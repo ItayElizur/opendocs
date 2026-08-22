@@ -42,6 +42,16 @@ interface OtherMessage {
 
 const pendingToolCalls = new Map<string, (result: ToolExecution) => void>()
 
+// Task 12: cached selection state, updated live from the .NET-side
+// WindowSelectionChange handler (TaskPaneHost.OnSelectionChanged) and read by
+// wordSkill.buildContext() below. Module-level `let`, same pattern as Task
+// 11's `editingMode`.
+let latestSelection: { hasSelection: boolean; preview: string; fullText: string } = {
+  hasSelection: false,
+  preview: '',
+  fullText: '',
+}
+
 chrome.webview.addEventListener('message', (ev) => {
   const data = ev.data as OtherMessage & ToolResultMessage
   if (!data) return
@@ -63,6 +73,13 @@ chrome.webview.addEventListener('message', (ev) => {
       ui.showHistoric(messages)
       loop.restore(messages.map((m) => ({ role: m.role, text: m.text })))
     }
+    return
+  }
+  if (data.kind === 'selection-changed') {
+    latestSelection = data as unknown as typeof latestSelection
+    ui.setScopeHint(
+      latestSelection.hasSelection ? `Selection: "${latestSelection.preview}..."` : 'Whole document',
+    )
   }
 })
 
@@ -214,6 +231,14 @@ const wordSkill: AgentSkill = {
   get tools() {
     return toolsForMode()
   },
+  // Task 12: injects the actual selected text (not just its position) into
+  // the per-turn context, so the model can act on "the selected text" even
+  // though our tool set is paragraph-index-based rather than selection-based.
+  // Mirrors genoffice's buildDocContext extension point (AgentLoop.run()
+  // calls skill.buildContext?.() once per run and appends it to the outgoing
+  // user message - see shared/web-src/agent-core/loop.ts).
+  buildContext: () =>
+    latestSelection.hasSelection ? `Content selected by the user:\n${latestSelection.fullText}` : '',
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }
 

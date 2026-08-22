@@ -52,6 +52,21 @@ namespace WordAiAddIn
             return _chatId;
         }
 
+        public void OnSelectionChanged(Word.Selection selection)
+        {
+            bool hasSelection = selection.Start != selection.End;
+            string fullText = hasSelection ? selection.Text : "";
+            if (fullText.Length > 24000) fullText = fullText.Substring(0, 24000);
+            string preview = fullText.Length > 40 ? fullText.Substring(0, 40) : fullText;
+            _bridge.PostMessage(new
+            {
+                kind = "selection-changed",
+                hasSelection,
+                preview,
+                fullText,
+            });
+        }
+
         private void OnOtherMessage(string kind, JsonElement root)
         {
             switch (kind)
