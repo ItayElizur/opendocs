@@ -23,6 +23,8 @@ namespace WordAiAddIn
                         return InsertContent(input);
                     case "edit_chart":
                         return EditChart(input);
+                    case "read_blocks":
+                        return ReadBlocks(input);
                     default:
                         return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
@@ -104,6 +106,28 @@ namespace WordAiAddIn
                 Mutated = true,
                 Summary = "edit_chart",
             };
+        }
+
+        private static ToolResult ReadBlocks(JsonElement input)
+        {
+            int startIndex = input.GetProperty("startIndex").GetInt32();
+            int endIndex = input.GetProperty("endIndex").GetInt32();
+            Word.Document doc = ActiveDoc;
+            Word.Paragraphs paragraphs = doc.Paragraphs;
+            int count = paragraphs.Count;
+            endIndex = Math.Min(endIndex, count - 1);
+            if (startIndex < 0 || startIndex > endIndex)
+            {
+                return new ToolResult { Output = "Invalid range.", IsError = true, Summary = "read_blocks" };
+            }
+            var sb = new System.Text.StringBuilder();
+            for (int i = startIndex; i <= endIndex; i++)
+            {
+                Word.Paragraph p = paragraphs[i + 1];
+                string text = p.Range.Text.TrimEnd('\r', '\a', '\n');
+                sb.AppendLine($"[{i}] {text}");
+            }
+            return new ToolResult { Output = sb.ToString(), Summary = "read_blocks" };
         }
     }
 }

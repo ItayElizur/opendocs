@@ -148,6 +148,15 @@ const wordSkill: AgentSkill = {
         required: ['title', 'values'],
       },
     },
+    {
+      name: 'read_blocks',
+      description: 'Reads paragraphs [startIndex, endIndex] (0-based, inclusive) of the active document, one per line prefixed with its index.',
+      inputSchema: {
+        type: 'object',
+        properties: { startIndex: { type: 'number' }, endIndex: { type: 'number' } },
+        required: ['startIndex', 'endIndex'],
+      },
+    },
   ],
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }
