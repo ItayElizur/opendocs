@@ -455,16 +455,22 @@ namespace ExcelAiAddIn
 
         private static void MoveSheet(JsonElement op)
         {
-            int position = op.GetProperty("position").GetInt32(); // 1-based
+            int position = op.GetProperty("position").GetInt32(); // 1-based, desired final position
             Excel.Workbook wb = Globals.ThisAddIn.Application.ActiveWorkbook;
             Excel.Worksheet target = Sheet(op);
-            if (position >= wb.Worksheets.Count)
+            int count = wb.Worksheets.Count;
+            int currentIndex = target.Index; // 1-based
+            int clamped = Math.Max(1, Math.Min(position, count));
+            if (clamped == currentIndex) return; // already there
+            if (clamped > currentIndex)
             {
-                target.Move(After: wb.Worksheets[wb.Worksheets.Count]);
+                int afterShift = clamped + 1;
+                if (afterShift > count) target.Move(After: wb.Worksheets[count]);
+                else target.Move(Before: wb.Worksheets[afterShift]);
             }
             else
             {
-                target.Move(Before: wb.Worksheets[position]);
+                target.Move(Before: wb.Worksheets[clamped]);
             }
         }
 
