@@ -113,37 +113,61 @@ function makeTransport(): AgentTransport {
   }
 }
 
+const ALL_TOOLS: AgentSkill['tools'] = [
+  {
+    name: 'get_workbook_context',
+    description: "Reads the active sheet's name, used range, and current selection address.",
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'read_range',
+    description: 'Reads cell values in a rectangular range (e.g. "A1:C10"), max 2000 cells. Optional sheet name defaults to the active sheet.',
+    inputSchema: { type: 'object', properties: { sheet: { type: 'string' }, address: { type: 'string' } }, required: ['address'] },
+  },
+  {
+    name: 'read_cells',
+    description: 'Reads specific scattered cell addresses (e.g. ["A1","C5"]).',
+    inputSchema: { type: 'object', properties: { sheet: { type: 'string' }, addresses: { type: 'array', items: { type: 'string' } } }, required: ['addresses'] },
+  },
+  {
+    name: 'propose_operations',
+    description:
+      'Applies a batch of spreadsheet operations. Each has a "kind": ' +
+      '"set_cell" (sheet?, address, value), "set_formula" (sheet?, address, formula), ' +
+      '"set_range" (sheet?, address, values: value[][]), ' +
+      '"format_range" (sheet?, address, bold?, italic?, numberFormat?, fillColor? - hex like "#FFFF00"), ' +
+      '"insert_rows"/"delete_rows" (sheet?, startRow:number 1-based, count:number), ' +
+      '"insert_cols"/"delete_cols" (sheet?, startCol:number 1-based, count:number), ' +
+      '"add_chart" (sheet?, dataRange:string, chartType?:"column"|"line"|"pie", title?:string).',
+    inputSchema: { type: 'object', properties: { operations: { type: 'array', items: { type: 'object' } } }, required: ['operations'] },
+  },
+]
+
+const READ_ONLY_TOOL_NAMES = new Set(['get_workbook_context', 'read_range', 'read_cells'])
+const READ_ONLY_TOOLS = ALL_TOOLS.filter((tool) => READ_ONLY_TOOL_NAMES.has(tool.name))
+
+let editingMode: EditingMode = 'fullAutonomy'
+
+function toolsForMode(): AgentSkill['tools'] {
+  // Excel has no add_comment-equivalent tool yet, so Comment Only mode
+  // allows the same read-only set as Read Only mode (documented gap - see
+  // Task 16 brief). Track Changes and Full Autonomy both get the full list;
+  // ExcelTools.Execute enforces the same policy server-side regardless of
+  // what the client sends.
+  if (editingMode === 'readOnly' || editingMode === 'commentOnly') return READ_ONLY_TOOLS
+  return ALL_TOOLS
+}
+
 const excelSkill: AgentSkill = {
   id: 'excel-tools',
   systemPrompt:
     'You are an assistant running inside a VSTO Excel add-in. You can help the user with their active workbook. ' +
-    'No tools are available yet.',
-  tools: [
-    {
-      name: 'get_workbook_context',
-      description: "Reads the active sheet's name, used range, and current selection address.",
-      inputSchema: { type: 'object', properties: {} },
-    },
-    {
-      name: 'read_range',
-      description: 'Reads cell values in a rectangular range (e.g. "A1:C10"), max 2000 cells. Optional sheet name defaults to the active sheet.',
-      inputSchema: { type: 'object', properties: { sheet: { type: 'string' }, address: { type: 'string' } }, required: ['address'] },
-    },
-    {
-      name: 'read_cells',
-      description: 'Reads specific scattered cell addresses (e.g. ["A1","C5"]).',
-      inputSchema: { type: 'object', properties: { sheet: { type: 'string' }, addresses: { type: 'array', items: { type: 'string' } } }, required: ['addresses'] },
-    },
-    {
-      name: 'propose_operations',
-      description:
-        'Applies a batch of spreadsheet operations. Each has a "kind": ' +
-        '"set_cell" (sheet?, address, value), "set_formula" (sheet?, address, formula), ' +
-        '"set_range" (sheet?, address, values: value[][]), ' +
-        '"format_range" (sheet?, address, bold?, italic?, numberFormat?, fillColor? - hex like "#FFFF00").',
-      inputSchema: { type: 'object', properties: { operations: { type: 'array', items: { type: 'object' } } }, required: ['operations'] },
-    },
-  ],
+    'You have tools to read the workbook (context, ranges, individual cells) and to propose batches of write ' +
+    'operations (set cell values/formulas, set ranges, format cells, insert/delete rows and columns, add charts). ' +
+    'Use the tools when asked to inspect or modify the spreadsheet.',
+  get tools() {
+    return toolsForMode()
+  },
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }
 
@@ -164,8 +188,8 @@ const ui = mountChatUI(root, {
     ui.resetToEmpty()
   },
   onModeChange: (mode: EditingMode) => {
-    // Deferred to a follow-up task once Excel has tools worth gating
-    // (same pattern as WordAiAddIn's Task 11).
+    editingMode = mode
+    chrome.webview.postMessage({ kind: 'set-mode', mode })
   },
   onSettingsSave: (settings) => {
     // Not yet wired to the transport/provider config - deferred (Phase 5).

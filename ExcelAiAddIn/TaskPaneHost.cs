@@ -73,6 +73,16 @@ namespace ExcelAiAddIn
                 case "new-chat-divider":
                     ChatStore.AppendDivider("ExcelAiAddIn", GetChatId());
                     break;
+                case "set-mode":
+                    string mode = root.GetProperty("mode").GetString();
+                    switch (mode)
+                    {
+                        case "readOnly": ExcelTools.Mode = EditingMode.ReadOnly; break;
+                        case "commentOnly": ExcelTools.Mode = EditingMode.CommentOnly; break;
+                        case "trackChanges": ExcelTools.Mode = EditingMode.TrackChanges; break;
+                        case "fullAutonomy": ExcelTools.Mode = EditingMode.FullAutonomy; break;
+                    }
+                    break;
             }
         }
     }

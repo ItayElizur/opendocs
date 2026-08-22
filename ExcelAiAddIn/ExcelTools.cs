@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Excel = Microsoft.Office.Interop.Excel;
@@ -6,12 +7,39 @@ using OfficeAi.Shared;
 
 namespace ExcelAiAddIn
 {
+    public enum EditingMode { ReadOnly, CommentOnly, TrackChanges, FullAutonomy }
+
     public static class ExcelTools
     {
+        public static EditingMode Mode = EditingMode.FullAutonomy;
+
+        private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
+        {
+            "get_workbook_context", "read_range", "read_cells",
+        };
+
         public static ToolResult Execute(string name, JsonElement input)
         {
             try
             {
+                // Excel has no add_comment-equivalent tool yet, so Comment Only
+                // mode allows no mutating tools at all (documented gap - see
+                // Task 16 brief). Track Changes mode currently behaves the
+                // same as Full Autonomy for gating purposes: Excel's
+                // track-changes equivalent (Workbook.HighlightChangesOnScreen /
+                // shared-workbook change tracking) is more limited than
+                // Word's TrackRevisions and is out of scope for this task, so
+                // there is deliberately no COM call wired up for it here.
+                bool isMutating = !AlwaysAllowedTools.Contains(name);
+                if (Mode == EditingMode.ReadOnly && isMutating)
+                {
+                    return new ToolResult { Output = "Blocked: editing mode is Read Only.", IsError = true, Summary = name };
+                }
+                if (Mode == EditingMode.CommentOnly && isMutating)
+                {
+                    return new ToolResult { Output = "Blocked: editing mode is Comment Only.", IsError = true, Summary = name };
+                }
+
                 switch (name)
                 {
                     case "get_workbook_context": return GetWorkbookContext();
@@ -107,6 +135,11 @@ namespace ExcelAiAddIn
                         case "format_range":
                             FormatRange(op);
                             lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "insert_rows": InsertDeleteRows(op, insert: true); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "delete_rows": InsertDeleteRows(op, insert: false); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "insert_cols": InsertDeleteCols(op, insert: true); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "delete_cols": InsertDeleteCols(op, insert: false); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "add_chart": AddChart(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
                     }
@@ -160,6 +193,58 @@ namespace ExcelAiAddIn
                 int g = Convert.ToInt32(hex.Substring(2, 2), 16);
                 int b = Convert.ToInt32(hex.Substring(4, 2), 16);
                 range.Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.FromArgb(r, g, b));
+            }
+        }
+
+        private static void InsertDeleteRows(JsonElement op, bool insert)
+        {
+            int startRow = op.GetProperty("startRow").GetInt32();
+            int count = op.GetProperty("count").GetInt32();
+            Excel.Range rows = Sheet(op).Range[$"{startRow}:{startRow + count - 1}"];
+            if (insert) rows.EntireRow.Insert(); else rows.EntireRow.Delete();
+        }
+
+        private static void InsertDeleteCols(JsonElement op, bool insert)
+        {
+            int startCol = op.GetProperty("startCol").GetInt32();
+            int count = op.GetProperty("count").GetInt32();
+            string startLetter = ColumnLetter(startCol);
+            string endLetter = ColumnLetter(startCol + count - 1);
+            Excel.Range cols = Sheet(op).Range[$"{startLetter}:{endLetter}"];
+            if (insert) cols.EntireColumn.Insert(); else cols.EntireColumn.Delete();
+        }
+
+        private static string ColumnLetter(int col)
+        {
+            string result = "";
+            while (col > 0)
+            {
+                int rem = (col - 1) % 26;
+                result = (char)('A' + rem) + result;
+                col = (col - 1) / 26;
+            }
+            return result;
+        }
+
+        private static void AddChart(JsonElement op)
+        {
+            Excel.Worksheet sheet = Sheet(op);
+            string dataRange = op.GetProperty("dataRange").GetString();
+            dynamic chartObjects = sheet.ChartObjects();
+            dynamic chartObj = chartObjects.Add(100, 20, 400, 250);
+            dynamic chart = chartObj.Chart;
+            chart.SetSourceData(sheet.Range[dataRange]);
+            int chartTypeCode = 51; // xlColumnClustered
+            if (op.TryGetProperty("chartType", out var ct))
+            {
+                string t = ct.GetString();
+                chartTypeCode = t == "line" ? 4 : t == "pie" ? 5 : 51;
+            }
+            chart.ChartType = chartTypeCode;
+            if (op.TryGetProperty("title", out var title))
+            {
+                chart.HasTitle = true;
+                chart.ChartTitle.Text = title.GetString();
             }
         }
     }
