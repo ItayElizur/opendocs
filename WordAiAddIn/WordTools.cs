@@ -251,6 +251,12 @@ namespace WordAiAddIn
                         case "deleteParagraphBullets":
                             DeleteParagraphBullets(cmd);
                             lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "updateImageProperties":
+                            UpdateImageProperties(cmd);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "insertToc":
+                            InsertTocCmd(cmd);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown command kind"); anyError = true; break;
                     }
@@ -562,6 +568,80 @@ namespace WordAiAddIn
                 if (range.ListFormat.ListType == Word.WdListType.wdListNoNumbering) continue; // non-list-item matches silently skipped, mirrors genoffice
                 range.ListFormat.RemoveNumbers();
             }
+        }
+
+        private static void UpdateImageProperties(JsonElement cmd)
+        {
+            int imageIndex = cmd.GetProperty("imageIndex").GetInt32(); // 0-based index into doc.InlineShapes
+            Word.InlineShapes shapes = ActiveDoc.InlineShapes;
+            if (imageIndex < 0 || imageIndex >= shapes.Count)
+            {
+                throw new ArgumentException("updateImageProperties: imageIndex out of range.");
+            }
+            Word.InlineShape shape = shapes[imageIndex + 1];
+            JsonElement properties = cmd.GetProperty("properties");
+            HashSet<string> fields = new HashSet<string>();
+            foreach (JsonElement f in cmd.GetProperty("fields").EnumerateArray()) fields.Add(f.GetString());
+
+            const float pxToPoints = 0.75f; // 96dpi px -> points, matches genoffice's own pixel model
+            float? newWidth = null, newHeight = null;
+            if (fields.Contains("widthPx") && properties.TryGetProperty("widthPx", out var w) && w.ValueKind == JsonValueKind.Number)
+                newWidth = (float)w.GetDouble() * pxToPoints;
+            if (fields.Contains("heightPx") && properties.TryGetProperty("heightPx", out var h) && h.ValueKind == JsonValueKind.Number)
+                newHeight = (float)h.GetDouble() * pxToPoints;
+
+            if (newWidth.HasValue && !newHeight.HasValue)
+            {
+                newHeight = shape.Height * (newWidth.Value / shape.Width); // proportional scale from current size
+            }
+            else if (newHeight.HasValue && !newWidth.HasValue)
+            {
+                newWidth = shape.Width * (newHeight.Value / shape.Height);
+            }
+            if (newWidth.HasValue) shape.Width = newWidth.Value;
+            if (newHeight.HasValue) shape.Height = newHeight.Value;
+
+            if (fields.Contains("align") && properties.TryGetProperty("align", out var align) && align.ValueKind == JsonValueKind.String)
+            {
+                switch (align.GetString())
+                {
+                    case "left": shape.Range.ParagraphFormat.Alignment = Word.WdParagraphAlignment.wdAlignParagraphLeft; break;
+                    case "center": shape.Range.ParagraphFormat.Alignment = Word.WdParagraphAlignment.wdAlignParagraphCenter; break;
+                    case "right": shape.Range.ParagraphFormat.Alignment = Word.WdParagraphAlignment.wdAlignParagraphRight; break;
+                }
+            }
+        }
+
+        private static void InsertTocCmd(JsonElement cmd)
+        {
+            int afterBlockIndex = cmd.GetProperty("afterBlockIndex").GetInt32();
+            Word.Paragraphs paragraphs = ActiveDoc.Paragraphs;
+            bool hasHeadings = false;
+            foreach (Word.Paragraph p in paragraphs)
+            {
+                if (p.Range.get_Style().NameLocal.StartsWith("Heading", StringComparison.OrdinalIgnoreCase)) { hasHeadings = true; break; }
+            }
+            if (!hasHeadings)
+            {
+                throw new InvalidOperationException("insertToc: document has no heading-styled paragraphs to build a table of contents from.");
+            }
+            if (afterBlockIndex < -1 || afterBlockIndex >= paragraphs.Count)
+            {
+                throw new ArgumentException("insertToc: afterBlockIndex out of range.");
+            }
+
+            Word.Range insertionPoint = afterBlockIndex == -1
+                ? ActiveDoc.Range(0, 0)
+                : paragraphs[afterBlockIndex + 1].Range;
+            insertionPoint.Collapse(afterBlockIndex == -1 ? Word.WdCollapseDirection.wdCollapseStart : Word.WdCollapseDirection.wdCollapseEnd);
+            insertionPoint.InsertParagraphAfter();
+            insertionPoint.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+
+            // Word's own native TOC field - auto-scans heading-styled paragraphs and
+            // produces real, page-numbered entries directly. This is a more direct,
+            // simpler native equivalent than genoffice's own hand-built TOC field-XML
+            // workaround (real Word already paginates; genoffice's web renderer doesn't).
+            ActiveDoc.TablesOfContents.Add(insertionPoint, UseHeadingStyles: true);
         }
     }
 }
