@@ -16,6 +16,8 @@ namespace WordAiAddIn
             _taskPane.Width = 420;
             _taskPane.Visible = true;
 
+            _taskPaneControl.RequestPaneWidth += width => _taskPane.Width = width;
+
             this.Application.WindowSelectionChange += Application_WindowSelectionChange;
         }
 

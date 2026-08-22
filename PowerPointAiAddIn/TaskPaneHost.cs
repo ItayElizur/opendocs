@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Windows.Forms;
@@ -11,6 +12,8 @@ namespace PowerPointAiAddIn
         private readonly Label _status;
         private readonly WebViewBridgeHost _bridge;
         private string _chatId;
+
+        public event Action<int> RequestPaneWidth;
 
         public TaskPaneHost()
         {
@@ -87,6 +90,12 @@ namespace PowerPointAiAddIn
                         case "trackChanges": PowerPointTools.Mode = EditingMode.TrackChanges; break;
                         case "fullAutonomy": PowerPointTools.Mode = EditingMode.FullAutonomy; break;
                     }
+                    break;
+                case "collapse-pane":
+                    RequestPaneWidth?.Invoke(34);
+                    break;
+                case "expand-pane":
+                    RequestPaneWidth?.Invoke(420);
                     break;
             }
         }

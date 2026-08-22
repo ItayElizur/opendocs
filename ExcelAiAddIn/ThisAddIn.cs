@@ -14,6 +14,8 @@ namespace ExcelAiAddIn
             _taskPane = this.CustomTaskPanes.Add(_taskPaneControl, "Airchat Office");
             _taskPane.Width = 420;
             _taskPane.Visible = true;
+
+            _taskPaneControl.RequestPaneWidth += width => _taskPane.Width = width;
         }
 
         private void ThisAddIn_Shutdown(object sender, EventArgs e)

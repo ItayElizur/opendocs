@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Windows.Forms;
@@ -11,6 +12,8 @@ namespace WordAiAddIn
         private readonly Label _status;
         private readonly WebViewBridgeHost _bridge;
         private string _chatId;
+
+        public event Action<int> RequestPaneWidth;
 
         public TaskPaneHost()
         {
@@ -102,6 +105,12 @@ namespace WordAiAddIn
                         case "trackChanges": WordTools.Mode = EditingMode.TrackChanges; break;
                         case "fullAutonomy": WordTools.Mode = EditingMode.FullAutonomy; break;
                     }
+                    break;
+                case "collapse-pane":
+                    RequestPaneWidth?.Invoke(34);
+                    break;
+                case "expand-pane":
+                    RequestPaneWidth?.Invoke(420);
                     break;
             }
         }
