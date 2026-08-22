@@ -124,4 +124,44 @@ describe('mountChatUI', () => {
     expect(root.querySelector('.ai-dock')!.classList.contains('collapsed')).toBe(false)
     expect(onCollapseChange).toHaveBeenCalledWith(false)
   })
+
+  it('RTL round trip: switching to Hebrew, sending a Hebrew message, and receiving a Hebrew reply all render inside the RTL-marked container', () => {
+    const { root, handle } = setup()
+
+    // Switch to Hebrew via Settings -> Save (language only takes effect on Save).
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-lang="he"]')!.click()
+    root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
+    expect(root.querySelector('.ai-dock')!.getAttribute('dir')).toBe('rtl')
+
+    // Send a Hebrew user message.
+    const hebrewQuestion = 'סכם את המסמך הזה בבקשה'
+    handle.addUserMessage(hebrewQuestion)
+
+    // Simulate a streamed Hebrew assistant reply.
+    handle.beginAssistantMessage()
+    const hebrewAnswer = 'המסמך עוסק בתקציב הרבעוני ובתחזית המכירות.'
+    handle.updateAssistantMessage(hebrewAnswer.slice(0, 10))
+    handle.endAssistantMessage(hebrewAnswer)
+
+    // Both messages must render intact (no mangling) and inside the
+    // RTL-marked ancestor, so the CSS's [dir='rtl'] .ai-msg-user /
+    // [dir='rtl'] .ai-msg-assistant alignment rules actually apply to them.
+    const userMsg = root.querySelector<HTMLElement>('[dir="rtl"] .ai-msg-user')
+    const assistantMsg = root.querySelector<HTMLElement>('[dir="rtl"] .ai-msg-assistant')
+    expect(userMsg).not.toBeNull()
+    expect(assistantMsg).not.toBeNull()
+    expect(userMsg!.textContent).toBe(hebrewQuestion)
+    expect(assistantMsg!.textContent).toBe(hebrewAnswer)
+
+    // Switching back to English moves the container back to LTR and the
+    // already-rendered Hebrew messages remain readable (dir is a container
+    // attribute, not per-message - Unicode bidi still renders Hebrew
+    // characters correctly regardless of the container's base direction).
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-lang="en"]')!.click()
+    root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
+    expect(root.querySelector('.ai-dock')!.getAttribute('dir')).toBe('ltr')
+    expect(root.querySelector('.ai-msg-user')!.textContent).toBe(hebrewQuestion)
+  })
 })
