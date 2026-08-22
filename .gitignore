@@ -1,1 +1,8 @@
 .worktrees/
+bin/
+obj/
+node_modules/
+*.user
+*.suo
+web/bundle.js
+web/bundle.js.map
