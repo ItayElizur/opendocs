@@ -25,6 +25,8 @@ namespace WordAiAddIn
                         return EditChart(input);
                     case "read_blocks":
                         return ReadBlocks(input);
+                    case "replace_blocks":
+                        return ReplaceBlocks(input);
                     default:
                         return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
@@ -128,6 +130,23 @@ namespace WordAiAddIn
                 sb.AppendLine($"[{i}] {text}");
             }
             return new ToolResult { Output = sb.ToString(), Summary = "read_blocks" };
+        }
+
+        private static ToolResult ReplaceBlocks(JsonElement input)
+        {
+            int startIndex = input.GetProperty("startIndex").GetInt32();
+            int endIndex = input.GetProperty("endIndex").GetInt32();
+            string text = input.GetProperty("text").GetString() ?? "";
+            Word.Document doc = ActiveDoc;
+            Word.Paragraphs paragraphs = doc.Paragraphs;
+            endIndex = Math.Min(endIndex, paragraphs.Count - 1);
+            if (startIndex < 0 || startIndex > endIndex)
+            {
+                return new ToolResult { Output = "Invalid range.", IsError = true, Summary = "replace_blocks" };
+            }
+            Word.Range range = doc.Range(paragraphs[startIndex + 1].Range.Start, paragraphs[endIndex + 1].Range.End);
+            range.Text = text;
+            return new ToolResult { Output = $"Replaced paragraphs {startIndex}-{endIndex} with: {text}", Mutated = true, Summary = "replace_blocks" };
         }
     }
 }

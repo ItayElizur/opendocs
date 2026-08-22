@@ -157,6 +157,15 @@ const wordSkill: AgentSkill = {
         required: ['startIndex', 'endIndex'],
       },
     },
+    {
+      name: 'replace_blocks',
+      description: 'Replaces paragraphs [startIndex, endIndex] (0-based, inclusive) with new text (empty text deletes the range).',
+      inputSchema: {
+        type: 'object',
+        properties: { startIndex: { type: 'number' }, endIndex: { type: 'number' }, text: { type: 'string' } },
+        required: ['startIndex', 'endIndex', 'text'],
+      },
+    },
   ],
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }
