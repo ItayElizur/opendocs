@@ -15,6 +15,7 @@ function setup() {
       { en: 'Fix grammar issues', he: 'תקן שגיאות דקדוק' },
       { en: 'Improve conciseness', he: 'שפר תמציתיות' },
     ],
+    onCollapseChange: vi.fn(),
   })
   return { root, onSend, onModeChange, onSettingsSave, onNewChat, handle }
 }
@@ -106,5 +107,21 @@ describe('mountChatUI', () => {
     expect(pills[0].textContent).toBe('Summarize this document')
     pills[0].click()
     expect(root.querySelector<HTMLTextAreaElement>('.ai-textarea')!.value).toBe('Summarize this document')
+  })
+
+  it('clicking collapse hides the panel and shows the rail; clicking the rail re-expands', () => {
+    const onCollapseChange = vi.fn()
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    mountChatUI(root, {
+      onSend: vi.fn(), onModeChange: vi.fn(), onSettingsSave: vi.fn(), onNewChat: vi.fn(),
+      starters: [], onCollapseChange,
+    })
+    root.querySelector<HTMLButtonElement>('[data-t-title="collapse"]')!.click()
+    expect(root.querySelector('.ai-dock')!.classList.contains('collapsed')).toBe(true)
+    expect(onCollapseChange).toHaveBeenCalledWith(true)
+    root.querySelector<HTMLElement>('.ai-rail')!.click()
+    expect(root.querySelector('.ai-dock')!.classList.contains('collapsed')).toBe(false)
+    expect(onCollapseChange).toHaveBeenCalledWith(false)
   })
 })

@@ -36,6 +36,7 @@ export interface ChatUIOptions {
   onModeChange: (mode: EditingMode) => void
   onSettingsSave: (settings: { baseUrl: string; apiKey: string; model: string; lang: Lang }) => void
   starters: Array<{ en: string; he: string }>
+  onCollapseChange: (collapsed: boolean) => void
 }
 
 export interface ToolStepHandle {
@@ -77,7 +78,9 @@ function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
 
 export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHandle {
   root.innerHTML = `
-    <div class="ai-panel">
+    <div class="ai-dock">
+      <div class="ai-rail" data-t="panelTitle"></div>
+      <div class="ai-panel">
       <div class="ai-panel-header">
         <div class="ai-panel-title"><span class="ai-logo">A</span><span data-t="panelTitle">Airchat Office</span></div>
         <div class="ai-header-actions">
@@ -119,6 +122,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           </div>
         </div>
       </div>
+      </div>
     </div>
   `
 
@@ -132,6 +136,18 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const modeMenu = root.querySelector<HTMLDivElement>('#modeMenu')!
   const modeBtnLabel = root.querySelector<HTMLSpanElement>('#modeBtnLabel')!
   const scopeHintLabel = root.querySelector<HTMLSpanElement>('#scopeHintLabel')!
+
+  const dockEl = root.querySelector<HTMLDivElement>('.ai-dock')!
+  const railEl = root.querySelector<HTMLDivElement>('.ai-rail')!
+  const collapseBtn = root.querySelector<HTMLButtonElement>('[data-t-title="collapse"]')!
+
+  function setCollapsed(collapsed: boolean): void {
+    dockEl.classList.toggle('collapsed', collapsed)
+    options.onCollapseChange(collapsed)
+  }
+
+  collapseBtn.addEventListener('click', () => setCollapsed(true))
+  railEl.addEventListener('click', () => setCollapsed(false))
 
   let currentLang: Lang = 'en'
   let lastSelection: { hasSelection: boolean; preview: string } | null = null
@@ -171,6 +187,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   }
 
   function setLang(l: Lang): void {
+    dockEl.setAttribute('lang', l)
+    dockEl.setAttribute('dir', l === 'he' ? 'rtl' : 'ltr')
     currentLang = l
     root.querySelectorAll<HTMLButtonElement>('.ai-lang-toggle button').forEach((b) => {
       b.classList.toggle('active', b.dataset.lang === l)
