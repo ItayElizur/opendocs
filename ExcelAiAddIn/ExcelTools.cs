@@ -473,12 +473,13 @@ namespace ExcelAiAddIn
             string dataRange = op.GetProperty("dataRange").GetString();
             string targetCell = op.TryGetProperty("targetCell", out var tc) && tc.ValueKind == JsonValueKind.String ? tc.GetString() : dataRange;
             string type = op.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : "line";
-            dynamic sheet = Sheet(op);
-            dynamic groups = sheet.SparklineGroups;
-            Excel.XlSparkType sparkType = type == "column" ? Excel.XlSparkType.xlSparkColumnStacked100
+            Excel.Worksheet sheet = Sheet(op);
+            dynamic targetRange = sheet.Range[targetCell];
+            dynamic groups = targetRange.SparklineGroups;
+            Excel.XlSparkType sparkType = type == "column" ? Excel.XlSparkType.xlSparkColumn
                 : type == "stacked" ? Excel.XlSparkType.xlSparkColumnStacked100
                 : Excel.XlSparkType.xlSparkLine;
-            dynamic group = groups.Add(sparkType, Sheet(op).Range[dataRange].Address[true, true, Excel.XlReferenceStyle.xlA1, true]);
+            dynamic group = groups.Add(sparkType, sheet.Range[dataRange].Address[true, true, Excel.XlReferenceStyle.xlA1, true]);
             if (op.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
             {
                 group.SeriesColor.Color = HexToOleColor(color.GetString());
