@@ -243,6 +243,24 @@ const MUTATION_TOOLS = [
       required: ['slideIndex', 'shapeIndex'],
     },
   },
+  {
+    name: 'set_slide_background',
+    description: 'Sets a solid background color for one slide, or slideIndex=-1 for every slide in the deck.',
+    inputSchema: {
+      type: 'object',
+      properties: { slideIndex: { type: 'number' }, color: { type: 'string' } },
+      required: ['slideIndex', 'color'],
+    },
+  },
+  {
+    name: 'ungroup_element',
+    description: 'Promotes a group shape\'s direct children to top-level shapes. Shape indices change after this call - re-read the slide before addressing the promoted shapes.',
+    inputSchema: {
+      type: 'object',
+      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' } },
+      required: ['slideIndex', 'shapeIndex'],
+    },
+  },
 ]
 
 const ALL_TOOLS = [...READER_TOOLS, ...MUTATION_TOOLS]

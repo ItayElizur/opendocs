@@ -49,6 +49,8 @@ namespace PowerPointAiAddIn
                     case "add_slide": return AddSlide(input);
                     case "set_element_fill": return SetElementFill(input);
                     case "set_element_stroke": return SetElementStroke(input);
+                    case "set_slide_background": return SetSlideBackground(input);
+                    case "ungroup_element": return UngroupElement(input);
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
             }
@@ -274,6 +276,36 @@ namespace PowerPointAiAddIn
                 shape.Line.Weight = input.TryGetProperty("widthPt", out var width) && width.ValueKind == JsonValueKind.Number ? (float)width.GetDouble() : 1f;
             }
             return new ToolResult { Output = "Stroke updated.", Mutated = true, Summary = "set_element_stroke" };
+        }
+
+        private static ToolResult SetSlideBackground(JsonElement input)
+        {
+            int slideIndex = input.GetProperty("slideIndex").GetInt32();
+            int oleColor = HexToOle(input.GetProperty("color").GetString());
+            PowerPoint.Slides slides = ActivePresentation.Slides;
+
+            void Apply(PowerPoint.Slide s)
+            {
+                s.Background.Fill.ForeColor.RGB = oleColor;
+                s.FollowMasterBackground = Microsoft.Office.Core.MsoTriState.msoFalse;
+            }
+
+            if (slideIndex == -1)
+            {
+                foreach (PowerPoint.Slide s in slides) Apply(s);
+            }
+            else
+            {
+                Apply(slides[slideIndex + 1]);
+            }
+            return new ToolResult { Output = "Background updated.", Mutated = true, Summary = "set_slide_background" };
+        }
+
+        private static ToolResult UngroupElement(JsonElement input)
+        {
+            PowerPoint.Shape shape = ResolveShape(input);
+            shape.Ungroup();
+            return new ToolResult { Output = "Shape ungrouped - re-read the slide (read_slide) to get updated shape indices before addressing the promoted children.", Mutated = true, Summary = "ungroup_element" };
         }
     }
 }
