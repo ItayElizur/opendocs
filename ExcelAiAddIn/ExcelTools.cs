@@ -20,6 +20,10 @@ namespace ExcelAiAddIn
             "get_workbook_context", "read_range", "read_cells", "select_range", "read_formats", "read_sheet_features", "find_cells", "trace_precedents", "trace_dependents",
         };
 
+        // Note: the brief's source table also lists "plus"/"mathPlus" (MsoAutoShapeType.msoShapePlus/
+        // msoShapeMathPlus), but those enum members do not exist in this project's referenced
+        // Microsoft.Office.Core PIA (confirmed via CS0117 compile failure) - omitted; requests for
+        // either shape type fall back to msoShapeRectangle per the table's existing fallback behavior.
         private static readonly Dictionary<string, Microsoft.Office.Core.MsoAutoShapeType> ShapeTypeMap =
             new Dictionary<string, Microsoft.Office.Core.MsoAutoShapeType>
         {
@@ -748,7 +752,7 @@ namespace ExcelAiAddIn
                     shape.TextFrame.Characters().Text = text.GetString();
                 }
             }
-            catch { /* shape doesn't support text */ }
+            catch (System.Runtime.InteropServices.COMException) { /* shape doesn't support a text frame */ }
             if (op.TryGetProperty("fillColor", out var fill) && fill.ValueKind == JsonValueKind.String)
             {
                 shape.Fill.ForeColor.RGB = HexToOleColor(fill.GetString());
