@@ -11,7 +11,6 @@
     <AssemblyName>ExcelAiAddIn</AssemblyName>
     <LoadBehavior>3</LoadBehavior>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
-    <RuntimeIdentifiers>win</RuntimeIdentifiers>
     <DefineConstants>VSTO40;UseOfficeInterop</DefineConstants>
     <BootstrapperEnabled>true</BootstrapperEnabled>
     <BootstrapperComponentsLocation>HomeSite</BootstrapperComponentsLocation>
