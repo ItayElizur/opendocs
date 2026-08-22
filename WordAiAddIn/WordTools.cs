@@ -239,6 +239,12 @@ namespace WordAiAddIn
                         case "updateParagraphStyle":
                             UpdateParagraphStyle(cmd);
                             lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "deleteBlocks":
+                            DeleteBlocksCmd(cmd);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "moveBlocks":
+                            MoveBlocksCmd(cmd);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown command kind"); anyError = true; break;
                     }
@@ -451,6 +457,75 @@ namespace WordAiAddIn
                         border.LineStyle = on ? Word.WdLineStyle.wdLineStyleSingle : Word.WdLineStyle.wdLineStyleNone;
                     }
                 }
+            }
+        }
+
+        private static void DeleteBlocksCmd(JsonElement cmd)
+        {
+            List<int> indexes = ResolveTargetParagraphs(cmd.GetProperty("target"));
+            Word.Paragraphs paragraphs = ActiveDoc.Paragraphs;
+            if (indexes.Count >= paragraphs.Count)
+            {
+                // Deleting every paragraph would leave zero - clear content instead,
+                // leaving one empty paragraph (mirrors genoffice's own guard).
+                ActiveDoc.Content.Text = "";
+                return;
+            }
+            // Delete in descending order so earlier indices don't shift as later ones are removed.
+            indexes.Sort();
+            indexes.Reverse();
+            foreach (int i in indexes)
+            {
+                paragraphs[i + 1].Range.Delete();
+            }
+        }
+
+        private static void MoveBlocksCmd(JsonElement cmd)
+        {
+            var blockIndexes = new List<int>();
+            foreach (JsonElement e in cmd.GetProperty("blockIndexes").EnumerateArray()) blockIndexes.Add(e.GetInt32());
+            int afterBlockIndex = cmd.GetProperty("afterBlockIndex").GetInt32();
+
+            Word.Paragraphs paragraphs = ActiveDoc.Paragraphs;
+            int count = paragraphs.Count;
+            if (blockIndexes.Any(i => i < 0 || i >= count) || afterBlockIndex < -1 || afterBlockIndex >= count)
+            {
+                throw new ArgumentException("moveBlocks: index out of range.");
+            }
+            if (blockIndexes.Contains(afterBlockIndex))
+            {
+                throw new ArgumentException("moveBlocks: afterBlockIndex cannot be one of the moved blocks.");
+            }
+
+            blockIndexes.Sort();
+            // Capture each moved paragraph's formatted content (preserves character
+            // formatting) before any deletion shifts indices.
+            var captured = blockIndexes.Select(i => paragraphs[i + 1].Range.FormattedText).ToList();
+
+            // Delete moved paragraphs in descending order.
+            var deleteOrder = new List<int>(blockIndexes);
+            deleteOrder.Reverse();
+            foreach (int i in deleteOrder)
+            {
+                paragraphs[i + 1].Range.Delete();
+            }
+
+            // Recompute the insertion point: afterBlockIndex shifts down by however
+            // many moved blocks were originally BEFORE it.
+            int shift = blockIndexes.Count(i => i < afterBlockIndex);
+            int adjustedAfter = afterBlockIndex - shift;
+
+            Word.Range insertionPoint = adjustedAfter == -1
+                ? ActiveDoc.Range(0, 0)
+                : ActiveDoc.Paragraphs[adjustedAfter + 1].Range;
+            insertionPoint.Collapse(adjustedAfter == -1 ? Word.WdCollapseDirection.wdCollapseStart : Word.WdCollapseDirection.wdCollapseEnd);
+
+            foreach (Word.Range block in captured)
+            {
+                insertionPoint.InsertParagraphAfter();
+                insertionPoint.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                insertionPoint.FormattedText = block;
+                insertionPoint.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
             }
         }
     }
