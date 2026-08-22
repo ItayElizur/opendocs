@@ -1,0 +1,300 @@
+  /* ---- tokens, mirroring packages/ui/src/tokens.css + apps/docs/src/renderer/styles.css ---- */
+  :root {
+    --color-brand-secondary: #0f7fff;
+    --color-text-primary: #232425;
+    --color-text-secondary: #606366;
+    --color-text-tertiary: #909499;
+    --color-bg-page: #ffffff;
+    --color-bg-subtle: #f5f5f5;
+    --color-border-default: #eaeaea;
+    --color-border-strong: #d0d3d8;
+
+    --word-blue: #185abd;
+    --accent: var(--word-blue);
+
+    --docs-ai-error: #c62828;
+    --docs-ok-ink: #2e7d32;
+    --docs-ok-bg: #e6f2e6;
+    --docs-brand-ghost: rgb(15 127 255 / 8%);
+    --docs-brand-ghost-weak: rgb(15 127 255 / 6%);
+    --docs-brand-ring: rgb(15 127 255 / 40%);
+    --docs-shimmer-base: #666666;
+    --docs-shimmer-hi: #d9d9d9;
+    --docs-shadow-composer: 0 6px 30px rgb(0 0 0 / 8%);
+
+    --radius-6: 6px; --radius-8: 8px; --radius-12: 12px; --radius-16: 16px; --radius-30: 30px;
+    --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+    --font-sans: 'Segoe UI', Arial, -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif;
+  }
+
+  [data-theme='dark'] {
+    --color-text-primary: #e4e4e4;
+    --color-text-secondary: #a0a0a0;
+    --color-text-tertiary: #8a8a8a;
+    --color-bg-page: #1e1e1e;
+    --color-bg-subtle: #2a2a2a;
+    --color-border-default: #3a3a3a;
+    --color-border-strong: #555555;
+    --word-blue: #4a9eff;
+    --docs-ai-error: #f28b82;
+    --docs-ok-ink: #7bd88a;
+    --docs-ok-bg: #16351c;
+    --docs-brand-ghost: rgb(74 158 255 / 14%);
+    --docs-brand-ghost-weak: rgb(74 158 255 / 10%);
+    --docs-brand-ring: rgb(74 158 255 / 45%);
+    --docs-shimmer-base: #8a8a8a;
+    --docs-shimmer-hi: #d0d0d0;
+    --docs-shadow-composer: 0 6px 30px rgb(0 0 0 / 30%);
+    --color-brand-secondary: #4a9eff;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+
+  .ai-dock {
+    width: 380px; flex-shrink: 0;
+    transition: width 180ms cubic-bezier(0.4, 0, 0.2, 1);
+    border-left: 1px solid var(--color-border-strong);
+    background: var(--color-bg-page);
+    position: relative;
+  }
+  .ai-dock[dir='rtl'] { border-left: none; border-right: 1px solid var(--color-border-strong); }
+  .ai-dock.collapsed { width: 34px; }
+  .ai-dock.collapsed .ai-panel { visibility: hidden; }
+  .ai-rail {
+    display: none; width: 34px; height: 100%; align-items: center; justify-content: center;
+    writing-mode: vertical-rl; font-size: 12px; letter-spacing: 2px; color: var(--color-text-tertiary); cursor: pointer;
+  }
+  .ai-dock.collapsed .ai-rail { display: flex; }
+
+  .ai-panel { height: 100%; display: flex; flex-direction: column; color: var(--color-text-primary); font-size: 14px; font-family: var(--font-sans); }
+
+  .ai-panel-header {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--color-border-default); flex-shrink: 0;
+    /* Feedback: the header chrome itself should not mirror with language -
+       title always left, action icons always right, regardless of RTL. Only
+       the chat content/composer below flip. Hebrew text inside still renders
+       its own characters right-to-left (Unicode bidi is per-run, independent
+       of this container's base direction) - just the block-level layout order
+       here is pinned. */
+    direction: ltr;
+  }
+  .ai-panel-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+  .ai-logo {
+    width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--color-brand-secondary), #6ec1ff);
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700;
+  }
+  .ai-header-actions { display: flex; gap: 2px; }
+  .ai-header-btn {
+    width: 26px; height: 26px; border: none; border-radius: var(--radius-8);
+    background: transparent; color: var(--color-text-secondary);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 14px; transition: var(--transition-fast); position: relative;
+  }
+  .ai-header-btn:hover { background: var(--color-bg-subtle); color: var(--color-text-primary); }
+  .ai-header-btn:active { filter: brightness(0.88); transform: scale(0.98); }
+  .ai-header-btn.new-badge { background: var(--docs-brand-ghost); color: var(--color-brand-secondary); }
+
+  /* ---- "earlier conversation" divider: genoffice's real history model.
+     There is no multi-session browser in genoffice - "New chat" just resets
+     the AgentLoop's in-memory context (loop.reset()) and keeps writing to the
+     SAME per-document chat log; the old scrollback stays visible above a
+     divider, it is never archived/switchable. This mirrors that exactly. ---- */
+  .ai-history-sep {
+    display: flex; align-items: center; gap: 10px; margin: 4px 0;
+    color: var(--color-text-tertiary); font-size: 12px;
+  }
+  .ai-history-sep::before, .ai-history-sep::after { content: ''; flex: 1; height: 1px; background: var(--color-border-default); }
+  /* No fade: verified genoffice applies an .ai-msg-historic class to old
+     messages but there is NO CSS rule for it anywhere in the codebase - the
+     restored transcript renders at full, identical opacity to live messages,
+     distinguished only by the divider above. Matching that exactly. */
+
+  /* ---- settings dropdown (NEW - genoffice has no equivalent UI yet). Anchored
+     under the gear icon, same pattern/positioning as a hypothetical history
+     dropdown would use - not a centered modal dialog. Anchored to the
+     physical right (not inset-inline-end) to match the header's fixed,
+     non-mirroring layout - the gear icon always sits on the physical right. */
+  .ai-settings-panel {
+    position: absolute; top: 44px; right: 12px; width: 280px;
+    background: var(--color-bg-page); border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-12); box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+    display: none; z-index: 20; padding: 14px;
+  }
+  .ai-settings-panel.open { display: block; }
+  .ai-settings-panel h4 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--color-text-tertiary); }
+  .ai-field { margin-bottom: 12px; }
+  .ai-field label { display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px; }
+  .ai-field input, .ai-field select {
+    width: 100%; padding: 7px 10px; border-radius: var(--radius-8);
+    border: 1px solid var(--color-border-default); font-size: 13px; font-family: inherit;
+    background: var(--color-bg-page); color: var(--color-text-primary);
+  }
+  .ai-field input:focus, .ai-field select:focus { outline: none; border-color: var(--docs-brand-ring); }
+  .ai-lang-toggle { display: flex; gap: 6px; }
+  .ai-lang-toggle button {
+    flex: 1; padding: 6px; border-radius: var(--radius-8); border: 1px solid var(--color-border-default);
+    background: var(--color-bg-page); color: var(--color-text-secondary); cursor: pointer; font-size: 13px;
+  }
+  .ai-lang-toggle button.active { border-color: var(--docs-brand-ring); background: var(--docs-brand-ghost-weak); color: var(--color-brand-secondary); }
+  .ai-settings-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .ai-btn-primary, .ai-btn-secondary {
+    padding: 7px 14px; border-radius: var(--radius-8); font-size: 13px; cursor: pointer; border: none;
+  }
+  .ai-btn-primary { background: var(--color-text-primary); color: var(--color-bg-page); }
+  .ai-btn-secondary { background: transparent; color: var(--color-text-secondary); }
+
+  .ai-chat { flex: 1; overflow-y: auto; padding: 32px 16px; display: flex; flex-direction: column; gap: 16px; }
+
+  /* ---- empty state ---- */
+  .ai-chat-empty { margin-top: 36px; padding: 0 10px; text-align: center; }
+  .ai-chat-empty-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .ai-chat-empty-body { color: var(--color-text-secondary); font-size: 14px; line-height: 1.5; margin-bottom: 20px; }
+  .ai-starters { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .ai-starter {
+    padding: 8px 16px; border-radius: var(--radius-30); border: 1px solid var(--color-border-default);
+    background: var(--color-bg-page); font-size: 13px; cursor: pointer; transition: var(--transition-fast);
+    max-width: 320px;
+  }
+  .ai-starter:hover { border-color: var(--color-border-strong); background: var(--color-bg-subtle); }
+  .ai-starter:active { filter: brightness(0.88); transform: scale(0.98); }
+
+  .ai-msg-user {
+    align-self: flex-end; background: var(--color-bg-subtle); padding: 8px 16px;
+    border-radius: var(--radius-16) var(--radius-16) 4px var(--radius-16);
+    max-width: 80%; line-height: 1.5; font-size: 16px;
+  }
+  [dir='rtl'] .ai-msg-user { align-self: flex-start; border-radius: var(--radius-16) var(--radius-16) var(--radius-16) 4px; }
+
+  .ai-msg-assistant { align-self: stretch; max-width: 100%; font-size: 16px; line-height: 1.6; }
+  /* In RTL, the user bubble's align-self:flex-start (Task feedback) sits at the
+     same physical right edge the assistant's full-width text starts from too -
+     without an inset they visually collide/read as one block. LTR wasn't
+     reported as an issue (the user bubble's right edge is already offset from
+     the assistant's flowing-text start on the left), so this stays RTL-only. */
+  [dir='rtl'] .ai-msg-assistant { margin-inline-start: 14px; }
+  .ai-msg-assistant p { margin: 0 0 16px; }
+  .ai-msg-assistant p:last-child { margin-bottom: 0; }
+  .ai-msg-assistant.streaming::after {
+    content: ''; display: inline-block; width: 6px; height: 1em; margin-inline-start: 2px;
+    background: var(--color-text-secondary); border-radius: 1px;
+    animation: caret-blink 900ms steps(1,end) infinite; vertical-align: text-bottom;
+  }
+  @keyframes caret-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+  .ai-work-group { font-size: 14px; }
+  .ai-work-group-summary {
+    display: inline-flex; align-items: center; gap: 8px; padding: 4px 0;
+    color: var(--color-text-tertiary); cursor: pointer; user-select: none;
+  }
+  .ai-work-group-summary .caret { display: inline-block; transition: transform 0.15s; font-size: 10px; color: var(--color-text-tertiary); }
+  .ai-work-group.open .ai-work-group-summary .caret { transform: rotate(90deg); }
+  [dir='rtl'] .ai-work-group-summary .caret { transform: rotate(180deg); }
+  [dir='rtl'] .ai-work-group.open .ai-work-group-summary .caret { transform: rotate(90deg); }
+  .ai-work-group-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.25s cubic-bezier(0.4,0,0.2,1); }
+  .ai-work-group.open .ai-work-group-body { grid-template-rows: 1fr; }
+  .ai-work-group-body > div { overflow: hidden; }
+
+  .ai-step-row { display: flex; gap: 12px; padding: 8px 0; position: relative; }
+  .ai-step-row:not(:last-child)::before {
+    content: ''; position: absolute; inset-inline-start: 9.5px; top: 26px; bottom: -8px; width: 1px; background: var(--color-border-default);
+  }
+  .ai-step-icon { width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--color-text-secondary); font-size: 13px; }
+  .ai-step-icon.error { color: var(--docs-ai-error); }
+  .ai-step-title { color: var(--color-text-secondary); padding-top: 1px; }
+  .ai-step-title code { background: var(--color-bg-subtle); border-radius: var(--radius-6); padding: 1px 5px; font-size: 13px; }
+  .ai-tool-output {
+    background: var(--color-bg-subtle); border-radius: var(--radius-12); font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 13px; padding: 12px 16px; margin: 6px 0 0 32px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; color: var(--color-text-secondary);
+  }
+  [dir='rtl'] .ai-tool-output { margin: 6px 32px 0 0; }
+  .ai-applied-tag {
+    display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 2px 9px; font-size: 11px;
+    background: var(--docs-ok-bg); color: var(--docs-ok-ink); margin-inline-start: 32px;
+  }
+
+  .ai-typing-label {
+    background: linear-gradient(90deg, var(--docs-shimmer-base) 0%, var(--docs-shimmer-hi) 50%, var(--docs-shimmer-base) 100%);
+    background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: shimmer 1.2s infinite alternate linear; font-size: 14px; display: inline-block;
+  }
+  @keyframes shimmer { from { background-position: 200% 0; } to { background-position: 0 0; } }
+  .ai-typing-dots { display: inline-flex; gap: 4px; align-items: center; margin-inline-start: 6px; }
+  .ai-typing-dots span { width: 4px; height: 4px; border-radius: 50%; background: var(--color-brand-secondary); animation: dot-grow 2s infinite; }
+  .ai-typing-dots span:nth-child(2) { animation-delay: 0.3s; }
+  .ai-typing-dots span:nth-child(3) { animation-delay: 0.6s; }
+  @keyframes dot-grow { 0%, 100% { transform: scale(1); opacity: 0.45; } 50% { transform: scale(3); opacity: 1; } }
+
+  .ai-msg-error { color: var(--docs-ai-error); font-size: 13px; }
+
+  .ai-composer { padding: 8px 12px 12px; background: var(--color-bg-page); flex-shrink: 0; }
+
+  .ai-input-box {
+    border: 1px solid var(--color-border-default); border-radius: var(--radius-16); background: var(--color-bg-page);
+    box-shadow: var(--docs-shadow-composer); transition: border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .ai-input-box:focus-within { border-color: var(--docs-brand-ring); }
+
+  /* scope hint now lives INSIDE the message box (feedback: convey it's the
+     scope for the message about to be sent, not a standalone panel setting) */
+  .ai-scope-hint {
+    display: inline-flex; align-items: center; gap: 6px; margin: 12px 14px 0; padding: 3px 10px; border-radius: var(--radius-30);
+    background: var(--docs-brand-ghost); color: var(--color-brand-secondary); font-size: 12px; font-weight: 500; cursor: help;
+    max-width: calc(100% - 28px);
+  }
+  .ai-scope-hint .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .ai-scope-hint .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  textarea.ai-textarea {
+    display: block; width: 100%; resize: none; border: none; background: none; outline: none;
+    padding: 0 14px; margin: 12px 0 4px; font-size: 16px; line-height: 24px; font-family: inherit;
+    min-height: 48px; max-height: 168px; overflow-y: auto; color: var(--color-text-primary);
+  }
+  textarea.ai-textarea::placeholder { color: var(--color-text-tertiary); }
+
+  .ai-input-footer { display: flex; align-items: center; gap: 8px; padding: 4px 8px 8px 10px; }
+  [dir='rtl'] .ai-input-footer { padding: 4px 10px 8px 8px; }
+  .ai-icon-btn {
+    width: 28px; height: 28px; border: none; background: transparent; color: var(--color-text-secondary);
+    border-radius: var(--radius-8); display: flex; align-items: center; justify-content: center; cursor: pointer;
+    transition: var(--transition-fast); font-size: 15px;
+  }
+  .ai-icon-btn:hover { filter: brightness(0.75); }
+
+  /* Editing-mode selector (replaces the old boolean "Track changes" toggle).
+     Real Word wiring per mode - see chat notes:
+       Read only    -> only read-* tools offered/allowed; TrackRevisions untouched
+       Comment only -> only read-* tools + new add_comment tool allowed
+       Track changes -> full tool set, Document.TrackRevisions = true before mutating
+       Full autonomy -> full tool set, Document.TrackRevisions = false */
+  .ai-mode-btn {
+    height: 24px; padding: 0 10px; border-radius: var(--radius-30); border: 1px solid var(--color-border-default);
+    background: transparent; color: var(--color-text-secondary); display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; cursor: pointer; position: relative;
+  }
+  .ai-mode-btn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-border-strong); }
+  .ai-mode-btn.accent { border-color: var(--docs-brand-ring); background: var(--docs-brand-ghost-weak); color: var(--color-brand-secondary); }
+  .ai-mode-btn.accent .dot { background: currentColor; }
+  .ai-mode-menu {
+    position: absolute; bottom: 32px; inset-inline-start: 0; width: 190px;
+    background: var(--color-bg-page); border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-12); box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+    display: none; z-index: 25; overflow: hidden;
+  }
+  .ai-mode-menu.open { display: block; }
+  .ai-mode-menu-item { padding: 9px 12px; font-size: 13px; cursor: pointer; color: var(--color-text-secondary); }
+  .ai-mode-menu-item:hover { background: var(--color-bg-subtle); }
+  .ai-mode-menu-item.selected { color: var(--color-text-primary); font-weight: 600; }
+  .ai-mode-menu-item .desc { display: block; font-size: 11px; font-weight: 400; color: var(--color-text-tertiary); margin-top: 1px; }
+
+  .ai-send-btn {
+    margin-inline-start: auto; width: 32px; height: 32px; border: none; border-radius: 35%;
+    background: var(--color-text-primary); color: var(--color-bg-page);
+    display: flex; align-items: center; justify-content: center; cursor: pointer; transition: var(--transition-fast); font-size: 14px;
+  }
+  [dir='rtl'] .ai-send-btn { transform: scaleX(-1); }
+  .ai-send-btn:hover { filter: brightness(0.92); }
+  .ai-send-btn:active { filter: brightness(0.88); transform: scale(0.98); }
+  [dir='rtl'] .ai-send-btn:active { transform: scaleX(-1) scale(0.98); }
