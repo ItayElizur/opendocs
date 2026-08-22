@@ -245,6 +245,12 @@ namespace WordAiAddIn
                         case "moveBlocks":
                             MoveBlocksCmd(cmd);
                             lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "createParagraphBullets":
+                            CreateParagraphBullets(cmd);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "deleteParagraphBullets":
+                            DeleteParagraphBullets(cmd);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown command kind"); anyError = true; break;
                     }
@@ -526,6 +532,35 @@ namespace WordAiAddIn
                 insertionPoint.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
                 insertionPoint.FormattedText = block;
                 insertionPoint.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            }
+        }
+
+        private static void CreateParagraphBullets(JsonElement cmd)
+        {
+            List<int> indexes = ResolveTargetParagraphs(cmd.GetProperty("target"));
+            string preset = cmd.TryGetProperty("bulletPreset", out var bp) && bp.ValueKind == JsonValueKind.String ? bp.GetString() : "BULLET";
+            bool numbered = preset.StartsWith("NUMBERED", StringComparison.OrdinalIgnoreCase);
+
+            Word.Paragraphs paragraphs = ActiveDoc.Paragraphs;
+            foreach (int i in indexes)
+            {
+                Word.Range range = paragraphs[i + 1].Range;
+                string styleName = range.get_Style().NameLocal;
+                if (styleName.StartsWith("Heading", StringComparison.OrdinalIgnoreCase)) continue; // headings are matched but left unchanged, mirrors genoffice
+                if (numbered) range.ListFormat.ApplyNumberDefault();
+                else range.ListFormat.ApplyBulletDefault();
+            }
+        }
+
+        private static void DeleteParagraphBullets(JsonElement cmd)
+        {
+            List<int> indexes = ResolveTargetParagraphs(cmd.GetProperty("target"));
+            Word.Paragraphs paragraphs = ActiveDoc.Paragraphs;
+            foreach (int i in indexes)
+            {
+                Word.Range range = paragraphs[i + 1].Range;
+                if (range.ListFormat.ListType == Word.WdListType.wdListNoNumbering) continue; // non-list-item matches silently skipped, mirrors genoffice
+                range.ListFormat.RemoveNumbers();
             }
         }
     }
