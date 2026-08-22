@@ -15,7 +15,7 @@ namespace ExcelAiAddIn
 
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
-            "get_workbook_context", "read_range", "read_cells", "select_range", "read_formats",
+            "get_workbook_context", "read_range", "read_cells", "select_range", "read_formats", "read_sheet_features",
         };
 
         public static ToolResult Execute(string name, JsonElement input)
@@ -47,6 +47,7 @@ namespace ExcelAiAddIn
                     case "read_cells": return ReadCells(input);
                     case "select_range": return SelectRange(input);
                     case "read_formats": return ReadFormats(input);
+                    case "read_sheet_features": return ReadSheetFeatures(input);
                     case "propose_operations": return ProposeOperations(input);
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
@@ -144,6 +145,48 @@ namespace ExcelAiAddIn
                 sb.AppendLine($"{cell.Address[false, false]}: bold={bold}, italic={italic}, underline={underline}, numberFormat={numberFormat}");
             }
             return new ToolResult { Output = sb.ToString(), Summary = "read_formats" };
+        }
+
+        private static ToolResult ReadSheetFeatures(JsonElement input)
+        {
+            Excel.Worksheet sheet = Sheet(input);
+            var sb = new System.Text.StringBuilder();
+
+            sb.AppendLine("Hidden: " + (sheet.Visible != Excel.XlSheetVisibility.xlSheetVisible));
+            sb.AppendLine("Protected: " + sheet.ProtectContents);
+
+            if (sheet.AutoFilterMode && sheet.AutoFilter != null)
+            {
+                sb.AppendLine("AutoFilter range: " + sheet.AutoFilter.Range.Address[false, false]);
+            }
+
+            try
+            {
+                Excel.Window window = Globals.ThisAddIn.Application.ActiveWindow;
+                if (window.FreezePanes)
+                {
+                    sb.AppendLine($"Freeze panes: rows={window.SplitRow}, columns={window.SplitColumn}");
+                }
+            }
+            catch { /* ActiveWindow may not correspond to this sheet if it's not active - best-effort only */ }
+
+            int cfCount = 0;
+            foreach (Excel.FormatCondition fc in sheet.UsedRange.FormatConditions) cfCount++;
+            sb.AppendLine("Conditional format rules in used range: " + cfCount);
+
+            foreach (Excel.Name n in sheet.Names)
+            {
+                sb.AppendLine("Defined name (sheet-scoped): " + n.Name + " = " + n.RefersTo);
+            }
+            foreach (Excel.Name n in Globals.ThisAddIn.Application.ActiveWorkbook.Names)
+            {
+                sb.AppendLine("Defined name (workbook-scoped): " + n.Name + " = " + n.RefersTo);
+            }
+
+            int shapeCount = sheet.Shapes.Count;
+            sb.AppendLine("Shapes/images: " + shapeCount);
+
+            return new ToolResult { Output = sb.ToString(), Summary = "read_sheet_features" };
         }
 
         private static ToolResult ProposeOperations(JsonElement input)
