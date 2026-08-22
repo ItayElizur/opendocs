@@ -34,7 +34,13 @@ namespace PowerPointAiAddIn
             // computed lazily on first actual use, in GetChatId() below, by
             // which point the task pane is visible and the user has
             // triggered a message - so ActivePresentation is guaranteed settled.
-            _bridge = new WebViewBridgeHost(this, PowerPointTools.Execute, "PowerPointAiAddIn", s => _status.Text = s, OnOtherMessage);
+            _bridge = new WebViewBridgeHost(this, PowerPointTools.Execute, "PowerPointAiAddIn", UpdateStatus, OnOtherMessage);
+        }
+
+        private void UpdateStatus(string s)
+        {
+            _status.Text = s;
+            _status.Visible = s != "ready";
         }
 
         private string GetChatId()

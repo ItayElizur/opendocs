@@ -85,11 +85,11 @@ namespace OfficeAi.Shared
                         var (requestId, toolName, input) = ToolProtocol.ParseToolCall(e.WebMessageAsJson);
                         _setStatus("Executing tool: " + toolName);
                         ToolResult result = _executor(toolName, input);
-                        _setStatus("Tool done: " + toolName + (result.IsError ? " (error)" : ""));
                         if (_webView.CoreWebView2 != null)
                         {
                             _webView.CoreWebView2.PostWebMessageAsJson(ToolProtocol.SerializeToolResult(requestId, result));
                         }
+                        _setStatus(result.IsError ? "Tool error: " + toolName : "ready");
                     }
                     else
                     {

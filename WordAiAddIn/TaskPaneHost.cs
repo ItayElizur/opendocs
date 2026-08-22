@@ -34,7 +34,13 @@ namespace WordAiAddIn
             // computed lazily on first actual use, in GetChatId() below, by
             // which point the task pane is visible and the user has
             // triggered a message - so ActiveDocument is guaranteed settled.
-            _bridge = new WebViewBridgeHost(this, WordTools.Execute, "WordAiAddIn", s => _status.Text = s, OnOtherMessage);
+            _bridge = new WebViewBridgeHost(this, WordTools.Execute, "WordAiAddIn", UpdateStatus, OnOtherMessage);
+        }
+
+        private void UpdateStatus(string s)
+        {
+            _status.Text = s;
+            _status.Visible = s != "ready";
         }
 
         private string GetChatId()

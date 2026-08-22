@@ -35,7 +35,13 @@ namespace ExcelAiAddIn
             // actual use, in GetChatId() below, by which point the task pane
             // is visible and the user has triggered a message - so
             // ActiveWorkbook is guaranteed settled.
-            _bridge = new WebViewBridgeHost(this, ExcelTools.Execute, "ExcelAiAddIn", s => _status.Text = s, OnOtherMessage);
+            _bridge = new WebViewBridgeHost(this, ExcelTools.Execute, "ExcelAiAddIn", UpdateStatus, OnOtherMessage);
+        }
+
+        private void UpdateStatus(string s)
+        {
+            _status.Text = s;
+            _status.Visible = s != "ready";
         }
 
         private string GetChatId()
