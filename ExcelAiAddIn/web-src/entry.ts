@@ -118,7 +118,23 @@ const excelSkill: AgentSkill = {
   systemPrompt:
     'You are an assistant running inside a VSTO Excel add-in. You can help the user with their active workbook. ' +
     'No tools are available yet.',
-  tools: [],
+  tools: [
+    {
+      name: 'get_workbook_context',
+      description: "Reads the active sheet's name, used range, and current selection address.",
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'read_range',
+      description: 'Reads cell values in a rectangular range (e.g. "A1:C10"), max 2000 cells. Optional sheet name defaults to the active sheet.',
+      inputSchema: { type: 'object', properties: { sheet: { type: 'string' }, address: { type: 'string' } }, required: ['address'] },
+    },
+    {
+      name: 'read_cells',
+      description: 'Reads specific scattered cell addresses (e.g. ["A1","C5"]).',
+      inputSchema: { type: 'object', properties: { sheet: { type: 'string' }, addresses: { type: 'array', items: { type: 'string' } } }, required: ['addresses'] },
+    },
+  ],
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }
 
