@@ -345,6 +345,33 @@ const MUTATION_TOOLS = [
       required: ['slideIndex', 'layout', 'items'],
     },
   },
+  {
+    name: 'crop_image',
+    description: 'Non-destructively crops a picture shape. l/t/r/b are 0..1 fractions of the current on-slide image size cut from each edge; all zero clears the crop.',
+    inputSchema: {
+      type: 'object',
+      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, l: { type: 'number' }, t: { type: 'number' }, r: { type: 'number' }, b: { type: 'number' } },
+      required: ['slideIndex', 'shapeIndex', 'l', 't', 'r', 'b'],
+    },
+  },
+  {
+    name: 'set_picture_opacity',
+    description: 'Sets a picture shape\'s overall opacity, 0 (invisible) to 1 (fully opaque).',
+    inputSchema: {
+      type: 'object',
+      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, opacity: { type: 'number' } },
+      required: ['slideIndex', 'shapeIndex', 'opacity'],
+    },
+  },
+  {
+    name: 'replace_image',
+    description: 'Swaps a picture shape\'s image content in place from a local file path, keeping position/size/rotation/approximate z-order.',
+    inputSchema: {
+      type: 'object',
+      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, localPath: { type: 'string' }, keepCrop: { type: 'boolean' } },
+      required: ['slideIndex', 'shapeIndex', 'localPath'],
+    },
+  },
 ]
 
 const ALL_TOOLS = [...READER_TOOLS, ...MUTATION_TOOLS]
