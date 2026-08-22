@@ -624,6 +624,10 @@ namespace PowerPointAiAddIn
             {
                 return new ToolResult { Output = "replace_image: remote URLs are not supported in this air-gapped deployment - use a local file path.", IsError = true, Summary = "replace_image" };
             }
+            if (!System.IO.File.Exists(localPath))
+            {
+                return new ToolResult { Output = "replace_image: file not found: " + localPath, IsError = true, Summary = "replace_image" };
+            }
             PowerPoint.Shape oldShape = ResolveShape(input);
             bool keepCrop = input.TryGetProperty("keepCrop", out var kc) && kc.ValueKind == JsonValueKind.True;
 
