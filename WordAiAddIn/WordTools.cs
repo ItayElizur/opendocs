@@ -233,6 +233,12 @@ namespace WordAiAddIn
                             lines.AppendLine($"{kind}: {replacements} replacement(s)");
                             if (replacements > 0) anyMutated = true;
                             break;
+                        case "updateTextStyle":
+                            UpdateTextStyle(cmd);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "updateParagraphStyle":
+                            UpdateParagraphStyle(cmd);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown command kind"); anyError = true; break;
                     }
@@ -278,6 +284,174 @@ namespace WordAiAddIn
             findObj.MatchCase = matchCase;
             bool found = findObj.Execute(Replace: Word.WdReplace.wdReplaceAll);
             return found ? 1 : 0;
+        }
+
+        private static List<int> ResolveTargetParagraphs(JsonElement target)
+        {
+            string nodeType = target.TryGetProperty("nodeType", out var nt) && nt.ValueKind == JsonValueKind.String ? nt.GetString() : null;
+            int? headingLevel = target.TryGetProperty("headingLevel", out var hl) && hl.ValueKind == JsonValueKind.Number ? hl.GetInt32() : (int?)null;
+            string containsText = target.TryGetProperty("containsText", out var ct) && ct.ValueKind == JsonValueKind.String ? ct.GetString() : null;
+            bool matchCase = target.TryGetProperty("matchCase", out var mc) && mc.ValueKind == JsonValueKind.True;
+            HashSet<int> blockIndexes = null;
+            if (target.TryGetProperty("blockIndexes", out var bi) && bi.ValueKind == JsonValueKind.Array)
+            {
+                blockIndexes = new HashSet<int>();
+                foreach (JsonElement e in bi.EnumerateArray()) blockIndexes.Add(e.GetInt32());
+            }
+            string scope = target.TryGetProperty("scope", out var sc) && sc.ValueKind == JsonValueKind.String ? sc.GetString() : "document";
+
+            if (nodeType == null && containsText == null && blockIndexes == null)
+            {
+                throw new ArgumentException("Target must specify at least one of nodeType, containsText, or blockIndexes.");
+            }
+
+            Word.Paragraphs paragraphs = ActiveDoc.Paragraphs;
+            int selStart = -1, selEnd = -1;
+            if (scope == "selection")
+            {
+                Word.Selection sel = Globals.ThisAddIn.Application.Selection;
+                if (sel.Type != Word.WdSelectionType.wdNoSelection)
+                {
+                    selStart = sel.Range.Start;
+                    selEnd = sel.Range.End;
+                }
+            }
+
+            var result = new List<int>();
+            for (int i = 0; i < paragraphs.Count; i++)
+            {
+                Word.Paragraph p = paragraphs[i + 1];
+
+                if (scope == "selection")
+                {
+                    if (selStart == -1) continue;
+                    if (p.Range.Start > selEnd || p.Range.End < selStart) continue;
+                }
+
+                if (blockIndexes != null && !blockIndexes.Contains(i)) continue;
+
+                string styleName = p.Range.get_Style().NameLocal;
+                bool isHeading = styleName.StartsWith("Heading", StringComparison.OrdinalIgnoreCase);
+                bool isListItem = p.Range.ListFormat.ListType != Word.WdListType.wdListNoNumbering;
+
+                if (nodeType == "heading" && !isHeading) continue;
+                if (nodeType == "paragraph" && (isHeading || isListItem)) continue;
+                if (nodeType == "listItem" && !isListItem) continue;
+
+                if (nodeType == "heading" && headingLevel.HasValue)
+                {
+                    string levelDigits = new string(styleName.Where(char.IsDigit).ToArray());
+                    if (!int.TryParse(levelDigits, out int actualLevel) || actualLevel != headingLevel.Value) continue;
+                }
+
+                if (containsText != null)
+                {
+                    string text = p.Range.Text ?? "";
+                    bool found = matchCase
+                        ? text.Contains(containsText)
+                        : text.IndexOf(containsText, StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (!found) continue;
+                }
+
+                result.Add(i);
+            }
+            return result;
+        }
+
+        private static void UpdateTextStyle(JsonElement cmd)
+        {
+            List<int> indexes = ResolveTargetParagraphs(cmd.GetProperty("target"));
+            JsonElement style = cmd.GetProperty("style");
+            HashSet<string> fields = new HashSet<string>();
+            foreach (JsonElement f in cmd.GetProperty("fields").EnumerateArray()) fields.Add(f.GetString());
+
+            Word.Paragraphs paragraphs = ActiveDoc.Paragraphs;
+            foreach (int i in indexes)
+            {
+                Word.Range range = paragraphs[i + 1].Range;
+                if (fields.Contains("bold") && style.TryGetProperty("bold", out var bold))
+                    range.Font.Bold = bold.ValueKind == JsonValueKind.True ? 1 : 0;
+                if (fields.Contains("italic") && style.TryGetProperty("italic", out var italic))
+                    range.Font.Italic = italic.ValueKind == JsonValueKind.True ? 1 : 0;
+                if (fields.Contains("underline") && style.TryGetProperty("underline", out var underline))
+                    range.Font.Underline = underline.ValueKind == JsonValueKind.True ? Word.WdUnderline.wdUnderlineSingle : Word.WdUnderline.wdUnderlineNone;
+                if (fields.Contains("strike") && style.TryGetProperty("strike", out var strike))
+                    range.Font.StrikeThrough = strike.ValueKind == JsonValueKind.True ? 1 : 0;
+                if (fields.Contains("sizeHalfPoints") && style.TryGetProperty("sizeHalfPoints", out var size) && size.ValueKind == JsonValueKind.Number)
+                    range.Font.Size = (float)(size.GetDouble() / 2.0);
+                if (fields.Contains("font") && style.TryGetProperty("font", out var font) && font.ValueKind == JsonValueKind.String)
+                    range.Font.Name = font.GetString();
+                if (fields.Contains("color") && style.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
+                    range.Font.Color = HexToWdColor(color.GetString());
+                if (fields.Contains("baselineOffset") && style.TryGetProperty("baselineOffset", out var baseline) && baseline.ValueKind == JsonValueKind.String)
+                {
+                    string b = baseline.GetString();
+                    range.Font.Superscript = b == "SUPERSCRIPT" ? 1 : 0;
+                    range.Font.Subscript = b == "SUBSCRIPT" ? 1 : 0;
+                }
+                if (fields.Contains("link") && style.TryGetProperty("link", out var link) && link.ValueKind == JsonValueKind.Object)
+                {
+                    string url = link.GetProperty("url").GetString();
+                    ActiveDoc.Hyperlinks.Add(range, url);
+                }
+            }
+        }
+
+        private static Word.WdColor HexToWdColor(string hex)
+        {
+            hex = hex.TrimStart('#');
+            int r = Convert.ToInt32(hex.Substring(0, 2), 16);
+            int g = Convert.ToInt32(hex.Substring(2, 2), 16);
+            int b = Convert.ToInt32(hex.Substring(4, 2), 16);
+            return (Word.WdColor)System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.FromArgb(r, g, b));
+        }
+
+        private static void UpdateParagraphStyle(JsonElement cmd)
+        {
+            List<int> indexes = ResolveTargetParagraphs(cmd.GetProperty("target"));
+            JsonElement style = cmd.GetProperty("style");
+            HashSet<string> fields = new HashSet<string>();
+            foreach (JsonElement f in cmd.GetProperty("fields").EnumerateArray()) fields.Add(f.GetString());
+
+            Word.Paragraphs paragraphs = ActiveDoc.Paragraphs;
+            foreach (int i in indexes)
+            {
+                Word.ParagraphFormat fmt = paragraphs[i + 1].Format;
+                if (fields.Contains("align") && style.TryGetProperty("align", out var align) && align.ValueKind == JsonValueKind.String)
+                {
+                    switch (align.GetString())
+                    {
+                        case "left": fmt.Alignment = Word.WdParagraphAlignment.wdAlignParagraphLeft; break;
+                        case "center": fmt.Alignment = Word.WdParagraphAlignment.wdAlignParagraphCenter; break;
+                        case "right": fmt.Alignment = Word.WdParagraphAlignment.wdAlignParagraphRight; break;
+                        case "justify": fmt.Alignment = Word.WdParagraphAlignment.wdAlignParagraphJustify; break;
+                    }
+                }
+                if (fields.Contains("lineSpacing") && style.TryGetProperty("lineSpacing", out var ls) && ls.ValueKind == JsonValueKind.Number)
+                    fmt.LineSpacing = (float)ls.GetDouble();
+                if (fields.Contains("indentLeft") && style.TryGetProperty("indentLeft", out var il) && il.ValueKind == JsonValueKind.Number)
+                    fmt.LeftIndent = (float)il.GetDouble();
+                if (fields.Contains("indentRight") && style.TryGetProperty("indentRight", out var ir) && ir.ValueKind == JsonValueKind.Number)
+                    fmt.RightIndent = (float)ir.GetDouble();
+                if (fields.Contains("indentFirstLine") && style.TryGetProperty("indentFirstLine", out var ifl) && ifl.ValueKind == JsonValueKind.Number)
+                    fmt.FirstLineIndent = (float)ifl.GetDouble();
+                if (fields.Contains("spaceBefore") && style.TryGetProperty("spaceBefore", out var sb) && sb.ValueKind == JsonValueKind.Number)
+                    fmt.SpaceBefore = (float)sb.GetDouble();
+                if (fields.Contains("spaceAfter") && style.TryGetProperty("spaceAfter", out var sa) && sa.ValueKind == JsonValueKind.Number)
+                    fmt.SpaceAfter = (float)sa.GetDouble();
+                if (fields.Contains("pageBreakBefore") && style.TryGetProperty("pageBreakBefore", out var pbb))
+                    fmt.PageBreakBefore = pbb.ValueKind == JsonValueKind.True ? 1 : 0;
+                if (fields.Contains("shadingFill") && style.TryGetProperty("shadingFill", out var shading) && shading.ValueKind == JsonValueKind.String)
+                    paragraphs[i + 1].Shading.BackgroundPatternColor = HexToWdColor(shading.GetString());
+                if (fields.Contains("borders") && style.TryGetProperty("borders", out var borders))
+                {
+                    bool on = borders.ValueKind == JsonValueKind.True;
+                    foreach (Word.Border border in paragraphs[i + 1].Borders)
+                    {
+                        border.LineStyle = on ? Word.WdLineStyle.wdLineStyleSingle : Word.WdLineStyle.wdLineStyleNone;
+                    }
+                }
+            }
         }
     }
 }
