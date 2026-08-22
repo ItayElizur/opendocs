@@ -8,7 +8,14 @@ function setup() {
   const onModeChange = vi.fn()
   const onSettingsSave = vi.fn()
   const onNewChat = vi.fn()
-  const handle = mountChatUI(root, { onSend, onModeChange, onSettingsSave, onNewChat })
+  const handle = mountChatUI(root, {
+    onSend, onModeChange, onSettingsSave, onNewChat,
+    starters: [
+      { en: 'Summarize this document', he: 'סכם את המסמך' },
+      { en: 'Fix grammar issues', he: 'תקן שגיאות דקדוק' },
+      { en: 'Improve conciseness', he: 'שפר תמציתיות' },
+    ],
+  })
   return { root, onSend, onModeChange, onSettingsSave, onNewChat, handle }
 }
 
@@ -90,5 +97,14 @@ describe('mountChatUI', () => {
     handle.resetToEmpty()
     expect(root.querySelector('.ai-msg-user')).toBeNull()
     expect(root.querySelector('.ai-chat-empty')).not.toBeNull()
+  })
+
+  it('shows starter pills in the empty state, and clicking one fills the textarea', () => {
+    const { root } = setup()
+    const pills = root.querySelectorAll<HTMLElement>('.ai-starter')
+    expect(pills.length).toBe(3)
+    expect(pills[0].textContent).toBe('Summarize this document')
+    pills[0].click()
+    expect(root.querySelector<HTMLTextAreaElement>('.ai-textarea')!.value).toBe('Summarize this document')
   })
 })

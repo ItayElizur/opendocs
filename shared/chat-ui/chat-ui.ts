@@ -35,6 +35,7 @@ export interface ChatUIOptions {
   onNewChat: () => void
   onModeChange: (mode: EditingMode) => void
   onSettingsSave: (settings: { baseUrl: string; apiKey: string; model: string; lang: Lang }) => void
+  starters: Array<{ en: string; he: string }>
 }
 
 export interface ToolStepHandle {
@@ -67,8 +68,11 @@ function escapeHtml(s: string): string {
   return div.innerHTML
 }
 
-function emptyStateHtml(): string {
-  return `<div class="ai-chat-empty"><div class="ai-chat-empty-title">What can I help with?</div><div class="ai-starters"></div></div>`
+function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
+  const pills = options.starters
+    .map((s) => `<div class="ai-starter">${escapeHtml(s[currentLang])}</div>`)
+    .join('')
+  return `<div class="ai-chat-empty"><div class="ai-chat-empty-title" data-t="emptyTitle">What can I help with?</div><div class="ai-starters">${pills}</div></div>`
 }
 
 export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHandle {
@@ -119,7 +123,6 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   `
 
   const chatEl = root.querySelector<HTMLDivElement>('.ai-chat')!
-  chatEl.innerHTML = emptyStateHtml()
   const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
   const sendBtn = root.querySelector<HTMLButtonElement>('.ai-send-btn')!
   const newChatBtn = root.querySelector<HTMLButtonElement>('[data-t-title="newChat"]')!
@@ -132,6 +135,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
 
   let currentLang: Lang = 'en'
   let lastSelection: { hasSelection: boolean; preview: string } | null = null
+
+  chatEl.innerHTML = emptyStateHtml(options, currentLang)
 
   function t(key: string): string {
     return STRINGS[key]?.[currentLang] ?? key
@@ -176,7 +181,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     const existingEmpty = chatEl.querySelector('.ai-chat-empty')
     if (existingEmpty) {
       existingEmpty.remove()
-      chatEl.insertAdjacentHTML('beforeend', emptyStateHtml())
+      chatEl.insertAdjacentHTML('beforeend', emptyStateHtml(options, currentLang))
     }
   }
 
@@ -195,6 +200,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     textarea.value = ''
     options.onSend(text)
   }
+
+  chatEl.addEventListener('click', (e) => {
+    const target = (e.target as HTMLElement).closest('.ai-starter')
+    if (target) textarea.value = target.textContent || ''
+  })
 
   sendBtn.addEventListener('click', doSend)
   textarea.addEventListener('keydown', (e) => {
@@ -318,7 +328,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       scrollToBottom()
     },
     resetToEmpty() {
-      chatEl.innerHTML = emptyStateHtml()
+      chatEl.innerHTML = emptyStateHtml(options, currentLang)
     },
     showHistoric(messages) {
       for (const m of messages) renderMessage(m.role, m.text)
@@ -326,7 +336,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       sep.className = 'ai-history-sep'
       sep.textContent = 'Earlier conversation'
       chatEl.appendChild(sep)
-      chatEl.insertAdjacentHTML('beforeend', emptyStateHtml())
+      chatEl.insertAdjacentHTML('beforeend', emptyStateHtml(options, currentLang))
       scrollToBottom()
     },
     setSelectionScope(selection) {
