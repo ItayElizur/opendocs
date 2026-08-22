@@ -201,7 +201,14 @@ const ALL_WORD_TOOLS = [
         'Applies a batch of formatting/editing commands. Each command has a "kind": ' +
         '"set_bold"/"set_italic" (fields: startIndex, endIndex, value:boolean), ' +
         '"set_heading" (fields: index, level:0-9, 0=Normal style), ' +
-        '"find_replace" (fields: find:string, replace:string, matchCase?:boolean).',
+        '"find_replace" (fields: find:string, replace:string, matchCase?:boolean), ' +
+        '"updateTextStyle"/"updateParagraphStyle" (fields: target:Target, style:object, fields:string[] - only listed style keys apply), ' +
+        '"deleteBlocks" (fields: target:Target), ' +
+        '"moveBlocks" (fields: blockIndexes:number[], afterBlockIndex:number, -1=start), ' +
+        '"createParagraphBullets"/"deleteParagraphBullets" (fields: target:Target, bulletPreset?:string), ' +
+        '"updateImageProperties" (fields: imageIndex:number, properties:object, fields:string[]), ' +
+        '"insertToc" (fields: afterBlockIndex:number, -1=start; requires at least one Heading-styled paragraph in the document). ' +
+        'Target = {nodeType?:"heading"|"paragraph"|"listItem", headingLevel?:1-6, containsText?:string, matchCase?:boolean, blockIndexes?:number[], scope?:"document"|"selection"} - at least one of nodeType/containsText/blockIndexes required.',
       inputSchema: { type: 'object', properties: { commands: { type: 'array', items: { type: 'object' } } }, required: ['commands'] },
     },
     {
