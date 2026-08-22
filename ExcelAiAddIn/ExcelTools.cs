@@ -17,6 +17,7 @@ namespace ExcelAiAddIn
                     case "get_workbook_context": return GetWorkbookContext();
                     case "read_range": return ReadRange(input);
                     case "read_cells": return ReadCells(input);
+                    case "propose_operations": return ProposeOperations(input);
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
             }
@@ -80,6 +81,86 @@ namespace ExcelAiAddIn
                 sb.AppendLine($"{a}: {value}");
             }
             return new ToolResult { Output = sb.ToString(), Summary = "read_cells" };
+        }
+
+        private static ToolResult ProposeOperations(JsonElement input)
+        {
+            var lines = new System.Text.StringBuilder();
+            bool anyMutated = false;
+            bool anyError = false;
+            foreach (JsonElement op in input.GetProperty("operations").EnumerateArray())
+            {
+                string kind = op.GetProperty("kind").GetString();
+                try
+                {
+                    switch (kind)
+                    {
+                        case "set_cell":
+                            Sheet(op).Range[op.GetProperty("address").GetString()].Value2 = JsonValueToObject(op.GetProperty("value"));
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_formula":
+                            Sheet(op).Range[op.GetProperty("address").GetString()].Formula = op.GetProperty("formula").GetString();
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_range":
+                            SetRangeValues(op);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "format_range":
+                            FormatRange(op);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        default:
+                            lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lines.AppendLine(kind + ": ERROR - " + ex.Message); anyError = true;
+                }
+            }
+            return new ToolResult { Output = lines.ToString(), Mutated = anyMutated, IsError = anyError, Summary = "propose_operations" };
+        }
+
+        private static object JsonValueToObject(JsonElement v)
+        {
+            switch (v.ValueKind)
+            {
+                case JsonValueKind.String: return v.GetString();
+                case JsonValueKind.Number: return v.GetDouble();
+                case JsonValueKind.True: return true;
+                case JsonValueKind.False: return false;
+                default: return null;
+            }
+        }
+
+        private static void SetRangeValues(JsonElement op)
+        {
+            string address = op.GetProperty("address").GetString();
+            JsonElement rows = op.GetProperty("values");
+            int rowCount = rows.GetArrayLength();
+            int colCount = rows[0].GetArrayLength();
+            object[,] grid = new object[rowCount, colCount];
+            for (int r = 0; r < rowCount; r++)
+            {
+                JsonElement row = rows[r];
+                for (int c = 0; c < colCount; c++) grid[r, c] = JsonValueToObject(row[c]);
+            }
+            Excel.Range topLeft = Sheet(op).Range[address];
+            topLeft.Resize[rowCount, colCount].Value2 = grid;
+        }
+
+        private static void FormatRange(JsonElement op)
+        {
+            Excel.Range range = Sheet(op).Range[op.GetProperty("address").GetString()];
+            if (op.TryGetProperty("bold", out var bold)) range.Font.Bold = bold.GetBoolean();
+            if (op.TryGetProperty("italic", out var italic)) range.Font.Italic = italic.GetBoolean();
+            if (op.TryGetProperty("numberFormat", out var nf)) range.NumberFormat = nf.GetString();
+            if (op.TryGetProperty("fillColor", out var fc))
+            {
+                string hex = fc.GetString().TrimStart('#');
+                int r = Convert.ToInt32(hex.Substring(0, 2), 16);
+                int g = Convert.ToInt32(hex.Substring(2, 2), 16);
+                int b = Convert.ToInt32(hex.Substring(4, 2), 16);
+                range.Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.FromArgb(r, g, b));
+            }
         }
     }
 }

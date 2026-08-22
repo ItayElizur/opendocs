@@ -134,6 +134,15 @@ const excelSkill: AgentSkill = {
       description: 'Reads specific scattered cell addresses (e.g. ["A1","C5"]).',
       inputSchema: { type: 'object', properties: { sheet: { type: 'string' }, addresses: { type: 'array', items: { type: 'string' } } }, required: ['addresses'] },
     },
+    {
+      name: 'propose_operations',
+      description:
+        'Applies a batch of spreadsheet operations. Each has a "kind": ' +
+        '"set_cell" (sheet?, address, value), "set_formula" (sheet?, address, formula), ' +
+        '"set_range" (sheet?, address, values: value[][]), ' +
+        '"format_range" (sheet?, address, bold?, italic?, numberFormat?, fillColor? - hex like "#FFFF00").',
+      inputSchema: { type: 'object', properties: { operations: { type: 'array', items: { type: 'object' } } }, required: ['operations'] },
+    },
   ],
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }
