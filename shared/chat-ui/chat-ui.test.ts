@@ -8,7 +8,7 @@ function setup() {
   const onModeChange = vi.fn()
   const onSettingsSave = vi.fn()
   const onNewChat = vi.fn()
-  const handle = mountChatUI(root, { title: 'Airchat Office', onSend, onModeChange, onSettingsSave, onNewChat })
+  const handle = mountChatUI(root, { onSend, onModeChange, onSettingsSave, onNewChat })
   return { root, onSend, onModeChange, onSettingsSave, onNewChat, handle }
 }
 
@@ -65,10 +65,23 @@ describe('mountChatUI', () => {
     expect(root.querySelector('.ai-history-faded')).toBeNull()
   })
 
-  it('setScopeHint updates the hint label text', () => {
+  it('setSelectionScope updates the hint label text for a live selection, and reverts to Whole document', () => {
     const { root, handle } = setup()
-    handle.setScopeHint('Selection: "Q3 revenue grew..."')
+    handle.setSelectionScope({ hasSelection: true, preview: 'Q3 revenue grew' })
     expect(root.querySelector('#scopeHintLabel')!.textContent).toBe('Selection: "Q3 revenue grew..."')
+    handle.setSelectionScope(null)
+    expect(root.querySelector('#scopeHintLabel')!.textContent).toBe('Whole document')
+  })
+
+  it('saving settings with a language change updates panel strings via Save, not live', () => {
+    const { root, onSettingsSave } = setup()
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-lang="he"]')!.click()
+    // Not yet applied - Hebrew string should not appear until Save.
+    expect(root.querySelector('[data-t="panelTitle"]')!.textContent).toBe('Airchat Office')
+    root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
+    expect(root.querySelector('[data-t="panelTitle"]')!.textContent).toBe("איירצ'אט אופיס")
+    expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ lang: 'he' }))
   })
 
   it('resetToEmpty calls onNewChat is NOT implied - resetToEmpty just clears the DOM to the empty state', () => {

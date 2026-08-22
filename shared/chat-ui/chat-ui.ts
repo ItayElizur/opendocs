@@ -2,12 +2,39 @@ import './chat-ui.css'
 
 export type EditingMode = 'readOnly' | 'commentOnly' | 'trackChanges' | 'fullAutonomy'
 
+export type Lang = 'en' | 'he'
+
+const STRINGS: Record<string, Record<Lang, string>> = {
+  panelTitle:           { en: 'Airchat Office', he: "איירצ'אט אופיס" },
+  inputPlaceholder:     { en: 'Ask Airchat Office to edit this document...', he: 'בקש מ-Airchat Office לערוך את המסמך...' },
+  send:                 { en: 'Send', he: 'שלח' },
+  newChat:              { en: 'New chat', he: 'שיחה חדשה' },
+  settings:             { en: 'Settings', he: 'הגדרות' },
+  settingsTitle:        { en: 'Airchat Office Settings', he: 'הגדרות Airchat Office' },
+  settingsBaseUrl:      { en: 'API Base URL', he: 'כתובת בסיס API' },
+  settingsApiKey:       { en: 'API Key', he: 'מפתח API' },
+  settingsModel:        { en: 'Model name', he: 'שם המודל' },
+  settingsLanguage:     { en: 'Language', he: 'שפה' },
+  save:                 { en: 'Save', he: 'שמור' },
+  collapse:             { en: 'Collapse panel', he: 'כווץ חלונית' },
+  historySep:           { en: 'Earlier conversation', he: 'שיחה קודמת' },
+  scopeWholeDoc:        { en: 'Whole document', he: 'כל המסמך' },
+  emptyTitle:           { en: 'What can I help with?', he: 'איך אפשר לעזור?' },
+  modeReadOnly:         { en: 'Read only', he: 'קריאה בלבד' },
+  modeReadOnlyDesc:     { en: 'AI can only read, never edit', he: 'הבינה יכולה רק לקרוא, לא לערוך' },
+  modeCommentOnly:      { en: 'Comment only', he: 'הערות בלבד' },
+  modeCommentOnlyDesc:  { en: 'Adds comments, no content edits', he: 'מוסיפה הערות בלבד, ללא עריכת תוכן' },
+  modeTrackChanges:     { en: 'Track changes', he: 'מעקב אחר שינויים' },
+  modeTrackChangesDesc: { en: 'Edits as reviewable revisions', he: 'עריכות כתיקונים לאישור' },
+  modeFullAutonomy:     { en: 'Full autonomy', he: 'אוטונומיה מלאה' },
+  modeFullAutonomyDesc: { en: 'Edits applied directly', he: 'עריכות מוחלות ישירות' },
+}
+
 export interface ChatUIOptions {
-  title: string
   onSend: (text: string) => void
   onNewChat: () => void
   onModeChange: (mode: EditingMode) => void
-  onSettingsSave: (settings: { baseUrl: string; apiKey: string; model: string; lang: 'en' | 'he' }) => void
+  onSettingsSave: (settings: { baseUrl: string; apiKey: string; model: string; lang: Lang }) => void
 }
 
 export interface ToolStepHandle {
@@ -29,7 +56,7 @@ export interface ChatUIHandle {
   showError(message: string): void
   resetToEmpty(): void
   showHistoric(messages: Array<{ role: 'user' | 'assistant'; text: string }>): void
-  setScopeHint(label: string): void
+  setSelectionScope(selection: { hasSelection: boolean; preview: string } | null): void
 }
 
 const MODES: EditingMode[] = ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy']
@@ -48,40 +75,40 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   root.innerHTML = `
     <div class="ai-panel">
       <div class="ai-panel-header">
-        <div class="ai-panel-title"><span class="ai-logo">A</span><span>Airchat Office</span></div>
+        <div class="ai-panel-title"><span class="ai-logo">A</span><span data-t="panelTitle">Airchat Office</span></div>
         <div class="ai-header-actions">
           <button class="ai-header-btn" data-t-title="newChat">+</button>
           <button class="ai-header-btn" data-t-title="settings">&#9881;</button>
           <button class="ai-header-btn" data-t-title="collapse">&#x276E;</button>
         </div>
         <div class="ai-settings-panel" id="settingsPanel">
-          <h4>Airchat Office Settings</h4>
-          <div class="ai-field"><label>API Base URL</label><input data-field="baseUrl" type="text" /></div>
-          <div class="ai-field"><label>API Key</label><input data-field="apiKey" type="password" /></div>
-          <div class="ai-field"><label>Model name</label><input data-field="model" type="text" /></div>
+          <h4 data-t="settingsTitle">Airchat Office Settings</h4>
+          <div class="ai-field"><label data-t="settingsBaseUrl">API Base URL</label><input data-field="baseUrl" type="text" /></div>
+          <div class="ai-field"><label data-t="settingsApiKey">API Key</label><input data-field="apiKey" type="password" /></div>
+          <div class="ai-field"><label data-t="settingsModel">Model name</label><input data-field="model" type="text" /></div>
           <div class="ai-field">
-            <label>Language</label>
+            <label data-t="settingsLanguage">Language</label>
             <div class="ai-lang-toggle">
               <button data-lang="en" class="active">English</button>
               <button data-lang="he">עברית</button>
             </div>
           </div>
-          <div class="ai-settings-actions"><button class="ai-btn-primary">Save</button></div>
+          <div class="ai-settings-actions"><button class="ai-btn-primary" data-t="save">Save</button></div>
         </div>
       </div>
       <div class="ai-chat"></div>
       <div class="ai-composer">
         <div class="ai-input-box">
           <span class="ai-scope-hint"><span class="dot"></span><span class="label" id="scopeHintLabel">Whole document</span></span>
-          <textarea class="ai-textarea" rows="1" placeholder="Ask Airchat Office to edit this document..."></textarea>
+          <textarea class="ai-textarea" rows="1" placeholder="Ask Airchat Office to edit this document..." data-t-placeholder="inputPlaceholder"></textarea>
           <div class="ai-input-footer">
             <div style="position: relative;">
               <button class="ai-mode-btn"><span class="dot"></span><span id="modeBtnLabel">Full autonomy</span></button>
               <div class="ai-mode-menu" id="modeMenu">
-                <div class="ai-mode-menu-item" data-mode="readOnly"><span>Read only</span><span class="desc">AI can only read, never edit</span></div>
-                <div class="ai-mode-menu-item" data-mode="commentOnly"><span>Comment only</span><span class="desc">Adds comments, no content edits</span></div>
-                <div class="ai-mode-menu-item" data-mode="trackChanges"><span>Track changes</span><span class="desc">Edits as reviewable revisions</span></div>
-                <div class="ai-mode-menu-item selected" data-mode="fullAutonomy"><span>Full autonomy</span><span class="desc">Edits applied directly</span></div>
+                <div class="ai-mode-menu-item" data-mode="readOnly"><span data-t="modeReadOnly">Read only</span><span class="desc" data-t="modeReadOnlyDesc">AI can only read, never edit</span></div>
+                <div class="ai-mode-menu-item" data-mode="commentOnly"><span data-t="modeCommentOnly">Comment only</span><span class="desc" data-t="modeCommentOnlyDesc">Adds comments, no content edits</span></div>
+                <div class="ai-mode-menu-item" data-mode="trackChanges"><span data-t="modeTrackChanges">Track changes</span><span class="desc" data-t="modeTrackChangesDesc">Edits as reviewable revisions</span></div>
+                <div class="ai-mode-menu-item selected" data-mode="fullAutonomy"><span data-t="modeFullAutonomy">Full autonomy</span><span class="desc" data-t="modeFullAutonomyDesc">Edits applied directly</span></div>
               </div>
             </div>
             <button class="ai-send-btn" data-t-title="send">&#10148;</button>
@@ -103,8 +130,60 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const modeBtnLabel = root.querySelector<HTMLSpanElement>('#modeBtnLabel')!
   const scopeHintLabel = root.querySelector<HTMLSpanElement>('#scopeHintLabel')!
 
+  let currentLang: Lang = 'en'
+  let lastSelection: { hasSelection: boolean; preview: string } | null = null
+
+  function t(key: string): string {
+    return STRINGS[key]?.[currentLang] ?? key
+  }
+
+  function applyStrings(): void {
+    root.querySelectorAll<HTMLElement>('[data-t]').forEach((el) => {
+      el.textContent = t(el.dataset.t!)
+    })
+    root.querySelectorAll<HTMLElement>('[data-t-title]').forEach((el) => {
+      const s = t(el.dataset.tTitle!)
+      el.title = s
+      el.setAttribute('aria-label', s)
+    })
+    root.querySelectorAll<HTMLTextAreaElement>('[data-t-placeholder]').forEach((el) => {
+      el.placeholder = t(el.dataset.tPlaceholder!)
+    })
+  }
+
+  function refreshScopeHint(): void {
+    if (lastSelection && lastSelection.hasSelection) {
+      const prefix = currentLang === 'he' ? 'בחירה: "' : 'Selection: "'
+      scopeHintLabel.textContent = prefix + lastSelection.preview + '..."'
+    } else {
+      scopeHintLabel.textContent = t('scopeWholeDoc')
+    }
+  }
+
+  function refreshModeLabel(): void {
+    const selected = root.querySelector<HTMLElement>('.ai-mode-menu-item.selected')
+    if (selected) modeBtnLabel.textContent = selected.querySelector('span')!.textContent
+  }
+
+  function setLang(l: Lang): void {
+    currentLang = l
+    root.querySelectorAll<HTMLButtonElement>('.ai-lang-toggle button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.lang === l)
+    })
+    applyStrings()
+    refreshScopeHint()
+    refreshModeLabel()
+    const existingEmpty = chatEl.querySelector('.ai-chat-empty')
+    if (existingEmpty) {
+      existingEmpty.remove()
+      chatEl.insertAdjacentHTML('beforeend', emptyStateHtml())
+    }
+  }
+
+  applyStrings()
+
   let assistantBubble: HTMLDivElement | null = null
-  let pendingLang: 'en' | 'he' = 'en'
+  let pendingLang: Lang = 'en'
 
   function scrollToBottom(): void {
     chatEl.scrollTop = chatEl.scrollHeight
@@ -134,6 +213,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     })
   })
   root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.addEventListener('click', () => {
+    setLang(pendingLang)
     options.onSettingsSave({
       baseUrl: root.querySelector<HTMLInputElement>('[data-field="baseUrl"]')!.value,
       apiKey: root.querySelector<HTMLInputElement>('[data-field="apiKey"]')!.value,
@@ -249,8 +329,9 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       chatEl.insertAdjacentHTML('beforeend', emptyStateHtml())
       scrollToBottom()
     },
-    setScopeHint(label) {
-      scopeHintLabel.textContent = label
+    setSelectionScope(selection) {
+      lastSelection = selection
+      refreshScopeHint()
     },
   }
 }
