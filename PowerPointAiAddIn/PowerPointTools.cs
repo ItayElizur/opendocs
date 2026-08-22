@@ -480,8 +480,14 @@ namespace PowerPointAiAddIn
             }
             finally
             {
-                dataWorkbook.Close(SaveChanges: true);
-                System.Runtime.InteropServices.Marshal.ReleaseComObject(dataWorkbook);
+                try
+                {
+                    dataWorkbook.Close(SaveChanges: true);
+                }
+                finally
+                {
+                    System.Runtime.InteropServices.Marshal.ReleaseComObject(dataWorkbook);
+                }
             }
 
             if (input.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
