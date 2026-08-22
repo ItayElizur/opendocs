@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
@@ -55,6 +56,8 @@ namespace PowerPointAiAddIn
                     case "edit_table_cell": return EditTableCell(input);
                     case "edit_table_structure": return EditTableStructure(input);
                     case "edit_table_style": return EditTableStyle(input);
+                    case "add_chart": return AddChartPpt(input);
+                    case "edit_chart": return EditChartPpt(input);
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
             }
@@ -416,6 +419,119 @@ namespace PowerPointAiAddIn
                 }
             }
             return new ToolResult { Output = "Table style updated.", Mutated = true, Summary = "edit_table_style" };
+        }
+
+        private static readonly Dictionary<string, int> PptChartTypeMap = new Dictionary<string, int>
+        {
+            ["bar"] = 51,          // xlColumnClustered
+            ["barStacked"] = 52,   // xlColumnStacked
+            ["line"] = 4,          // xlLine
+            ["area"] = 1,          // xlArea
+            ["pie"] = 5,           // xlPie
+            ["doughnut"] = -4120,  // xlDoughnut
+        };
+
+        private static ToolResult AddChartPpt(JsonElement input)
+        {
+            int slideIndex = input.GetProperty("slideIndex").GetInt32();
+            string kindStr = input.GetProperty("kind").GetString();
+            int typeCode = PptChartTypeMap.TryGetValue(kindStr, out var t) ? t : 51;
+            var categories = new List<string>();
+            foreach (JsonElement c in input.GetProperty("categories").EnumerateArray()) categories.Add(c.GetString());
+            float left = input.TryGetProperty("x", out var x) ? (float)x.GetDouble() : 100f;
+            float top = input.TryGetProperty("y", out var y) ? (float)y.GetDouble() : 100f;
+            float width = input.TryGetProperty("w", out var w) ? (float)w.GetDouble() : 400f;
+            float height = input.TryGetProperty("h", out var h) ? (float)h.GetDouble() : 300f;
+
+            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            dynamic chartShape = slide.Shapes.AddChart2(-1, (Microsoft.Office.Core.XlChartType)typeCode, left, top, width, height);
+            dynamic chart = chartShape.Chart;
+
+            // Chart data lives in an embedded Excel workbook - open, write the grid,
+            // close, and RELEASE explicitly so no hidden Excel host process leaks.
+            dynamic dataWorkbook = chart.ChartData.Workbook;
+            try
+            {
+                dynamic sheet = dataWorkbook.Worksheets[1];
+                JsonElement seriesArray = input.GetProperty("series");
+                int colIdx = 0;
+                foreach (JsonElement s in seriesArray.EnumerateArray())
+                {
+                    sheet.Cells[1, colIdx + 2].Value = s.GetProperty("name").GetString();
+                    colIdx++;
+                }
+                for (int r = 0; r < categories.Count; r++)
+                {
+                    sheet.Cells[r + 2, 1].Value = categories[r];
+                }
+                colIdx = 0;
+                foreach (JsonElement s in seriesArray.EnumerateArray())
+                {
+                    int r = 0;
+                    foreach (JsonElement v in s.GetProperty("values").EnumerateArray())
+                    {
+                        sheet.Cells[r + 2, colIdx + 2].Value = v.GetDouble();
+                        r++;
+                    }
+                    colIdx++;
+                }
+                dynamic usedRange = sheet.UsedRange;
+                chart.SetSourceData(usedRange);
+            }
+            finally
+            {
+                dataWorkbook.Close(SaveChanges: true);
+                System.Runtime.InteropServices.Marshal.ReleaseComObject(dataWorkbook);
+            }
+
+            if (input.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+            {
+                chart.HasTitle = true;
+                chart.ChartTitle.Text = title.GetString();
+            }
+            return new ToolResult { Output = "Chart added.", Mutated = true, Summary = "add_chart" };
+        }
+
+        private static ToolResult EditChartPpt(JsonElement input)
+        {
+            PowerPoint.Shape shape = ResolveShape(input);
+            dynamic chart = shape.Chart;
+
+            if (input.TryGetProperty("chartType", out var ct) && ct.ValueKind == JsonValueKind.String && PptChartTypeMap.TryGetValue(ct.GetString(), out var typeCode))
+            {
+                chart.ChartType = typeCode;
+            }
+            if (input.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+            {
+                chart.HasTitle = true;
+                chart.ChartTitle.Text = title.GetString();
+            }
+            if (input.TryGetProperty("legendPos", out var legendPos) && legendPos.ValueKind == JsonValueKind.String)
+            {
+                string pos = legendPos.GetString();
+                if (pos == "none")
+                {
+                    chart.HasLegend = false;
+                }
+                else
+                {
+                    chart.HasLegend = true;
+                    chart.Legend.Position = pos == "r" ? -4152 : pos == "t" ? -4160 : pos == "l" ? -4131 : -4107;
+                }
+            }
+            if (input.TryGetProperty("dataLabels", out var dl))
+            {
+                bool show = dl.ValueKind == JsonValueKind.True;
+                foreach (dynamic series in chart.SeriesCollection())
+                {
+                    series.HasDataLabels = show;
+                }
+            }
+            if (input.TryGetProperty("gridlines", out var gl))
+            {
+                chart.Axes(2 /* xlValue */).HasMajorGridlines = gl.ValueKind == JsonValueKind.True;
+            }
+            return new ToolResult { Output = "Chart updated.", Mutated = true, Summary = "edit_chart" };
         }
     }
 }

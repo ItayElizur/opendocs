@@ -305,6 +305,33 @@ const MUTATION_TOOLS = [
       required: ['slideIndex', 'shapeIndex'],
     },
   },
+  {
+    name: 'add_chart',
+    description: 'Adds a native, editable PowerPoint chart. kind: "bar"|"barStacked"|"line"|"area"|"pie"|"doughnut".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' }, kind: { type: 'string' }, title: { type: 'string' },
+        categories: { type: 'array', items: { type: 'string' } },
+        series: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, values: { type: 'array', items: { type: 'number' } } } } },
+        x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
+      },
+      required: ['slideIndex', 'kind', 'categories', 'series'],
+    },
+  },
+  {
+    name: 'edit_chart',
+    description: 'Modifies an existing chart\'s type/title/legend position/data labels/gridlines.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' }, shapeIndex: { type: 'number' },
+        chartType: { type: 'string' }, title: { type: 'string' },
+        legendPos: { type: 'string' }, dataLabels: { type: 'boolean' }, gridlines: { type: 'boolean' },
+      },
+      required: ['slideIndex', 'shapeIndex'],
+    },
+  },
 ]
 
 const ALL_TOOLS = [...READER_TOOLS, ...MUTATION_TOOLS]
