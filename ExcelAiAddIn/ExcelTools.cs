@@ -13,9 +13,11 @@ namespace ExcelAiAddIn
     {
         public static EditingMode Mode = EditingMode.FullAutonomy;
 
+        private static readonly string[] ExcelErrorTexts = { "#REF!", "#DIV/0!", "#VALUE!", "#NAME?", "#N/A", "#NUM!", "#NULL!" };
+
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
-            "get_workbook_context", "read_range", "read_cells", "select_range", "read_formats", "read_sheet_features",
+            "get_workbook_context", "read_range", "read_cells", "select_range", "read_formats", "read_sheet_features", "find_cells",
         };
 
         public static ToolResult Execute(string name, JsonElement input)
@@ -48,6 +50,7 @@ namespace ExcelAiAddIn
                     case "select_range": return SelectRange(input);
                     case "read_formats": return ReadFormats(input);
                     case "read_sheet_features": return ReadSheetFeatures(input);
+                    case "find_cells": return FindCells(input);
                     case "propose_operations": return ProposeOperations(input);
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
@@ -145,6 +148,72 @@ namespace ExcelAiAddIn
                 sb.AppendLine($"{cell.Address[false, false]}: bold={bold}, italic={italic}, underline={underline}, numberFormat={numberFormat}");
             }
             return new ToolResult { Output = sb.ToString(), Summary = "read_formats" };
+        }
+
+        private static ToolResult FindCells(JsonElement input)
+        {
+            bool errorsOnly = input.TryGetProperty("errors_only", out var eo) && eo.ValueKind == JsonValueKind.True;
+            string query = input.TryGetProperty("query", out var q) && q.ValueKind == JsonValueKind.String ? q.GetString() : null;
+            bool useRegex = input.TryGetProperty("regex", out var rx) && rx.ValueKind == JsonValueKind.True;
+            string lookIn = input.TryGetProperty("look_in", out var li) && li.ValueKind == JsonValueKind.String ? li.GetString() : "both";
+            int maxResults = input.GetProperty("max_results").GetInt32();
+            string sheetName = input.TryGetProperty("sheetId", out var sid) && sid.ValueKind == JsonValueKind.String ? sid.GetString() : null;
+
+            if (!errorsOnly && query == null)
+            {
+                return new ToolResult { Output = "find_cells requires either 'query' or 'errors_only'.", IsError = true, Summary = "find_cells" };
+            }
+
+            System.Text.RegularExpressions.Regex regex = useRegex && query != null
+                ? new System.Text.RegularExpressions.Regex(query)
+                : null;
+
+            var sb = new System.Text.StringBuilder();
+            int found = 0;
+            Excel.Workbook wb = Globals.ThisAddIn.Application.ActiveWorkbook;
+            foreach (Excel.Worksheet sheet in wb.Worksheets)
+            {
+                if (sheetName != null && sheet.Name != sheetName) continue;
+                if (found >= maxResults) break;
+
+                if (errorsOnly)
+                {
+                    Excel.Range errorCells = null;
+                    try
+                    {
+                        // Native error-cell scan - the exact advantage this project's
+                        // original feasibility report flagged VSTO/COM as having over
+                        // Office.js's wildcard-only Range.find.
+                        errorCells = sheet.UsedRange.SpecialCells(Excel.XlCellType.xlCellTypeFormulas, Excel.XlSpecialCellsValue.xlErrors);
+                    }
+                    catch (System.Runtime.InteropServices.COMException) { /* no error cells on this sheet - SpecialCells throws if none match */ }
+                    if (errorCells != null)
+                    {
+                        foreach (Excel.Range cell in errorCells.Cells)
+                        {
+                            if (found >= maxResults) break;
+                            sb.AppendLine($"{sheet.Name}!{cell.Address[false, false]}: {cell.Text}");
+                            found++;
+                        }
+                    }
+                    continue;
+                }
+
+                foreach (Excel.Range cell in sheet.UsedRange.Cells)
+                {
+                    if (found >= maxResults) break;
+                    string valueText = cell.Text as string ?? "";
+                    string formulaText = cell.Formula as string ?? "";
+                    string haystack = lookIn == "values" ? valueText : lookIn == "formulas" ? formulaText : valueText + " " + formulaText;
+                    bool isMatch = regex != null ? regex.IsMatch(haystack) : haystack.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (isMatch)
+                    {
+                        sb.AppendLine($"{sheet.Name}!{cell.Address[false, false]}: {valueText}");
+                        found++;
+                    }
+                }
+            }
+            return new ToolResult { Output = sb.ToString(), Summary = "find_cells" };
         }
 
         private static ToolResult ReadSheetFeatures(JsonElement input)
