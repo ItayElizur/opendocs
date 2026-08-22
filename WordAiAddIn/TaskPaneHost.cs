@@ -72,6 +72,16 @@ namespace WordAiAddIn
                 case "new-chat-divider":
                     ChatStore.AppendDivider("WordAiAddIn", GetChatId());
                     break;
+                case "set-mode":
+                    string modeStr = root.GetProperty("mode").GetString();
+                    switch (modeStr)
+                    {
+                        case "readOnly": WordTools.Mode = EditingMode.ReadOnly; break;
+                        case "commentOnly": WordTools.Mode = EditingMode.CommentOnly; break;
+                        case "trackChanges": WordTools.Mode = EditingMode.TrackChanges; break;
+                        case "fullAutonomy": WordTools.Mode = EditingMode.FullAutonomy; break;
+                    }
+                    break;
             }
         }
     }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using OfficeAi.Shared;
@@ -6,15 +7,51 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAiAddIn
 {
+    // Task 11: server-side editing-mode gate. Defaults to FullAutonomy so
+    // existing spike behavior (Tasks 8-10) is unchanged until a user
+    // explicitly picks a more restrictive mode from the chat-ui mode menu.
+    public enum EditingMode { ReadOnly, CommentOnly, TrackChanges, FullAutonomy }
 
     // Spike 3: real COM tool execution against the live Word document, called
     // from the WebView2-hosted AgentLoop via the JSON WebMessage bridge.
     public static class WordTools
     {
+        public static EditingMode Mode = EditingMode.FullAutonomy;
+
+        // Tools that are always safe to run regardless of editing mode - they
+        // never touch document content. Everything else is gated below.
+        private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
+        {
+            "get_document_context", "read_blocks",
+        };
+
         public static ToolResult Execute(string name, JsonElement input)
         {
             try
             {
+                bool isAlwaysAllowed = AlwaysAllowedTools.Contains(name);
+                bool isAddComment = name == "add_comment";
+                // "Mutating" here means "changes document content/structure" -
+                // used only to decide whether TrackRevisions should be toggled.
+                // add_comment does not mutate document content (it adds a
+                // comment annotation), so it's excluded from this set even
+                // though it is gated like a mutating tool below.
+                bool isContentMutating = !isAlwaysAllowed && !isAddComment;
+
+                if (Mode == EditingMode.ReadOnly && !isAlwaysAllowed)
+                {
+                    return new ToolResult { Output = "Blocked: editing mode is Read Only.", IsError = true, Summary = name };
+                }
+                if (Mode == EditingMode.CommentOnly && !isAlwaysAllowed && !isAddComment)
+                {
+                    return new ToolResult { Output = "Blocked: editing mode is Comment Only - use add_comment instead of editing content directly.", IsError = true, Summary = name };
+                }
+
+                if (isContentMutating)
+                {
+                    ActiveDoc.TrackRevisions = (Mode == EditingMode.TrackChanges);
+                }
+
                 switch (name)
                 {
                     case "get_document_context":
@@ -29,6 +66,8 @@ namespace WordAiAddIn
                         return ReplaceBlocks(input);
                     case "apply_commands":
                         return ApplyCommands(input);
+                    case "add_comment":
+                        return AddComment(input);
                     default:
                         return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
@@ -37,6 +76,23 @@ namespace WordAiAddIn
             {
                 return new ToolResult { Output = ex.Message, IsError = true, Summary = name };
             }
+        }
+
+        private static ToolResult AddComment(JsonElement input)
+        {
+            string anchorText = input.GetProperty("anchorText").GetString();
+            string commentText = input.GetProperty("commentText").GetString();
+            Word.Document doc = ActiveDoc;
+            Word.Range range = doc.Content;
+            range.Find.ClearFormatting();
+            range.Find.Text = anchorText;
+            bool found = range.Find.Execute();
+            if (!found)
+            {
+                return new ToolResult { Output = $"Could not find text to anchor comment: '{anchorText}'", IsError = true, Summary = "add_comment" };
+            }
+            doc.Comments.Add(range, commentText);
+            return new ToolResult { Output = "Comment added.", Mutated = true, Summary = "add_comment" };
         }
 
         private static Word.Document ActiveDoc => Globals.ThisAddIn.Application.ActiveDocument;

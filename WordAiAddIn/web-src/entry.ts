@@ -115,12 +115,26 @@ function makeTransport(): AgentTransport {
   }
 }
 
-const wordSkill: AgentSkill = {
-  id: 'spike3-word-tools',
-  systemPrompt:
-    'You are a test assistant running inside a VSTO Word add-in spike (spike 3: real COM tool execution). ' +
-    'You can read the document, insert text, and create/edit a native Word chart. Use the tools when asked to.',
-  tools: [
+// Task 11: editing-mode control. This is client-side filtering only (first
+// line of defense - smaller prompts, fewer wasted turns); the real
+// enforcement is server-side in WordTools.Execute (WordTools.cs), which gates
+// mutating tool calls even if the model somehow requests one that wasn't
+// offered here.
+let editingMode: EditingMode = 'fullAutonomy'
+
+const READ_ONLY_TOOL_NAMES = new Set(['get_document_context', 'read_blocks'])
+
+function toolsForMode(): typeof ALL_WORD_TOOLS {
+  if (editingMode === 'readOnly') {
+    return ALL_WORD_TOOLS.filter((t) => READ_ONLY_TOOL_NAMES.has(t.name))
+  }
+  if (editingMode === 'commentOnly') {
+    return ALL_WORD_TOOLS.filter((t) => READ_ONLY_TOOL_NAMES.has(t.name) || t.name === 'add_comment')
+  }
+  return ALL_WORD_TOOLS
+}
+
+const ALL_WORD_TOOLS = [
     {
       name: 'get_document_context',
       description: "Reads the active Word document's paragraph/word count and a text preview.",
@@ -175,7 +189,31 @@ const wordSkill: AgentSkill = {
         '"find_replace" (fields: find:string, replace:string, matchCase?:boolean).',
       inputSchema: { type: 'object', properties: { commands: { type: 'array', items: { type: 'object' } } }, required: ['commands'] },
     },
-  ],
+    {
+      name: 'add_comment',
+      description:
+        'Adds a Word comment anchored to the first occurrence of the given text, without changing document content. Available in every editing mode.',
+      inputSchema: {
+        type: 'object',
+        properties: { anchorText: { type: 'string' }, commentText: { type: 'string' } },
+        required: ['anchorText', 'commentText'],
+      },
+    },
+  ]
+
+const wordSkill: AgentSkill = {
+  id: 'spike3-word-tools',
+  systemPrompt:
+    'You are a test assistant running inside a VSTO Word add-in spike (spike 3: real COM tool execution). ' +
+    'You can read the document, insert text, and create/edit a native Word chart. Use the tools when asked to.',
+  // Live getter (not a fixed array): AgentLoop.startTurn() reads
+  // `this.options.skill.tools` fresh every turn (see
+  // shared/web-src/agent-core/loop.ts), so this recomputes the tool list
+  // per-turn from the current editingMode without needing to rebuild the
+  // whole skill object or touch agent-core.
+  get tools() {
+    return toolsForMode()
+  },
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }
 
@@ -196,7 +234,8 @@ const ui = mountChatUI(root, {
     ui.resetToEmpty()
   },
   onModeChange: (mode: EditingMode) => {
-    // Task 11 wires the actual bridge call + tool-list filtering here.
+    editingMode = mode
+    chrome.webview.postMessage({ kind: 'set-mode', mode })
   },
   onSettingsSave: (settings) => {
     // Not yet wired to the transport/provider config - deferred (Phase 5).
