@@ -15,7 +15,24 @@ namespace ExcelAiAddIn
             _taskPane.Width = 420;
             _taskPane.Visible = true;
 
-            _taskPaneControl.RequestPaneWidth += width => _taskPane.Width = width;
+            _taskPaneControl.RequestPaneWidth += width =>
+            {
+                try
+                {
+                    if (_taskPane.DockPosition == Microsoft.Office.Core.MsoCTPDockPosition.msoCTPDockPositionLeft ||
+                        _taskPane.DockPosition == Microsoft.Office.Core.MsoCTPDockPosition.msoCTPDockPositionRight)
+                    {
+                        _taskPane.Width = width;
+                    }
+                }
+                catch
+                {
+                    // Resizing is best-effort - never let a transient Office
+                    // COM exception (e.g. pane docked top/bottom) propagate
+                    // out and permanently reveal the debug status label via
+                    // WebViewBridgeHost's generic error-status path.
+                }
+            };
         }
 
         private void ThisAddIn_Shutdown(object sender, EventArgs e)

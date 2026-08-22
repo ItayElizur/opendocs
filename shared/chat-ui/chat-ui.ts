@@ -73,7 +73,8 @@ function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
   const pills = options.starters
     .map((s) => `<div class="ai-starter">${escapeHtml(s[currentLang])}</div>`)
     .join('')
-  return `<div class="ai-chat-empty"><div class="ai-chat-empty-title" data-t="emptyTitle">What can I help with?</div><div class="ai-starters">${pills}</div></div>`
+  const title = escapeHtml(STRINGS.emptyTitle[currentLang])
+  return `<div class="ai-chat-empty"><div class="ai-chat-empty-title" data-t="emptyTitle">${title}</div><div class="ai-starters">${pills}</div></div>`
 }
 
 export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHandle {
@@ -352,7 +353,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       for (const m of messages) renderMessage(m.role, m.text)
       const sep = document.createElement('div')
       sep.className = 'ai-history-sep'
-      sep.textContent = 'Earlier conversation'
+      sep.textContent = t('historySep')
       chatEl.appendChild(sep)
       chatEl.insertAdjacentHTML('beforeend', emptyStateHtml(options, currentLang))
       scrollToBottom()
