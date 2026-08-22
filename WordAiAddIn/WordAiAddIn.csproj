@@ -148,6 +148,10 @@
     <None Include="App.config" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\OfficeAi.Shared\OfficeAi.Shared.csproj" />
+  </ItemGroup>
+
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">17.0</VisualStudioVersion>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>

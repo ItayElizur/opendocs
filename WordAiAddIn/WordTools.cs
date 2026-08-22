@@ -1,17 +1,11 @@
 ﻿using System;
 using System.Linq;
 using System.Text.Json;
+using OfficeAi.Shared;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAiAddIn
 {
-    public struct ToolResult
-    {
-        public string Output;
-        public bool IsError;
-        public bool Mutated;
-        public string Summary;
-    }
 
     // Spike 3: real COM tool execution against the live Word document, called
     // from the WebView2-hosted AgentLoop via the JSON WebMessage bridge.
