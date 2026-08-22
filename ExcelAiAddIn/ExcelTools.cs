@@ -181,6 +181,17 @@ namespace ExcelAiAddIn
                         case "insert_cols": InsertDeleteCols(op, insert: true); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "delete_cols": InsertDeleteCols(op, insert: false); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "add_chart": AddChart(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "sort_range": SortRange(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "merge_cells":
+                            Sheet(op).Range[op.GetProperty("range").GetString()].Merge();
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "unmerge_cells":
+                            Sheet(op).Range[op.GetProperty("range").GetString()].UnMerge();
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_row_height": SetRowHeight(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_col_width": SetColWidth(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_rows_hidden": SetRowsHidden(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_cols_hidden": SetColsHidden(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
                     }
@@ -287,6 +298,61 @@ namespace ExcelAiAddIn
                 chart.HasTitle = true;
                 chart.ChartTitle.Text = title.GetString();
             }
+        }
+
+        private static void SortRange(JsonElement op)
+        {
+            string range = op.GetProperty("range").GetString();
+            string byColumn = op.GetProperty("byColumn").GetString();
+            string order = op.GetProperty("order").GetString();
+            bool hasHeader = op.TryGetProperty("hasHeader", out var hh) && hh.ValueKind == JsonValueKind.True;
+            Excel.Range target = Sheet(op).Range[range];
+            Excel.Range key = Sheet(op).Range[byColumn + "1"];
+            target.Sort(
+                Key1: key,
+                Order1: order == "desc" ? Excel.XlSortOrder.xlDescending : Excel.XlSortOrder.xlAscending,
+                Header: hasHeader ? Excel.XlYesNoGuess.xlYes : Excel.XlYesNoGuess.xlNo);
+        }
+
+        private static void SetRowHeight(JsonElement op)
+        {
+            int row = op.GetProperty("row").GetInt32();
+            int count = op.TryGetProperty("count", out var c) ? c.GetInt32() : 1;
+            double heightPoints = op.GetProperty("heightPoints").GetDouble();
+            Sheet(op).Range[$"{row}:{row + count - 1}"].RowHeight = heightPoints;
+        }
+
+        // Character-width units, NOT pixels: Excel's native ColumnWidth property has
+        // no pixel unit at the COM layer. Converts genoffice's px schema using the
+        // standard Calibri-11 approximation (px - 5) / 7 - a documented, deliberate
+        // approximation, not exact for other default fonts.
+        private static void SetColWidth(JsonElement op)
+        {
+            int col = op.GetProperty("column").GetInt32();
+            int count = op.TryGetProperty("count", out var c) ? c.GetInt32() : 1;
+            double widthPx = op.GetProperty("widthPx").GetDouble();
+            double charWidth = Math.Max(0, (widthPx - 5) / 7.0);
+            string startLetter = ColumnLetter(col);
+            string endLetter = ColumnLetter(col + count - 1);
+            Sheet(op).Range[$"{startLetter}:{endLetter}"].ColumnWidth = charWidth;
+        }
+
+        private static void SetRowsHidden(JsonElement op)
+        {
+            int row = op.GetProperty("row").GetInt32();
+            int count = op.TryGetProperty("count", out var c) ? c.GetInt32() : 1;
+            bool hidden = op.GetProperty("hidden").GetBoolean();
+            Sheet(op).Range[$"{row}:{row + count - 1}"].EntireRow.Hidden = hidden;
+        }
+
+        private static void SetColsHidden(JsonElement op)
+        {
+            int col = op.GetProperty("column").GetInt32();
+            int count = op.TryGetProperty("count", out var c) ? c.GetInt32() : 1;
+            bool hidden = op.GetProperty("hidden").GetBoolean();
+            string startLetter = ColumnLetter(col);
+            string endLetter = ColumnLetter(col + count - 1);
+            Sheet(op).Range[$"{startLetter}:{endLetter}"].EntireColumn.Hidden = hidden;
         }
     }
 }
