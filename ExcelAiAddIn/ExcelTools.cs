@@ -136,11 +136,12 @@ namespace ExcelAiAddIn
             {
                 bool bold = (bool)(cell.Font.Bold ?? false);
                 bool italic = (bool)(cell.Font.Italic ?? false);
-                bool underline = !(cell.Font.Underline is bool underlineOff) || underlineOff == false ? cell.Font.Underline.ToString() != "-4142" : false;
+                object underlineRaw = cell.Font.Underline;
+                bool underline = underlineRaw != null && Convert.ToInt32(underlineRaw) != -4142; // -4142 == xlUnderlineStyleNone
                 string numberFormat = cell.NumberFormat as string;
-                bool hasDefaultFormat = !bold && !italic && (numberFormat == "General" || numberFormat == null);
+                bool hasDefaultFormat = !bold && !italic && !underline && (numberFormat == "General" || numberFormat == null);
                 if (hasDefaultFormat) continue; // only explicitly-formatted cells, matches genoffice
-                sb.AppendLine($"{cell.Address[false, false]}: bold={bold}, italic={italic}, numberFormat={numberFormat}");
+                sb.AppendLine($"{cell.Address[false, false]}: bold={bold}, italic={italic}, underline={underline}, numberFormat={numberFormat}");
             }
             return new ToolResult { Output = sb.ToString(), Summary = "read_formats" };
         }
