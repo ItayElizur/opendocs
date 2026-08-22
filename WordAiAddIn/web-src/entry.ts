@@ -35,21 +35,44 @@ interface ToolResultMessage {
   summary: string
 }
 
+interface OtherMessage {
+  kind: string
+  [key: string]: unknown
+}
+
 const pendingToolCalls = new Map<string, (result: ToolExecution) => void>()
 
 chrome.webview.addEventListener('message', (ev) => {
-  const data = ev.data as ToolResultMessage
-  if (!data || data.kind !== 'tool-result') return
-  const resolve = pendingToolCalls.get(data.requestId)
-  if (!resolve) return
-  pendingToolCalls.delete(data.requestId)
-  resolve({
-    output: data.output,
-    isError: data.isError,
-    mutated: data.mutated,
-    summary: data.summary,
-  })
+  const data = ev.data as OtherMessage & ToolResultMessage
+  if (!data) return
+  if (data.kind === 'tool-result') {
+    const resolve = pendingToolCalls.get(data.requestId)
+    if (!resolve) return
+    pendingToolCalls.delete(data.requestId)
+    resolve({
+      output: data.output,
+      isError: data.isError,
+      mutated: data.mutated,
+      summary: data.summary,
+    })
+    return
+  }
+  if (data.kind === 'history-loaded') {
+    const messages = data.messages as Array<{ role: 'user' | 'assistant'; text: string }>
+    if (messages.length > 0) {
+      ui.showHistoric(messages)
+      loop.restore(messages.map((m) => ({ role: m.role, text: m.text })))
+    }
+  }
 })
+
+function requestHistory(): void {
+  chrome.webview.postMessage({ kind: 'load-history' })
+}
+
+function persistMessage(role: 'user' | 'assistant', text: string): void {
+  chrome.webview.postMessage({ kind: 'append-message', role, text })
+}
 
 function callDotNetTool(toolName: string, input: Record<string, unknown>): Promise<ToolExecution> {
   const requestId = crypto.randomUUID()
@@ -137,10 +160,12 @@ const ui = mountChatUI(root, {
     ui.addUserMessage(text)
     ui.beginAssistantMessage()
     ui.setBusy(true)
+    persistMessage('user', text)
     loop.run(text)
   },
   onNewChat: () => {
-    // Task 7 wires the actual divider persistence call here.
+    chrome.webview.postMessage({ kind: 'new-chat-divider' })
+    loop.reset()
     ui.resetToEmpty()
   },
   onModeChange: (mode: EditingMode) => {
@@ -176,8 +201,10 @@ const loop = new AgentLoop({
       currentToolGroup = null
     },
     onDone: (result) => {
-      ui.endAssistantMessage(result.text || '(no text)')
+      const finalText = result.text || '(no text)'
+      ui.endAssistantMessage(finalText)
       ui.setBusy(false)
+      persistMessage('assistant', finalText)
     },
     onError: (error) => {
       ui.showError(error)
@@ -185,3 +212,5 @@ const loop = new AgentLoop({
     },
   },
 })
+
+requestHistory()
