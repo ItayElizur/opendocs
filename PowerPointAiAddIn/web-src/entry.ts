@@ -332,6 +332,19 @@ const MUTATION_TOOLS = [
       required: ['slideIndex', 'shapeIndex'],
     },
   },
+  {
+    name: 'add_smartart',
+    description: 'Adds a shape-composed SmartArt diagram. layout: "list"|"process"|"cycle"|"hierarchy"|"pyramid"|"matrix"|"venn". items are flat node texts, one per top-level node.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' }, layout: { type: 'string' },
+        items: { type: 'array', items: { type: 'string' } },
+        x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
+      },
+      required: ['slideIndex', 'layout', 'items'],
+    },
+  },
 ]
 
 const ALL_TOOLS = [...READER_TOOLS, ...MUTATION_TOOLS]

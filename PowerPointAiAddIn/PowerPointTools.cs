@@ -58,6 +58,7 @@ namespace PowerPointAiAddIn
                     case "edit_table_style": return EditTableStyle(input);
                     case "add_chart": return AddChartPpt(input);
                     case "edit_chart": return EditChartPpt(input);
+                    case "add_smartart": return AddSmartArt(input);
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
             }
@@ -538,6 +539,59 @@ namespace PowerPointAiAddIn
                 chart.Axes(2 /* xlValue */).HasMajorGridlines = gl.ValueKind == JsonValueKind.True;
             }
             return new ToolResult { Output = "Chart updated.", Mutated = true, Summary = "edit_chart" };
+        }
+
+        // Verified against the standard English display names for PowerPoint's built-in SmartArt
+        // layout gallery. Live cross-check against Application.SmartArtLayouts on this machine's
+        // Office install (plan Task 6 Step 1) requires interactive Office GUI access that was not
+        // available in this environment - remains a manual follow-up for a human with GUI access.
+        private static readonly Dictionary<string, string> SmartArtLayoutNames = new Dictionary<string, string>
+        {
+            ["list"] = "Basic Block List",
+            ["process"] = "Basic Process",
+            ["cycle"] = "Basic Cycle",
+            ["hierarchy"] = "Organization Chart",
+            ["pyramid"] = "Basic Pyramid",
+            ["matrix"] = "Basic Matrix",
+            ["venn"] = "Basic Venn",
+        };
+
+        private static dynamic ResolveSmartArtLayout(string layoutKey)
+        {
+            string targetName = SmartArtLayoutNames.TryGetValue(layoutKey, out var name) ? name : "Basic Block List";
+            dynamic layouts = Globals.ThisAddIn.Application.SmartArtLayouts;
+            foreach (dynamic layout in layouts)
+            {
+                if (string.Equals((string)layout.Name, targetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return layout;
+                }
+            }
+            throw new InvalidOperationException("add_smartart: no SmartArt layout named '" + targetName + "' found - see plan Task 6 Step 1.");
+        }
+
+        private static ToolResult AddSmartArt(JsonElement input)
+        {
+            int slideIndex = input.GetProperty("slideIndex").GetInt32();
+            string layoutKey = input.GetProperty("layout").GetString();
+            float left = input.TryGetProperty("x", out var x) ? (float)x.GetDouble() : 100f;
+            float top = input.TryGetProperty("y", out var y) ? (float)y.GetDouble() : 100f;
+            float width = input.TryGetProperty("w", out var w) ? (float)w.GetDouble() : 400f;
+            float height = input.TryGetProperty("h", out var h) ? (float)h.GetDouble() : 300f;
+
+            dynamic layout = ResolveSmartArtLayout(layoutKey);
+            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            dynamic shape = slide.Shapes.AddSmartArt(layout, left, top, width, height);
+            dynamic smartArt = shape.SmartArt;
+
+            // genoffice's own version only ever produces a flat item list - maps
+            // 1:1 to sequential top-level nodes, no nested tree-building needed.
+            foreach (JsonElement item in input.GetProperty("items").EnumerateArray())
+            {
+                dynamic node = smartArt.Nodes.Add();
+                node.TextFrame2.TextRange.Text = item.GetString();
+            }
+            return new ToolResult { Output = "SmartArt added.", Mutated = true, Summary = "add_smartart" };
         }
     }
 }
