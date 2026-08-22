@@ -381,8 +381,12 @@ const powerPointSkill: AgentSkill = {
   systemPrompt:
     'You are an AI assistant running inside a VSTO PowerPoint add-in. ' +
     'You can read the deck outline (get_deck_context) and the full text of any slide (read_slide). ' +
-    'You can also edit the deck: set_element_text, set_element_style, set_element_transform, ' +
-    'add_text_box, add_shape, and delete_element.',
+    'You can edit text and shapes: set_element_text, set_element_style, set_element_transform, add_text_box, add_shape, and delete_element. ' +
+    'You can manage slides and shape styling: add_slide, set_element_fill, set_element_stroke, set_slide_background, and ungroup_element. ' +
+    'You can add and edit tables: add_table, edit_table_cell, edit_table_structure, and edit_table_style. ' +
+    'You can create and edit charts: add_chart and edit_chart. ' +
+    'You can add SmartArt diagrams: add_smartart. ' +
+    'You can work with images: crop_image, set_picture_opacity, and replace_image.',
   tools: ALL_TOOLS,
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }
