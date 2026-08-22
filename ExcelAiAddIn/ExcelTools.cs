@@ -55,6 +55,16 @@ namespace ExcelAiAddIn
             ["downArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeDownArrow,
         };
 
+        private static readonly Dictionary<string, int> ExcelChartTypeMap = new Dictionary<string, int>
+        {
+            ["column"] = 51, // xlColumnClustered
+            ["bar"] = 57,     // xlBarClustered
+            ["line"] = 4,     // xlLine
+            ["area"] = 1,     // xlArea
+            ["pie"] = 5,      // xlPie
+            ["doughnut"] = -4120, // xlDoughnut
+        };
+
         public static ToolResult Execute(string name, JsonElement input)
         {
             try
@@ -397,6 +407,7 @@ namespace ExcelAiAddIn
                         case "protect_sheet": ProtectSheet(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "rename_sheet": Sheet(op).Name = op.GetProperty("name").GetString(); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "edit_shape": EditShapeExcel(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "edit_chart": EditChartExcel(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "delete_visual": DeleteVisual(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "add_image": AddImageExcel(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
@@ -504,6 +515,81 @@ namespace ExcelAiAddIn
             {
                 chart.HasTitle = true;
                 chart.ChartTitle.Text = title.GetString();
+            }
+        }
+
+        private static void EditChartExcel(JsonElement op)
+        {
+            string chartName = op.GetProperty("chartPath").GetString(); // this project's visualId-equivalent for charts
+            dynamic chartObjects = Sheet(op).ChartObjects();
+            dynamic chartObj = chartObjects.Item(chartName);
+            dynamic chart = chartObj.Chart;
+
+            if (op.TryGetProperty("chartType", out var ct) && ct.ValueKind == JsonValueKind.String && ExcelChartTypeMap.TryGetValue(ct.GetString(), out int typeCode))
+            {
+                chart.ChartType = typeCode;
+            }
+            if (op.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+            {
+                chart.HasTitle = true;
+                chart.ChartTitle.Text = title.GetString();
+            }
+            if (op.TryGetProperty("legend", out var legend) && legend.ValueKind == JsonValueKind.String)
+            {
+                string pos = legend.GetString();
+                if (pos == "none") { chart.HasLegend = false; }
+                else
+                {
+                    chart.HasLegend = true;
+                    chart.Legend.Position = pos == "right" ? -4152 /*xlLegendPositionRight*/
+                        : pos == "top" ? -4160 /*xlLegendPositionTop*/
+                        : pos == "left" ? -4131 /*xlLegendPositionLeft*/
+                        : -4107 /*xlLegendPositionBottom*/;
+                }
+            }
+            if (op.TryGetProperty("dataLabels", out var dl) && dl.ValueKind == JsonValueKind.String)
+            {
+                bool show = dl.GetString() != "none";
+                foreach (dynamic series in chart.SeriesCollection())
+                {
+                    series.HasDataLabels = show;
+                    if (show && dl.GetString() == "percent") series.DataLabels().ShowPercentage = true;
+                }
+            }
+            if (op.TryGetProperty("seriesColors", out var colors) && colors.ValueKind == JsonValueKind.Object)
+            {
+                foreach (JsonProperty prop in colors.EnumerateObject())
+                {
+                    int seriesIndex = int.Parse(prop.Name);
+                    dynamic series = chart.SeriesCollection(seriesIndex + 1);
+                    series.Format.Fill.ForeColor.RGB = HexToOleColor(prop.Value.GetString());
+                }
+            }
+
+            // Data changes require the chart's embedded workbook - open, write,
+            // close, and RELEASE explicitly so no hidden Excel host process leaks.
+            if (op.TryGetProperty("seriesData", out var seriesData) && seriesData.ValueKind == JsonValueKind.Array)
+            {
+                dynamic chartDataWorkbook = chart.ChartData.Workbook;
+                try
+                {
+                    dynamic dataSheet = chartDataWorkbook.Worksheets[1];
+                    int seriesIdx = 0;
+                    foreach (JsonElement sd in seriesData.EnumerateArray())
+                    {
+                        dynamic series = chart.SeriesCollection(seriesIdx + 1);
+                        if (sd.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String)
+                        {
+                            series.Name = nameEl.GetString();
+                        }
+                        seriesIdx++;
+                    }
+                }
+                finally
+                {
+                    chartDataWorkbook.Close(SaveChanges: true);
+                    System.Runtime.InteropServices.Marshal.ReleaseComObject(chartDataWorkbook);
+                }
             }
         }
 
