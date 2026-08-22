@@ -27,7 +27,7 @@ namespace WordAiAddIn
             // An unsaved document has no on-disk Path; ActiveDocument.FullName
             // falls back to its temp Name (e.g. "Document1") in that case,
             // which is not a stable key across sessions, so use a per-process
-            // fallback id instead (mirrors genospark's tempChatId concept).
+            // fallback id instead (mirrors genoffice's tempChatId concept).
             _chatId = string.IsNullOrEmpty(activeDoc.Path)
                 ? "unsaved-" + Process.GetCurrentProcess().Id
                 : ChatStore.ChatIdForFile(activeDoc.FullName);
