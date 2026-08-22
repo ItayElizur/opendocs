@@ -119,8 +119,19 @@ const powerPointSkill: AgentSkill = {
   id: 'powerpoint-tools',
   systemPrompt:
     'You are an AI assistant running inside a VSTO PowerPoint add-in. ' +
-    'Tool support is being added incrementally.',
-  tools: [],
+    'You can read the deck outline (get_deck_context) and the full text of any slide (read_slide).',
+  tools: [
+    {
+      name: 'get_deck_context',
+      description: 'Reads a one-line-per-slide outline: slide index and a text preview of its shapes.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'read_slide',
+      description: 'Reads full text of every shape on one slide (0-based index).',
+      inputSchema: { type: 'object', properties: { slideIndex: { type: 'number' } }, required: ['slideIndex'] },
+    },
+  ],
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }
 
