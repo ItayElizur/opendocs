@@ -230,7 +230,14 @@ const powerPointSkill: AgentSkill = {
 
 const root = document.getElementById('root')!
 const ui = mountChatUI(root, {
-  title: 'Airchat Office',
+  starters: [
+    { en: "Improve this slide's title and copy", he: 'שפר את הכותרת והטקסט של השקופית' },
+    { en: "Make this slide's bullets more concise", he: 'קצר את התבליטים בשקופית' },
+    { en: 'Check the whole deck for typos and fix them', he: 'בדוק שגיאות כתיב בכל המצגת ותקן אותן' },
+  ],
+  onCollapseChange: (collapsed) => {
+    chrome.webview.postMessage({ kind: collapsed ? 'collapse-pane' : 'expand-pane' })
+  },
   onSend: (text) => {
     if (loop.busy) return
     ui.addUserMessage(text)

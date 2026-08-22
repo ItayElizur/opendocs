@@ -173,7 +173,14 @@ const excelSkill: AgentSkill = {
 
 const root = document.getElementById('root')!
 const ui = mountChatUI(root, {
-  title: 'Airchat Office',
+  starters: [
+    { en: 'Summarize this sheet', he: 'סכם את הגיליון הזה' },
+    { en: 'Add a totals row', he: 'הוסף שורת סיכום' },
+    { en: 'Check the formulas', he: 'בדוק את הנוסחאות' },
+  ],
+  onCollapseChange: (collapsed) => {
+    chrome.webview.postMessage({ kind: collapsed ? 'collapse-pane' : 'expand-pane' })
+  },
   onSend: (text) => {
     if (loop.busy) return
     ui.addUserMessage(text)
