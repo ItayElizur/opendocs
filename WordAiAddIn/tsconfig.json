@@ -10,7 +10,8 @@
     "types": ["node"],
     "paths": {
       "@genoffice/agent-core": ["../shared/web-src/agent-core/index.ts"],
-      "@genoffice/ai-provider": ["../shared/web-src/ai-provider/index.ts"]
+      "@genoffice/ai-provider": ["../shared/web-src/ai-provider/index.ts"],
+      "@officeai/chat-ui": ["../shared/chat-ui/chat-ui.ts"]
     }
   },
   "include": ["web-src/**/*.ts"]

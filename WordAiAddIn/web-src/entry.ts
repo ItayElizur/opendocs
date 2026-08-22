@@ -1,5 +1,6 @@
 import { AgentLoop, type AgentSkill, type AgentStreamHandle, type AgentTransport, type ToolExecution } from '@genoffice/agent-core'
 import { streamOpenAiCompatible, type AiProviderConfig } from '@genoffice/ai-provider'
+import { mountChatUI, type EditingMode } from '@officeai/chat-ui'
 
 // Spike 2: prove packages/agent-core's AgentLoop and packages/ai-provider's
 // streamOpenAiCompatible run unmodified inside a WebView2 page hosted in a
@@ -70,8 +71,6 @@ function makeTransport(): AgentTransport {
   return {
     stream(request, callbacks): AgentStreamHandle {
       const controller = new AbortController()
-      const t0 = performance.now()
-      let chunkIndex = 0
       streamOpenAiCompatible(
         BASE_URL,
         PROVIDER_CONFIG,
@@ -80,11 +79,7 @@ function makeTransport(): AgentTransport {
         request.tools,
         MAX_TOKENS,
         {
-          onDelta: (text) => {
-            chunkIndex++
-            appendLine(`  [chunk ${chunkIndex} @ +${Math.round(performance.now() - t0)}ms] ${JSON.stringify(text)}`)
-            callbacks.onDelta(text)
-          },
+          onDelta: callbacks.onDelta,
           onToolCall: callbacks.onToolCall,
           onStopReason: callbacks.onStopReason,
           signal: controller.signal,
@@ -134,75 +129,59 @@ const wordSkill: AgentSkill = {
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }
 
+const root = document.getElementById('root')!
+const ui = mountChatUI(root, {
+  title: 'Airchat Office',
+  onSend: (text) => {
+    if (loop.busy) return
+    ui.addUserMessage(text)
+    ui.beginAssistantMessage()
+    ui.setBusy(true)
+    loop.run(text)
+  },
+  onNewChat: () => {
+    // Task 7 wires the actual divider persistence call here.
+    ui.resetToEmpty()
+  },
+  onModeChange: (mode: EditingMode) => {
+    // Task 11 wires the actual bridge call + tool-list filtering here.
+  },
+  onSettingsSave: (settings) => {
+    // Not yet wired to the transport/provider config - deferred (Phase 5).
+  },
+})
+
+let currentToolGroup: ReturnType<typeof ui.beginToolGroup> | null = null
+const activeSteps = new Map<string, ReturnType<ReturnType<typeof ui.beginToolGroup>['addStep']>>()
+
 const loop = new AgentLoop({
   transport: makeTransport(),
   skill: wordSkill,
   events: {
-    onText: (text) => setAssistantBubble(text),
+    onText: (text) => ui.updateAssistantMessage(text),
     onToolStart: (call) => {
-      appendLine(`  [tool call] ${call.name}(${JSON.stringify(call.input)})`)
+      if (!currentToolGroup) currentToolGroup = ui.beginToolGroup()
+      activeSteps.set(call.id, currentToolGroup.addStep(call.name, call.input))
     },
     onToolExecuted: (event) => {
-      appendLine(
-        `  [tool result] ${event.call.name} -> ${event.execution.isError ? 'ERROR: ' : ''}${event.execution.output}`,
-      )
+      activeSteps.get(event.call.id)?.complete({
+        output: event.execution.output,
+        isError: event.execution.isError,
+        mutated: event.execution.mutated,
+      })
+      activeSteps.delete(event.call.id)
     },
-    onTurnEnd: () => appendLine('  [turn end - back to model]'),
+    onTurnEnd: () => {
+      currentToolGroup?.end()
+      currentToolGroup = null
+    },
     onDone: (result) => {
-      setAssistantBubble(result.text || '(no text)')
-      setBusy(false)
+      ui.endAssistantMessage(result.text || '(no text)')
+      ui.setBusy(false)
     },
     onError: (error) => {
-      appendLine(`[error] ${error}`)
-      setBusy(false)
+      ui.showError(error)
+      ui.setBusy(false)
     },
   },
 })
-
-// ---- minimal chat UI ----
-
-const transcript = document.getElementById('transcript') as HTMLDivElement
-const input = document.getElementById('input') as HTMLInputElement
-const sendBtn = document.getElementById('sendBtn') as HTMLButtonElement
-
-let assistantBubble: HTMLDivElement | null = null
-
-function appendLine(text: string): void {
-  const div = document.createElement('div')
-  div.className = 'line'
-  div.textContent = text
-  transcript.appendChild(div)
-  transcript.scrollTop = transcript.scrollHeight
-}
-
-function setAssistantBubble(text: string): void {
-  if (!assistantBubble) {
-    assistantBubble = document.createElement('div')
-    assistantBubble.className = 'line assistant'
-    transcript.appendChild(assistantBubble)
-  }
-  assistantBubble.textContent = 'assistant: ' + text
-  transcript.scrollTop = transcript.scrollHeight
-}
-
-function setBusy(busy: boolean): void {
-  sendBtn.disabled = busy
-  input.disabled = busy
-}
-
-function send(): void {
-  const text = input.value.trim()
-  if (!text || loop.busy) return
-  appendLine('user: ' + text)
-  input.value = ''
-  assistantBubble = null
-  setBusy(true)
-  loop.run(text)
-}
-
-sendBtn.addEventListener('click', send)
-input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') send()
-})
-
-appendLine('[spike 2 ready] talking to ' + BASE_URL)

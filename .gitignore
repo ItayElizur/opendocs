@@ -6,3 +6,5 @@ node_modules/
 *.suo
 **/web/bundle.js
 **/web/bundle.js.map
+**/web/bundle.css
+**/web/bundle.css.map
