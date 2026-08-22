@@ -46,6 +46,7 @@ namespace PowerPointAiAddIn
                     case "add_text_box": return AddTextBox(input);
                     case "add_shape": return AddShape(input);
                     case "delete_element": return DeleteElement(input);
+                    case "add_slide": return AddSlide(input);
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
             }
@@ -200,6 +201,32 @@ namespace PowerPointAiAddIn
         {
             ResolveShape(input).Delete();
             return new ToolResult { Output = "Shape deleted.", Mutated = true, Summary = "delete_element" };
+        }
+
+        private static ToolResult AddSlide(JsonElement input)
+        {
+            int sourceIndex = input.GetProperty("sourceIndex").GetInt32();
+            bool clearText = !input.TryGetProperty("clearText", out var ct) || ct.ValueKind != JsonValueKind.False;
+            PowerPoint.Slides slides = ActivePresentation.Slides;
+            if (sourceIndex < 0 || sourceIndex >= slides.Count)
+            {
+                return new ToolResult { Output = "Invalid sourceIndex.", IsError = true, Summary = "add_slide" };
+            }
+            dynamic source = slides[sourceIndex + 1];
+            dynamic dupRange = source.Duplicate(); // returns a SlideRange containing exactly the new slide
+            dynamic newSlide = dupRange[1];
+            newSlide.MoveTo(sourceIndex + 2);
+            if (clearText)
+            {
+                foreach (PowerPoint.Shape shape in newSlide.Shapes)
+                {
+                    if (shape.HasTextFrame == Microsoft.Office.Core.MsoTriState.msoTrue)
+                    {
+                        shape.TextFrame.TextRange.Text = "";
+                    }
+                }
+            }
+            return new ToolResult { Output = "Slide added after index " + sourceIndex + ".", Mutated = true, Summary = "add_slide" };
         }
     }
 }

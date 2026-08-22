@@ -213,6 +213,15 @@ const MUTATION_TOOLS = [
       required: ['slideIndex', 'shapeIndex'],
     },
   },
+  {
+    name: 'add_slide',
+    description: 'Clones an existing slide\'s layout as a new blank (or templated) slide inserted right after it.',
+    inputSchema: {
+      type: 'object',
+      properties: { sourceIndex: { type: 'number' }, clearText: { type: 'boolean' } },
+      required: ['sourceIndex'],
+    },
+  },
 ]
 
 const ALL_TOOLS = [...READER_TOOLS, ...MUTATION_TOOLS]
