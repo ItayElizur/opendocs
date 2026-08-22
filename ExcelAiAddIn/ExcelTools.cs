@@ -20,6 +20,37 @@ namespace ExcelAiAddIn
             "get_workbook_context", "read_range", "read_cells", "select_range", "read_formats", "read_sheet_features", "find_cells", "trace_precedents", "trace_dependents",
         };
 
+        private static readonly Dictionary<string, Microsoft.Office.Core.MsoAutoShapeType> ShapeTypeMap =
+            new Dictionary<string, Microsoft.Office.Core.MsoAutoShapeType>
+        {
+            ["rect"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRectangle,
+            ["roundRect"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRoundedRectangle,
+            ["ellipse"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeOval,
+            ["triangle"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeIsoscelesTriangle,
+            ["rtTriangle"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRightTriangle,
+            ["parallelogram"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeParallelogram,
+            ["trapezoid"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeTrapezoid,
+            ["diamond"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeDiamond,
+            ["pentagon"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapePentagon,
+            ["hexagon"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeHexagon,
+            ["octagon"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeOctagon,
+            ["pie"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapePie,
+            ["chord"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeChord,
+            ["donut"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeDonut,
+            ["foldedCorner"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeFoldedCorner,
+            ["heart"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeHeart,
+            ["lightningBolt"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeLightningBolt,
+            ["sun"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeSun,
+            ["moon"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeMoon,
+            ["cloud"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeCloud,
+            ["arc"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeArc,
+            ["star5"] = Microsoft.Office.Core.MsoAutoShapeType.msoShape5pointStar,
+            ["rightArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRightArrow,
+            ["leftArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeLeftArrow,
+            ["upArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeUpArrow,
+            ["downArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeDownArrow,
+        };
+
         public static ToolResult Execute(string name, JsonElement input)
         {
             try
@@ -340,6 +371,7 @@ namespace ExcelAiAddIn
                         case "delete_cols": InsertDeleteCols(op, insert: false); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "add_chart": AddChart(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "add_sparkline": AddSparkline(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "add_shape": AddShapeExcel(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "sort_range": SortRange(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "merge_cells":
                             Sheet(op).Range[op.GetProperty("range").GetString()].Merge();
@@ -360,6 +392,9 @@ namespace ExcelAiAddIn
                         case "move_sheet": MoveSheet(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "protect_sheet": ProtectSheet(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "rename_sheet": Sheet(op).Name = op.GetProperty("name").GetString(); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "edit_shape": EditShapeExcel(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "delete_visual": DeleteVisual(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "add_image": AddImageExcel(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
                     }
@@ -483,6 +518,35 @@ namespace ExcelAiAddIn
             if (op.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
             {
                 group.SeriesColor.Color = HexToOleColor(color.GetString());
+            }
+        }
+
+        private static void AddShapeExcel(JsonElement op)
+        {
+            string shapeType = op.GetProperty("shapeType").GetString();
+            string anchorCell = op.GetProperty("anchorCell").GetString();
+            Excel.Range anchor = Sheet(op).Range[anchorCell];
+            float left = (float)(double)anchor.Left;
+            float top = (float)(double)anchor.Top;
+            float width = 100f, height = 60f;
+
+            Excel.Shape shape;
+            if (shapeType == "textbox")
+            {
+                shape = Sheet(op).Shapes.AddTextbox(Microsoft.Office.Core.MsoTextOrientation.msoTextOrientationHorizontal, left, top, width, height);
+            }
+            else
+            {
+                Microsoft.Office.Core.MsoAutoShapeType msoType = ShapeTypeMap.TryGetValue(shapeType, out var mapped) ? mapped : Microsoft.Office.Core.MsoAutoShapeType.msoShapeRectangle;
+                shape = Sheet(op).Shapes.AddShape(msoType, left, top, width, height);
+            }
+            if (op.TryGetProperty("fillColor", out var fill) && fill.ValueKind == JsonValueKind.String)
+            {
+                shape.Fill.ForeColor.RGB = HexToOleColor(fill.GetString());
+            }
+            if (op.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+            {
+                shape.TextFrame.Characters().Text = text.GetString();
             }
         }
 
@@ -666,6 +730,53 @@ namespace ExcelAiAddIn
             Excel.Worksheet sheet = Sheet(op);
             if (isProtected) sheet.Protect();
             else sheet.Unprotect();
+        }
+
+        private static Excel.Shape ResolveShapeByName(JsonElement op, string idField)
+        {
+            string visualId = op.GetProperty(idField).GetString();
+            return Sheet(op).Shapes.Item(visualId);
+        }
+
+        private static void EditShapeExcel(JsonElement op)
+        {
+            Excel.Shape shape = ResolveShapeByName(op, "visualId");
+            try
+            {
+                if (op.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+                {
+                    shape.TextFrame.Characters().Text = text.GetString();
+                }
+            }
+            catch { /* shape doesn't support text */ }
+            if (op.TryGetProperty("fillColor", out var fill) && fill.ValueKind == JsonValueKind.String)
+            {
+                shape.Fill.ForeColor.RGB = HexToOleColor(fill.GetString());
+            }
+            if (op.TryGetProperty("anchorCell", out var anchorCell) && anchorCell.ValueKind == JsonValueKind.String)
+            {
+                Excel.Range anchor = Sheet(op).Range[anchorCell.GetString()];
+                shape.Left = (float)(double)anchor.Left;
+                shape.Top = (float)(double)anchor.Top;
+            }
+        }
+
+        private static void DeleteVisual(JsonElement op)
+        {
+            ResolveShapeByName(op, "visualId").Delete();
+        }
+
+        private static void AddImageExcel(JsonElement op)
+        {
+            string path = op.GetProperty("path").GetString();
+            if (path.StartsWith("http://") || path.StartsWith("https://"))
+            {
+                throw new NotSupportedException("add_image: remote URLs are not supported in this air-gapped deployment - use a local file path.");
+            }
+            string anchorCell = op.GetProperty("anchorCell").GetString();
+            Excel.Range anchor = Sheet(op).Range[anchorCell];
+            Sheet(op).Shapes.AddPicture(path, Microsoft.Office.Core.MsoTriState.msoFalse, Microsoft.Office.Core.MsoTriState.msoTrue,
+                (float)(double)anchor.Left, (float)(double)anchor.Top, -1, -1);
         }
     }
 }
