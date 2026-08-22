@@ -192,6 +192,8 @@ namespace ExcelAiAddIn
                         case "set_col_width": SetColWidth(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "set_rows_hidden": SetRowsHidden(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "set_cols_hidden": SetColsHidden(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_freeze": SetFreeze(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_page_setup": SetPageSetup(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
                     }
@@ -353,6 +355,55 @@ namespace ExcelAiAddIn
             string startLetter = ColumnLetter(col);
             string endLetter = ColumnLetter(col + count - 1);
             Sheet(op).Range[$"{startLetter}:{endLetter}"].EntireColumn.Hidden = hidden;
+        }
+
+        private static void SetFreeze(JsonElement op)
+        {
+            int rows = op.GetProperty("rows").GetInt32();
+            int columns = op.GetProperty("columns").GetInt32();
+            Excel.Worksheet sheet = Sheet(op);
+            sheet.Activate();
+            Excel.Window window = Globals.ThisAddIn.Application.ActiveWindow;
+            window.FreezePanes = false;
+            if (rows == 0 && columns == 0) return; // unfreeze only
+            sheet.Cells[rows + 1, columns + 1].Select();
+            window.FreezePanes = true;
+        }
+
+        private static void SetPageSetup(JsonElement op)
+        {
+            Excel.PageSetup setup = Sheet(op).PageSetup;
+            if (op.TryGetProperty("orientation", out var orient) && orient.ValueKind == JsonValueKind.String)
+                setup.Orientation = orient.GetString() == "landscape" ? Excel.XlPageOrientation.xlLandscape : Excel.XlPageOrientation.xlPortrait;
+            if (op.TryGetProperty("scale", out var scale) && scale.ValueKind == JsonValueKind.Number)
+                setup.Zoom = (int)scale.GetDouble();
+            if (op.TryGetProperty("fitToWidth", out var ftw) && ftw.ValueKind == JsonValueKind.Number)
+            {
+                setup.Zoom = false; // Zoom and FitToPages are mutually exclusive in Excel's own UI
+                setup.FitToPagesWide = (int)ftw.GetDouble();
+            }
+            if (op.TryGetProperty("fitToHeight", out var fth) && fth.ValueKind == JsonValueKind.Number)
+                setup.FitToPagesTall = (int)fth.GetDouble();
+            if (op.TryGetProperty("printGridlines", out var pg))
+                setup.PrintGridlines = pg.ValueKind == JsonValueKind.True;
+            if (op.TryGetProperty("printHeadings", out var ph))
+                setup.PrintHeadings = ph.ValueKind == JsonValueKind.True;
+            if (op.TryGetProperty("printArea", out var pa) && pa.ValueKind == JsonValueKind.String)
+                setup.PrintArea = pa.GetString();
+            if (op.TryGetProperty("margins", out var margins) && margins.ValueKind == JsonValueKind.String)
+            {
+                // Point values match Excel's own ribbon presets (Normal/Wide/Narrow).
+                double top, bottom, leftRight, header, footer;
+                switch (margins.GetString())
+                {
+                    case "wide": top = 72; bottom = 72; leftRight = 72; header = 36; footer = 36; break;
+                    case "narrow": top = 27; bottom = 27; leftRight = 18; header = 13.5; footer = 13.5; break;
+                    default: top = 54; bottom = 54; leftRight = 43.2; header = 22.5; footer = 22.5; break; // "normal"
+                }
+                setup.TopMargin = top; setup.BottomMargin = bottom;
+                setup.LeftMargin = leftRight; setup.RightMargin = leftRight;
+                setup.HeaderMargin = header; setup.FooterMargin = footer;
+            }
         }
     }
 }
