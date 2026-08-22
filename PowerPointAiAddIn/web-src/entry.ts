@@ -261,6 +261,50 @@ const MUTATION_TOOLS = [
       required: ['slideIndex', 'shapeIndex'],
     },
   },
+  {
+    name: 'add_table',
+    description: 'Adds a native PowerPoint table, optionally pre-filled with cell text (row-major array of arrays).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' }, rows: { type: 'number' }, cols: { type: 'number' },
+        cells: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
+        x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
+      },
+      required: ['slideIndex', 'rows', 'cols'],
+    },
+  },
+  {
+    name: 'edit_table_cell',
+    description: 'Replaces one table cell\'s text (0-based row/col).',
+    inputSchema: {
+      type: 'object',
+      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, row: { type: 'number' }, col: { type: 'number' }, paragraphs: { type: 'string' } },
+      required: ['slideIndex', 'shapeIndex', 'row', 'col', 'paragraphs'],
+    },
+  },
+  {
+    name: 'edit_table_structure',
+    description: 'Inserts or deletes a table row/column. kind: "insert-row"|"delete-row"|"insert-col"|"delete-col".',
+    inputSchema: {
+      type: 'object',
+      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, kind: { type: 'string' }, index: { type: 'number' }, before: { type: 'boolean' } },
+      required: ['slideIndex', 'shapeIndex', 'kind', 'index'],
+    },
+  },
+  {
+    name: 'edit_table_style',
+    description: 'Applies granular table styling: firstRow/bandRow (header row / banded rows), shadingColor (all cells), borderColor/borderWidthPt/borderPreset ("all"|"none").',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' }, shapeIndex: { type: 'number' },
+        firstRow: { type: 'boolean' }, bandRow: { type: 'boolean' }, shadingColor: { type: 'string' },
+        borderColor: { type: 'string' }, borderWidthPt: { type: 'number' }, borderPreset: { type: 'string' },
+      },
+      required: ['slideIndex', 'shapeIndex'],
+    },
+  },
 ]
 
 const ALL_TOOLS = [...READER_TOOLS, ...MUTATION_TOOLS]

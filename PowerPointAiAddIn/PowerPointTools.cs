@@ -51,6 +51,10 @@ namespace PowerPointAiAddIn
                     case "set_element_stroke": return SetElementStroke(input);
                     case "set_slide_background": return SetSlideBackground(input);
                     case "ungroup_element": return UngroupElement(input);
+                    case "add_table": return AddTable(input);
+                    case "edit_table_cell": return EditTableCell(input);
+                    case "edit_table_structure": return EditTableStructure(input);
+                    case "edit_table_style": return EditTableStyle(input);
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
             }
@@ -306,6 +310,112 @@ namespace PowerPointAiAddIn
             PowerPoint.Shape shape = ResolveShape(input);
             shape.Ungroup();
             return new ToolResult { Output = "Shape ungrouped - re-read the slide (read_slide) to get updated shape indices before addressing the promoted children.", Mutated = true, Summary = "ungroup_element" };
+        }
+
+        private static ToolResult AddTable(JsonElement input)
+        {
+            int slideIndex = input.GetProperty("slideIndex").GetInt32();
+            int rows = input.GetProperty("rows").GetInt32();
+            int cols = input.GetProperty("cols").GetInt32();
+            float left = input.TryGetProperty("x", out var x) ? (float)x.GetDouble() : 100f;
+            float top = input.TryGetProperty("y", out var y) ? (float)y.GetDouble() : 100f;
+            float width = input.TryGetProperty("w", out var w) ? (float)w.GetDouble() : 400f;
+            float height = input.TryGetProperty("h", out var h) ? (float)h.GetDouble() : 200f;
+
+            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            PowerPoint.Shape tableShape = slide.Shapes.AddTable(rows, cols, left, top, width, height);
+            if (input.TryGetProperty("cells", out var cells) && cells.ValueKind == JsonValueKind.Array)
+            {
+                int r = 0;
+                foreach (JsonElement rowEl in cells.EnumerateArray())
+                {
+                    int c = 0;
+                    foreach (JsonElement cellEl in rowEl.EnumerateArray())
+                    {
+                        tableShape.Table.Cell(r + 1, c + 1).Shape.TextFrame.TextRange.Text = cellEl.GetString();
+                        c++;
+                    }
+                    r++;
+                }
+            }
+            return new ToolResult { Output = "Table added.", Mutated = true, Summary = "add_table" };
+        }
+
+        private static PowerPoint.Table ResolveTable(JsonElement input)
+        {
+            return ResolveShape(input).Table;
+        }
+
+        private static ToolResult EditTableCell(JsonElement input)
+        {
+            PowerPoint.Table table = ResolveTable(input);
+            int row = input.GetProperty("row").GetInt32();
+            int col = input.GetProperty("col").GetInt32();
+            string text = input.GetProperty("paragraphs").GetString();
+            table.Cell(row + 1, col + 1).Shape.TextFrame.TextRange.Text = text;
+            return new ToolResult { Output = "Cell updated.", Mutated = true, Summary = "edit_table_cell" };
+        }
+
+        private static ToolResult EditTableStructure(JsonElement input)
+        {
+            PowerPoint.Table table = ResolveTable(input);
+            string kind = input.GetProperty("kind").GetString();
+            int index = input.GetProperty("index").GetInt32();
+            bool before = input.TryGetProperty("before", out var b) && b.ValueKind == JsonValueKind.True;
+            switch (kind)
+            {
+                case "insert-row": table.Rows.Add(before ? index + 1 : index + 2); break;
+                case "delete-row": table.Rows[index + 1].Delete(); break;
+                case "insert-col": table.Columns.Add(before ? index + 1 : index + 2); break;
+                case "delete-col": table.Columns[index + 1].Delete(); break;
+                default: return new ToolResult { Output = "Unknown structure kind: " + kind, IsError = true, Summary = "edit_table_structure" };
+            }
+            return new ToolResult { Output = "Table structure updated.", Mutated = true, Summary = "edit_table_structure" };
+        }
+
+        private static ToolResult EditTableStyle(JsonElement input)
+        {
+            PowerPoint.Table table = ResolveTable(input);
+            if (input.TryGetProperty("firstRow", out var firstRow))
+            {
+                table.FirstRow = firstRow.ValueKind == JsonValueKind.True;
+            }
+            if (input.TryGetProperty("bandRow", out var bandRow))
+            {
+                table.HorizBanding = bandRow.ValueKind == JsonValueKind.True;
+            }
+            if (input.TryGetProperty("shadingColor", out var shading) && shading.ValueKind == JsonValueKind.String)
+            {
+                int color = HexToOle(shading.GetString());
+                foreach (PowerPoint.Row row in table.Rows)
+                {
+                    foreach (PowerPoint.Cell cell in row.Cells)
+                    {
+                        cell.Shape.Fill.ForeColor.RGB = color;
+                    }
+                }
+            }
+            if (input.TryGetProperty("borderColor", out _) || input.TryGetProperty("borderWidthPt", out _) || input.TryGetProperty("borderPreset", out _))
+            {
+                bool visible = !(input.TryGetProperty("borderPreset", out var bp) && bp.ValueKind == JsonValueKind.String && bp.GetString() == "none");
+                float weight = input.TryGetProperty("borderWidthPt", out var bw) && bw.ValueKind == JsonValueKind.Number ? (float)bw.GetDouble() : 1f;
+                int color = input.TryGetProperty("borderColor", out var bc) && bc.ValueKind == JsonValueKind.String ? HexToOle(bc.GetString()) : HexToOle("#000000");
+                PowerPoint.PpBorderType[] sides = { PowerPoint.PpBorderType.ppBorderTop, PowerPoint.PpBorderType.ppBorderBottom, PowerPoint.PpBorderType.ppBorderLeft, PowerPoint.PpBorderType.ppBorderRight };
+                foreach (PowerPoint.Row row in table.Rows)
+                {
+                    foreach (PowerPoint.Cell cell in row.Cells)
+                    {
+                        foreach (PowerPoint.PpBorderType side in sides)
+                        {
+                            PowerPoint.LineFormat border = cell.Borders[side];
+                            border.Visible = visible ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
+                            border.Weight = weight;
+                            border.ForeColor.RGB = color;
+                        }
+                    }
+                }
+            }
+            return new ToolResult { Output = "Table style updated.", Mutated = true, Summary = "edit_table_style" };
         }
     }
 }
