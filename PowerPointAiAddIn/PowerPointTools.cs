@@ -6,6 +6,9 @@ using OfficeAi.Shared;
 
 namespace PowerPointAiAddIn
 {
+    // Mirrors the Word/Excel Task 11/16 editing-mode enum pattern.
+    public enum EditingMode { ReadOnly, CommentOnly, TrackChanges, FullAutonomy }
+
     public static class PowerPointTools
     {
         // Editing-mode gating (mirrors the Word/Excel Task 11/16 pattern this plan establishes
@@ -13,16 +16,11 @@ namespace PowerPointAiAddIn
         // (web-src/entry.ts, first line of defense - smaller prompts, fewer wasted turns), but
         // Execute() independently re-checks mode here as defense-in-depth, since nothing stops a
         // misbehaving or malicious model response from calling a tool that wasn't offered.
-        public static string Mode = "fullAutonomy";
+        public static EditingMode Mode = EditingMode.FullAutonomy;
 
         // Tools always allowed regardless of editing mode (read-only, no document mutation).
         private static readonly System.Collections.Generic.HashSet<string> AlwaysAllowedTools =
             new System.Collections.Generic.HashSet<string> { "get_deck_context", "read_slide" };
-
-        public static void SetMode(string mode)
-        {
-            Mode = mode;
-        }
 
         public static ToolResult Execute(string name, JsonElement input)
         {
@@ -32,7 +30,7 @@ namespace PowerPointAiAddIn
                 {
                     return new ToolResult
                     {
-                        Output = "Blocked: tool '" + name + "' is not allowed in editing mode '" + Mode + "'.",
+                        Output = "Blocked: editing mode is " + ModeLabel(Mode) + ".",
                         IsError = true,
                         Summary = name,
                     };
@@ -62,9 +60,20 @@ namespace PowerPointAiAddIn
         // behaves identically to Read Only: no mutating tools available). Track Changes is scoped
         // to simple allow/block gating for now (same as Excel's Task 16 scoping note) rather than a
         // native PowerPoint revision-tracking UI. Full Autonomy allows everything.
-        private static bool IsMutationAllowed(string mode)
+        private static bool IsMutationAllowed(EditingMode mode)
         {
-            return mode == "trackChanges" || mode == "fullAutonomy";
+            return mode == EditingMode.TrackChanges || mode == EditingMode.FullAutonomy;
+        }
+
+        private static string ModeLabel(EditingMode mode)
+        {
+            switch (mode)
+            {
+                case EditingMode.ReadOnly: return "Read Only";
+                case EditingMode.CommentOnly: return "Comment Only";
+                case EditingMode.TrackChanges: return "Track Changes";
+                default: return "Full Autonomy";
+            }
         }
 
         private static PowerPoint.Presentation ActivePresentation => Globals.ThisAddIn.Application.ActivePresentation;

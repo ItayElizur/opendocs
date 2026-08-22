@@ -284,6 +284,9 @@ const loop = new AgentLoop({
       persistMessage('assistant', finalText)
     },
     onError: (error) => {
+      const placeholder = `[Error: ${error}]`
+      ui.endAssistantMessage(placeholder)
+      persistMessage('assistant', placeholder)
       ui.showError(error)
       ui.setBusy(false)
     },

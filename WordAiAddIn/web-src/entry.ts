@@ -219,10 +219,12 @@ const ALL_WORD_TOOLS = [
   ]
 
 const wordSkill: AgentSkill = {
-  id: 'spike3-word-tools',
+  id: 'word-tools',
   systemPrompt:
-    'You are a test assistant running inside a VSTO Word add-in spike (spike 3: real COM tool execution). ' +
-    'You can read the document, insert text, and create/edit a native Word chart. Use the tools when asked to.',
+    'You are an AI assistant embedded in Microsoft Word via the Airchat Office add-in. ' +
+    'You can read the document, insert content, read and replace paragraph ranges, apply formatting and find/replace commands, add comments, and create or edit a native Word chart. ' +
+    "Your available tools depend on the user's current editing mode (Read only, Comment only, Track changes, or Full autonomy); only call tools that are currently offered to you. " +
+    'If the user has selected text in the document, it will be included in your context as "Content selected by the user."',
   // Live getter (not a fixed array): AgentLoop.startTurn() reads
   // `this.options.skill.tools` fresh every turn (see
   // shared/web-src/agent-core/loop.ts), so this recomputes the tool list
@@ -298,6 +300,9 @@ const loop = new AgentLoop({
       persistMessage('assistant', finalText)
     },
     onError: (error) => {
+      const placeholder = `[Error: ${error}]`
+      ui.endAssistantMessage(placeholder)
+      persistMessage('assistant', placeholder)
       ui.showError(error)
       ui.setBusy(false)
     },

@@ -27,7 +27,7 @@ namespace PowerPointAiAddIn
             // Globals.ThisAddIn.Application.ActivePresentation eagerly, at the
             // exact moment this constructor runs inside ThisAddIn_Startup
             // (i.e. before CustomTaskPanes.Add() has even returned), hits a
-            // COM timing issue in Word's own startup sequence and silently
+            // COM timing issue in PowerPoint's own startup sequence and silently
             // kills the whole add-in connection (VSTO never connects it - no
             // exception, no resiliency-disabled entry, just Connect=False
             // forever). Confirmed by direct repro (Word). _chatId is instead
@@ -73,8 +73,14 @@ namespace PowerPointAiAddIn
                     ChatStore.AppendDivider("PowerPointAiAddIn", GetChatId());
                     break;
                 case "set-mode":
-                    string mode = root.GetProperty("mode").GetString();
-                    PowerPointTools.SetMode(mode);
+                    string modeStr = root.GetProperty("mode").GetString();
+                    switch (modeStr)
+                    {
+                        case "readOnly": PowerPointTools.Mode = EditingMode.ReadOnly; break;
+                        case "commentOnly": PowerPointTools.Mode = EditingMode.CommentOnly; break;
+                        case "trackChanges": PowerPointTools.Mode = EditingMode.TrackChanges; break;
+                        case "fullAutonomy": PowerPointTools.Mode = EditingMode.FullAutonomy; break;
+                    }
                     break;
             }
         }

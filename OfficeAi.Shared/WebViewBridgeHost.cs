@@ -68,6 +68,7 @@ namespace OfficeAi.Shared
 
         public void PostMessage(object payload)
         {
+            if (_webView.CoreWebView2 == null) return;
             _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(payload));
         }
 
@@ -85,15 +86,10 @@ namespace OfficeAi.Shared
                         _setStatus("Executing tool: " + toolName);
                         ToolResult result = _executor(toolName, input);
                         _setStatus("Tool done: " + toolName + (result.IsError ? " (error)" : ""));
-                        PostMessage(new
+                        if (_webView.CoreWebView2 != null)
                         {
-                            kind = "tool-result",
-                            requestId,
-                            output = result.Output,
-                            isError = result.IsError,
-                            mutated = result.Mutated,
-                            summary = result.Summary,
-                        });
+                            _webView.CoreWebView2.PostWebMessageAsJson(ToolProtocol.SerializeToolResult(requestId, result));
+                        }
                     }
                     else
                     {

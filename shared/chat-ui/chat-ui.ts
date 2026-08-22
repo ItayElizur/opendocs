@@ -40,6 +40,10 @@ function escapeHtml(s: string): string {
   return div.innerHTML
 }
 
+function emptyStateHtml(): string {
+  return `<div class="ai-chat-empty"><div class="ai-chat-empty-title">What can I help with?</div><div class="ai-starters"></div></div>`
+}
+
 export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHandle {
   root.innerHTML = `
     <div class="ai-panel">
@@ -88,6 +92,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   `
 
   const chatEl = root.querySelector<HTMLDivElement>('.ai-chat')!
+  chatEl.innerHTML = emptyStateHtml()
   const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
   const sendBtn = root.querySelector<HTMLButtonElement>('.ai-send-btn')!
   const newChatBtn = root.querySelector<HTMLButtonElement>('[data-t-title="newChat"]')!
@@ -151,6 +156,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   })
 
   function renderMessage(role: 'user' | 'assistant', text: string): HTMLDivElement {
+    const existingEmpty = chatEl.querySelector('.ai-chat-empty')
+    if (existingEmpty) existingEmpty.remove()
     const div = document.createElement('div')
     div.className = role === 'user' ? 'ai-msg-user' : 'ai-msg-assistant'
     div.textContent = text
@@ -231,7 +238,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       scrollToBottom()
     },
     resetToEmpty() {
-      chatEl.innerHTML = `<div class="ai-chat-empty"><div class="ai-chat-empty-title">What can I help with?</div><div class="ai-starters"></div></div>`
+      chatEl.innerHTML = emptyStateHtml()
     },
     showHistoric(messages) {
       for (const m of messages) renderMessage(m.role, m.text)
@@ -239,6 +246,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       sep.className = 'ai-history-sep'
       sep.textContent = 'Earlier conversation'
       chatEl.appendChild(sep)
+      chatEl.insertAdjacentHTML('beforeend', emptyStateHtml())
       scrollToBottom()
     },
     setScopeHint(label) {

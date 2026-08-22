@@ -12,7 +12,7 @@ namespace WordAiAddIn
         private void ThisAddIn_Startup(object sender, EventArgs e)
         {
             _taskPaneControl = new TaskPaneHost();
-            _taskPane = this.CustomTaskPanes.Add(_taskPaneControl, "GenOffice AI (spike)");
+            _taskPane = this.CustomTaskPanes.Add(_taskPaneControl, "Airchat Office");
             _taskPane.Width = 420;
             _taskPane.Visible = true;
 
@@ -26,7 +26,15 @@ namespace WordAiAddIn
 
         private void Application_WindowSelectionChange(Word.Selection selection)
         {
-            _taskPaneControl.OnSelectionChanged(selection);
+            try
+            {
+                _taskPaneControl.OnSelectionChanged(selection);
+            }
+            catch
+            {
+                // Selection-change notifications are best-effort; never let one
+                // crash out of a COM event sink and kill the add-in connection.
+            }
         }
 
         #region VSTO generated code
