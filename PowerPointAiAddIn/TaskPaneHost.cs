@@ -72,6 +72,10 @@ namespace PowerPointAiAddIn
                 case "new-chat-divider":
                     ChatStore.AppendDivider("PowerPointAiAddIn", GetChatId());
                     break;
+                case "set-mode":
+                    string mode = root.GetProperty("mode").GetString();
+                    PowerPointTools.SetMode(mode);
+                    break;
             }
         }
     }

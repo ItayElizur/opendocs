@@ -115,23 +115,116 @@ function makeTransport(): AgentTransport {
   }
 }
 
+const READER_TOOLS = [
+  {
+    name: 'get_deck_context',
+    description: 'Reads a one-line-per-slide outline: slide index and a text preview of its shapes.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'read_slide',
+    description: 'Reads full text of every shape on one slide (0-based index).',
+    inputSchema: { type: 'object', properties: { slideIndex: { type: 'number' } }, required: ['slideIndex'] },
+  },
+]
+
+const MUTATION_TOOLS = [
+  {
+    name: 'set_element_text',
+    description: 'Replaces the text content of one shape (0-based slideIndex, 0-based shapeIndex within that slide).',
+    inputSchema: {
+      type: 'object',
+      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, text: { type: 'string' } },
+      required: ['slideIndex', 'shapeIndex', 'text'],
+    },
+  },
+  {
+    name: 'set_element_style',
+    description: 'Changes text formatting of one shape without changing its text.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' },
+        shapeIndex: { type: 'number' },
+        bold: { type: 'boolean' },
+        italic: { type: 'boolean' },
+        fontSize: { type: 'number' },
+        color: { type: 'string' },
+      },
+      required: ['slideIndex', 'shapeIndex'],
+    },
+  },
+  {
+    name: 'set_element_transform',
+    description: 'Moves/resizes/rotates one shape (values in points; rotation in degrees).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' },
+        shapeIndex: { type: 'number' },
+        left: { type: 'number' },
+        top: { type: 'number' },
+        width: { type: 'number' },
+        height: { type: 'number' },
+        rotation: { type: 'number' },
+      },
+      required: ['slideIndex', 'shapeIndex'],
+    },
+  },
+  {
+    name: 'add_text_box',
+    description: 'Creates a new text box on the given slide.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' },
+        left: { type: 'number' },
+        top: { type: 'number' },
+        width: { type: 'number' },
+        height: { type: 'number' },
+        text: { type: 'string' },
+      },
+      required: ['slideIndex', 'left', 'top', 'width', 'height', 'text'],
+    },
+  },
+  {
+    name: 'add_shape',
+    description: 'Creates a shape (rectangle/oval/roundRect) with optional text.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' },
+        shapeType: { type: 'string', enum: ['rectangle', 'oval', 'roundRect'] },
+        left: { type: 'number' },
+        top: { type: 'number' },
+        width: { type: 'number' },
+        height: { type: 'number' },
+        text: { type: 'string' },
+      },
+      required: ['slideIndex', 'shapeType', 'left', 'top', 'width', 'height'],
+    },
+  },
+  {
+    name: 'delete_element',
+    description: 'Deletes one shape from a slide.',
+    inputSchema: {
+      type: 'object',
+      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' } },
+      required: ['slideIndex', 'shapeIndex'],
+    },
+  },
+]
+
+const ALL_TOOLS = [...READER_TOOLS, ...MUTATION_TOOLS]
+
 const powerPointSkill: AgentSkill = {
   id: 'powerpoint-tools',
   systemPrompt:
     'You are an AI assistant running inside a VSTO PowerPoint add-in. ' +
-    'You can read the deck outline (get_deck_context) and the full text of any slide (read_slide).',
-  tools: [
-    {
-      name: 'get_deck_context',
-      description: 'Reads a one-line-per-slide outline: slide index and a text preview of its shapes.',
-      inputSchema: { type: 'object', properties: {} },
-    },
-    {
-      name: 'read_slide',
-      description: 'Reads full text of every shape on one slide (0-based index).',
-      inputSchema: { type: 'object', properties: { slideIndex: { type: 'number' } }, required: ['slideIndex'] },
-    },
-  ],
+    'You can read the deck outline (get_deck_context) and the full text of any slide (read_slide). ' +
+    'You can also edit the deck: set_element_text, set_element_style, set_element_transform, ' +
+    'add_text_box, add_shape, and delete_element.',
+  tools: ALL_TOOLS,
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }
 
@@ -152,7 +245,8 @@ const ui = mountChatUI(root, {
     ui.resetToEmpty()
   },
   onModeChange: (mode: EditingMode) => {
-    // Task 19 wires the actual bridge call + tool-list filtering here.
+    chrome.webview.postMessage({ kind: 'set-mode', mode })
+    powerPointSkill.tools = mode === 'readOnly' || mode === 'commentOnly' ? READER_TOOLS : ALL_TOOLS
   },
   onSettingsSave: (settings) => {
     // Not yet wired to the transport/provider config - deferred (Phase 5).
