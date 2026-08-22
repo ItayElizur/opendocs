@@ -15,7 +15,7 @@ namespace ExcelAiAddIn
 
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
-            "get_workbook_context", "read_range", "read_cells",
+            "get_workbook_context", "read_range", "read_cells", "select_range", "read_formats",
         };
 
         public static ToolResult Execute(string name, JsonElement input)
@@ -45,6 +45,8 @@ namespace ExcelAiAddIn
                     case "get_workbook_context": return GetWorkbookContext();
                     case "read_range": return ReadRange(input);
                     case "read_cells": return ReadCells(input);
+                    case "select_range": return SelectRange(input);
+                    case "read_formats": return ReadFormats(input);
                     case "propose_operations": return ProposeOperations(input);
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
@@ -111,6 +113,38 @@ namespace ExcelAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "read_cells" };
         }
 
+        private static ToolResult SelectRange(JsonElement input)
+        {
+            string address = input.GetProperty("address").GetString();
+            Excel.Worksheet sheet = Sheet(input);
+            sheet.Activate();
+            Excel.Range range = sheet.Range[address];
+            range.Select();
+            return new ToolResult { Output = "Selected " + address + " on " + sheet.Name + ".", Summary = "select_range" };
+        }
+
+        private static ToolResult ReadFormats(JsonElement input)
+        {
+            string address = input.GetProperty("address").GetString();
+            Excel.Range range = Sheet(input).Range[address];
+            if (range.Cells.Count > 200)
+            {
+                return new ToolResult { Output = "Range exceeds 200-cell cap.", IsError = true, Summary = "read_formats" };
+            }
+            var sb = new System.Text.StringBuilder();
+            foreach (Excel.Range cell in range.Cells)
+            {
+                bool bold = (bool)(cell.Font.Bold ?? false);
+                bool italic = (bool)(cell.Font.Italic ?? false);
+                bool underline = !(cell.Font.Underline is bool underlineOff) || underlineOff == false ? cell.Font.Underline.ToString() != "-4142" : false;
+                string numberFormat = cell.NumberFormat as string;
+                bool hasDefaultFormat = !bold && !italic && (numberFormat == "General" || numberFormat == null);
+                if (hasDefaultFormat) continue; // only explicitly-formatted cells, matches genoffice
+                sb.AppendLine($"{cell.Address[false, false]}: bold={bold}, italic={italic}, numberFormat={numberFormat}");
+            }
+            return new ToolResult { Output = sb.ToString(), Summary = "read_formats" };
+        }
+
         private static ToolResult ProposeOperations(JsonElement input)
         {
             var lines = new System.Text.StringBuilder();
@@ -134,6 +168,12 @@ namespace ExcelAiAddIn
                             lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "format_range":
                             FormatRange(op);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "clear_cell":
+                            Sheet(op).Range[op.GetProperty("address").GetString()].ClearContents();
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "clear_range":
+                            Sheet(op).Range[op.GetProperty("range").GetString()].ClearContents();
                             lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "insert_rows": InsertDeleteRows(op, insert: true); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "delete_rows": InsertDeleteRows(op, insert: false); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
