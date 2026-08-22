@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>Airchat Office - chat UI mockup</title>
+<style>
+  /* ---- tokens, mirroring packages/ui/src/tokens.css + apps/docs/src/renderer/styles.css ---- */
+  :root {
+    --color-brand-secondary: #0f7fff;
+    --color-text-primary: #232425;
+    --color-text-secondary: #606366;
+    --color-text-tertiary: #909499;
+    --color-bg-page: #ffffff;
+    --color-bg-subtle: #f5f5f5;
+    --color-border-default: #eaeaea;
+    --color-border-strong: #d0d3d8;
+
+    --word-blue: #185abd;
+    --accent: var(--word-blue);
+
+    --docs-ai-error: #c62828;
+    --docs-ok-ink: #2e7d32;
+    --docs-ok-bg: #e6f2e6;
+    --docs-brand-ghost: rgb(15 127 255 / 8%);
+    --docs-brand-ghost-weak: rgb(15 127 255 / 6%);
+    --docs-brand-ring: rgb(15 127 255 / 40%);
+    --docs-shimmer-base: #666666;
+    --docs-shimmer-hi: #d9d9d9;
+    --docs-shadow-composer: 0 6px 30px rgb(0 0 0 / 8%);
+
+    --radius-6: 6px; --radius-8: 8px; --radius-12: 12px; --radius-16: 16px; --radius-30: 30px;
+    --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+    --font-sans: 'Segoe UI', Arial, -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif;
+  }
+
+  [data-theme='dark'] {
+    --color-text-primary: #e4e4e4;
+    --color-text-secondary: #a0a0a0;
+    --color-text-tertiary: #8a8a8a;
+    --color-bg-page: #1e1e1e;
+    --color-bg-subtle: #2a2a2a;
+    --color-border-default: #3a3a3a;
+    --color-border-strong: #555555;
+    --word-blue: #4a9eff;
+    --docs-ai-error: #f28b82;
+    --docs-ok-ink: #7bd88a;
+    --docs-ok-bg: #16351c;
+    --docs-brand-ghost: rgb(74 158 255 / 14%);
+    --docs-brand-ghost-weak: rgb(74 158 255 / 10%);
+    --docs-brand-ring: rgb(74 158 255 / 45%);
+    --docs-shimmer-base: #8a8a8a;
+    --docs-shimmer-hi: #d0d0d0;
+    --docs-shadow-composer: 0 6px 30px rgb(0 0 0 / 30%);
+    --color-brand-secondary: #4a9eff;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: #ccc;
+    display: flex; align-items: center; justify-content: center; gap: 24px;
+  }
+
+  .host-window {
+    width: 900px; height: 680px;
+    background: repeating-linear-gradient(45deg, #e9e9e9, #e9e9e9 12px, #e2e2e2 12px, #e2e2e2 24px);
+    border-radius: 6px; display: flex; box-shadow: 0 10px 40px rgb(0 0 0 / 25%); overflow: hidden;
+  }
+  .host-doc-area { flex: 1; }
+
+  .ai-dock {
+    width: 380px; flex-shrink: 0;
+    transition: width 180ms cubic-bezier(0.4, 0, 0.2, 1);
+    border-left: 1px solid var(--color-border-strong);
+    background: var(--color-bg-page);
+    position: relative;
+  }
+  .ai-dock[dir='rtl'] { border-left: none; border-right: 1px solid var(--color-border-strong); }
+  .ai-dock.collapsed { width: 34px; }
+  .ai-dock.collapsed .ai-panel { visibility: hidden; }
+  .ai-rail {
+    display: none; width: 34px; height: 100%; align-items: center; justify-content: center;
+    writing-mode: vertical-rl; font-size: 12px; letter-spacing: 2px; color: var(--color-text-tertiary); cursor: pointer;
+  }
+  .ai-dock.collapsed .ai-rail { display: flex; }
+
+  .ai-panel { height: 100%; display: flex; flex-direction: column; color: var(--color-text-primary); font-size: 14px; }
+
+  .ai-panel-header {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--color-border-default); flex-shrink: 0;
+    /* Feedback: the header chrome itself should not mirror with language -
+       title always left, action icons always right, regardless of RTL. Only
+       the chat content/composer below flip. Hebrew text inside still renders
+       its own characters right-to-left (Unicode bidi is per-run, independent
+       of this container's base direction) - just the block-level layout order
+       here is pinned. */
+    direction: ltr;
+  }
+  .ai-panel-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+  .ai-logo {
+    width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--color-brand-secondary), #6ec1ff);
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700;
+  }
+  .ai-header-actions { display: flex; gap: 2px; }
+  .ai-header-btn {
+    width: 26px; height: 26px; border: none; border-radius: var(--radius-8);
+    background: transparent; color: var(--color-text-secondary);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 14px; transition: var(--transition-fast); position: relative;
+  }
+  .ai-header-btn:hover { background: var(--color-bg-subtle); color: var(--color-text-primary); }
+  .ai-header-btn:active { filter: brightness(0.88); transform: scale(0.98); }
+  .ai-header-btn.new-badge { background: var(--docs-brand-ghost); color: var(--color-brand-secondary); }
+
+  /* ---- "earlier conversation" divider: genoffice's real history model.
+     There is no multi-session browser in genoffice - "New chat" just resets
+     the AgentLoop's in-memory context (loop.reset()) and keeps writing to the
+     SAME per-document chat log; the old scrollback stays visible above a
+     divider, it is never archived/switchable. This mirrors that exactly. ---- */
+  .ai-history-sep {
+    display: flex; align-items: center; gap: 10px; margin: 4px 0;
+    color: var(--color-text-tertiary); font-size: 12px;
+  }
+  .ai-history-sep::before, .ai-history-sep::after { content: ''; flex: 1; height: 1px; background: var(--color-border-default); }
+  /* No fade: verified genoffice applies an .ai-msg-historic class to old
+     messages but there is NO CSS rule for it anywhere in the codebase - the
+     restored transcript renders at full, identical opacity to live messages,
+     distinguished only by the divider above. Matching that exactly. */
+
+  /* ---- settings dropdown (NEW - genoffice has no equivalent UI yet). Anchored
+     under the gear icon, same pattern/positioning as a hypothetical history
+     dropdown would use - not a centered modal dialog. Anchored to the
+     physical right (not inset-inline-end) to match the header's fixed,
+     non-mirroring layout - the gear icon always sits on the physical right. */
+  .ai-settings-panel {
+    position: absolute; top: 44px; right: 12px; width: 280px;
+    background: var(--color-bg-page); border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-12); box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+    display: none; z-index: 20; padding: 14px;
+  }
+  .ai-settings-panel.open { display: block; }
+  .ai-settings-panel h4 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--color-text-tertiary); }
+  .ai-field { margin-bottom: 12px; }
+  .ai-field label { display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px; }
+  .ai-field input, .ai-field select {
+    width: 100%; padding: 7px 10px; border-radius: var(--radius-8);
+    border: 1px solid var(--color-border-default); font-size: 13px; font-family: inherit;
+    background: var(--color-bg-page); color: var(--color-text-primary);
+  }
+  .ai-field input:focus, .ai-field select:focus { outline: none; border-color: var(--docs-brand-ring); }
+  .ai-lang-toggle { display: flex; gap: 6px; }
+  .ai-lang-toggle button {
+    flex: 1; padding: 6px; border-radius: var(--radius-8); border: 1px solid var(--color-border-default);
+    background: var(--color-bg-page); color: var(--color-text-secondary); cursor: pointer; font-size: 13px;
+  }
+  .ai-lang-toggle button.active { border-color: var(--docs-brand-ring); background: var(--docs-brand-ghost-weak); color: var(--color-brand-secondary); }
+  .ai-settings-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .ai-btn-primary, .ai-btn-secondary {
+    padding: 7px 14px; border-radius: var(--radius-8); font-size: 13px; cursor: pointer; border: none;
+  }
+  .ai-btn-primary { background: var(--color-text-primary); color: var(--color-bg-page); }
+  .ai-btn-secondary { background: transparent; color: var(--color-text-secondary); }
+
+  .ai-chat { flex: 1; overflow-y: auto; padding: 32px 16px; display: flex; flex-direction: column; gap: 16px; }
+
+  /* ---- empty state ---- */
+  .ai-chat-empty { margin-top: 36px; padding: 0 10px; text-align: center; }
+  .ai-chat-empty-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .ai-chat-empty-body { color: var(--color-text-secondary); font-size: 14px; line-height: 1.5; margin-bottom: 20px; }
+  .ai-starters { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .ai-starter {
+    padding: 8px 16px; border-radius: var(--radius-30); border: 1px solid var(--color-border-default);
+    background: var(--color-bg-page); font-size: 13px; cursor: pointer; transition: var(--transition-fast);
+    max-width: 320px;
+  }
+  .ai-starter:hover { border-color: var(--color-border-strong); background: var(--color-bg-subtle); }
+  .ai-starter:active { filter: brightness(0.88); transform: scale(0.98); }
+
+  .ai-msg-user {
+    align-self: flex-end; background: var(--color-bg-subtle); padding: 8px 16px;
+    border-radius: var(--radius-16) var(--radius-16) 4px var(--radius-16);
+    max-width: 80%; line-height: 1.5; font-size: 16px;
+  }
+  [dir='rtl'] .ai-msg-user { align-self: flex-start; border-radius: var(--radius-16) var(--radius-16) var(--radius-16) 4px; }
+
+  .ai-msg-assistant { align-self: stretch; max-width: 100%; font-size: 16px; line-height: 1.6; }
+  /* In RTL, the user bubble's align-self:flex-start (Task feedback) sits at the
+     same physical right edge the assistant's full-width text starts from too -
+     without an inset they visually collide/read as one block. LTR wasn't
+     reported as an issue (the user bubble's right edge is already offset from
+     the assistant's flowing-text start on the left), so this stays RTL-only. */
+  [dir='rtl'] .ai-msg-assistant { margin-inline-start: 14px; }
+  .ai-msg-assistant p { margin: 0 0 16px; }
+  .ai-msg-assistant p:last-child { margin-bottom: 0; }
+  .ai-msg-assistant.streaming::after {
+    content: ''; display: inline-block; width: 6px; height: 1em; margin-inline-start: 2px;
+    background: var(--color-text-secondary); border-radius: 1px;
+    animation: caret-blink 900ms steps(1,end) infinite; vertical-align: text-bottom;
+  }
+  @keyframes caret-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+  .ai-work-group { font-size: 14px; }
+  .ai-work-group-summary {
+    display: inline-flex; align-items: center; gap: 8px; padding: 4px 0;
+    color: var(--color-text-tertiary); cursor: pointer; user-select: none;
+  }
+  .ai-work-group-summary .caret { display: inline-block; transition: transform 0.15s; font-size: 10px; color: var(--color-text-tertiary); }
+  .ai-work-group.open .ai-work-group-summary .caret { transform: rotate(90deg); }
+  [dir='rtl'] .ai-work-group-summary .caret { transform: rotate(180deg); }
+  [dir='rtl'] .ai-work-group.open .ai-work-group-summary .caret { transform: rotate(90deg); }
+  .ai-work-group-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.25s cubic-bezier(0.4,0,0.2,1); }
+  .ai-work-group.open .ai-work-group-body { grid-template-rows: 1fr; }
+  .ai-work-group-body > div { overflow: hidden; }
+
+  .ai-step-row { display: flex; gap: 12px; padding: 8px 0; position: relative; }
+  .ai-step-row:not(:last-child)::before {
+    content: ''; position: absolute; inset-inline-start: 9.5px; top: 26px; bottom: -8px; width: 1px; background: var(--color-border-default);
+  }
+  .ai-step-icon { width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--color-text-secondary); font-size: 13px; }
+  .ai-step-icon.error { color: var(--docs-ai-error); }
+  .ai-step-title { color: var(--color-text-secondary); padding-top: 1px; }
+  .ai-step-title code { background: var(--color-bg-subtle); border-radius: var(--radius-6); padding: 1px 5px; font-size: 13px; }
+  .ai-tool-output {
+    background: var(--color-bg-subtle); border-radius: var(--radius-12); font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 13px; padding: 12px 16px; margin: 6px 0 0 32px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; color: var(--color-text-secondary);
+  }
+  [dir='rtl'] .ai-tool-output { margin: 6px 32px 0 0; }
+  .ai-applied-tag {
+    display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 2px 9px; font-size: 11px;
+    background: var(--docs-ok-bg); color: var(--docs-ok-ink); margin-inline-start: 32px;
+  }
+
+  .ai-typing-label {
+    background: linear-gradient(90deg, var(--docs-shimmer-base) 0%, var(--docs-shimmer-hi) 50%, var(--docs-shimmer-base) 100%);
+    background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: shimmer 1.2s infinite alternate linear; font-size: 14px; display: inline-block;
+  }
+  @keyframes shimmer { from { background-position: 200% 0; } to { background-position: 0 0; } }
+  .ai-typing-dots { display: inline-flex; gap: 4px; align-items: center; margin-inline-start: 6px; }
+  .ai-typing-dots span { width: 4px; height: 4px; border-radius: 50%; background: var(--color-brand-secondary); animation: dot-grow 2s infinite; }
+  .ai-typing-dots span:nth-child(2) { animation-delay: 0.3s; }
+  .ai-typing-dots span:nth-child(3) { animation-delay: 0.6s; }
+  @keyframes dot-grow { 0%, 100% { transform: scale(1); opacity: 0.45; } 50% { transform: scale(3); opacity: 1; } }
+
+  .ai-msg-error { color: var(--docs-ai-error); font-size: 13px; }
+
+  .ai-composer { padding: 8px 12px 12px; background: var(--color-bg-page); flex-shrink: 0; }
+
+  .ai-input-box {
+    border: 1px solid var(--color-border-default); border-radius: var(--radius-16); background: var(--color-bg-page);
+    box-shadow: var(--docs-shadow-composer); transition: border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .ai-input-box:focus-within { border-color: var(--docs-brand-ring); }
+
+  /* scope hint now lives INSIDE the message box (feedback: convey it's the
+     scope for the message about to be sent, not a standalone panel setting) */
+  .ai-scope-hint {
+    display: inline-flex; align-items: center; gap: 6px; margin: 12px 14px 0; padding: 3px 10px; border-radius: var(--radius-30);
+    background: var(--docs-brand-ghost); color: var(--color-brand-secondary); font-size: 12px; font-weight: 500; cursor: help;
+    max-width: calc(100% - 28px);
+  }
+  .ai-scope-hint .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .ai-scope-hint .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  textarea.ai-textarea {
+    display: block; width: 100%; resize: none; border: none; background: none; outline: none;
+    padding: 0 14px; margin: 12px 0 4px; font-size: 16px; line-height: 24px; font-family: inherit;
+    min-height: 48px; max-height: 168px; overflow-y: auto; color: var(--color-text-primary);
+  }
+  textarea.ai-textarea::placeholder { color: var(--color-text-tertiary); }
+
+  .ai-input-footer { display: flex; align-items: center; gap: 8px; padding: 4px 8px 8px 10px; }
+  [dir='rtl'] .ai-input-footer { padding: 4px 10px 8px 8px; }
+  .ai-icon-btn {
+    width: 28px; height: 28px; border: none; background: transparent; color: var(--color-text-secondary);
+    border-radius: var(--radius-8); display: flex; align-items: center; justify-content: center; cursor: pointer;
+    transition: var(--transition-fast); font-size: 15px;
+  }
+  .ai-icon-btn:hover { filter: brightness(0.75); }
+
+  /* Editing-mode selector (replaces the old boolean "Track changes" toggle).
+     Real Word wiring per mode - see chat notes:
+       Read only    -> only read-* tools offered/allowed; TrackRevisions untouched
+       Comment only -> only read-* tools + new add_comment tool allowed
+       Track changes -> full tool set, Document.TrackRevisions = true before mutating
+       Full autonomy -> full tool set, Document.TrackRevisions = false */
+  .ai-mode-btn {
+    height: 24px; padding: 0 10px; border-radius: var(--radius-30); border: 1px solid var(--color-border-default);
+    background: transparent; color: var(--color-text-secondary); display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; cursor: pointer; position: relative;
+  }
+  .ai-mode-btn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-border-strong); }
+  .ai-mode-btn.accent { border-color: var(--docs-brand-ring); background: var(--docs-brand-ghost-weak); color: var(--color-brand-secondary); }
+  .ai-mode-btn.accent .dot { background: currentColor; }
+  .ai-mode-menu {
+    position: absolute; bottom: 32px; inset-inline-start: 0; width: 190px;
+    background: var(--color-bg-page); border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-12); box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+    display: none; z-index: 25; overflow: hidden;
+  }
+  .ai-mode-menu.open { display: block; }
+  .ai-mode-menu-item { padding: 9px 12px; font-size: 13px; cursor: pointer; color: var(--color-text-secondary); }
+  .ai-mode-menu-item:hover { background: var(--color-bg-subtle); }
+  .ai-mode-menu-item.selected { color: var(--color-text-primary); font-weight: 600; }
+  .ai-mode-menu-item .desc { display: block; font-size: 11px; font-weight: 400; color: var(--color-text-tertiary); margin-top: 1px; }
+
+  .ai-send-btn {
+    margin-inline-start: auto; width: 32px; height: 32px; border: none; border-radius: 35%;
+    background: var(--color-text-primary); color: var(--color-bg-page);
+    display: flex; align-items: center; justify-content: center; cursor: pointer; transition: var(--transition-fast); font-size: 14px;
+  }
+  [dir='rtl'] .ai-send-btn { transform: scaleX(-1); }
+  .ai-send-btn:hover { filter: brightness(0.92); }
+  .ai-send-btn:active { filter: brightness(0.88); transform: scale(0.98); }
+  [dir='rtl'] .ai-send-btn:active { transform: scaleX(-1) scale(0.98); }
+
+  .mockup-controls { display: flex; flex-direction: column; gap: 6px; font-family: var(--font-sans); font-size: 12px; width: 160px; }
+  .mockup-controls .group { border: 1px solid #999; border-radius: 6px; padding: 6px; background: #fff; }
+  .mockup-controls .group-label { font-weight: 600; margin-bottom: 4px; }
+  .mockup-controls button { padding: 5px 8px; border-radius: 6px; border: 1px solid #bbb; background: #f7f7f7; cursor: pointer; margin: 2px 2px 0 0; font-size: 11px; }
+  .mockup-controls button.active { background: #0f7fff; color: #fff; border-color: #0f7fff; }
+  .mockup-note { font-size: 10.5px; color: #444; margin-top: 4px; line-height: 1.4; }
+</style>
+</head>
+<body>
+
+  <div class="mockup-controls">
+    <div class="group">
+      <div class="group-label">Theme</div>
+      <button onclick="setTheme('light')" id="btn-theme-light" class="active">Light</button>
+      <button onclick="setTheme('dark')" id="btn-theme-dark">Dark</button>
+    </div>
+    <div class="group">
+      <div class="group-label">Language / direction</div>
+      <button onclick="setLang('en')" id="btn-lang-en" class="active">English</button>
+      <button onclick="setLang('he')" id="btn-lang-he">עברית</button>
+      <div class="mockup-note">Toggling language also flips dir=rtl. Genoffice today translates strings but never sets dir/mirrors chrome - this is new.</div>
+    </div>
+    <div class="group">
+      <div class="group-label">Host app</div>
+      <button onclick="setApp('word')" id="btn-app-word" class="active">Word</button>
+      <button onclick="setApp('excel')" id="btn-app-excel">Excel</button>
+      <button onclick="setApp('powerpoint')" id="btn-app-powerpoint">PowerPoint</button>
+    </div>
+    <div class="group">
+      <div class="group-label">View</div>
+      <button onclick="setView('empty')" id="btn-view-empty">New chat (empty)</button>
+      <button onclick="setView('active')" id="btn-view-active" class="active">Active conversation</button>
+      <button onclick="setView('afterNewChat')" id="btn-view-afterNewChat">Reopened doc (has history)</button>
+    </div>
+    <div class="group">
+      <div class="group-label">Selection in document</div>
+      <button onclick="toggleSelectionDemo()" id="btn-selection">Text selected</button>
+      <div class="mockup-note">Demo only - in the real add-in this updates live from Word's WindowSelectionChange event.</div>
+    </div>
+    <div class="group">
+      <div class="group-label">Panel</div>
+      <button onclick="document.querySelector('.ai-dock').classList.toggle('collapsed')">Toggle collapse</button>
+    </div>
+  </div>
+
+  <div class="host-window">
+    <div class="host-doc-area"></div>
+
+    <div class="ai-dock">
+      <div class="ai-rail">AIRCHAT OFFICE</div>
+      <div class="ai-panel">
+
+        <div class="ai-panel-header">
+          <div class="ai-panel-title">
+            <span class="ai-logo">A</span>
+            <span data-t="panelTitle">Airchat Office</span>
+          </div>
+          <div class="ai-header-actions">
+            <button class="ai-header-btn" data-t-title="newChat" onclick="newChat()">+</button>
+            <button class="ai-header-btn" data-t-title="settings" onclick="toggleSettings()">&#9881;</button>
+            <button class="ai-header-btn" data-t-title="collapse" onclick="document.querySelector('.ai-dock').classList.add('collapsed')">&#x276E;</button>
+          </div>
+
+          <div class="ai-settings-panel" id="settingsPanel">
+            <h4 data-t="settingsTitle">Airchat Office Settings</h4>
+            <div class="ai-field">
+              <label data-t="settingsBaseUrl">API Base URL</label>
+              <input type="text" placeholder="http://localhost:9000/v1" value="http://localhost:9000/v1" />
+            </div>
+            <div class="ai-field">
+              <label data-t="settingsApiKey">API Key</label>
+              <input type="password" placeholder="sk-..." />
+            </div>
+            <div class="ai-field">
+              <label data-t="settingsModel">Model name</label>
+              <input type="text" placeholder="gpt-4o-mini / llama-3.1-70b / ..." />
+            </div>
+            <div class="ai-field">
+              <label data-t="settingsLanguage">Language</label>
+              <div class="ai-lang-toggle">
+                <button id="settings-lang-en" class="active" onclick="selectPendingLang('en')">English</button>
+                <button id="settings-lang-he" onclick="selectPendingLang('he')">עברית</button>
+              </div>
+            </div>
+            <div class="ai-settings-actions">
+              <button class="ai-btn-primary" data-t="save" onclick="saveSettings()">Save</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ai-chat" id="chatArea"></div>
+
+        <div class="ai-composer">
+          <div class="ai-input-box">
+            <span class="ai-scope-hint" id="scopeHint" title="Shows what context THIS message will use once sent - the whole document, or (if you have text selected in Word) the selection, starting from where it begins. Mirrors genoffice's real per-turn context injection (protocol.ts buildDocContext), just made visible.">
+              <span class="dot"></span> <span class="label" id="scopeHintLabel" data-t="scopeWholeDoc">Whole document</span>
+            </span>
+            <textarea class="ai-textarea" id="textarea" data-t-placeholder="inputPlaceholder" placeholder="Ask Airchat Office to edit this document..." rows="1"></textarea>
+            <div class="ai-input-footer">
+              <div style="position: relative;">
+                <button class="ai-mode-btn" id="modeBtn" onclick="toggleModeMenu()">
+                  <span class="dot"></span> <span id="modeBtnLabel" data-t="modeFullAutonomy">Full autonomy</span>
+                </button>
+                <div class="ai-mode-menu" id="modeMenu">
+                  <div class="ai-mode-menu-item" data-mode="readOnly" onclick="selectMode('readOnly')">
+                    <span data-t="modeReadOnly">Read only</span><span class="desc" data-t="modeReadOnlyDesc">AI can only read, never edit</span>
+                  </div>
+                  <div class="ai-mode-menu-item" data-mode="commentOnly" onclick="selectMode('commentOnly')">
+                    <span data-t="modeCommentOnly">Comment only</span><span class="desc" data-t="modeCommentOnlyDesc">Adds comments, no content edits</span>
+                  </div>
+                  <div class="ai-mode-menu-item" data-mode="trackChanges" onclick="selectMode('trackChanges')">
+                    <span data-t="modeTrackChanges">Track changes</span><span class="desc" data-t="modeTrackChangesDesc">Edits as reviewable revisions</span>
+                  </div>
+                  <div class="ai-mode-menu-item selected" data-mode="fullAutonomy" onclick="selectMode('fullAutonomy')">
+                    <span data-t="modeFullAutonomy">Full autonomy</span><span class="desc" data-t="modeFullAutonomyDesc">Edits applied directly</span>
+                  </div>
+                </div>
+              </div>
+              <button class="ai-send-btn" data-t-title="send" title="Send">&#10148;</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+<script>
+  const STRINGS = {
+    panelTitle:        { en: 'Airchat Office', he: "איירצ'אט אופיס" },
+    inputPlaceholder:  { en: 'Ask Airchat Office to edit this document...', he: "בקש מ-Airchat Office לערוך את המסמך..." },
+    send:              { en: 'Send', he: 'שלח' },
+    newChat:           { en: 'New chat', he: 'שיחה חדשה' },
+    history:           { en: 'History', he: 'היסטוריה' },
+    historyPanelTitle: { en: 'Conversations in this document', he: 'שיחות במסמך זה' },
+    settings:          { en: 'Settings', he: 'הגדרות' },
+    settingsTitle:     { en: 'Airchat Office Settings', he: 'הגדרות Airchat Office' },
+    settingsBaseUrl:   { en: 'API Base URL', he: 'כתובת בסיס API' },
+    settingsApiKey:    { en: 'API Key', he: 'מפתח API' },
+    settingsModel:     { en: 'Model name', he: 'שם המודל' },
+    settingsLanguage:  { en: 'Language', he: 'שפה' },
+    save:              { en: 'Save', he: 'שמור' },
+    cancel:            { en: 'Cancel', he: 'ביטול' },
+    collapse:          { en: 'Collapse panel', he: 'כווץ חלונית' },
+    historySep:        { en: 'Earlier conversation', he: 'שיחה קודמת' },
+    scopeWholeDoc:     { en: 'Whole document', he: 'כל המסמך' },
+    emptyTitle:        { en: 'What can I help with?', he: 'איך אפשר לעזור?' },
+    modeReadOnly:          { en: 'Read only', he: 'קריאה בלבד' },
+    modeReadOnlyDesc:      { en: 'AI can only read, never edit', he: 'הבינה יכולה רק לקרוא, לא לערוך' },
+    modeCommentOnly:       { en: 'Comment only', he: 'הערות בלבד' },
+    modeCommentOnlyDesc:   { en: 'Adds comments, no content edits', he: 'מוסיפה הערות בלבד, ללא עריכת תוכן' },
+    modeTrackChanges:      { en: 'Track changes', he: 'מעקב אחר שינויים' },
+    modeTrackChangesDesc:  { en: 'Edits as reviewable revisions', he: 'עריכות כתיקונים לאישור' },
+    modeFullAutonomy:      { en: 'Full autonomy', he: 'אוטונומיה מלאה' },
+    modeFullAutonomyDesc:  { en: 'Edits applied directly', he: 'עריכות מוחלות ישירות' },
+  }
+
+  const STARTERS = {
+    word: {
+      empty: [
+        { en: 'Write a weekly project report for me', he: 'כתוב עבורי דוח פרויקט שבועי' },
+        { en: 'Draft a product launch announcement', he: 'נסח הודעת השקת מוצר' },
+        { en: 'Outline an event plan', he: 'תכנן מתווה לאירוע' },
+      ],
+      active: [
+        { en: 'Summarize the key points of this document', he: 'סכם את הנקודות העיקריות במסמך' },
+        { en: 'Polish the whole document for a more professional tone', he: 'לטש את כל המסמך לטון מקצועי יותר' },
+        { en: 'Continue writing from where the document leaves off', he: 'המשך לכתוב מהיכן שהמסמך מסתיים' },
+      ],
+    },
+    powerpoint: {
+      empty: [
+        { en: 'Build a quarterly project review deck for me', he: 'בנה עבורי מצגת סקירה רבעונית לפרויקט' },
+        { en: 'Create a product launch presentation', he: 'צור מצגת השקת מוצר' },
+        { en: 'Make an onboarding training deck', he: 'הכן מצגת הדרכה לקליטת עובדים' },
+      ],
+      active: [
+        { en: "Improve this slide's title and copy", he: 'שפר את הכותרת והטקסט של השקופית' },
+        { en: "Make this slide's bullets more concise", he: 'קצר את התבליטים בשקופית' },
+        { en: 'Check the whole deck for typos and fix them', he: 'בדוק שגיאות כתיב בכל המצגת ותקן אותן' },
+      ],
+    },
+    excel: {
+      empty: [
+        { en: 'Summarize this sheet', he: 'סכם את הגיליון הזה' },
+        { en: 'Add a totals row', he: 'הוסף שורת סיכום' },
+        { en: 'Check the formulas', he: 'בדוק את הנוסחאות' },
+      ],
+      active: [
+        { en: 'Summarize this sheet', he: 'סכם את הגיליון הזה' },
+        { en: 'Add a totals row', he: 'הוסף שורת סיכום' },
+        { en: 'Check the formulas', he: 'בדוק את הנוסחאות' },
+      ],
+    },
+  }
+
+  let lang = 'en'
+  let currentApp = 'word'
+  let currentView = 'active'
+
+  function t(key) { return (STRINGS[key] && STRINGS[key][lang]) || key }
+
+  function applyStrings() {
+    document.querySelectorAll('[data-t]').forEach(el => { el.textContent = t(el.getAttribute('data-t')) })
+    document.querySelectorAll('[data-t-title]').forEach(el => { const s = t(el.getAttribute('data-t-title')); el.title = s; el.setAttribute('aria-label', s) })
+    document.querySelectorAll('[data-t-placeholder]').forEach(el => { el.placeholder = t(el.getAttribute('data-t-placeholder')) })
+  }
+
+  function setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme)
+    document.getElementById('btn-theme-light').classList.toggle('active', theme === 'light')
+    document.getElementById('btn-theme-dark').classList.toggle('active', theme === 'dark')
+  }
+
+  let pendingLang = lang
+
+  function setLang(l) {
+    lang = l
+    pendingLang = l
+    // Scoped to the panel itself, not document.documentElement: the AI panel's
+    // language is independent of the host document/page's own language/direction
+    // (mirrors how a real VSTO task pane's WebView2 content has its own <html>,
+    // separate from whatever's open in Word/Excel/PowerPoint behind it).
+    const dockEl = document.querySelector('.ai-dock')
+    dockEl.setAttribute('lang', l)
+    dockEl.setAttribute('dir', l === 'he' ? 'rtl' : 'ltr')
+    document.getElementById('btn-lang-en').classList.toggle('active', l === 'en')
+    document.getElementById('btn-lang-he').classList.toggle('active', l === 'he')
+    document.getElementById('settings-lang-en')?.classList.toggle('active', l === 'en')
+    document.getElementById('settings-lang-he')?.classList.toggle('active', l === 'he')
+    applyStrings()
+    updateScopeHint()
+    render()
+  }
+
+  // Feedback: language should only take effect after pressing Save in
+  // Settings, not live as soon as it's clicked - just tracks the pending
+  // choice and updates the toggle's own visual state.
+  function selectPendingLang(l) {
+    pendingLang = l
+    document.getElementById('settings-lang-en').classList.toggle('active', l === 'en')
+    document.getElementById('settings-lang-he').classList.toggle('active', l === 'he')
+  }
+
+  function saveSettings() {
+    setLang(pendingLang)
+    toggleSettings()
+  }
+
+  function setApp(app) {
+    currentApp = app
+    ;['word', 'excel', 'powerpoint'].forEach(a => document.getElementById('btn-app-' + a).classList.toggle('active', a === app))
+    render()
+  }
+
+  function setView(view) {
+    currentView = view
+    document.getElementById('btn-view-empty').classList.toggle('active', view === 'empty')
+    document.getElementById('btn-view-active').classList.toggle('active', view === 'active')
+    document.getElementById('btn-view-afterNewChat').classList.toggle('active', view === 'afterNewChat')
+    render()
+  }
+
+  // DELIBERATE DEPARTURE from genoffice, per chat feedback: genoffice's real
+  // "New chat" (AiPanel.tsx:775-781) clears the live screen but writes NO
+  // marker to disk, so re-opening the document loads the full unbounded
+  // history (up to a 200-message cap) with no way to know where a past
+  // "New chat" happened - confirmed bad UX. Our version instead writes a
+  // divider record into the same per-document JSONL log at the moment "New
+  // chat" is clicked. On next open, only messages AFTER the last divider are
+  // loaded/shown/fed back to the model - i.e. exactly the last conversation,
+  // picking up where it left off, not the entire history. Still ONE
+  // continuous log per document (no multi-session browser - that idea was
+  // rejected), just with a real resume point instead of an unbounded tail.
+  function newChat() {
+    // real impl: bridge.postMessage({ kind: 'new-chat-divider' }) -> .NET
+    // ChatStore.AppendDivider(chatId) - see plan Task for the persistence design
+    setView('empty')
+  }
+
+  function toggleSettings() {
+    const panel = document.getElementById('settingsPanel')
+    const opening = !panel.classList.contains('open')
+    panel.classList.toggle('open')
+    if (opening) {
+      // Reset the pending selection to match the currently-applied language
+      // each time the panel opens (discards any unsaved pick from last time).
+      pendingLang = lang
+      document.getElementById('settings-lang-en').classList.toggle('active', pendingLang === 'en')
+      document.getElementById('settings-lang-he').classList.toggle('active', pendingLang === 'he')
+    }
+  }
+
+  function toggleGroup(el) { el.parentElement.classList.toggle('open') }
+
+  // ---- editing mode selector ----
+  let editingMode = 'fullAutonomy'
+
+  function toggleModeMenu() {
+    document.getElementById('modeMenu').classList.toggle('open')
+  }
+
+  function selectMode(mode) {
+    editingMode = mode
+    document.getElementById('modeBtnLabel').setAttribute('data-t', 'mode' + mode[0].toUpperCase() + mode.slice(1))
+    document.querySelectorAll('.ai-mode-menu-item').forEach(el => el.classList.toggle('selected', el.dataset.mode === mode))
+    document.getElementById('modeBtn').classList.toggle('accent', mode === 'trackChanges')
+    document.getElementById('modeMenu').classList.remove('open')
+    applyStrings()
+    // real impl: bridge.postMessage({ kind: 'set-mode', mode }) -> .NET WordTools
+    // sets Document.TrackRevisions accordingly and gates which tools execute -
+    // see plan Task for the exact per-mode COM wiring and tool filtering.
+  }
+
+  // ---- selection-aware scope hint ----
+  // Mirrors genoffice's real per-turn context injection (protocol.ts
+  // buildDocContext/getSelectionScope): when there's an actual range
+  // selection, its content is what gets sent to the model, not just an index
+  // range - so the hint shows a live preview of the selection's start,
+  // matching what will actually be sent, not an abstract "selected" label.
+  let hasSelection = false
+  const FAKE_SELECTION_TEXT = {
+    en: 'Q3 revenue grew 12% year-over-year, driven primarily by...',
+    he: 'ההכנסות ברבעון השלישי צמחו ב-12% לעומת השנה הקודמת, בעיקר בזכות...',
+  }
+
+  function toggleSelectionDemo() {
+    hasSelection = !hasSelection
+    document.getElementById('btn-selection').classList.toggle('active', hasSelection)
+    updateScopeHint()
+  }
+
+  function updateScopeHint() {
+    const labelEl = document.getElementById('scopeHintLabel')
+    if (hasSelection) {
+      labelEl.removeAttribute('data-t')
+      const preview = FAKE_SELECTION_TEXT[lang].slice(0, 28)
+      labelEl.textContent = (lang === 'he' ? 'בחירה: "' : 'Selection: "') + preview + '..."'
+    } else {
+      labelEl.setAttribute('data-t', 'scopeWholeDoc')
+      labelEl.textContent = t('scopeWholeDoc')
+    }
+  }
+
+  function renderEmpty() {
+    const starters = STARTERS[currentApp][currentApp === 'word' ? 'active' : 'active'] // "existing content" set by default
+    const pills = STARTERS[currentApp].empty.map(s => `<div class="ai-starter" onclick="document.getElementById('textarea').value=this.textContent">${s[lang]}</div>`).join('')
+    return `
+      <div class="ai-chat-empty">
+        <div class="ai-chat-empty-title">${t('emptyTitle')}</div>
+        <div class="ai-starters">${pills}</div>
+      </div>
+    `
+  }
+
+  function renderActive() {
+    return `
+      <div class="ai-msg-user">${lang === 'he' ? 'בבקשה תקרא את המסמך ותוסיף גרף' : 'please read the document and add a chart'}</div>
+
+      <div class="ai-work-group">
+        <div class="ai-work-group-summary" onclick="toggleGroup(this)">
+          <span class="caret">&#9656;</span>
+          <span class="label">${lang === 'he' ? 'הרצת 3 כלים' : 'Ran 3 tools'}</span>
+        </div>
+        <div class="ai-work-group-body"><div>
+          <div class="ai-step-row"><div class="ai-step-icon">&#10003;</div><div class="ai-step-title">${lang==='he'?'קריאת מסמך':'Read document'} &mdash; <code>get_document_context</code></div></div>
+          <div class="ai-tool-output">Paragraphs: 66, Words: 1077
+Preview: מה חסר בדמ"ץ/אפיון?...</div>
+          <div class="ai-step-row"><div class="ai-step-icon">&#10003;</div><div class="ai-step-title">${lang==='he'?'הוספת טקסט':'Inserted text'} &mdash; <code>insert_content</code></div></div>
+          <div class="ai-applied-tag">&#10003; ${lang==='he'?'הוחל':'Applied'}</div>
+          <div class="ai-step-row"><div class="ai-step-icon">&#10003;</div><div class="ai-step-title">${lang==='he'?'יצירת גרף':'Created chart'} &mdash; <code>edit_chart</code></div></div>
+          <div class="ai-applied-tag">&#10003; ${lang==='he'?'הוחל':'Applied'}</div>
+        </div></div>
+      </div>
+
+      <div class="ai-msg-assistant">
+        <p>${lang === 'he'
+          ? 'בוצע — קראתי את המסמך, הוספתי פסקה מסכמת, ויצרתי גרף עמודות "הכנסות רבעוניות" עם ארבעת הערכים לדוגמה.'
+          : 'Done &mdash; I read the document, added a closing paragraph, and created a <strong>Quarterly Revenue</strong> column chart with your four sample values.'}</p>
+      </div>
+
+      <div class="ai-msg-user">${lang === 'he' ? 'עכשיו תהפוך את הגרף לגרף קווי' : 'now also make the chart a line chart instead'}</div>
+
+      <div class="ai-work-group">
+        <div class="ai-work-group-summary" onclick="toggleGroup(this)">
+          <span class="caret">&#9656;</span>
+          <span class="ai-typing-label">${lang === 'he' ? 'עורך גרף...' : 'Editing chart...'}</span>
+          <span class="ai-typing-dots"><span></span><span></span><span></span></span>
+        </div>
+      </div>
+
+      <div class="ai-msg-assistant streaming">
+        <p>${lang === 'he' ? 'בטח, משנה עכשיו את סוג הגרף לגרף קווי' : 'Sure, switching the chart type to a line chart now'}</p>
+      </div>
+    `
+  }
+
+  // This is what a FRESH REOPEN of the document looks like when it already has
+  // a saved conversation - NOT what "New chat" produces within the same
+  // session (that's just the empty state, see newChat() above). On remount,
+  // resolveChat/loadChat populates historicChat, which renders (full opacity,
+  // no fade - verified, no CSS rule exists for .ai-msg-historic) above the
+  // divider, followed by an empty composer ready for the next instruction.
+  function renderReopenedWithHistory() {
+    return `
+      ${renderActive()}
+      <div class="ai-history-sep">${t('historySep')}</div>
+      ${renderEmpty()}
+    `
+  }
+
+  function render() {
+    const renderers = { empty: renderEmpty, active: renderActive, afterNewChat: renderReopenedWithHistory }
+    document.getElementById('chatArea').innerHTML = renderers[currentView]()
+  }
+
+  applyStrings()
+  render()
+</script>
+
+</body>
+</html>

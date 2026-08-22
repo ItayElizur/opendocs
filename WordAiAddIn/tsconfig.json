@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "paths": {
+      "@genoffice/agent-core": ["./web-src/agent-core/index.ts"],
+      "@genoffice/ai-provider": ["./web-src/ai-provider/index.ts"]
+    }
+  },
+  "include": ["web-src/**/*.ts"]
+}
