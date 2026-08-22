@@ -77,9 +77,7 @@ chrome.webview.addEventListener('message', (ev) => {
   }
   if (data.kind === 'selection-changed') {
     latestSelection = data as unknown as typeof latestSelection
-    ui.setScopeHint(
-      latestSelection.hasSelection ? `Selection: "${latestSelection.preview}..."` : 'Whole document',
-    )
+    ui.setSelectionScope(latestSelection.hasSelection ? { hasSelection: true, preview: latestSelection.preview } : null)
   }
 })
 
@@ -246,7 +244,14 @@ const wordSkill: AgentSkill = {
 
 const root = document.getElementById('root')!
 const ui = mountChatUI(root, {
-  title: 'Airchat Office',
+  starters: [
+    { en: 'Summarize the key points of this document', he: 'סכם את הנקודות העיקריות במסמך' },
+    { en: 'Polish the whole document for a more professional tone', he: 'לטש את כל המסמך לטון מקצועי יותר' },
+    { en: 'Continue writing from where the document leaves off', he: 'המשך לכתוב מהיכן שהמסמך מסתיים' },
+  ],
+  onCollapseChange: (collapsed) => {
+    chrome.webview.postMessage({ kind: collapsed ? 'collapse-pane' : 'expand-pane' })
+  },
   onSend: (text) => {
     if (loop.busy) return
     ui.addUserMessage(text)
