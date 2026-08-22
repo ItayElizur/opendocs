@@ -166,6 +166,15 @@ const wordSkill: AgentSkill = {
         required: ['startIndex', 'endIndex', 'text'],
       },
     },
+    {
+      name: 'apply_commands',
+      description:
+        'Applies a batch of formatting/editing commands. Each command has a "kind": ' +
+        '"set_bold"/"set_italic" (fields: startIndex, endIndex, value:boolean), ' +
+        '"set_heading" (fields: index, level:0-9, 0=Normal style), ' +
+        '"find_replace" (fields: find:string, replace:string, matchCase?:boolean).',
+      inputSchema: { type: 'object', properties: { commands: { type: 'array', items: { type: 'object' } } }, required: ['commands'] },
+    },
   ],
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }

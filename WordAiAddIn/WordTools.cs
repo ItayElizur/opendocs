@@ -27,6 +27,8 @@ namespace WordAiAddIn
                         return ReadBlocks(input);
                     case "replace_blocks":
                         return ReplaceBlocks(input);
+                    case "apply_commands":
+                        return ApplyCommands(input);
                     default:
                         return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
@@ -147,6 +149,79 @@ namespace WordAiAddIn
             Word.Range range = doc.Range(paragraphs[startIndex + 1].Range.Start, paragraphs[endIndex + 1].Range.End);
             range.Text = text;
             return new ToolResult { Output = $"Replaced paragraphs {startIndex}-{endIndex} with: {text}", Mutated = true, Summary = "replace_blocks" };
+        }
+
+        private static ToolResult ApplyCommands(JsonElement input)
+        {
+            var lines = new System.Text.StringBuilder();
+            bool anyMutated = false;
+            bool anyError = false;
+            foreach (JsonElement cmd in input.GetProperty("commands").EnumerateArray())
+            {
+                string kind = cmd.GetProperty("kind").GetString();
+                try
+                {
+                    switch (kind)
+                    {
+                        case "set_bold":
+                            SetRunProperty(cmd, (range, value) => range.Bold = value ? 1 : 0);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_italic":
+                            SetRunProperty(cmd, (range, value) => range.Italic = value ? 1 : 0);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_heading":
+                            SetHeading(cmd);
+                            lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "find_replace":
+                            int replacements = FindReplace(cmd);
+                            lines.AppendLine($"{kind}: {replacements} replacement(s)");
+                            if (replacements > 0) anyMutated = true;
+                            break;
+                        default:
+                            lines.AppendLine(kind + ": unknown command kind"); anyError = true; break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lines.AppendLine(kind + ": ERROR - " + ex.Message); anyError = true;
+                }
+            }
+            return new ToolResult { Output = lines.ToString(), Mutated = anyMutated, IsError = anyError, Summary = "apply_commands" };
+        }
+
+        private static void SetRunProperty(JsonElement cmd, Action<Word.Range, bool> apply)
+        {
+            int startIndex = cmd.GetProperty("startIndex").GetInt32();
+            int endIndex = cmd.GetProperty("endIndex").GetInt32();
+            bool value = cmd.GetProperty("value").GetBoolean();
+            Word.Document doc = ActiveDoc;
+            Word.Paragraphs paragraphs = doc.Paragraphs;
+            endIndex = Math.Min(endIndex, paragraphs.Count - 1);
+            Word.Range range = doc.Range(paragraphs[startIndex + 1].Range.Start, paragraphs[endIndex + 1].Range.End);
+            apply(range, value);
+        }
+
+        private static void SetHeading(JsonElement cmd)
+        {
+            int index = cmd.GetProperty("index").GetInt32();
+            int level = cmd.GetProperty("level").GetInt32();
+            Word.Paragraph p = ActiveDoc.Paragraphs[index + 1];
+            p.Range.set_Style(level == 0 ? "Normal" : "Heading " + level);
+        }
+
+        private static int FindReplace(JsonElement cmd)
+        {
+            string find = cmd.GetProperty("find").GetString();
+            string replace = cmd.GetProperty("replace").GetString();
+            bool matchCase = cmd.TryGetProperty("matchCase", out var mc) && mc.GetBoolean();
+            Word.Find findObj = ActiveDoc.Content.Find;
+            findObj.ClearFormatting();
+            findObj.Text = find;
+            findObj.Replacement.ClearFormatting();
+            findObj.Replacement.Text = replace;
+            findObj.MatchCase = matchCase;
+            bool found = findObj.Execute(Replace: Word.WdReplace.wdReplaceAll);
+            return found ? 1 : 0;
         }
     }
 }
