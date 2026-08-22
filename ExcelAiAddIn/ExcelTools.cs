@@ -194,6 +194,13 @@ namespace ExcelAiAddIn
                         case "set_cols_hidden": SetColsHidden(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "set_freeze": SetFreeze(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "set_page_setup": SetPageSetup(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "add_sheet": AddSheet(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "delete_sheet": DeleteSheet(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "duplicate_sheet": DuplicateSheet(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_sheet_hidden": SetSheetHidden(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "move_sheet": MoveSheet(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "protect_sheet": ProtectSheet(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "rename_sheet": Sheet(op).Name = op.GetProperty("name").GetString(); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
                     }
@@ -404,6 +411,69 @@ namespace ExcelAiAddIn
                 setup.LeftMargin = leftRight; setup.RightMargin = leftRight;
                 setup.HeaderMargin = header; setup.FooterMargin = footer;
             }
+        }
+
+        private static void AddSheet(JsonElement op)
+        {
+            Excel.Workbook wb = Globals.ThisAddIn.Application.ActiveWorkbook;
+            Excel.Worksheet newSheet = (Excel.Worksheet)wb.Worksheets.Add(After: wb.Worksheets[wb.Worksheets.Count]);
+            newSheet.Name = op.GetProperty("name").GetString();
+        }
+
+        private static void DeleteSheet(JsonElement op)
+        {
+            Excel.Application app = Globals.ThisAddIn.Application;
+            bool prevAlerts = app.DisplayAlerts;
+            app.DisplayAlerts = false;
+            try
+            {
+                Sheet(op).Delete();
+            }
+            finally
+            {
+                app.DisplayAlerts = prevAlerts;
+            }
+        }
+
+        private static void DuplicateSheet(JsonElement op)
+        {
+            Excel.Worksheet source = Sheet(op);
+            Excel.Workbook wb = Globals.ThisAddIn.Application.ActiveWorkbook;
+            source.Copy(After: wb.Worksheets[wb.Worksheets.Count]);
+            Excel.Worksheet copy = (Excel.Worksheet)Globals.ThisAddIn.Application.ActiveSheet;
+            if (op.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String)
+            {
+                copy.Name = name.GetString();
+            }
+        }
+
+        private static void SetSheetHidden(JsonElement op)
+        {
+            bool hidden = op.GetProperty("hidden").GetBoolean();
+            Sheet(op).Visible = hidden ? Excel.XlSheetVisibility.xlSheetHidden : Excel.XlSheetVisibility.xlSheetVisible;
+        }
+
+        private static void MoveSheet(JsonElement op)
+        {
+            int position = op.GetProperty("position").GetInt32(); // 1-based
+            Excel.Workbook wb = Globals.ThisAddIn.Application.ActiveWorkbook;
+            Excel.Worksheet target = Sheet(op);
+            if (position >= wb.Worksheets.Count)
+            {
+                target.Move(After: wb.Worksheets[wb.Worksheets.Count]);
+            }
+            else
+            {
+                target.Move(Before: wb.Worksheets[position]);
+            }
+        }
+
+        private static void ProtectSheet(JsonElement op)
+        {
+            bool isProtected = op.GetProperty("protected").GetBoolean();
+            Excel.Worksheet sheet = Sheet(op);
+            if (isProtected) sheet.Protect();
+            else sheet.Unprotect();
         }
     }
 }
