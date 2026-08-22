@@ -339,6 +339,7 @@ namespace ExcelAiAddIn
                         case "insert_cols": InsertDeleteCols(op, insert: true); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "delete_cols": InsertDeleteCols(op, insert: false); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "add_chart": AddChart(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "add_sparkline": AddSparkline(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "sort_range": SortRange(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "merge_cells":
                             Sheet(op).Range[op.GetProperty("range").GetString()].Merge();
@@ -465,6 +466,32 @@ namespace ExcelAiAddIn
                 chart.HasTitle = true;
                 chart.ChartTitle.Text = title.GetString();
             }
+        }
+
+        private static void AddSparkline(JsonElement op)
+        {
+            string dataRange = op.GetProperty("dataRange").GetString();
+            string targetCell = op.TryGetProperty("targetCell", out var tc) && tc.ValueKind == JsonValueKind.String ? tc.GetString() : dataRange;
+            string type = op.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : "line";
+            dynamic sheet = Sheet(op);
+            dynamic groups = sheet.SparklineGroups;
+            Excel.XlSparkType sparkType = type == "column" ? Excel.XlSparkType.xlSparkColumnStacked100
+                : type == "stacked" ? Excel.XlSparkType.xlSparkColumnStacked100
+                : Excel.XlSparkType.xlSparkLine;
+            dynamic group = groups.Add(sparkType, Sheet(op).Range[dataRange].Address[true, true, Excel.XlReferenceStyle.xlA1, true]);
+            if (op.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
+            {
+                group.SeriesColor.Color = HexToOleColor(color.GetString());
+            }
+        }
+
+        private static int HexToOleColor(string hex)
+        {
+            hex = hex.TrimStart('#');
+            int r = Convert.ToInt32(hex.Substring(0, 2), 16);
+            int g = Convert.ToInt32(hex.Substring(2, 2), 16);
+            int b = Convert.ToInt32(hex.Substring(4, 2), 16);
+            return System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.FromArgb(r, g, b));
         }
 
         private static void SortRange(JsonElement op)
