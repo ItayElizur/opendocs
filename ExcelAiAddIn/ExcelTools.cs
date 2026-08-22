@@ -17,7 +17,7 @@ namespace ExcelAiAddIn
 
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
-            "get_workbook_context", "read_range", "read_cells", "select_range", "read_formats", "read_sheet_features", "find_cells",
+            "get_workbook_context", "read_range", "read_cells", "select_range", "read_formats", "read_sheet_features", "find_cells", "trace_precedents", "trace_dependents",
         };
 
         public static ToolResult Execute(string name, JsonElement input)
@@ -51,6 +51,8 @@ namespace ExcelAiAddIn
                     case "read_formats": return ReadFormats(input);
                     case "read_sheet_features": return ReadSheetFeatures(input);
                     case "find_cells": return FindCells(input);
+                    case "trace_precedents": return TracePrecedents(input);
+                    case "trace_dependents": return TraceDependents(input);
                     case "propose_operations": return ProposeOperations(input);
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
@@ -256,6 +258,50 @@ namespace ExcelAiAddIn
             sb.AppendLine("Shapes/images: " + shapeCount);
 
             return new ToolResult { Output = sb.ToString(), Summary = "read_sheet_features" };
+        }
+
+        private static ToolResult TracePrecedents(JsonElement input)
+        {
+            string address = input.GetProperty("address").GetString();
+            Excel.Range cell = Sheet(input).Range[address];
+            Excel.Range precedents;
+            try
+            {
+                precedents = cell.DirectPrecedents;
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                return new ToolResult { Output = address + " has no precedents (not a formula, or references nothing).", Summary = "trace_precedents" };
+            }
+            var sb = new System.Text.StringBuilder();
+            foreach (Excel.Range p in precedents.Cells)
+            {
+                string text = p.Text as string ?? "";
+                bool isError = ExcelErrorTexts.Any(e => text == e);
+                sb.AppendLine($"{p.Address[false, false]}: {text}" + (isError ? " (ERROR)" : ""));
+            }
+            return new ToolResult { Output = sb.ToString(), Summary = "trace_precedents" };
+        }
+
+        private static ToolResult TraceDependents(JsonElement input)
+        {
+            string address = input.GetProperty("address").GetString();
+            Excel.Range cell = Sheet(input).Range[address];
+            Excel.Range dependents;
+            try
+            {
+                dependents = cell.Dependents;
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                return new ToolResult { Output = "No formulas in this sheet reference " + address + ".", Summary = "trace_dependents" };
+            }
+            var sb = new System.Text.StringBuilder();
+            foreach (Excel.Range d in dependents.Cells)
+            {
+                sb.AppendLine($"{d.Address[false, false]}: {d.Formula}");
+            }
+            return new ToolResult { Output = sb.ToString(), Summary = "trace_dependents" };
         }
 
         private static ToolResult ProposeOperations(JsonElement input)
