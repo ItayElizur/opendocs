@@ -47,6 +47,8 @@ namespace PowerPointAiAddIn
                     case "add_shape": return AddShape(input);
                     case "delete_element": return DeleteElement(input);
                     case "add_slide": return AddSlide(input);
+                    case "set_element_fill": return SetElementFill(input);
+                    case "set_element_stroke": return SetElementStroke(input);
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
             }
@@ -227,6 +229,51 @@ namespace PowerPointAiAddIn
                 }
             }
             return new ToolResult { Output = "Slide added after index " + sourceIndex + ".", Mutated = true, Summary = "add_slide" };
+        }
+
+        private static int HexToOle(string hex)
+        {
+            hex = hex.TrimStart('#');
+            int r = Convert.ToInt32(hex.Substring(0, 2), 16);
+            int g = Convert.ToInt32(hex.Substring(2, 2), 16);
+            int b = Convert.ToInt32(hex.Substring(4, 2), 16);
+            return System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.FromArgb(r, g, b));
+        }
+
+        private static ToolResult SetElementFill(JsonElement input)
+        {
+            PowerPoint.Shape shape = ResolveShape(input);
+            string fill = input.GetProperty("fill").GetString();
+            if (fill == "none")
+            {
+                shape.Fill.Visible = Microsoft.Office.Core.MsoTriState.msoFalse;
+            }
+            else
+            {
+                shape.Fill.Visible = Microsoft.Office.Core.MsoTriState.msoTrue;
+                shape.Fill.ForeColor.RGB = HexToOle(fill);
+            }
+            return new ToolResult { Output = "Fill updated.", Mutated = true, Summary = "set_element_fill" };
+        }
+
+        private static ToolResult SetElementStroke(JsonElement input)
+        {
+            PowerPoint.Shape shape = ResolveShape(input);
+            bool remove = input.TryGetProperty("remove", out var r) && r.ValueKind == JsonValueKind.True;
+            if (remove)
+            {
+                shape.Line.Visible = Microsoft.Office.Core.MsoTriState.msoFalse;
+            }
+            else
+            {
+                shape.Line.Visible = Microsoft.Office.Core.MsoTriState.msoTrue;
+                if (input.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
+                {
+                    shape.Line.ForeColor.RGB = HexToOle(color.GetString());
+                }
+                shape.Line.Weight = input.TryGetProperty("widthPt", out var width) && width.ValueKind == JsonValueKind.Number ? (float)width.GetDouble() : 1f;
+            }
+            return new ToolResult { Output = "Stroke updated.", Mutated = true, Summary = "set_element_stroke" };
         }
     }
 }

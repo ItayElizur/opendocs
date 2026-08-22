@@ -222,6 +222,27 @@ const MUTATION_TOOLS = [
       required: ['sourceIndex'],
     },
   },
+  {
+    name: 'set_element_fill',
+    description: 'Sets a shape\'s solid fill color, or "none" to remove its fill.',
+    inputSchema: {
+      type: 'object',
+      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, fill: { type: 'string' } },
+      required: ['slideIndex', 'shapeIndex', 'fill'],
+    },
+  },
+  {
+    name: 'set_element_stroke',
+    description: 'Sets a shape\'s outline/stroke color and width, or removes it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' }, shapeIndex: { type: 'number' },
+        color: { type: 'string' }, widthPt: { type: 'number' }, remove: { type: 'boolean' },
+      },
+      required: ['slideIndex', 'shapeIndex'],
+    },
+  },
 ]
 
 const ALL_TOOLS = [...READER_TOOLS, ...MUTATION_TOOLS]
