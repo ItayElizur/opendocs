@@ -385,6 +385,96 @@ namespace ExcelAiAddIn
             filterRange.AutoFilter(Field: fieldIndex, Criteria1: criteria.ToArray(), Operator: Excel.XlAutoFilterOperator.xlFilterValues);
         }
 
+        private static Excel.XlFormatConditionOperator MapCfOperator(string op)
+        {
+            switch (op)
+            {
+                case "greaterThan": return Excel.XlFormatConditionOperator.xlGreater;
+                case "lessThan": return Excel.XlFormatConditionOperator.xlLess;
+                case "equal": return Excel.XlFormatConditionOperator.xlEqual;
+                case "between": return Excel.XlFormatConditionOperator.xlBetween;
+                default: return Excel.XlFormatConditionOperator.xlEqual;
+            }
+        }
+
+        private static void AddConditionalFormat(JsonElement op)
+        {
+            string range = op.GetProperty("range").GetString();
+            Excel.Range target = Sheet(op).Range[range];
+            JsonElement rule = op.GetProperty("rule");
+            string kind = rule.GetProperty("kind").GetString();
+            Excel.FormatCondition fc = null;
+
+            switch (kind)
+            {
+                case "number":
+                {
+                    string oper = rule.GetProperty("operator").GetString();
+                    double value = rule.GetProperty("value").GetDouble();
+                    string formula2 = rule.TryGetProperty("value2", out var v2) ? v2.GetDouble().ToString() : null;
+                    fc = target.FormatConditions.Add(Excel.XlFormatConditionType.xlCellValue, MapCfOperator(oper), value.ToString(), formula2);
+                    break;
+                }
+                case "text":
+                {
+                    string text = rule.GetProperty("text").GetString();
+                    fc = target.FormatConditions.Add(Excel.XlFormatConditionType.xlTextString, String: text, TextOperator: Excel.XlContainsOperator.xlContains);
+                    break;
+                }
+                case "blank":
+                    fc = target.FormatConditions.Add(Excel.XlFormatConditionType.xlBlanksCondition);
+                    break;
+                case "duplicate":
+                    fc = target.FormatConditions.AddUniqueValues();
+                    ((Excel.UniqueValues)fc).DupeUnique = Excel.XlDupeUnique.xlDuplicate;
+                    break;
+                case "top10":
+                {
+                    int rank = rule.TryGetProperty("rank", out var r) ? r.GetInt32() : 10;
+                    bool percent = rule.TryGetProperty("percent", out var p) && p.ValueKind == JsonValueKind.True;
+                    bool bottom = rule.TryGetProperty("bottom", out var b) && b.ValueKind == JsonValueKind.True;
+                    Excel.Top10 top10 = target.FormatConditions.AddTop10();
+                    top10.Rank = rank;
+                    top10.Percent = percent;
+                    top10.TopBottom = bottom ? Excel.XlTopBottom.xlTop10Bottom : Excel.XlTopBottom.xlTop10Top;
+                    if (rule.TryGetProperty("format", out var top10Format))
+                    {
+                        if (top10Format.TryGetProperty("bold", out var bold)) top10.Font.Bold = bold.ValueKind == JsonValueKind.True;
+                        if (top10Format.TryGetProperty("fontColor", out var fontColor)) top10.Font.Color = HexToOleColor(fontColor.GetString());
+                        if (top10Format.TryGetProperty("fillColor", out var fillColor)) top10.Interior.Color = HexToOleColor(fillColor.GetString());
+                    }
+                    return; // Top10 doesn't implement FormatCondition in this PIA (confirmed via reflection) - format applied directly above, mirroring colorScale/dataBar's early-return pattern
+                }
+                case "formula":
+                    fc = target.FormatConditions.Add(Excel.XlFormatConditionType.xlExpression, Formula1: rule.GetProperty("formula").GetString());
+                    break;
+                case "colorScale":
+                {
+                    Excel.ColorScale scale = target.FormatConditions.AddColorScale(3);
+                    if (rule.TryGetProperty("minColor", out var minC)) scale.ColorScaleCriteria[1].FormatColor.Color = HexToOleColor(minC.GetString());
+                    if (rule.TryGetProperty("midColor", out var midC)) scale.ColorScaleCriteria[2].FormatColor.Color = HexToOleColor(midC.GetString());
+                    if (rule.TryGetProperty("maxColor", out var maxC)) scale.ColorScaleCriteria[3].FormatColor.Color = HexToOleColor(maxC.GetString());
+                    return; // ColorScale/DataBar carry their own visual - no separate "format" object to apply below
+                }
+                case "dataBar":
+                {
+                    Excel.Databar bar = target.FormatConditions.AddDatabar();
+                    if (rule.TryGetProperty("color", out var barColor))
+                    {
+                        bar.BarColor.Color = HexToOleColor(barColor.GetString());
+                    }
+                    return;
+                }
+            }
+
+            if (fc != null && rule.TryGetProperty("format", out var format))
+            {
+                if (format.TryGetProperty("bold", out var bold)) fc.Font.Bold = bold.ValueKind == JsonValueKind.True;
+                if (format.TryGetProperty("fontColor", out var fontColor)) fc.Font.Color = HexToOleColor(fontColor.GetString());
+                if (format.TryGetProperty("fillColor", out var fillColor)) fc.Interior.Color = HexToOleColor(fillColor.GetString());
+            }
+        }
+
         private static ToolResult ProposeOperations(JsonElement input)
         {
             var lines = new System.Text.StringBuilder();
@@ -459,6 +549,8 @@ namespace ExcelAiAddIn
                         case "set_filter": SetFilter(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "clear_filter": ClearFilter(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "set_filter_criteria": SetFilterCriteria(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "add_conditional_format": AddConditionalFormat(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "clear_conditional_formats": Sheet(op).UsedRange.FormatConditions.Delete(); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
                     }
