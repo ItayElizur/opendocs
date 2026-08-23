@@ -510,9 +510,11 @@ namespace WordAiAddIn
             }
 
             blockIndexes.Sort();
-            // Capture each moved paragraph's formatted content (preserves character
-            // formatting) before any deletion shifts indices.
-            var captured = blockIndexes.Select(i => paragraphs[i + 1].Range.FormattedText).ToList();
+            // Capture each moved paragraph's content as an OOXML string - a true,
+            // detached snapshot (plain text, not a live COM Range reference) -
+            // before any deletion shifts indices, so formatting survives the
+            // move without depending on FormattedText's live-vs-copy semantics.
+            var captured = blockIndexes.Select(i => paragraphs[i + 1].Range.WordOpenXML).ToList();
 
             // Delete moved paragraphs in descending order.
             var deleteOrder = new List<int>(blockIndexes);
@@ -532,11 +534,9 @@ namespace WordAiAddIn
                 : ActiveDoc.Paragraphs[adjustedAfter + 1].Range;
             insertionPoint.Collapse(adjustedAfter == -1 ? Word.WdCollapseDirection.wdCollapseStart : Word.WdCollapseDirection.wdCollapseEnd);
 
-            foreach (Word.Range block in captured)
+            foreach (string xml in captured)
             {
-                insertionPoint.InsertParagraphAfter();
-                insertionPoint.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
-                insertionPoint.FormattedText = block;
+                insertionPoint.InsertXML(xml);
                 insertionPoint.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
             }
         }

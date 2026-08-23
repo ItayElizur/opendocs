@@ -89,7 +89,7 @@ namespace OfficeAi.Shared
                         {
                             _webView.CoreWebView2.PostWebMessageAsJson(ToolProtocol.SerializeToolResult(requestId, result));
                         }
-                        _setStatus(result.IsError ? "Tool error: " + toolName : "ready");
+                        _setStatus("ready");
                     }
                     else
                     {

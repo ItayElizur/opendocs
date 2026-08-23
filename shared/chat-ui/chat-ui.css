@@ -203,7 +203,7 @@
   }
   .ai-step-icon { width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--color-text-secondary); font-size: 13px; }
   .ai-step-icon.error { color: var(--docs-ai-error); }
-  .ai-step-title { color: var(--color-text-secondary); padding-top: 1px; }
+  .ai-step-title { color: var(--color-text-secondary); padding-top: 1px; overflow-wrap: anywhere; }
   .ai-step-title code { background: var(--color-bg-subtle); border-radius: var(--radius-6); padding: 1px 5px; font-size: 13px; }
   .ai-tool-output {
     background: var(--color-bg-subtle); border-radius: var(--radius-12); font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;

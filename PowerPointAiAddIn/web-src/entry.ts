@@ -386,7 +386,8 @@ const powerPointSkill: AgentSkill = {
     'You can add and edit tables: add_table, edit_table_cell, edit_table_structure, and edit_table_style. ' +
     'You can create and edit charts: add_chart and edit_chart. ' +
     'You can add SmartArt diagrams: add_smartart. ' +
-    'You can work with images: crop_image, set_picture_opacity, and replace_image.',
+    'You can work with images: crop_image, set_picture_opacity, and replace_image. ' +
+    'Your available tools depend on the current editing mode (Read Only, Comment Only, Track Changes, or Full Autonomy) - only call tools that are currently offered to you.',
   tools: ALL_TOOLS,
   executeTool: (call) => callDotNetTool(call.name, call.input),
 }

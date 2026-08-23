@@ -69,6 +69,10 @@ function escapeHtml(s: string): string {
   return div.innerHTML
 }
 
+function truncateForDisplay(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) + '…' : s
+}
+
 function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
   const pills = options.starters
     .map((s) => `<div class="ai-starter">${escapeHtml(s[currentLang])}</div>`)
@@ -312,7 +316,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           summaryEl.textContent = `Running ${count} tool${count > 1 ? 's' : ''}...`
           const rowEl = document.createElement('div')
           rowEl.className = 'ai-step-row'
-          rowEl.innerHTML = `<div class="ai-step-icon">&#8987;</div><div class="ai-step-title">${escapeHtml(toolName)}(${escapeHtml(JSON.stringify(input))})</div>`
+          rowEl.innerHTML = `<div class="ai-step-icon">&#8987;</div><div class="ai-step-title">${escapeHtml(toolName)}(${escapeHtml(truncateForDisplay(JSON.stringify(input), 150))})</div>`
           stepsEl.appendChild(rowEl)
           scrollToBottom()
           return {

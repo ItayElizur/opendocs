@@ -710,29 +710,17 @@ namespace ExcelAiAddIn
                 }
             }
 
-            // Data changes require the chart's embedded workbook - open, write,
-            // close, and RELEASE explicitly so no hidden Excel host process leaks.
             if (op.TryGetProperty("seriesData", out var seriesData) && seriesData.ValueKind == JsonValueKind.Array)
             {
-                dynamic chartDataWorkbook = chart.ChartData.Workbook;
-                try
+                int seriesIdx = 0;
+                foreach (JsonElement sd in seriesData.EnumerateArray())
                 {
-                    dynamic dataSheet = chartDataWorkbook.Worksheets[1];
-                    int seriesIdx = 0;
-                    foreach (JsonElement sd in seriesData.EnumerateArray())
+                    dynamic series = chart.SeriesCollection(seriesIdx + 1);
+                    if (sd.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String)
                     {
-                        dynamic series = chart.SeriesCollection(seriesIdx + 1);
-                        if (sd.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String)
-                        {
-                            series.Name = nameEl.GetString();
-                        }
-                        seriesIdx++;
+                        series.Name = nameEl.GetString();
                     }
-                }
-                finally
-                {
-                    chartDataWorkbook.Close(SaveChanges: true);
-                    System.Runtime.InteropServices.Marshal.ReleaseComObject(chartDataWorkbook);
+                    seriesIdx++;
                 }
             }
         }
