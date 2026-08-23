@@ -410,6 +410,12 @@ namespace ExcelAiAddIn
                         case "edit_chart": EditChartExcel(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "delete_visual": DeleteVisual(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "add_image": AddImageExcel(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "add_table": AddTable(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "add_table_row": AddTableRow(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "add_table_column": AddTableColumn(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "delete_table_row": DeleteTableRow(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "delete_table_column": DeleteTableColumn(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "delete_table": DeleteTable(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
                     }
@@ -867,6 +873,92 @@ namespace ExcelAiAddIn
             Excel.Range anchor = Sheet(op).Range[anchorCell];
             Sheet(op).Shapes.AddPicture(path, Microsoft.Office.Core.MsoTriState.msoFalse, Microsoft.Office.Core.MsoTriState.msoTrue,
                 (float)(double)anchor.Left, (float)(double)anchor.Top, -1, -1);
+        }
+
+        private static void AddTable(JsonElement op)
+        {
+            string range = op.GetProperty("range").GetString();
+            Excel.Worksheet sheet = Sheet(op);
+            Excel.ListObject table = sheet.ListObjects.Add(Excel.XlListObjectSourceType.xlSrcRange, sheet.Range[range], Type.Missing, Excel.XlYesNoGuess.xlYes);
+            if (op.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String)
+            {
+                table.Name = name.GetString();
+            }
+            if (op.TryGetProperty("style", out var style) && style.ValueKind == JsonValueKind.String)
+            {
+                table.TableStyle = style.GetString();
+            }
+            if (op.TryGetProperty("bandedRows", out var banded))
+            {
+                table.ShowTableStyleRowStripes = banded.ValueKind == JsonValueKind.True;
+            }
+        }
+
+        private static Excel.ListObject ResolveTable(JsonElement op)
+        {
+            string tableName = op.GetProperty("tableName").GetString();
+            return Sheet(op).ListObjects[tableName];
+        }
+
+        private static void AddTableRow(JsonElement op)
+        {
+            Excel.ListObject table = ResolveTable(op);
+            int count = op.TryGetProperty("count", out var c) ? c.GetInt32() : 1;
+            for (int i = 0; i < count; i++)
+            {
+                if (op.TryGetProperty("row", out var row) && row.ValueKind == JsonValueKind.Number)
+                {
+                    table.ListRows.Add(row.GetInt32() + 1);
+                }
+                else
+                {
+                    table.ListRows.Add();
+                }
+            }
+        }
+
+        private static void AddTableColumn(JsonElement op)
+        {
+            Excel.ListObject table = ResolveTable(op);
+            int count = op.TryGetProperty("count", out var c) ? c.GetInt32() : 1;
+            string columnName = op.GetProperty("columnName").GetString();
+            for (int i = 0; i < count; i++)
+            {
+                Excel.ListColumn col = op.TryGetProperty("column", out var colPos) && colPos.ValueKind == JsonValueKind.Number
+                    ? table.ListColumns.Add(colPos.GetInt32() + 1)
+                    : table.ListColumns.Add();
+                // Excel requires unique column names - only the last added column (or
+                // the only one, when count==1) gets the literal requested name; extras
+                // get a numbered suffix to stay valid.
+                col.Name = count == 1 ? columnName : columnName + " " + (i + 1);
+            }
+        }
+
+        private static void DeleteTableRow(JsonElement op)
+        {
+            Excel.ListObject table = ResolveTable(op);
+            int row = op.GetProperty("row").GetInt32();
+            int count = op.TryGetProperty("count", out var c) ? c.GetInt32() : 1;
+            for (int i = 0; i < count; i++)
+            {
+                table.ListRows[row + 1].Delete();
+            }
+        }
+
+        private static void DeleteTableColumn(JsonElement op)
+        {
+            Excel.ListObject table = ResolveTable(op);
+            int column = op.GetProperty("column").GetInt32();
+            int count = op.TryGetProperty("count", out var c) ? c.GetInt32() : 1;
+            for (int i = 0; i < count; i++)
+            {
+                table.ListColumns[column + 1].Delete();
+            }
+        }
+
+        private static void DeleteTable(JsonElement op)
+        {
+            ResolveTable(op).Unlist(); // converts back to a plain range, keeping data/formatting
         }
     }
 }
