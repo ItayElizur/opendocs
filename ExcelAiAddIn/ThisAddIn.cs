@@ -39,6 +39,21 @@ namespace ExcelAiAddIn
         {
         }
 
+        protected override Microsoft.Office.Core.IRibbonExtensibility CreateRibbonExtensibilityObject()
+        {
+            return new Ribbon();
+        }
+
+        // Reopens the pane after the user closes it via its native "x" (or
+        // hides it), toggled from the Home-tab ribbon button.
+        public void TogglePane()
+        {
+            if (_taskPane != null)
+            {
+                _taskPane.Visible = !_taskPane.Visible;
+            }
+        }
+
         #region VSTO generated code
 
         private void InternalStartup()

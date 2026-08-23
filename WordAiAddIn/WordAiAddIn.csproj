@@ -129,11 +129,18 @@
     <Compile Include="WordTools.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Ribbon.cs">
+      <SubType>Code</SubType>
+    </Compile>
     <AppDesigner Include="Properties\" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="web\index.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\shared\chat-ui\logo.png">
+      <Link>web\logo.png</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="web\bundle.js">

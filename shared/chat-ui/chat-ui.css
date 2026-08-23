@@ -83,8 +83,7 @@
   .ai-panel-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
   .ai-logo {
     width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
-    background: linear-gradient(135deg, var(--color-brand-secondary), #6ec1ff);
-    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700;
+    object-fit: cover; display: block;
   }
   .ai-header-actions { display: flex; gap: 2px; }
   .ai-header-btn {

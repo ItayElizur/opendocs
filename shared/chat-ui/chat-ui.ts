@@ -87,7 +87,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       <div class="ai-rail" data-t="panelTitle"></div>
       <div class="ai-panel">
       <div class="ai-panel-header">
-        <div class="ai-panel-title"><span class="ai-logo">A</span><span data-t="panelTitle">Airchat Office</span></div>
+        <div class="ai-panel-title"><img class="ai-logo" src="logo.png" alt="" /><span data-t="panelTitle">Airchat Office</span></div>
         <div class="ai-header-actions">
           <button class="ai-header-btn" data-t-title="newChat">+</button>
           <button class="ai-header-btn" data-t-title="settings">&#9881;</button>
