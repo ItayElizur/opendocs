@@ -8,3 +8,4 @@ node_modules/
 **/web/bundle.js.map
 **/web/bundle.css
 **/web/bundle.css.map
+deploy/dist/
