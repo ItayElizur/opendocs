@@ -56,6 +56,30 @@ describe('mountChatUI', () => {
     expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: 'http://localhost:9000/v1' }))
   })
 
+  it('the skipTlsVerify checkbox defaults unchecked and reports its state on Save', () => {
+    const { root, onSettingsSave } = setup()
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    const checkbox = root.querySelector<HTMLInputElement>('[data-field="skipTlsVerify"]')!
+    expect(checkbox.checked).toBe(false)
+    checkbox.checked = true
+    root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
+    expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ skipTlsVerify: true }))
+  })
+
+  it('initialSettings pre-fills the settings form so a returning user sees their saved values', () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    mountChatUI(root, {
+      onSend: vi.fn(), onModeChange: vi.fn(), onSettingsSave: vi.fn(), onNewChat: vi.fn(),
+      starters: [], onCollapseChange: vi.fn(),
+      initialSettings: { baseUrl: 'https://internal-gateway.example/v1', apiKey: 'sk-existing', model: 'gpt-4o', skipTlsVerify: true },
+    })
+    expect(root.querySelector<HTMLInputElement>('[data-field="baseUrl"]')!.value).toBe('https://internal-gateway.example/v1')
+    expect(root.querySelector<HTMLInputElement>('[data-field="apiKey"]')!.value).toBe('sk-existing')
+    expect(root.querySelector<HTMLInputElement>('[data-field="model"]')!.value).toBe('gpt-4o')
+    expect(root.querySelector<HTMLInputElement>('[data-field="skipTlsVerify"]')!.checked).toBe(true)
+  })
+
   it('a tool group renders a step per addStep call and reflects completion, collapsed by default', () => {
     const { root, handle } = setup()
     const group = handle.beginToolGroup()

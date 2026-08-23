@@ -14,6 +14,7 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   settingsBaseUrl:      { en: 'API Base URL', he: 'כתובת בסיס API' },
   settingsApiKey:       { en: 'API Key', he: 'מפתח API' },
   settingsModel:        { en: 'Model name', he: 'שם המודל' },
+  settingsSkipTls:      { en: 'Skip TLS certificate verification (insecure - testing only)', he: 'דלג על אימות אישור TLS (לא מאובטח - לבדיקות בלבד)' },
   settingsLanguage:     { en: 'Language', he: 'שפה' },
   save:                 { en: 'Save', he: 'שמור' },
   collapse:             { en: 'Collapse panel', he: 'כווץ חלונית' },
@@ -34,9 +35,13 @@ export interface ChatUIOptions {
   onSend: (text: string) => void
   onNewChat: () => void
   onModeChange: (mode: EditingMode) => void
-  onSettingsSave: (settings: { baseUrl: string; apiKey: string; model: string; lang: Lang }) => void
+  onSettingsSave: (settings: { baseUrl: string; apiKey: string; model: string; skipTlsVerify: boolean; lang: Lang }) => void
   starters: Array<{ en: string; he: string }>
   onCollapseChange: (collapsed: boolean) => void
+  // Pre-fills the settings form on mount (e.g. from the host app's own
+  // persisted storage) so the user doesn't see blank fields every time they
+  // reopen the document, even though a value was saved previously.
+  initialSettings?: { baseUrl?: string; apiKey?: string; model?: string; skipTlsVerify?: boolean }
 }
 
 export interface ToolStepHandle {
@@ -98,6 +103,9 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <div class="ai-field"><label data-t="settingsBaseUrl">API Base URL</label><input data-field="baseUrl" type="text" /></div>
           <div class="ai-field"><label data-t="settingsApiKey">API Key</label><input data-field="apiKey" type="password" /></div>
           <div class="ai-field"><label data-t="settingsModel">Model name</label><input data-field="model" type="text" /></div>
+          <div class="ai-field ai-field-checkbox">
+            <label><input type="checkbox" data-field="skipTlsVerify" /> <span data-t="settingsSkipTls">Skip TLS certificate verification (insecure - testing only)</span></label>
+          </div>
           <div class="ai-field">
             <label data-t="settingsLanguage">Language</label>
             <div class="ai-lang-toggle">
@@ -145,6 +153,14 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const dockEl = root.querySelector<HTMLDivElement>('.ai-dock')!
   const railEl = root.querySelector<HTMLDivElement>('.ai-rail')!
   const collapseBtn = root.querySelector<HTMLButtonElement>('[data-t-title="collapse"]')!
+
+  if (options.initialSettings) {
+    const init = options.initialSettings
+    if (init.baseUrl) root.querySelector<HTMLInputElement>('[data-field="baseUrl"]')!.value = init.baseUrl
+    if (init.apiKey) root.querySelector<HTMLInputElement>('[data-field="apiKey"]')!.value = init.apiKey
+    if (init.model) root.querySelector<HTMLInputElement>('[data-field="model"]')!.value = init.model
+    if (init.skipTlsVerify) root.querySelector<HTMLInputElement>('[data-field="skipTlsVerify"]')!.checked = true
+  }
 
   function setCollapsed(collapsed: boolean): void {
     dockEl.classList.toggle('collapsed', collapsed)
@@ -251,6 +267,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       baseUrl: root.querySelector<HTMLInputElement>('[data-field="baseUrl"]')!.value,
       apiKey: root.querySelector<HTMLInputElement>('[data-field="apiKey"]')!.value,
       model: root.querySelector<HTMLInputElement>('[data-field="model"]')!.value,
+      skipTlsVerify: root.querySelector<HTMLInputElement>('[data-field="skipTlsVerify"]')!.checked,
       lang: pendingLang,
     })
     settingsPanel.classList.remove('open')

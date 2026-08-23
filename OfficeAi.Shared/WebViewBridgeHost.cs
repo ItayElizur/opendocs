@@ -20,6 +20,14 @@ namespace OfficeAi.Shared
         private readonly Action<string> _setStatus;
         private readonly OtherMessageHandler _onOtherMessage;
 
+        // Off by default. Only settable via the explicit "set-tls-bypass"
+        // WebMessage the Settings panel's checkbox sends - never enabled
+        // silently. Intended for testing against an internal/air-gapped LLM
+        // gateway using a self-signed or otherwise untrusted certificate;
+        // the correct fix for a real deployment is trusting the real
+        // certificate in Windows' certificate store instead.
+        private bool _skipTlsVerify;
+
         public WebView2 WebView => _webView;
 
         public WebViewBridgeHost(
@@ -56,6 +64,7 @@ namespace OfficeAi.Shared
                     CoreWebView2HostResourceAccessKind.Allow);
 
                 _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+                _webView.CoreWebView2.ServerCertificateErrorDetected += OnServerCertificateErrorDetected;
 
                 _webView.Source = new Uri("https://appassets.local/index.html");
                 _setStatus("ready");
@@ -70,6 +79,13 @@ namespace OfficeAi.Shared
         {
             if (_webView.CoreWebView2 == null) return;
             _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(payload));
+        }
+
+        private void OnServerCertificateErrorDetected(object sender, CoreWebView2ServerCertificateErrorDetectedEventArgs e)
+        {
+            e.Action = _skipTlsVerify
+                ? CoreWebView2ServerCertificateErrorAction.AlwaysAllow
+                : CoreWebView2ServerCertificateErrorAction.Default;
         }
 
         private void OnWebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -90,6 +106,10 @@ namespace OfficeAi.Shared
                             _webView.CoreWebView2.PostWebMessageAsJson(ToolProtocol.SerializeToolResult(requestId, result));
                         }
                         _setStatus("ready");
+                    }
+                    else if (kind == "set-tls-bypass")
+                    {
+                        _skipTlsVerify = root.TryGetProperty("enabled", out var enabled) && enabled.GetBoolean();
                     }
                     else
                     {

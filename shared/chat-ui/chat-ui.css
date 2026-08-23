@@ -132,6 +132,8 @@
     background: var(--color-bg-page); color: var(--color-text-primary);
   }
   .ai-field input:focus, .ai-field select:focus { outline: none; border-color: var(--docs-brand-ring); }
+  .ai-field-checkbox label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+  .ai-field-checkbox input[type="checkbox"] { width: auto; flex-shrink: 0; }
   .ai-lang-toggle { display: flex; gap: 6px; }
   .ai-lang-toggle button {
     flex: 1; padding: 6px; border-radius: var(--radius-8); border: 1px solid var(--color-border-default);

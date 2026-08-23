@@ -98,20 +98,46 @@ function callDotNetTool(toolName: string, input: Record<string, unknown>): Promi
   })
 }
 
-const PROVIDER_CONFIG: AiProviderConfig = {
-  apiKey: 'test',
-  model: 'test-model',
+// Connection settings are user-editable via the panel's Settings dropdown
+// (onSettingsSave below) and persisted in this WebView2 profile's own
+// localStorage - each app has its own separate WebView2 user-data folder
+// (see WebViewBridgeHost's userDataFolder), so this never collides with or
+// shares storage across Word/Excel/PowerPoint.
+const SETTINGS_STORAGE_KEY = 'airchat-settings'
+
+interface StoredSettings {
+  baseUrl: string
+  apiKey: string
+  model: string
+  skipTlsVerify: boolean
 }
-const BASE_URL = 'http://127.0.0.1:9000/v1'
+
+function loadSettings(): StoredSettings {
+  const defaults: StoredSettings = { baseUrl: 'http://127.0.0.1:9000/v1', apiKey: 'test', model: 'test-model', skipTlsVerify: false }
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY)
+    if (!raw) return defaults
+    return { ...defaults, ...JSON.parse(raw) }
+  } catch {
+    return defaults
+  }
+}
+
+function saveSettings(settings: StoredSettings): void {
+  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings))
+}
+
+let currentSettings = loadSettings()
 const MAX_TOKENS = 1024
 
 function makeTransport(): AgentTransport {
   return {
     stream(request, callbacks): AgentStreamHandle {
       const controller = new AbortController()
+      const providerConfig: AiProviderConfig = { apiKey: currentSettings.apiKey, model: currentSettings.model }
       streamOpenAiCompatible(
-        BASE_URL,
-        PROVIDER_CONFIG,
+        currentSettings.baseUrl,
+        providerConfig,
         request.system,
         request.messages,
         request.tools,
@@ -259,6 +285,7 @@ const ui = mountChatUI(root, {
   onCollapseChange: (collapsed) => {
     chrome.webview.postMessage({ kind: collapsed ? 'collapse-pane' : 'expand-pane' })
   },
+  initialSettings: currentSettings,
   onSend: (text) => {
     if (loop.busy) return
     ui.addUserMessage(text)
@@ -277,9 +304,21 @@ const ui = mountChatUI(root, {
     chrome.webview.postMessage({ kind: 'set-mode', mode })
   },
   onSettingsSave: (settings) => {
-    // Not yet wired to the transport/provider config - deferred (Phase 5).
+    currentSettings = {
+      baseUrl: settings.baseUrl || currentSettings.baseUrl,
+      apiKey: settings.apiKey || currentSettings.apiKey,
+      model: settings.model || currentSettings.model,
+      skipTlsVerify: settings.skipTlsVerify,
+    }
+    saveSettings(currentSettings)
+    chrome.webview.postMessage({ kind: 'set-tls-bypass', enabled: currentSettings.skipTlsVerify })
   },
 })
+
+// Apply the persisted TLS-bypass preference on load too, not just after a
+// future Save - otherwise a user who enabled it last session would silently
+// go back to strict verification every time they reopen the document.
+chrome.webview.postMessage({ kind: 'set-tls-bypass', enabled: currentSettings.skipTlsVerify })
 
 let currentToolGroup: ReturnType<typeof ui.beginToolGroup> | null = null
 const activeSteps = new Map<string, ReturnType<ReturnType<typeof ui.beginToolGroup>['addStep']>>()
