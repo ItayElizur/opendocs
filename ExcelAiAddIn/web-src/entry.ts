@@ -181,7 +181,7 @@ const ALL_TOOLS: AgentSkill['tools'] = [
       'Structure: "insert_rows"/"delete_rows" (sheet?, startRow:number 1-based, count:number), "insert_cols"/"delete_cols" (sheet?, startCol:number 1-based, count:number), ' +
       '"add_sheet" (name), "delete_sheet" (sheet?), "duplicate_sheet" (sheet?, name?), "set_sheet_hidden" (sheet?, hidden), ' +
       '"move_sheet" (sheet?, position:number 1-based), "protect_sheet" (sheet?, protected:boolean), "rename_sheet" (sheet?, name).\n' +
-      'Charts/visuals: "add_chart" (sheet?, dataRange:string, chartType?:"column"|"line"|"pie"|"bar"|"doughnut", title?:string), ' +
+      'Charts/visuals: "add_chart" (sheet?, dataRange:string, chartType?:"column"|"line"|"pie" - other values silently become column, title?:string), ' +
       '"edit_chart" (sheet?, chartPath:string - the chart\'s name, chartType?, title?, legend?:"none"|"right"|"top"|"left"|"bottom", dataLabels?:"none"|"value"|"percent", seriesColors?: {seriesIndex0based: hex}, seriesData?: [{name}]), ' +
       '"delete_visual" (sheet?, visualId:string - shape/chart name), "add_sparkline" (sheet?, dataRange, targetCell?, type?:"line"|"column"|"stacked", color?), ' +
       '"add_shape" (sheet?, shapeType, anchorCell, fillColor?, text?), "edit_shape" (sheet?, visualId, text?, fillColor?, anchorCell?), ' +
@@ -189,7 +189,7 @@ const ALL_TOOLS: AgentSkill['tools'] = [
       'Tables: "add_table" (sheet?, range, name?, style?, bandedRows?), "add_table_row" (sheet?, tableName, row?, count?), ' +
       '"add_table_column" (sheet?, tableName, column?, columnName, count?), "delete_table_row" (sheet?, tableName, row, count?), ' +
       '"delete_table_column" (sheet?, tableName, column, count?), "delete_table" (sheet?, tableName).\n' +
-      'Pivot: "add_pivot" (sourceRange, targetCell, targetSheetId?, name?, rowFields?: string|string[], columnField?, pageFields?: string[], values: [{field, agg?:"sum"|"count"|"average"|"max"|"min", formula?, numFmt?}]), "refresh_pivot" (sheet?).\n' +
+      'Pivot: "add_pivot" (sheet?, sourceRange, targetCell, targetSheetId?, name?, rowFields?: string|string[], columnField?, pageFields?: string[], values: [{field, agg?:"sum"|"count"|"average"|"max"|"min", formula?, numFmt?}]), "refresh_pivot" (sheet?).\n' +
       'Data: "set_hyperlink" (sheet?, address, target: string|null to remove), "set_note" (sheet?, address, text: string|null to remove), ' +
       '"add_defined_name" (name, ref), "delete_defined_name" (name), "set_filter" (sheet?, range), "clear_filter" (sheet?), ' +
       '"set_filter_criteria" (sheet?, column:number 0-based, values: string[]|null to clear), ' +
