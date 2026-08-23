@@ -551,6 +551,7 @@ namespace ExcelAiAddIn
                         case "set_filter_criteria": SetFilterCriteria(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "add_conditional_format": AddConditionalFormat(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "clear_conditional_formats": Sheet(op).UsedRange.FormatConditions.Delete(); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_data_validation": SetDataValidation(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
                     }
@@ -1141,6 +1142,71 @@ namespace ExcelAiAddIn
         {
             string name = op.GetProperty("name").GetString();
             Globals.ThisAddIn.Application.ActiveWorkbook.Names.Item(name).Delete();
+        }
+
+        private static void SetDataValidation(JsonElement op)
+        {
+            string range = op.GetProperty("range").GetString();
+            Excel.Range target = Sheet(op).Range[range];
+
+            if (!op.TryGetProperty("validation", out var validation) || validation.ValueKind == JsonValueKind.Null)
+            {
+                target.Validation.Delete();
+                return;
+            }
+
+            string kind = validation.GetProperty("kind").GetString();
+            target.Validation.Delete();
+
+            switch (kind)
+            {
+                case "list":
+                {
+                    var values = new List<string>();
+                    foreach (JsonElement v in validation.GetProperty("values").EnumerateArray()) values.Add(v.GetString());
+                    target.Validation.Add(Excel.XlDVType.xlValidateList, Excel.XlDVAlertStyle.xlValidAlertStop, Excel.XlFormatConditionOperator.xlBetween, string.Join(",", values));
+                    break;
+                }
+                case "listRef":
+                {
+                    string refRange = validation.GetProperty("range").GetString();
+                    target.Validation.Add(Excel.XlDVType.xlValidateList, Excel.XlDVAlertStyle.xlValidAlertStop, Excel.XlFormatConditionOperator.xlBetween, "=" + refRange);
+                    break;
+                }
+                case "numberBetween":
+                {
+                    double min = validation.GetProperty("min").GetDouble();
+                    double max = validation.GetProperty("max").GetDouble();
+                    target.Validation.Add(Excel.XlDVType.xlValidateDecimal, Excel.XlDVAlertStyle.xlValidAlertStop, Excel.XlFormatConditionOperator.xlBetween, min.ToString(), max.ToString());
+                    break;
+                }
+                case "dateBetween":
+                {
+                    string start = validation.GetProperty("start").GetString();
+                    string end = validation.GetProperty("end").GetString();
+                    target.Validation.Add(Excel.XlDVType.xlValidateDate, Excel.XlDVAlertStyle.xlValidAlertStop, Excel.XlFormatConditionOperator.xlBetween, start, end);
+                    break;
+                }
+                case "formula":
+                {
+                    string formula = validation.GetProperty("formula").GetString();
+                    target.Validation.Add(Excel.XlDVType.xlValidateCustom, Excel.XlDVAlertStyle.xlValidAlertStop, Excel.XlFormatConditionOperator.xlBetween, formula);
+                    break;
+                }
+                // XlDVType enum verification (via reflection against this machine's
+                // Microsoft.Office.Interop.Excel PIA) shows 8 total validation kinds:
+                // xlValidateInputOnly, xlValidateWholeNumber, xlValidateDecimal, xlValidateList,
+                // xlValidateDate, xlValidateTime, xlValidateTextLength, xlValidateCustom. None of
+                // these map to boolean-checkbox cells. The assembly does define CheckBox and
+                // CheckBoxes types, but they are form controls (accessed via Shapes.AddFormControl),
+                // not Data Validation options. Thus, Excel's native checkbox-cell feature (if it
+                // exists in newer Office 365 builds) is not accessible through the Validation API
+                // in this Interop version.
+                case "checkbox":
+                    throw new NotSupportedException("set_data_validation: 'checkbox' kind is not supported in this version of Excel Interop - CheckBox is a form control, not a Data Validation type.");
+                default:
+                    throw new ArgumentException("set_data_validation: unknown validation kind '" + kind + "'.");
+            }
         }
     }
 }
