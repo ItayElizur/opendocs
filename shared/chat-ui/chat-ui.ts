@@ -273,6 +273,13 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     if (existingEmpty) existingEmpty.remove()
     const div = document.createElement('div')
     div.className = role === 'user' ? 'ai-msg-user' : 'ai-msg-assistant'
+    // dir="auto" lets the browser's own bidi algorithm pick this message's
+    // paragraph direction from its own first strong-directional character,
+    // instead of blindly inheriting the panel's UI-language dir (set by
+    // setLang) - otherwise a Hebrew-first message typed while the panel is
+    // in English mode (or vice versa) gets the wrong base direction and
+    // mixed Hebrew/English word order renders scrambled.
+    div.dir = 'auto'
     div.textContent = text
     chatEl.appendChild(div)
     return div

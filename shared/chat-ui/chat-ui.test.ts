@@ -164,4 +164,28 @@ describe('mountChatUI', () => {
     expect(root.querySelector('.ai-dock')!.getAttribute('dir')).toBe('ltr')
     expect(root.querySelector('.ai-msg-user')!.textContent).toBe(hebrewQuestion)
   })
+
+  it('mixed-script messages get their own bidi direction via dir="auto", independent of the panel\'s UI language', () => {
+    const { root, handle } = setup()
+
+    // Panel stays in English (default) - but the user types a message that
+    // starts in Hebrew and switches to English mid-sentence. Without
+    // dir="auto" on the message element, it would wrongly inherit the
+    // panel's ltr dir and the mixed-script word order would render scrambled.
+    const mixedHebrewFirst = 'שלום, please summarize this document'
+    handle.addUserMessage(mixedHebrewFirst)
+    const userMsg = root.querySelector<HTMLElement>('.ai-msg-user')!
+    expect(userMsg.getAttribute('dir')).toBe('auto')
+    expect(userMsg.textContent).toBe(mixedHebrewFirst)
+
+    // Same for a streamed assistant reply that starts in English but
+    // contains Hebrew.
+    handle.beginAssistantMessage()
+    const mixedEnglishFirst = 'Sure, the summary is: זהו סיכום המסמך.'
+    handle.updateAssistantMessage(mixedEnglishFirst.slice(0, 10))
+    handle.endAssistantMessage(mixedEnglishFirst)
+    const assistantMsg = root.querySelector<HTMLElement>('.ai-msg-assistant')!
+    expect(assistantMsg.getAttribute('dir')).toBe('auto')
+    expect(assistantMsg.textContent).toBe(mixedEnglishFirst)
+  })
 })
