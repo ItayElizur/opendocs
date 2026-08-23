@@ -552,6 +552,8 @@ namespace ExcelAiAddIn
                         case "add_conditional_format": AddConditionalFormat(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "clear_conditional_formats": Sheet(op).UsedRange.FormatConditions.Delete(); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "set_data_validation": SetDataValidation(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "add_pivot": AddPivot(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "refresh_pivot": RefreshPivot(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
                     }
@@ -1206,6 +1208,79 @@ namespace ExcelAiAddIn
                     throw new NotSupportedException("set_data_validation: 'checkbox' kind is not supported in this version of Excel Interop - CheckBox is a form control, not a Data Validation type.");
                 default:
                     throw new ArgumentException("set_data_validation: unknown validation kind '" + kind + "'.");
+            }
+        }
+
+        private static Excel.XlConsolidationFunction MapPivotAgg(string agg)
+        {
+            switch (agg)
+            {
+                case "count": return Excel.XlConsolidationFunction.xlCount;
+                case "average": return Excel.XlConsolidationFunction.xlAverage;
+                case "max": return Excel.XlConsolidationFunction.xlMax;
+                case "min": return Excel.XlConsolidationFunction.xlMin;
+                default: return Excel.XlConsolidationFunction.xlSum;
+            }
+        }
+
+        private static void AddPivot(JsonElement op)
+        {
+            string sourceRange = op.GetProperty("sourceRange").GetString();
+            string targetCell = op.GetProperty("targetCell").GetString();
+            Excel.Worksheet sourceSheet = Sheet(op);
+            Excel.Worksheet targetSheet = op.TryGetProperty("targetSheetId", out var tsid) && tsid.ValueKind == JsonValueKind.String
+                ? (Excel.Worksheet)Globals.ThisAddIn.Application.ActiveWorkbook.Sheets[tsid.GetString()]
+                : sourceSheet;
+
+            Excel.PivotCache cache = Globals.ThisAddIn.Application.ActiveWorkbook.PivotCaches().Create(
+                Excel.XlPivotTableSourceType.xlDatabase, sourceSheet.Range[sourceRange]);
+            Excel.PivotTable pivot = cache.CreatePivotTable(targetSheet.Range[targetCell],
+                op.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String ? name.GetString() : "PivotTable1");
+
+            void AddField(string fieldName, Excel.XlPivotFieldOrientation orientation)
+            {
+                Excel.PivotField field = (Excel.PivotField)pivot.PivotFields(fieldName);
+                field.Orientation = orientation;
+            }
+
+            if (op.TryGetProperty("rowFields", out var rowFields))
+            {
+                if (rowFields.ValueKind == JsonValueKind.Array)
+                    foreach (JsonElement f in rowFields.EnumerateArray()) AddField(f.GetString(), Excel.XlPivotFieldOrientation.xlRowField);
+                else
+                    AddField(rowFields.GetString(), Excel.XlPivotFieldOrientation.xlRowField);
+            }
+            if (op.TryGetProperty("columnField", out var colField) && colField.ValueKind == JsonValueKind.String)
+            {
+                AddField(colField.GetString(), Excel.XlPivotFieldOrientation.xlColumnField);
+            }
+            if (op.TryGetProperty("pageFields", out var pageFields) && pageFields.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement f in pageFields.EnumerateArray()) AddField(f.GetString(), Excel.XlPivotFieldOrientation.xlPageField);
+            }
+            foreach (JsonElement v in op.GetProperty("values").EnumerateArray())
+            {
+                string fieldName = v.GetProperty("field").GetString();
+                string agg = v.TryGetProperty("agg", out var a) ? a.GetString() : "sum";
+                if (v.TryGetProperty("formula", out var formula) && formula.ValueKind == JsonValueKind.String)
+                {
+                    pivot.CalculatedFields().Add(fieldName, formula.GetString());
+                }
+                Excel.PivotField dataField = (Excel.PivotField)pivot.PivotFields(fieldName);
+                dataField.Orientation = Excel.XlPivotFieldOrientation.xlDataField;
+                dataField.Function = MapPivotAgg(agg);
+                if (v.TryGetProperty("numFmt", out var numFmt) && numFmt.ValueKind == JsonValueKind.String)
+                {
+                    dataField.NumberFormat = numFmt.GetString();
+                }
+            }
+        }
+
+        private static void RefreshPivot(JsonElement op)
+        {
+            foreach (Excel.PivotTable pivot in Sheet(op).PivotTables())
+            {
+                pivot.PivotCache().Refresh();
             }
         }
     }
