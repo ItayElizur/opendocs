@@ -416,6 +416,10 @@ namespace ExcelAiAddIn
                         case "delete_table_row": DeleteTableRow(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "delete_table_column": DeleteTableColumn(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "delete_table": DeleteTable(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_hyperlink": SetHyperlink(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_note": SetNote(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "add_defined_name": AddDefinedName(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "delete_defined_name": DeleteDefinedName(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
                     }
@@ -959,6 +963,53 @@ namespace ExcelAiAddIn
         private static void DeleteTable(JsonElement op)
         {
             ResolveTable(op).Unlist(); // converts back to a plain range, keeping data/formatting
+        }
+
+        private static void SetHyperlink(JsonElement op)
+        {
+            string address = op.GetProperty("address").GetString();
+            Excel.Range range = Sheet(op).Range[address];
+            if (!op.TryGetProperty("target", out var target) || target.ValueKind == JsonValueKind.Null)
+            {
+                foreach (Excel.Hyperlink link in range.Hyperlinks) link.Delete();
+                return;
+            }
+            string url = target.GetString();
+            Excel.Worksheet sheet = Sheet(op);
+            if (url.Contains("!") && !url.StartsWith("http"))
+            {
+                sheet.Hyperlinks.Add(range, "", SubAddress: url);
+            }
+            else
+            {
+                sheet.Hyperlinks.Add(range, url);
+            }
+        }
+
+        private static void SetNote(JsonElement op)
+        {
+            string address = op.GetProperty("address").GetString();
+            Excel.Range cell = Sheet(op).Range[address];
+            if (!op.TryGetProperty("text", out var text) || text.ValueKind == JsonValueKind.Null)
+            {
+                cell.Comment?.Delete();
+                return;
+            }
+            cell.Comment?.Delete();
+            cell.AddComment(text.GetString());
+        }
+
+        private static void AddDefinedName(JsonElement op)
+        {
+            string name = op.GetProperty("name").GetString();
+            string reference = op.GetProperty("ref").GetString();
+            Globals.ThisAddIn.Application.ActiveWorkbook.Names.Add(name, "=" + reference);
+        }
+
+        private static void DeleteDefinedName(JsonElement op)
+        {
+            string name = op.GetProperty("name").GetString();
+            Globals.ThisAddIn.Application.ActiveWorkbook.Names.Item(name).Delete();
         }
     }
 }
