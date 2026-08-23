@@ -66,6 +66,14 @@ if ($problems.Count -gt 0) {
     Write-Host ""
 }
 
+# Files that arrive via a zip transfer from another machine are commonly
+# flagged with a "Mark of the Web" (Zone.Identifier) by Windows, which can
+# make .NET/Office refuse to load the assemblies with a generic "runtime
+# error occurred during the loading of the COM add-in" - unblock everything
+# in the package up front so this never bites silently.
+Write-Host "Unblocking package files (clears any Mark-of-the-Web from a zip transfer)..."
+Get-ChildItem -Path $PackageDir -Recurse | Unblock-File -ErrorAction SilentlyContinue
+
 $certPath = Join-Path $PackageDir 'AirchatOfficeDevCert.cer'
 if (-not (Test-Path $certPath)) { throw "Certificate file not found next to install.ps1: $certPath" }
 
@@ -102,3 +110,8 @@ Write-Host ""
 Write-Host "Done. Start (or restart) the corresponding Office application(s) to load the add-in(s)."
 Write-Host "If an app doesn't show the panel: File > Options > Add-ins > Manage: COM Add-ins > Go,"
 Write-Host "and confirm the add-in is checked and not listed under Disabled Items."
+Write-Host ""
+Write-Host "If LoadBehavior shows 'Not Loaded' with a runtime error: this script already"
+Write-Host "unblocked the files, so if it still fails, get the real exception from"
+Write-Host "Event Viewer > Windows Logs > Application (look for a '.NET Runtime' or"
+Write-Host "'Application Error' entry timestamped right when you opened the Office app)."
