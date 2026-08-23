@@ -349,6 +349,42 @@ namespace ExcelAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "trace_dependents" };
         }
 
+        private static void SetFilter(JsonElement op)
+        {
+            string range = op.GetProperty("range").GetString();
+            Sheet(op).Range[range].AutoFilter();
+        }
+
+        private static void ClearFilter(JsonElement op)
+        {
+            Excel.Worksheet sheet = Sheet(op);
+            if (sheet.AutoFilterMode)
+            {
+                sheet.AutoFilterMode = false;
+            }
+        }
+
+        private static void SetFilterCriteria(JsonElement op)
+        {
+            Excel.Worksheet sheet = Sheet(op);
+            if (sheet.AutoFilter == null)
+            {
+                throw new InvalidOperationException("set_filter_criteria: no AutoFilter is active on this sheet - call set_filter first.");
+            }
+            int column = op.GetProperty("column").GetInt32(); // 0-based, relative to the AutoFilter range's first column
+            Excel.Range filterRange = sheet.AutoFilter.Range;
+            int fieldIndex = column + 1; // AutoFilter's Field parameter is 1-based, relative to the filter range - a common COM gotcha
+
+            if (!op.TryGetProperty("values", out var values) || values.ValueKind == JsonValueKind.Null)
+            {
+                filterRange.AutoFilter(Field: fieldIndex); // toggling with no Criteria1 clears that column's filter
+                return;
+            }
+            var criteria = new List<string>();
+            foreach (JsonElement v in values.EnumerateArray()) criteria.Add(v.GetString());
+            filterRange.AutoFilter(Field: fieldIndex, Criteria1: criteria.ToArray(), Operator: Excel.XlAutoFilterOperator.xlFilterValues);
+        }
+
         private static ToolResult ProposeOperations(JsonElement input)
         {
             var lines = new System.Text.StringBuilder();
@@ -420,6 +456,9 @@ namespace ExcelAiAddIn
                         case "set_note": SetNote(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "add_defined_name": AddDefinedName(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "delete_defined_name": DeleteDefinedName(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_filter": SetFilter(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "clear_filter": ClearFilter(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "set_filter_criteria": SetFilterCriteria(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
                             lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
                     }
