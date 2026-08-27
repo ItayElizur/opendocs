@@ -5,11 +5,7 @@ namespace OfficeAi.Shared
     /// <summary>
     /// "#RRGGBB" hex color to the OLE/BGR integer Office's COM APIs want.
     /// Shared by Word/Excel/PowerPoint (each casts the int to its own color
-    /// type at the call site - see the seam rule: this assembly never
-    /// exposes an Office interop type, only plain int/string, since an
-    /// embedded interop type cannot cross an assembly boundary as a generic
-    /// type argument - confirmed via CS1769 while building Phase 0's
-    /// ShapeTypes.cs).
+    /// type at the call site - see the seam rules at the top of TextUtil.cs).
     /// </summary>
     public static class ColorUtil
     {

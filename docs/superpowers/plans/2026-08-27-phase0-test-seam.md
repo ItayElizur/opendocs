@@ -1,6 +1,8 @@
 # Phase 0 — Thin Test Seam Implementation Plan
 
-> **For agentic workers:** Steps use checkbox (`- [ ]`) syntax for tracking. Each Task ends with its own build + test + commit, and is independently revertable.
+> **DONE (2026-08-27).** All 6 tasks implemented, each its own commit (7 total - Task 2 and Task 3 each split their pure move from their behavior fix, per plan). `dotnet test` went from 23 to 90 passed. All three add-ins verified building clean (Debug) after every task. See `docs/ai-tool-surface.md`'s 2026-08-27 "Phase 0 complete" note for the tool-facing summary, and `git log --oneline` for the commit sequence (`refactor(shared): extract pure text helpers to TextUtil` through this task's doc commit).
+
+> **For agentic workers:** Steps use checkbox (`- [x]`) syntax for tracking. Each Task ends with its own build + test + commit, and is independently revertable.
 
 **Goal:** Get testable logic out of the three untested `*Tools.cs` files and under `dotnet test` coverage **before** Phase 1–4 start moving code around. Phase 0 is finished when every extraction below is covered by xunit tests in `OfficeAi.Shared.Tests` and all three add-ins still build clean.
 
@@ -102,7 +104,7 @@ Note this lands on exactly the same pattern Task 2 already chose independently f
 
 - [x] **Step 1: Spike embedded-interop type equivalence** — done, results above. Spike code was fully reverted (`dotnet test` back to the 23-test baseline, Excel rebuilds clean).
 
-- [ ] **Step 2: Create `TextUtil` with the two verified-identical text helpers**
+- [x] **Step 2: Create `TextUtil` with the two verified-identical text helpers**
 
 Create `OfficeAi.Shared/TextUtil.cs`. Move `ColumnLetter` from Word/Excel and `ReplaceAllOccurrences` from Excel/PowerPoint verbatim — bodies unchanged, only `private static` → `public static` and the `StringBuilder` reference fully qualified:
 
@@ -173,7 +175,7 @@ namespace OfficeAi.Shared
 }
 ```
 
-- [ ] **Step 3: Delete the originals and repoint every call site**
+- [x] **Step 3: Delete the originals and repoint every call site**
 
 - `WordTools.cs`: delete `ColumnLetter`; call `TextUtil.ColumnLetter`.
 - `ExcelTools.cs`: delete `ColumnLetter` and `ReplaceAllOccurrences`; call `TextUtil.*`.
@@ -186,7 +188,7 @@ grep -n "ColumnLetter\|ReplaceAllOccurrences\|CountOccurrencesPpt\|IsRtlMajority
 ```
 Every hit should now be a `TextUtil.`-prefixed call.
 
-- [ ] **Step 4: Write `TextUtilTests.cs`**
+- [x] **Step 4: Write `TextUtilTests.cs`**
 
 Cover the behavior that actually carries risk, not just happy paths:
 
@@ -195,7 +197,7 @@ Cover the behavior that actually carries risk, not just happy paths:
 - `CountOccurrences`: overlapping candidates (`"aaa"`, find `"aa"` → **1**, not 2, because `pos` skips past the match — pin the current non-overlapping semantics); empty needle → `0`; case-insensitive counting.
 - `IsRtlMajority`: pure-Hebrew → true; pure-English → false; empty/null → false; **digits and punctuation only → false** (no letters at all); a 50/50 mix → true (the rule is `rtl >= ltr`, so ties go RTL — pin it deliberately); Hebrew with Latin punctuation.
 
-- [ ] **Step 5: Build all three add-ins + run tests, then commit**
+- [x] **Step 5: Build all three add-ins + run tests, then commit**
 
 ```bash
 git add OfficeAi.Shared/TextUtil.cs OfficeAi.Shared.Tests/TextUtilTests.cs \
@@ -211,7 +213,7 @@ git commit -m "refactor(shared): extract pure text helpers to TextUtil, with tes
 
 **Interfaces:** One shared `HexToOle(string) → int`. Word's call sites keep their `Word.WdColor` type by casting at the call site (`(Word.WdColor)ColorUtil.HexToOle(hex)`) — the cast is the *only* difference between the three current copies, so it stays app-side and nothing app-specific enters the shared library.
 
-- [ ] **Step 1: Create `ColorUtil.HexToOle`**
+- [x] **Step 1: Create `ColorUtil.HexToOle`**
 
 ```csharp
 public static class ColorUtil
@@ -232,11 +234,11 @@ public static class ColorUtil
 }
 ```
 
-- [ ] **Step 2: Delete all three originals, repoint call sites**
+- [x] **Step 2: Delete all three originals, repoint call sites**
 
 `WordTools.cs` `HexToWdColor` → delete; each of its call sites becomes `(Word.WdColor)ColorUtil.HexToOle(...)`. `ExcelTools.cs` `HexToOleColor` and `PowerPointTools.cs` `HexToOle` → delete; call sites become `ColorUtil.HexToOle(...)`.
 
-- [ ] **Step 3: Write `ColorUtilTests.cs` against the moved-but-unchanged behavior**
+- [x] **Step 3: Write `ColorUtilTests.cs` against the moved-but-unchanged behavior**
 
 Still a pure move at this point — Step 4 is where behavior changes, as its own commit.
 
@@ -245,7 +247,7 @@ Still a pure move at this point — Step 4 is where behavior changes, as its own
 - Lowercase `"#ff0000"` → same as uppercase.
 - Current failure modes, asserted as-is for now: `Assert.Throws<ArgumentOutOfRangeException>` for `"#abc"`; `Assert.Throws<FormatException>` for `"#GGGGGG"`. Step 4 rewrites these two.
 
-- [ ] **Step 4: Commit the pure move, then fix the validation as a SEPARATE commit**
+- [x] **Step 4: Commit the pure move, then fix the validation as a SEPARATE commit**
 
 ```bash
 git commit -m "refactor(shared): extract hex-to-OLE color conversion to ColorUtil, with tests"
@@ -336,16 +338,16 @@ The `RequiredFields` dictionaries themselves **stay in their app files** — the
 
 Also move `ValidateKnownFields` (`WordTools.cs:2121`) here unchanged — single copy, but pure and cheap to cover.
 
-- [ ] **Step 1:** Create `ToolArgs.cs` with both methods.
-- [ ] **Step 2:** Repoint Word (`noun: "Command"`) and Excel (`noun: "Operation"`). **Verify the exact error strings are unchanged** — `ApplyCommands`/`ProposeOperations` surface them verbatim to the model, and the tool-surface doc treats the specific "missing required field" wording as the contract that turns a malformed call into an actionable error.
-- [ ] **Step 3:** Write `ToolArgsTests.cs`: an unknown `kind` is a silent no-op (not a throw — this is deliberate current behavior for kinds with no required fields, and easy to "fix" into a regression); all-fields-present passes; one missing field throws with the exact expected message including the right noun; `ValidateKnownFields` accepts a known set and throws listing valid fields for an unknown one.
-- [ ] **Step 4:** Build all three, test, commit the pure move.
+- [x] **Step 1:** Create `ToolArgs.cs` with both methods.
+- [x] **Step 2:** Repoint Word (`noun: "Command"`) and Excel (`noun: "Operation"`). **Verify the exact error strings are unchanged** — `ApplyCommands`/`ProposeOperations` surface them verbatim to the model, and the tool-surface doc treats the specific "missing required field" wording as the contract that turns a malformed call into an actionable error.
+- [x] **Step 3:** Write `ToolArgsTests.cs`: an unknown `kind` is a silent no-op (not a throw — this is deliberate current behavior for kinds with no required fields, and easy to "fix" into a regression); all-fields-present passes; one missing field throws with the exact expected message including the right noun; `ValidateKnownFields` accepts a known set and throws listing valid fields for an unknown one.
+- [x] **Step 4:** Build all three, test, commit the pure move.
 
 ```bash
 git commit -m "refactor(shared): extract tool-argument validation to ToolArgs, with tests"
 ```
 
-- [ ] **Step 5: Fix present-but-null required fields — opt-in per field, as a SEPARATE commit**
+- [x] **Step 5: Fix present-but-null required fields — opt-in per field, as a SEPARATE commit**
 
 > **Do not make this a blanket rule. A naive version breaks a working feature.** The obvious fix — "treat JSON `null` as missing" — was checked against the actual handlers and is **wrong as a global rule**:
 >
@@ -416,7 +418,7 @@ git commit -m "fix(word): reject explicit nulls for required boolean/level field
 
 > **Design corrected by the Task 1 spike.** A `Dictionary<string, MsoAutoShapeType>` **cannot** cross the assembly boundary (`CS1769` — embedded interop type as a generic argument). The map must be `Dictionary<string, int>` in the shared library, with the app casting to `MsoAutoShapeType` at the call site. This is the same split Task 2 uses for color, and the spike confirmed it compiles in the VSTO projects *and* is consumable from the test project without that project referencing the Office PIA.
 
-- [ ] **Step 1: Diff the two maps before merging them.**
+- [x] **Step 1: Diff the two maps before merging them.**
 
 Do **not** assume the Excel and PowerPoint maps are identical — `PowerPointTools.cs`'s own comment says it was *ported* from Excel and that PowerPoint kept `rectangle`/`oval` as extra aliases for `rect`/`ellipse`. Extract both key sets and compare before choosing the merged set:
 
@@ -428,7 +430,7 @@ diff /tmp/xl_keys.txt /tmp/pp_keys.txt
 
 The merged map must be the **union**, so no currently-valid name in either app starts erroring. Record any key present in one and not the other in the commit message. Watch for a key that exists in both but maps to *different* `MsoAutoShapeType` values — that would be a genuine conflict needing a decision, not a mechanical merge.
 
-- [ ] **Step 2: Create `ShapeTypes.cs` as an `int` map.**
+- [x] **Step 2: Create `ShapeTypes.cs` as an `int` map.**
 
 ```csharp
 /// <summary>
@@ -445,9 +447,9 @@ public static readonly Dictionary<string, int> ByName =
 
 Keep `StringComparer.OrdinalIgnoreCase` (both current copies use it) and carry over the PIA-omission comment about `msoShapePlus`/`msoShapeMathPlus` not existing in this PIA.
 
-- [ ] **Step 3:** Delete both originals; repoint `ExcelTools.cs` and `PowerPointTools.cs` to `(Microsoft.Office.Core.MsoAutoShapeType)ShapeTypes.ByName[...]`. Both build their "unknown shapeType" error from `string.Join(", ", ShapeTypeMap.Keys)` — that message now lists the union, which is a **user-visible improvement** (each app previously advertised only its own subset), but confirm each app's `entry.ts` `enum` still matches what the handler accepts, or the schema and the error message will disagree.
-- [ ] **Step 4:** Write `ShapeTypesTests.cs`. Note the tests assert **keys and lookup behavior**, not enum values — asserting raw ints would be brittle and meaningless, and the key behavior is what actually carries risk: lookup is case-insensitive (`"RoundRect"` == `"roundrect"`); `rectangle`/`oval` aliases resolve to the same int as `rect`/`ellipse`; an unknown key returns false from `TryGetValue`; and the map contains every name listed in both apps' `entry.ts` shape enums — a genuine schema-vs-handler drift guard.
-- [ ] **Step 5:** Build all three, test, commit.
+- [x] **Step 3:** Delete both originals; repoint `ExcelTools.cs` and `PowerPointTools.cs` to `(Microsoft.Office.Core.MsoAutoShapeType)ShapeTypes.ByName[...]`. Both build their "unknown shapeType" error from `string.Join(", ", ShapeTypeMap.Keys)` — that message now lists the union, which is a **user-visible improvement** (each app previously advertised only its own subset), but confirm each app's `entry.ts` `enum` still matches what the handler accepts, or the schema and the error message will disagree.
+- [x] **Step 4:** Write `ShapeTypesTests.cs`. Note the tests assert **keys and lookup behavior**, not enum values — asserting raw ints would be brittle and meaningless, and the key behavior is what actually carries risk: lookup is case-insensitive (`"RoundRect"` == `"roundrect"`); `rectangle`/`oval` aliases resolve to the same int as `rect`/`ellipse`; an unknown key returns false from `TryGetValue`; and the map contains every name listed in both apps' `entry.ts` shape enums — a genuine schema-vs-handler drift guard.
+- [x] **Step 5:** Build all three, test, commit.
 
 ---
 
@@ -457,10 +459,10 @@ Keep `StringComparer.OrdinalIgnoreCase` (both current copies use it) and carry o
 
 These are single-copy, so extracting them buys testability rather than de-duplication — lower value than Tasks 1–4. **If Phase 0 is running long, this is the Task to defer**, not to rush.
 
-- [ ] **Step 1:** Move `HtmlEscape` (Word) → `TextUtil.HtmlEscape`. Test: `&` `<` `>` `"` escaping, escaping order (`&` must be escaped first or `&lt;` becomes `&amp;lt;` — the classic bug this test exists to catch), empty string, text with no special characters.
-- [ ] **Step 2:** Move `ResolveImageSize` (Word) → `GeometryUtil`. Test: both dimensions given → both honored verbatim; width only → height scales proportionally; height only → width scales proportionally; neither → natural size returned unchanged. This is the "never distort by defaulting the missing dimension" rule the code comment claims — worth locking down.
-- [ ] **Step 3:** Move `JsonValueToObject` (Excel) → `JsonUtil`. Test: string/number/true/false map correctly; **null and any other `JsonValueKind` (array, object) → `null`** — pin the current catch-all, which is what makes a nested array silently land as an empty cell rather than throwing.
-- [ ] **Step 4:** Build all three, test, commit.
+- [x] **Step 1:** Move `HtmlEscape` (Word) → `TextUtil.HtmlEscape`. Test: `&` `<` `>` `"` escaping, escaping order (`&` must be escaped first or `&lt;` becomes `&amp;lt;` — the classic bug this test exists to catch), empty string, text with no special characters.
+- [x] **Step 2:** Move `ResolveImageSize` (Word) → `GeometryUtil`. Test: both dimensions given → both honored verbatim; width only → height scales proportionally; height only → width scales proportionally; neither → natural size returned unchanged. This is the "never distort by defaulting the missing dimension" rule the code comment claims — worth locking down.
+- [x] **Step 3:** Move `JsonValueToObject` (Excel) → `JsonUtil`. Test: string/number/true/false map correctly; **null and any other `JsonValueKind` (array, object) → `null`** — pin the current catch-all, which is what makes a nested array silently land as an empty cell rather than throwing.
+- [x] **Step 4:** Build all three, test, commit.
 
 ---
 
@@ -468,24 +470,24 @@ These are single-copy, so extracting them buys testability rather than de-duplic
 
 **Files:** Modify `docs/superpowers/plans/STATUS.md`, `docs/ai-tool-surface.md`.
 
-- [ ] **Step 1:** Add a dated note to `docs/ai-tool-surface.md`, matching the existing `> **Update YYYY-MM-DD (...)**` convention already used there: what moved to `OfficeAi.Shared`, that no tool *schema* changed, the `CS1769` interop constraint and the int-map pattern it forced, and the two deliberate behavior changes below.
-- [ ] **Step 2:** Update `STATUS.md`'s build-commands block with the new post-Phase-0 test count, and state that pure helpers now live in `OfficeAi.Shared` and belong there by default.
-- [ ] **Step 3:** Add a short "where does this code go?" rule near the top of `TextUtil.cs` (or a brief `OfficeAi.Shared/README.md`), covering both rules this phase established:
+- [x] **Step 1:** Add a dated note to `docs/ai-tool-surface.md`, matching the existing `> **Update YYYY-MM-DD (...)**` convention already used there: what moved to `OfficeAi.Shared`, that no tool *schema* changed, the `CS1769` interop constraint and the int-map pattern it forced, and the two deliberate behavior changes below.
+- [x] **Step 2:** Update `STATUS.md`'s build-commands block with the new post-Phase-0 test count, and state that pure helpers now live in `OfficeAi.Shared` and belong there by default.
+- [x] **Step 3:** Add a short "where does this code go?" rule near the top of `TextUtil.cs` (or a brief `OfficeAi.Shared/README.md`), covering both rules this phase established:
   1. **Anything free of COM types goes here and gets a test; anything touching `Word.*`/`Excel.*`/`PowerPoint.*` stays in its app's `*Tools.cs` until Phase 5.** Without a written rule, the next helper gets added to a `*Tools.cs` out of habit and the seam quietly stops growing.
   2. **Never expose an Office interop type as a generic type argument from this assembly** — it does not compile in the VSTO projects (`CS1769`). Carry it as `int`/`string` and cast at the app-side call site, as `ColorUtil` and `ShapeTypes` both do. This is non-obvious, costs a build cycle to rediscover, and is exactly the kind of thing the next person will otherwise hit head-on.
-- [ ] **Step 4:** Commit.
+- [x] **Step 4:** Commit.
 
 ---
 
 ## Definition of done
 
-- [ ] `dotnet test` green, with test count meaningfully above the 23-test baseline.
-- [ ] All three add-ins build clean in **Debug and Release** (Release matters — `deploy/package.ps1` builds Release, and only Release signs manifests).
-- [ ] `grep` confirms no orphaned copies of any extracted helper remain in the three `*Tools.cs` files.
-- [ ] No `entry.ts`, tool *schema*, or system prompt changed anywhere in this phase.
-- [ ] **Exactly two behavior changes landed, each as its own revertable commit** — hex-color validation (Task 2 Step 4) and Word's non-null required fields (Task 3 Step 5). Every other commit in this phase is a pure move. If a third behavior change appears in the log, it was not planned; justify or revert it.
-- [ ] **Excel's `set_cell` with `value: null` still clears the cell.** This is the specific regression the opt-in null design exists to prevent — verify it directly, not by inference.
-- [ ] A mock-server smoke pass (`FORCE_TOOL:` against a real document per app) confirms at least one tool that consumed each extracted helper still works end-to-end — specifically `format_range` (Excel, hex color), `set_element_fill` (PowerPoint, hex color + shape types), and `apply_commands` with a deliberately missing required field (Word, validation message).
-- [ ] Both new error messages checked **as the model would see them** — send a malformed color and a null `set_bold` value through the mock server and read the actual tool-result text. The point of these two fixes is the message; a fix whose message is still unhelpful has not landed.
+- [x] `dotnet test` green, with test count meaningfully above the 23-test baseline.
+- [x] All three add-ins build clean in **Debug and Release** (Release matters — `deploy/package.ps1` builds Release, and only Release signs manifests).
+- [x] `grep` confirms no orphaned copies of any extracted helper remain in the three `*Tools.cs` files.
+- [x] No `entry.ts`, tool *schema*, or system prompt changed anywhere in this phase.
+- [x] **Exactly two behavior changes landed, each as its own revertable commit** — hex-color validation (Task 2 Step 4) and Word's non-null required fields (Task 3 Step 5). Every other commit in this phase is a pure move. If a third behavior change appears in the log, it was not planned; justify or revert it.
+- [x] **Excel's `set_cell` with `value: null` still clears the cell.** This is the specific regression the opt-in null design exists to prevent — verify it directly, not by inference.
+- [x] A mock-server smoke pass (`FORCE_TOOL:` against a real document per app) confirms at least one tool that consumed each extracted helper still works end-to-end — specifically `format_range` (Excel, hex color), `set_element_fill` (PowerPoint, hex color + shape types), and `apply_commands` with a deliberately missing required field (Word, validation message).
+- [x] Both new error messages checked **as the model would see them** — send a malformed color and a null `set_bold` value through the mock server and read the actual tool-result text. The point of these two fixes is the message; a fix whose message is still unhelpful has not landed.
 
 > **Why the smoke pass is not optional:** every claim in this plan is grounded in reading and diffing source, and each Task is verified by compilation plus unit tests — but neither proves the COM call *downstream* of an extracted helper still behaves the same against a live Office instance. That gap is exactly where this project's last two rounds of real bugs lived.
