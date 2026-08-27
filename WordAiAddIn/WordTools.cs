@@ -196,46 +196,6 @@ namespace WordAiAddIn
         // transient RPC HRESULTs are retried, so a genuine logic error
         // (bad range, etc.) still fails immediately rather than being
         // masked for 3 attempts.
-        private static readonly int[] TransientComHResults =
-        {
-            unchecked((int)0x800706BE), // RPC_S_CALL_FAILED - "The remote procedure call failed."
-            unchecked((int)0x8001010A), // RPC_E_SERVERCALL_RETRYLATER - "The message filter indicated that the application is busy."
-            unchecked((int)0x800706BA), // RPC_S_SERVER_UNAVAILABLE
-        };
-
-        // Post-hoc diagnostic addition (2026-08-24): every attempt (success,
-        // retried failure, AND a non-retried failure) is logged via
-        // DebugLog - this is the thing that finally shows the REAL exception
-        // detail (type/HResult/message/stack) from a live repro, instead of
-        // guessing further. `label` identifies which call site this is, for
-        // when multiple charts/reads happen in one session.
-        private static void RetryTransientCom(Action action, string label = "RetryTransientCom")
-        {
-            const int maxAttempts = 3;
-            for (int attempt = 1; attempt <= maxAttempts; attempt++)
-            {
-                try
-                {
-                    DebugLog.Write(label + ": attempt " + attempt + " starting");
-                    action();
-                    DebugLog.Write(label + ": attempt " + attempt + " SUCCEEDED");
-                    return;
-                }
-                catch (Exception ex) when (attempt < maxAttempts && Array.IndexOf(TransientComHResults, ex.HResult) >= 0)
-                {
-                    DebugLog.WriteException(label + ": attempt " + attempt + " (transient, retrying)", ex);
-                    System.Threading.Thread.Sleep(200 * attempt);
-                }
-                catch (Exception ex)
-                {
-                    // Either the last attempt, or an HResult not in the
-                    // transient list - logged before rethrowing so the real
-                    // failure is captured even when no more retries happen.
-                    DebugLog.WriteException(label + ": attempt " + attempt + " (NOT retried - rethrowing)", ex);
-                    throw;
-                }
-            }
-        }
 
         private static void WriteChartData(dynamic chart, List<string> categories, JsonElement seriesArray)
         {
@@ -256,7 +216,7 @@ namespace WordAiAddIn
 
             // Post-hoc fix (2026-08-24, code-review finding while adding
             // diagnostics): chart.ChartData.Workbook was fetched OUTSIDE the
-            // RetryTransientCom-protected block, so if THIS specific call is
+            // ComRetry.Run-protected block, so if THIS specific call is
             // the flaky one (plausible under the "OLE server not fully live
             // yet" hypothesis - it is the very first COM call that opens the
             // embedded object), the retry wrapper never got a chance to help
@@ -267,7 +227,7 @@ namespace WordAiAddIn
             try
             {
                 // Build the whole grid in memory up front (pure C#, no COM) -
-                // only the write itself needs to go through RetryTransientCom.
+                // only the write itself needs to go through ComRetry.Run.
                 int rowCount = categories.Count + 1; // +1 header row
                 int colCount = seriesList.Count + 1; // +1 category column
                 object[,] grid = new object[rowCount, colCount];
@@ -295,7 +255,7 @@ namespace WordAiAddIn
                     colIdx++;
                 }
 
-                RetryTransientCom(() =>
+                ComRetry.Run(() =>
                 {
                     // Post-hoc fix (2026-08-24, user-reported the RPC failure
                     // recurring even after the first fix): a brief settle
@@ -851,7 +811,7 @@ namespace WordAiAddIn
                 // write path (WriteChartData) - opening the embedded OLE
                 // workbook via ChartData.Workbook is not guaranteed to be
                 // immediately ready for automation calls.
-                RetryTransientCom(() =>
+                ComRetry.Run(() =>
                 {
                     System.Threading.Thread.Sleep(120);
                     DebugLog.Write("ReadChart: getting chart.ChartData.Workbook");
@@ -1312,29 +1272,19 @@ namespace WordAiAddIn
             return new ToolResult { Output = sb.ToString().TrimEnd(), Summary = "read_table" };
         }
 
-        // PP-23 Task 4: ported from PowerPointTools.SmartArtLayoutNames /
+        // PP-23 Task 4: ported from PowerPointTools.SmartArtLayouts.ByName /
         // ResolveSmartArtLayout verbatim - same seven keys, same
         // two-distinct-errors design (unknown key vs. valid-key-but-not-in-
         // this-install's-gallery). SmartArt is the Office-shared object
         // model, not PowerPoint-specific - Application.SmartArtLayouts
         // resolves identically against this add-in's own ThisAddIn.
-        private static readonly Dictionary<string, string> SmartArtLayoutNames = new Dictionary<string, string>
-        {
-            ["list"] = "Basic Block List",
-            ["process"] = "Basic Process",
-            ["cycle"] = "Basic Cycle",
-            ["hierarchy"] = "Organization Chart",
-            ["pyramid"] = "Basic Pyramid",
-            ["matrix"] = "Basic Matrix",
-            ["venn"] = "Basic Venn",
-        };
 
         private static dynamic ResolveSmartArtLayout(string layoutKey)
         {
             string targetName;
-            if (!SmartArtLayoutNames.TryGetValue(layoutKey, out targetName))
+            if (!SmartArtLayouts.ByName.TryGetValue(layoutKey, out targetName))
                 throw new ArgumentException("add_smartart: unknown layout '" + layoutKey + "'. Valid: " +
-                                            string.Join(", ", SmartArtLayoutNames.Keys) + ".");
+                                            string.Join(", ", SmartArtLayouts.ByName.Keys) + ".");
             dynamic layouts = Globals.ThisAddIn.Application.SmartArtLayouts;
             foreach (dynamic layout in layouts)
             {

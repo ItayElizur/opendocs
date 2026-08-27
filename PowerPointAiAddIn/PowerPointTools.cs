@@ -452,7 +452,7 @@ namespace PowerPointAiAddIn
         }
 
         // PP-20: left|center|right|justify -> PpParagraphAlignment, mirroring
-        // this file's ChartTypes.ByName/SmartArtLayoutNames dictionary pattern.
+        // this file's ChartTypes.ByName/SmartArtLayouts.ByName dictionary pattern.
         private static readonly Dictionary<string, PowerPoint.PpParagraphAlignment> AlignmentMap =
             new Dictionary<string, PowerPoint.PpParagraphAlignment>
         {
@@ -1240,37 +1240,9 @@ namespace PowerPointAiAddIn
         // chartType:'bar' produced a column chart, with "barStacked" identically
         // wrong. That bug is precisely why the table is now single-source.
 
-        // Post-hoc fix (2026-08-24, user-reported, same root cause ported
-        // from WordTools.cs's identical fix): the embedded chart-data
-        // workbook's OLE server occasionally still throws "The remote
-        // procedure call failed" (HRESULT 0x800706BE) even after the
-        // Clear()+batched-write fix below - a known, documented transient
-        // failure mode for rapid COM calls against Office's embedded chart
-        // Excel object. Only the specific known transient RPC HRESULTs are
-        // retried, so a genuine logic error still fails immediately.
-        private static readonly int[] TransientComHResults =
-        {
-            unchecked((int)0x800706BE), // RPC_S_CALL_FAILED
-            unchecked((int)0x8001010A), // RPC_E_SERVERCALL_RETRYLATER
-            unchecked((int)0x800706BA), // RPC_S_SERVER_UNAVAILABLE
-        };
-
-        private static void RetryTransientCom(Action action)
-        {
-            const int maxAttempts = 3;
-            for (int attempt = 1; attempt <= maxAttempts; attempt++)
-            {
-                try { action(); return; }
-                // Post-hoc fix (2026-08-24, ported from Word's identical fix): widened
-                // from COMException to the base Exception type, still filtered by
-                // HResult - a COM error surfaced through dynamic late-binding is not
-                // guaranteed to arrive as a raw COMException.
-                catch (Exception ex) when (attempt < maxAttempts && Array.IndexOf(TransientComHResults, ex.HResult) >= 0)
-                {
-                    System.Threading.Thread.Sleep(200 * attempt);
-                }
-            }
-        }
+        // Transient-COM retry (the embedded chart-data workbook's OLE server
+        // intermittently refuses rapid calls) now lives in
+        // OfficeAi.Shared.ComRetry, shared with Word.
 
         private static ToolResult AddChartPpt(JsonElement input)
         {
@@ -1325,7 +1297,7 @@ namespace PowerPointAiAddIn
                 var seriesList = input.GetProperty("series").EnumerateArray().ToList();
 
                 // Build the whole grid in memory up front (pure C#, no COM) -
-                // only the write itself needs to go through RetryTransientCom.
+                // only the write itself needs to go through ComRetry.Run.
                 int rowCount = categories.Count + 1; // +1 header row
                 int colCount = seriesList.Count + 1; // +1 category column
                 object[,] grid = new object[rowCount, colCount];
@@ -1352,7 +1324,7 @@ namespace PowerPointAiAddIn
                     colIdx++;
                 }
 
-                RetryTransientCom(() =>
+                ComRetry.Run(() =>
                 {
                     // Post-hoc fix (2026-08-24, user-reported the RPC failure
                     // recurring even after the first fix - ported from
@@ -1528,16 +1500,6 @@ namespace PowerPointAiAddIn
         // layout gallery. Live cross-check against Application.SmartArtLayouts on this machine's
         // Office install (plan Task 6 Step 1) requires interactive Office GUI access that was not
         // available in this environment - remains a manual follow-up for a human with GUI access.
-        private static readonly Dictionary<string, string> SmartArtLayoutNames = new Dictionary<string, string>
-        {
-            ["list"] = "Basic Block List",
-            ["process"] = "Basic Process",
-            ["cycle"] = "Basic Cycle",
-            ["hierarchy"] = "Organization Chart",
-            ["pyramid"] = "Basic Pyramid",
-            ["matrix"] = "Basic Matrix",
-            ["venn"] = "Basic Venn",
-        };
 
         // PP-22 Task 2 Step 4: index-based lookup (SmartArtLayouts is
         // index-addressable, and the built-in gallery order is stable across
@@ -1549,9 +1511,9 @@ namespace PowerPointAiAddIn
         private static dynamic ResolveSmartArtLayout(string layoutKey)
         {
             string targetName;
-            if (!SmartArtLayoutNames.TryGetValue(layoutKey, out targetName))
+            if (!SmartArtLayouts.ByName.TryGetValue(layoutKey, out targetName))
                 throw new ArgumentException("add_smartart: unknown layout '" + layoutKey + "'. Valid: " +
-                                            string.Join(", ", SmartArtLayoutNames.Keys) + ".");
+                                            string.Join(", ", SmartArtLayouts.ByName.Keys) + ".");
             dynamic layouts = Globals.ThisAddIn.Application.SmartArtLayouts;
             foreach (dynamic layout in layouts)
             {
