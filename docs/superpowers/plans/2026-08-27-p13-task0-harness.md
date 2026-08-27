@@ -68,7 +68,7 @@ wc -l WordAiAddIn/WordTools.cs ExcelAiAddIn/ExcelTools.cs PowerPointAiAddIn/Powe
 grep -c "<Compile" WordAiAddIn/WordAiAddIn.csproj ExcelAiAddIn/ExcelAiAddIn.csproj PowerPointAiAddIn/PowerPointAiAddIn.csproj
 ```
 
-**Expected:** 2532 / 2184 / 1821 lines; `6` Compile entries in each csproj.
+**Expected:** 2531 / 2183 / 1820 lines; `6` Compile entries in each csproj.
 
 Write these down — Task 4 reconciles against them.
 

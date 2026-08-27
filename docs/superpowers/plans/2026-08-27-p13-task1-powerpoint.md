@@ -5,7 +5,7 @@
 
 **Do this file first.** PowerPoint's members are already almost perfectly contiguous, so this is the least fiddly of the three splits. Learn the mechanics here before touching Excel or Word.
 
-**Result:** 1 file of 1,821 lines → 10 files, largest ~300 lines. Zero logic change.
+**Result:** 1 file of 1,820 lines → 10 files, largest ~300 lines. Zero logic change.
 
 > **This exact split has already been executed and verified once** (2026-08-27, on a throwaway copy and then in-repo): it compiles, and the member set comes out identical. The config below is the one that was validated. If you follow it literally you should get the same result.
 
@@ -52,7 +52,7 @@ python tools/split-partial.py .split-work/ppt.json --dry-run
 **Expected:**
 
 ```
-source        : PowerPointAiAddIn/PowerPointTools.cs (1821 lines, 65 members)
+source        : PowerPointAiAddIn/PowerPointTools.cs (1820 lines, 65 members)
 stays in core : 8 members
   .Read.cs          5 members
   .Elements.cs      15 members
@@ -159,7 +159,9 @@ wc -l PowerPointAiAddIn/PowerPointTools*.cs | sort -n
 
 **Expected:** `Total: 114` passing (unchanged — this task adds no testable logic), and no file over ~310 lines.
 
-Reference sizes from the validated run:
+Reference sizes from the validated run. **These predate the SmartArt port**, which added 6 members to
+`.SmartArt.cs` and moved 2 out of `.Charts.cs` - so expect `.SmartArt.cs` around 260 and `.Charts.cs`
+around 270, with the total near 1,955. Every other file should match:
 
 | File | Lines |
 |---|---|
@@ -181,7 +183,7 @@ Then commit:
 git add PowerPointAiAddIn/PowerPointTools*.cs PowerPointAiAddIn/PowerPointAiAddIn.csproj
 git commit -m "refactor(powerpoint): split PowerPointTools into partial class files by tool area
 
-Structure only - no logic change. 1683 lines -> 10 files, largest 303.
+Structure only - no logic change. 1820 lines -> 10 files.
 Member set verified identical before and after.
 
 P13 Task 1 of docs/superpowers/plans/2026-08-27-phase1-3-file-split.md."

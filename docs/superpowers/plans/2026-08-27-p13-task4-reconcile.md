@@ -50,7 +50,7 @@ for A in "WordAiAddIn/WordTools" "ExcelAiAddIn/ExcelTools" "PowerPointAiAddIn/Po
 done
 ```
 
-**Expected, against the Task 0 baselines (2543 / 2157 / 1683):**
+**Expected, against the Task 0 baselines (2531 / 2183 / 1820):**
 
 | Class | Before | After (approx) | Growth |
 |---|---|---|---|
