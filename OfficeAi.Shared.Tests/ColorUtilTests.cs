@@ -42,18 +42,49 @@ public class ColorUtilTests
         Assert.Equal(ColorUtil.HexToOle("#FF0000"), ColorUtil.HexToOle("#ff0000"));
     }
 
-    // ---- current failure modes, as of the pure move (Task 2 Step 3) ----
-    // Step 4 rewrites both of these into a clean ArgumentException.
+    [Fact]
+    public void HexToOle_SurroundingWhitespace_IsTrimmed()
+    {
+        Assert.Equal(ColorUtil.HexToOle("#FF0000"), ColorUtil.HexToOle(" #FF0000 "));
+    }
+
+    // ---- Task 2 Step 4: malformed input now gets an actionable message ----
 
     [Fact]
-    public void HexToOle_ThreeDigitShorthand_ThrowsIndexError_BeforeTheFix()
+    public void HexToOle_ThreeDigitShorthand_ExpandsToSixDigit()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => ColorUtil.HexToOle("#abc"));
+        // "abc" is CSS shorthand for "aabbcc".
+        Assert.Equal(ColorUtil.HexToOle("#aabbcc"), ColorUtil.HexToOle("#abc"));
     }
 
     [Fact]
-    public void HexToOle_NonHexDigits_ThrowsFormatException_BeforeTheFix()
+    public void HexToOle_ThreeDigitShorthand_WithoutHash_AlsoExpands()
     {
-        Assert.Throws<FormatException>(() => ColorUtil.HexToOle("#GGGGGG"));
+        Assert.Equal(ColorUtil.HexToOle("#aabbcc"), ColorUtil.HexToOle("abc"));
+    }
+
+    [Fact]
+    public void HexToOle_NonHexDigits_ThrowsWithOffendingValueInMessage()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => ColorUtil.HexToOle("#GGGGGG"));
+        Assert.Contains("#GGGGGG", ex.Message);
+    }
+
+    [Fact]
+    public void HexToOle_WrongLength_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => ColorUtil.HexToOle("#12345"));
+    }
+
+    [Fact]
+    public void HexToOle_EmptyString_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => ColorUtil.HexToOle(""));
+    }
+
+    [Fact]
+    public void HexToOle_Null_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => ColorUtil.HexToOle(null));
     }
 }
