@@ -199,6 +199,34 @@ web-based Office clone suite that this project ports its tool design from).
 > recoverable on retry - the same defect class as the malformed-hex-colour
 > error fixed in Phase 0.
 
+> **Update 2026-08-27 (Phases 1+3 - tool files split into partial classes):**
+> the three `*Tools.cs` files were split by tool area into `partial class`
+> file sets - Word 2,531 lines -> 10 files (2,676 total), Excel 2,183 -> 10
+> (2,310), PowerPoint 1,820 -> 10 (1,956). Largest file is `WordTools.Content.cs`
+> at 452 lines - 2 over the ~450 target; left as-is rather than re-splitting
+> for 2 lines. **Structure only: no method body, tool schema, `entry.ts`, or
+> system prompt changed**, and `dotnet test` stayed at 114. Each split was
+> verified by an order-independent member-set diff (sorted declaration list
+> identical before and after), which is what makes an otherwise unreviewable
+> move-diff trustworthy. All three apps rebuilt clean in both Debug and
+> Release afterward - Release matters because `deploy/package.ps1` only signs
+> manifests in that configuration.
+>
+> Two things worth knowing before adding code to these projects:
+> - The `.csproj` files are **classic format with explicit `<Compile Include>`
+>   items** - they do not glob `*.cs`. A new file must be added by hand, or it
+>   is silently not compiled and the error points at a call site elsewhere.
+>   `tools/split-partial.py` did this split and can do further ones; it
+>   refuses to run unless every member is assigned to exactly one destination.
+> - Word's `ListChartShapes`/`ListSmartArtShapes` stayed `internal` (not
+>   `private`) because `WordAiAddIn/TaskPaneHost.cs` calls them from outside
+>   the class - the partial-class split keeps that legal since it's still one
+>   class, one assembly.
+>
+> The cross-app duplication this phase might otherwise have surfaced
+> (`ComRetry`, `SmartArtLayouts`) was already resolved into `OfficeAi.Shared`
+> the same day, before this split ran - see the Phase 2 update above.
+
 ## Architecture
 
 officeoffice drives the **real desktop Office applications** via VSTO + COM interop

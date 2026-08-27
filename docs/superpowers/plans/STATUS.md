@@ -7,6 +7,11 @@
 - Shared UI tests: `cd shared/chat-ui && npx vitest run`
 - C# unit tests: `dotnet test OfficeAi.Shared.Tests/OfficeAi.Shared.Tests.csproj --nologo`
 - No `.sln` file exists in this repo; each `.csproj` is built individually. No `.csproj` has an esbuild `Exec`/`PreBuild` target — the bundle step is manual, run before MSBuild, every time.
+- Each app's tool code is a `partial class` split across ~10 files
+  (`WordTools.cs`, `WordTools.Charts.cs`, …). **New files must be added to the
+  classic `.csproj` by hand** - it lists `<Compile Include>` explicitly and does
+  not glob. `tools/split-partial.py` did the original split and can do further
+  ones; it refuses to run unless every member is assigned exactly once.
 
 **Baseline (2026-08-24, before any implementation work):** all four C# projects build clean; `dotnet test` on `OfficeAi.Shared.Tests` — 8/8 passed; `npx vitest run` in `shared/chat-ui` — 15/15 passed. This is the pre-existing state of `main` at commit `3ebaee0`.
 

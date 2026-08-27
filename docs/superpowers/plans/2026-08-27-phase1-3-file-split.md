@@ -1,5 +1,16 @@
 # Phases 1 + 3 (unified) — Split the Giant Tool Files
 
+> **DONE (2026-08-27).** All 5 numbered tasks (0-4) implemented, plus a fix
+> to the `inv()` member-set diff helper found while executing Task 1 (it read
+> only `$1` and every multi-file call site single-quoted its glob, so it
+> never actually diffed more than one file — see the P13 doc-fix commit).
+> Word 2,531 lines → 10 files (2,676 total), Excel 2,183 → 10 (2,310),
+> PowerPoint 1,820 → 10 (1,956). `dotnet test` stayed at 114 throughout. All
+> three apps verified building clean in both Debug and Release. Task 5
+> (archive completed plans) is independent and not yet done. See
+> `docs/ai-tool-surface.md`'s 2026-08-27 "Phases 1+3" note for the tool-facing
+> summary.
+
 > **This document is the overview. Each task has its own step-by-step plan — follow those, not this.**
 >
 > | Task | Plan | Notes |

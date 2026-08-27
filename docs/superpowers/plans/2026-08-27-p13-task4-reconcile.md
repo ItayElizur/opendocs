@@ -52,13 +52,13 @@ done
 
 **Expected, against the Task 0 baselines (2531 / 2183 / 1820):**
 
-| Class | Before | After (approx) | Growth |
+| Class | Before | After (measured) | Growth |
 |---|---|---|---|
-| `WordTools` | 2,543 | ~2,670 | +5% |
-| `ExcelTools` | 2,157 | ~2,285 | +6% |
-| `PowerPointTools` | 1,683 | 1,819 | +8% |
+| `WordTools` | 2,531 | 2,676 | +5.7% |
+| `ExcelTools` | 2,183 | 2,310 | +5.8% |
+| `PowerPointTools` | 1,820 | 1,956 | +7.5% |
 
-**Growth of 5–10% is correct and expected** — each new file repeats the `using` block, `namespace {`, `class {` and the two closing braces (~14 lines × 9 extra files). PowerPoint's 1,819 is the measured figure from the validated run.
+**Growth of 5–10% is correct and expected** — each new file repeats the `using` block, `namespace {`, `class {` and the two closing braces (~14 lines × 9 extra files). These are the actual measured figures from executing Tasks 1-3.
 
 **If growth exceeds ~12%**, something is duplicated rather than moved. Check for a member appearing in two files:
 

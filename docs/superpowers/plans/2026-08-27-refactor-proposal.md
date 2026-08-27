@@ -24,9 +24,11 @@ Get the three `Tools.cs` files under *some* test coverage before restructuring t
 
 Implemented in full per `docs/superpowers/plans/2026-08-27-phase0-test-seam.md` - `dotnet test` 23 → 90 passed. One correction worth flagging: paragraph-index-resolution logic turned out to be COM-bound (holds `Word.Paragraph` state) and could not be extracted after all - deferred to Phase 5. The color/shape-type maps *were* extracted, but not as originally envisioned - an embedded Office interop type cannot cross an assembly boundary as a generic type argument (`CS1769`, found via a spike), so both are `Dictionary<string, int>` with each app casting at its call site, not `Dictionary<string, TheirEnum>`. Two tool-facing bugs were fixed along the way (hex-color validation, Word's null required-field handling) - see `docs/ai-tool-surface.md`'s 2026-08-27 note.
 
-### Phase 1 — quick wins (low risk, do first, no behavior change)
+### Phase 1 — quick wins (low risk, do first, no behavior change) — **DONE (2026-08-27)**
 - Add `#region`/section-header comments to the three `Tools.cs` files, grouped by the tool grouping that already roughly exists in the method ordering (read tools → gateway dispatcher → per-command handlers → media/misc). Pure navigation aid, zero functional risk.
 - Archive completed plan docs under `docs/superpowers/plans/` into a `docs/superpowers/plans/archive/` (or similar) subfolder, keeping only currently-relevant ones at the top level, and add one line to `STATUS.md` pointing at `ai-tool-surface.md` as the canonical current-state doc. Prevents the `tool-surface-todo.md` staleness problem from recurring.
+
+Merged into a single pass with Phase 3 rather than done separately - see `2026-08-27-phase1-3-file-split.md`. The "section markers" this phase originally proposed became the actual `partial class` file boundaries instead of comments within one file, which is a stronger version of the same navigation goal.
 
 ### Phase 2 — de-duplicate the cross-app C# helpers
 Extract into `OfficeAi.Shared` (already exists, already referenced by all three add-ins):
@@ -36,8 +38,10 @@ Extract into `OfficeAi.Shared` (already exists, already referenced by all three 
 
 Each app's native color/shape/chart enum types differ (`Word.WdColor` vs `Excel`'s OLE color vs PowerPoint's `MsoAutoShapeType`), so this isn't a single shared function — it's shared *string-key tables* with each app supplying its own native-enum values, or small per-app adapter functions calling into one shared parsing/validation routine. Worth scoping carefully per-map rather than forcing a single generic abstraction that doesn't fit all three.
 
-### Phase 3 — split the giant files (structure only, no logic change)
+### Phase 3 — split the giant files (structure only, no logic change) — **DONE (2026-08-27)**
 Once Phase 1's section markers exist, turn each `*Tools.cs` into a C# `partial class` split across a few files along the same grouping — e.g. for Word: `WordTools.cs` (dispatcher + shared helpers), `WordTools.Content.cs` (read/insert/replace blocks, find_text, get_headings), `WordTools.Commands.cs` (`apply_commands` and every command handler, including `ResolveTargetParagraphs`), `WordTools.Charts.cs`, `WordTools.Tables.cs`, `WordTools.SmartArt.cs`. Same pattern for Excel/PowerPoint. This is mechanical (move methods, no logic changes) but still needs a full rebuild + the mock-server smoke pass per app afterward, since a missed `private` visibility or an accidentally-duplicated helper name would be a real compile break, not silent.
+
+Merged into a single pass with Phase 1 - see `2026-08-27-phase1-3-file-split.md` for the six-task breakdown, the `tools/split-partial.py` script that did the actual moves, and the member-set-diff verification each split ran against. Word 2,531 lines → 10 files, Excel 2,183 → 10, PowerPoint 1,820 → 10; `dotnet test` stayed at 114 throughout. No mock-server smoke pass was done - this phase changed no method body, tool schema, or system prompt, so a clean compile plus an identical member set covers it (see that plan's Definition of Done note).
 
 ### Phase 4 — unify the `entry.ts` tool-declaration shape
 Design one shared shape (in `shared/web-src`, alongside `app-shell`) that all three apps' `entry.ts` files build their tool list with — something like a common `defineTool(name, description, schema)` and a shared `readOnlyTools`-computation helper, so Excel's `DETAILED_KINDS`-style schema-size tradeoff becomes a documented, reusable pattern instead of a bespoke one-off. This is the most disruptive phase (touches every tool declaration in every app) — do it last, after the other phases have already reduced how much is moving at once.
