@@ -3,6 +3,13 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>7.3</LangVersion>
     <RootNamespace>OfficeAi.Shared</RootNamespace>
+    <!-- Needed for the Office/stdole PIA references below (RibbonBase.cs).
+         This SDK-style project's default AssemblySearchPaths omits
+         {AssemblyFolders}/{GAC}/{Registry:AssemblyFoldersEx}, which is how the
+         apps' own legacy-style .csproj resolve the same PIAs by plain GAC
+         identity with no HintPath - add them back rather than hardcoding an
+         absolute HintPath tied to one machine's VS install location. -->
+    <AssemblySearchPaths>$(AssemblySearchPaths);{AssemblyFolders};{GAC};{Registry:Software\Microsoft\.NETFramework,v4.8,AssemblyFoldersEx}</AssemblySearchPaths>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
@@ -11,5 +18,39 @@
   <ItemGroup>
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Needed by RibbonBase.cs (IRibbonExtensibility/IRibbonUI/IRibbonControl from
+         Microsoft.Office.Core, stdole.IPictureDisp) - same GAC identity every app's
+         own .csproj already references for its Ribbon.cs.
+
+         HintPath is a deliberate belt-and-suspenders addition, not a substitute for
+         the AssemblySearchPaths fix above: the full Visual Studio MSBuild.exe (used
+         to build the app projects) resolves these by identity alone via
+         {AssemblyFolders}/{GAC}/{Registry:AssemblyFoldersEx}, but `dotnet build`/
+         `dotnet test`'s resolver does not honor those same tokens for this SDK-style
+         project - it needs a HintPath. MSBuild tries HintPath first and falls back to
+         the search-path tokens if the file isn't there, so this degrades gracefully
+         on another machine where Visual Studio is installed to a different location;
+         it assumes the standard install layout, though, so if neither resolves on a
+         given machine, point HintPath at wherever that machine's Office15 PIA /
+         stdole.dll actually live. -->
+    <Reference Include="Office, Version=15.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c">
+      <HintPath>C:\Program Files (x86)\Microsoft Visual Studio\Shared\Visual Studio Tools for Office\PIA\Office15\Office.dll</HintPath>
+      <Private>False</Private>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="stdole, Version=7.0.3300.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+      <!-- NOT ...\Common7\IDE\PublicAssemblies\stdole.dll - that one is v17.0.0.0
+           (a different, newer stdole shipped with VS2022 tooling) and `dotnet
+           build`'s resolver correctly rejects it as an identity mismatch against
+           the requested 7.0.3300.0. The real 7.0.3300.0 lives in the classic
+           .NET GAC hive (C:\Windows\assembly\GAC, not GAC_MSIL) that full VS
+           MSBuild.exe's {GAC} search token covers but `dotnet build`'s resolver
+           apparently does not for this SDK-style project - hence needing it
+           spelled out here explicitly. -->
+      <HintPath>C:\Windows\assembly\GAC\stdole\7.0.3300.0__b03f5f7f11d50a3a\stdole.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
   </ItemGroup>
 </Project>
