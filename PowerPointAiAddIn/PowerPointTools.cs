@@ -452,7 +452,7 @@ namespace PowerPointAiAddIn
         }
 
         // PP-20: left|center|right|justify -> PpParagraphAlignment, mirroring
-        // this file's PptChartTypeMap/SmartArtLayoutNames dictionary pattern.
+        // this file's ChartTypes.ByName/SmartArtLayoutNames dictionary pattern.
         private static readonly Dictionary<string, PowerPoint.PpParagraphAlignment> AlignmentMap =
             new Dictionary<string, PowerPoint.PpParagraphAlignment>
         {
@@ -726,7 +726,7 @@ namespace PowerPointAiAddIn
         // pre-2007 leftovers (ppLayoutOrgchart, ppLayoutMediaClipAndText,
         // etc.) are omitted as unlikely to be what a model means by a
         // layout request. Same curated-map-with-throw-on-unknown pattern as
-        // PptChartTypeMap/AlignmentMap elsewhere in this file.
+        // ChartTypes.ByName/AlignmentMap elsewhere in this file.
         private static readonly Dictionary<string, PowerPoint.PpSlideLayout> SlideLayoutMap = new Dictionary<string, PowerPoint.PpSlideLayout>
         {
             ["title"] = PowerPoint.PpSlideLayout.ppLayoutTitle,
@@ -1234,23 +1234,11 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = "Table style updated.", Mutated = true, Summary = "edit_table_style" };
         }
 
-        // PP-21: one chart vocabulary across the repo, matching ExcelChartTypeMap
-        // (ExcelAiAddIn/ExcelTools.cs) exactly. "bar" was previously mapped to 51
-        // (xlColumnClustered, Excel's "column" code) instead of 57
-        // (xlBarClustered) - a silent wrong result: even a *successful*
-        // chartType:'bar' produced a column chart. Fixed here; "barStacked" had
-        // the identical bug (52 = xlColumnStacked, not 58 = xlBarStacked).
-        private static readonly Dictionary<string, int> PptChartTypeMap = new Dictionary<string, int>
-        {
-            ["column"] = 51,       // xlColumnClustered
-            ["columnStacked"] = 52,// xlColumnStacked
-            ["bar"] = 57,          // xlBarClustered
-            ["barStacked"] = 58,   // xlBarStacked
-            ["line"] = 4,          // xlLine
-            ["area"] = 1,          // xlArea
-            ["pie"] = 5,           // xlPie
-            ["doughnut"] = -4120,  // xlDoughnut
-        };
+        // PP-21: chart-type vocabulary now lives in OfficeAi.Shared.ChartTypes.
+        // This file's copy previously mapped "bar" to 51 (xlColumnClustered)
+        // instead of 57 - a silent wrong result where even a *successful*
+        // chartType:'bar' produced a column chart, with "barStacked" identically
+        // wrong. That bug is precisely why the table is now single-source.
 
         // Post-hoc fix (2026-08-24, user-reported, same root cause ported
         // from WordTools.cs's identical fix): the embedded chart-data
@@ -1289,9 +1277,9 @@ namespace PowerPointAiAddIn
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
             string kindStr = input.GetProperty("kind").GetString();
             int typeCode;
-            if (!PptChartTypeMap.TryGetValue(kindStr, out typeCode))
+            if (!ChartTypes.ByName.TryGetValue(kindStr, out typeCode))
                 throw new ArgumentException("add_chart: unknown kind '" + kindStr + "'. Valid: " +
-                                            string.Join(", ", PptChartTypeMap.Keys) + ".");
+                                            string.Join(", ", ChartTypes.ByName.Keys) + ".");
             var categories = new List<string>();
             foreach (JsonElement c in input.GetProperty("categories").EnumerateArray()) categories.Add(c.GetString());
 
@@ -1466,9 +1454,9 @@ namespace PowerPointAiAddIn
             if (input.TryGetProperty("chartType", out var ct) && ct.ValueKind == JsonValueKind.String)
             {
                 int typeCode;
-                if (!PptChartTypeMap.TryGetValue(ct.GetString(), out typeCode))
+                if (!ChartTypes.ByName.TryGetValue(ct.GetString(), out typeCode))
                     throw new ArgumentException("edit_chart: unknown chartType '" + ct.GetString() + "'. Valid: " +
-                                                string.Join(", ", PptChartTypeMap.Keys) + ".");
+                                                string.Join(", ", ChartTypes.ByName.Keys) + ".");
                 chart.ChartType = typeCode;
                 applied.Add("chartType=" + ct.GetString());
             }

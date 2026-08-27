@@ -178,22 +178,9 @@ namespace WordAiAddIn
             return end;
         }
 
-        // PP-9: same xlChartType codes as ExcelChartTypeMap / PptChartTypeMap -
-        // one chart vocabulary across all three add-ins. Note the deliberate
-        // difference from PptChartTypeMap, which maps "bar" to 51
-        // (xlColumnClustered) - a naming bug in that file (see PP-21/PP-22),
-        // not a model to copy. This map uses the correct code for each name.
-        private static readonly Dictionary<string, int> WordChartTypeMap = new Dictionary<string, int>
-        {
-            ["column"] = 51,        // xlColumnClustered
-            ["columnStacked"] = 52, // xlColumnStacked
-            ["bar"] = 57,           // xlBarClustered
-            ["barStacked"] = 58,    // xlBarStacked
-            ["line"] = 4,           // xlLine
-            ["area"] = 1,           // xlArea
-            ["pie"] = 5,            // xlPie
-            ["doughnut"] = -4120,   // xlDoughnut
-        };
+        // Chart-type vocabulary now lives in OfficeAi.Shared.ChartTypes -
+        // one table for all three add-ins (PP-9's "one chart vocabulary"
+        // intent, now enforced by construction rather than by comment).
 
         // PP-9: ported from PowerPointTools.AddChartPpt's data-writing block -
         // the embedded chart workbook MUST be closed and released in a
@@ -844,7 +831,7 @@ namespace WordAiAddIn
             string title = (bool)chart.HasTitle ? (string)chart.ChartTitle.Text : null;
             int typeCode = (int)chart.ChartType;
             string typeName = null;
-            foreach (var kv in WordChartTypeMap) { if (kv.Value == typeCode) { typeName = kv.Key; break; } }
+            foreach (var kv in ChartTypes.ByName) { if (kv.Value == typeCode) { typeName = kv.Key; break; } }
 
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("Chart " + chartIndex + " of " + chartShapes.Count + " (pass this index to edit_chart to target it):");
@@ -937,9 +924,9 @@ namespace WordAiAddIn
                 int typeCode = 51; // xlColumnClustered default
                 if (input.TryGetProperty("chartType", out var ctEl) && ctEl.ValueKind == JsonValueKind.String)
                 {
-                    if (!WordChartTypeMap.TryGetValue(ctEl.GetString(), out typeCode))
+                    if (!ChartTypes.ByName.TryGetValue(ctEl.GetString(), out typeCode))
                         throw new ArgumentException("edit_chart: unknown chartType '" + ctEl.GetString() +
-                                                    "'. Valid: " + string.Join(", ", WordChartTypeMap.Keys) + ".");
+                                                    "'. Valid: " + string.Join(", ", ChartTypes.ByName.Keys) + ".");
                 }
 
                 if (input.TryGetProperty("afterBlockIndex", out var abEl) && abEl.ValueKind == JsonValueKind.Number)
@@ -978,9 +965,9 @@ namespace WordAiAddIn
             if (input.TryGetProperty("chartType", out var chartTypeEl) && chartTypeEl.ValueKind == JsonValueKind.String)
             {
                 int typeCode;
-                if (!WordChartTypeMap.TryGetValue(chartTypeEl.GetString(), out typeCode))
+                if (!ChartTypes.ByName.TryGetValue(chartTypeEl.GetString(), out typeCode))
                     throw new ArgumentException("edit_chart: unknown chartType '" + chartTypeEl.GetString() +
-                                                "'. Valid: " + string.Join(", ", WordChartTypeMap.Keys) + ".");
+                                                "'. Valid: " + string.Join(", ", ChartTypes.ByName.Keys) + ".");
                 DebugLog.Write("EditChart: chart.ChartType = " + typeCode);
                 chart.ChartType = (Microsoft.Office.Core.XlChartType)typeCode;
             }

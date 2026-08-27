@@ -37,25 +37,10 @@ namespace ExcelAiAddIn
         // ExcelAiAddIn/web-src/entry.ts exactly, plus the separately-handled
         // "textbox". Edit both together.
 
-        // PP-15: the single chart-type vocabulary source for BOTH add_chart and
-        // edit_chart (AddChart previously ignored this map entirely). Cross-
-        // referenced against PowerPointAiAddIn/PowerPointTools.cs's
-        // PptChartTypeMap and any Word chart map - those must use the same
-        // names for the same xlChartType codes. Note PptChartTypeMap's "bar"
-        // was independently wrong (51/xlColumnClustered instead of 57/
-        // xlBarClustered) - fixed on that side (PP-21/22), not by changing
-        // Excel's (already-correct) codes here.
-        private static readonly Dictionary<string, int> ExcelChartTypeMap = new Dictionary<string, int>
-        {
-            ["column"] = 51,        // xlColumnClustered
-            ["columnStacked"] = 52, // xlColumnStacked
-            ["bar"] = 57,           // xlBarClustered
-            ["barStacked"] = 58,    // xlBarStacked
-            ["line"] = 4,           // xlLine
-            ["area"] = 1,           // xlArea
-            ["pie"] = 5,            // xlPie
-            ["doughnut"] = -4120,   // xlDoughnut
-        };
+        // PP-15: chart-type vocabulary for BOTH add_chart and edit_chart now
+        // lives in OfficeAi.Shared.ChartTypes, shared with Word and PowerPoint.
+        // The cross-referencing this comment used to describe by hand (and the
+        // PptChartTypeMap "bar" bug it records) is what motivated sharing it.
 
         public static ToolResult Execute(string docKey, string name, JsonElement input)
         {
@@ -1076,7 +1061,7 @@ namespace ExcelAiAddIn
         }
 
         // PP-13: horizontal/vertical alignment name -> XlHAlign/XlVAlign, mirroring
-        // this file's existing ExcelChartTypeMap pattern (ShapeTypes moved to
+        // this file's existing ChartTypes.ByName pattern (ShapeTypes moved to
         // OfficeAi.Shared in Phase 0).
         private static readonly Dictionary<string, Excel.XlHAlign> HAlignMap = new Dictionary<string, Excel.XlHAlign>
         {
@@ -1324,9 +1309,9 @@ namespace ExcelAiAddIn
             int chartTypeCode = 51; // xlColumnClustered
             if (op.TryGetProperty("chartType", out var ct) && ct.ValueKind == JsonValueKind.String)
             {
-                if (!ExcelChartTypeMap.TryGetValue(ct.GetString(), out chartTypeCode))
+                if (!ChartTypes.ByName.TryGetValue(ct.GetString(), out chartTypeCode))
                     throw new ArgumentException("add_chart: unknown chartType '" + ct.GetString() +
-                                                "'. Valid: " + string.Join(", ", ExcelChartTypeMap.Keys) + ".");
+                                                "'. Valid: " + string.Join(", ", ChartTypes.ByName.Keys) + ".");
             }
             chart.ChartType = chartTypeCode;
             if (op.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
@@ -1375,9 +1360,9 @@ namespace ExcelAiAddIn
             if (op.TryGetProperty("chartType", out var ct) && ct.ValueKind == JsonValueKind.String)
             {
                 int typeCode;
-                if (!ExcelChartTypeMap.TryGetValue(ct.GetString(), out typeCode))
+                if (!ChartTypes.ByName.TryGetValue(ct.GetString(), out typeCode))
                     throw new ArgumentException("edit_chart: unknown chartType '" + ct.GetString() +
-                                                "'. Valid: " + string.Join(", ", ExcelChartTypeMap.Keys) + ".");
+                                                "'. Valid: " + string.Join(", ", ChartTypes.ByName.Keys) + ".");
                 chart.ChartType = typeCode;
             }
 
