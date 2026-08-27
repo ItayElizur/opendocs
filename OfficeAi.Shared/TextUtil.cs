@@ -12,6 +12,13 @@ namespace OfficeAi.Shared
     /// </summary>
     public static class TextUtil
     {
+        // Order matters: & must be escaped first, or a literal "<" would
+        // become "&amp;lt;" instead of "&lt;".
+        public static string HtmlEscape(string s)
+        {
+            return s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+        }
+
         public static string ColumnLetter(int col)
         {
             string result = "";

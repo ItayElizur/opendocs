@@ -4,6 +4,34 @@ using OfficeAi.Shared;
 
 public class TextUtilTests
 {
+    // ---- HtmlEscape ----
+
+    [Fact]
+    public void HtmlEscape_EscapesAmpersandLessThanGreaterThan()
+    {
+        Assert.Equal("a &amp; b &lt; c &gt; d", TextUtil.HtmlEscape("a & b < c > d"));
+    }
+
+    [Fact]
+    public void HtmlEscape_AmpersandEscapedFirst_DoesNotDoubleEscapeLessThan()
+    {
+        // The classic bug this test exists to catch: escaping "<" before "&"
+        // would turn "&lt;" (from escaping "<") into "&amp;lt;".
+        Assert.Equal("&lt;", TextUtil.HtmlEscape("<"));
+    }
+
+    [Fact]
+    public void HtmlEscape_EmptyString_ReturnsEmpty()
+    {
+        Assert.Equal("", TextUtil.HtmlEscape(""));
+    }
+
+    [Fact]
+    public void HtmlEscape_NoSpecialCharacters_ReturnsUnchanged()
+    {
+        Assert.Equal("hello world", TextUtil.HtmlEscape("hello world"));
+    }
+
     // ---- ColumnLetter ----
 
     [Theory]

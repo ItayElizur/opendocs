@@ -946,7 +946,7 @@ namespace ExcelAiAddIn
                     switch (kind)
                     {
                         case "set_cell":
-                            Sheet(op).Range[op.GetProperty("address").GetString()].Value2 = JsonValueToObject(op.GetProperty("value"));
+                            Sheet(op).Range[op.GetProperty("address").GetString()].Value2 = JsonUtil.JsonValueToObject(op.GetProperty("value"));
                             lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "set_formula":
                             Sheet(op).Range[op.GetProperty("address").GetString()].Formula = op.GetProperty("formula").GetString();
@@ -1059,18 +1059,6 @@ namespace ExcelAiAddIn
             return new ToolResult { Output = lines.ToString(), Mutated = anyMutated, IsError = anyError, Summary = "propose_operations" };
         }
 
-        private static object JsonValueToObject(JsonElement v)
-        {
-            switch (v.ValueKind)
-            {
-                case JsonValueKind.String: return v.GetString();
-                case JsonValueKind.Number: return v.GetDouble();
-                case JsonValueKind.True: return true;
-                case JsonValueKind.False: return false;
-                default: return null;
-            }
-        }
-
         private static void SetRangeValues(JsonElement op)
         {
             string address = op.GetProperty("address").GetString();
@@ -1081,7 +1069,7 @@ namespace ExcelAiAddIn
             for (int r = 0; r < rowCount; r++)
             {
                 JsonElement row = rows[r];
-                for (int c = 0; c < colCount; c++) grid[r, c] = JsonValueToObject(row[c]);
+                for (int c = 0; c < colCount; c++) grid[r, c] = JsonUtil.JsonValueToObject(row[c]);
             }
             Excel.Range topLeft = Sheet(op).Range[address];
             topLeft.Resize[rowCount, colCount].Value2 = grid;

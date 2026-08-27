@@ -1600,11 +1600,6 @@ namespace WordAiAddIn
             }
         }
 
-        private static string HtmlEscape(string s)
-        {
-            return s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
-        }
-
         // PP-10 Task 4: 'html' mode emits the same restricted subset
         // InsertHtmlFragment accepts, so read_blocks -> replace_blocks/
         // insert_content round-trips (headings/bold/italic/underline/list
@@ -1642,7 +1637,7 @@ namespace WordAiAddIn
                 if (wBold && !bold) { sb.Append("<b>"); bold = true; }
                 if (wItalic && !italic) { sb.Append("<i>"); italic = true; }
                 if (wUnderline && !underline) { sb.Append("<u>"); underline = true; }
-                sb.Append(HtmlEscape(word.Text));
+                sb.Append(TextUtil.HtmlEscape(word.Text));
             }
             if (underline) sb.Append("</u>");
             if (italic) sb.Append("</i>");
@@ -2488,7 +2483,7 @@ namespace WordAiAddIn
                 Word.Shape shape = doc.Shapes.AddPicture(path, Microsoft.Office.Core.MsoTriState.msoFalse, Microsoft.Office.Core.MsoTriState.msoTrue,
                     (float)left, (float)top, -1, -1);
                 float naturalW = shape.Width, naturalH = shape.Height;
-                ResolveImageSize(naturalW, naturalH, widthPoints, heightPoints, out finalWidth, out finalHeight);
+                GeometryUtil.ResolveImageSize(naturalW, naturalH, widthPoints, heightPoints, out finalWidth, out finalHeight);
                 shape.Width = finalWidth;
                 shape.Height = finalHeight;
                 if (altText != null) shape.AlternativeText = altText;
@@ -2498,7 +2493,7 @@ namespace WordAiAddIn
             {
                 Word.InlineShape shape = doc.InlineShapes.AddPicture(path, LinkToFile: false, SaveWithDocument: true, Range: at);
                 float naturalW = shape.Width, naturalH = shape.Height;
-                ResolveImageSize(naturalW, naturalH, widthPoints, heightPoints, out finalWidth, out finalHeight);
+                GeometryUtil.ResolveImageSize(naturalW, naturalH, widthPoints, heightPoints, out finalWidth, out finalHeight);
                 shape.Width = finalWidth;
                 shape.Height = finalHeight;
                 if (altText != null) shape.AlternativeText = altText;
@@ -2523,19 +2518,6 @@ namespace WordAiAddIn
                 Mutated = true,
                 Summary = "add_image",
             };
-        }
-
-        // Sets width/height from optional inputs, scaling the unset dimension
-        // proportionally from the natural size - never distorting by
-        // defaulting the missing dimension to a constant.
-        private static void ResolveImageSize(float naturalWidth, float naturalHeight, float? widthPoints, float? heightPoints, out float finalWidth, out float finalHeight)
-        {
-            if (widthPoints.HasValue && !heightPoints.HasValue)
-                heightPoints = naturalHeight * (widthPoints.Value / naturalWidth);
-            else if (heightPoints.HasValue && !widthPoints.HasValue)
-                widthPoints = naturalWidth * (heightPoints.Value / naturalHeight);
-            finalWidth = widthPoints ?? naturalWidth;
-            finalHeight = heightPoints ?? naturalHeight;
         }
 
         private static void InsertTocCmd(JsonElement cmd)
