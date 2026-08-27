@@ -1753,6 +1753,7 @@ namespace WordAiAddIn
             ["deleteBlocks"] = new[] { "target" },
             ["moveBlocks"] = new[] { "blockIndexes", "afterBlockIndex" },
             ["createParagraphBullets"] = new[] { "target" },
+            ["set_bullet"] = new[] { "target" },   // alias - see the switch case
             ["deleteParagraphBullets"] = new[] { "target" },
             ["updateImageProperties"] = new[] { "imageIndex", "properties", "fields" },
             ["insertToc"] = new[] { "afterBlockIndex" },
@@ -1770,6 +1771,17 @@ namespace WordAiAddIn
             ["set_bold"] = new[] { "value" },
             ["set_italic"] = new[] { "value" },
             ["set_heading"] = new[] { "level" },
+        };
+
+        // Single source for the "what can I send?" answer in the
+        // unknown-kind error. Mirrors ApplyCommands' switch - edit both
+        // together (set_bullet is an accepted alias, listed so the model
+        // discovers it).
+        private static readonly string[] KnownCommandKinds =
+        {
+            "set_bold", "set_italic", "set_heading", "set_bullet", "find_replace",
+            "updateTextStyle", "updateParagraphStyle", "deleteBlocks", "moveBlocks",
+            "createParagraphBullets", "deleteParagraphBullets", "updateImageProperties", "insertToc",
         };
 
         // PP-12 Task 3 (the half PP-5 Task 4 Step 1 did not cover): each
@@ -1840,6 +1852,27 @@ namespace WordAiAddIn
                             if (report.StartsWith("deleteParagraphBullets: 0 removed")) { /* nothing changed */ } else anyMutated = true;
                             break;
                         }
+                        // Post-hoc addition (2026-08-27, user-reported): a model
+                        // sent kind:"set_bullet" and got a dead-end "unknown
+                        // command kind". It is an entirely reasonable guess -
+                        // the neighbouring commands are set_bold/set_italic/
+                        // set_heading, so a snake_case set_X for bullets reads
+                        // as the obvious name, while the real ones are
+                        // camelCase createParagraphBullets/deleteParagraphBullets.
+                        // Rather than expect the model to memorise an
+                        // inconsistency, accept the guess: set_bullet takes the
+                        // same target as the two it delegates to, plus a
+                        // value:true|false picking which.
+                        case "set_bullet":
+                        {
+                            bool on = !cmd.TryGetProperty("value", out var bulletVal) || bulletVal.ValueKind != JsonValueKind.False;
+                            string report = on ? CreateParagraphBullets(cmd) : DeleteParagraphBullets(cmd);
+                            lines.AppendLine($"[{commandIndex}] set_bullet -> {report}");
+                            bool noop = report.StartsWith("createParagraphBullets: 0 applied")
+                                     || report.StartsWith("deleteParagraphBullets: 0 removed");
+                            if (!noop) anyMutated = true;
+                            break;
+                        }
                         case "updateImageProperties":
                             UpdateImageProperties(cmd);
                             lines.AppendLine($"[{commandIndex}] {kind}: ok"); anyMutated = true; break;
@@ -1847,7 +1880,12 @@ namespace WordAiAddIn
                             InsertTocCmd(cmd);
                             lines.AppendLine($"[{commandIndex}] {kind}: ok"); anyMutated = true; break;
                         default:
-                            lines.AppendLine($"[{commandIndex}] {kind}: unknown command kind"); failedCount++; break;
+                            // List what IS valid. A bare "unknown command kind"
+                            // is a dead end - the model has no way to correct
+                            // itself and typically retries the same wrong name.
+                            lines.AppendLine($"[{commandIndex}] {kind}: unknown command kind. Valid kinds: " +
+                                             string.Join(", ", KnownCommandKinds) + ".");
+                            failedCount++; break;
                     }
                 }
                 catch (Exception ex)

@@ -187,6 +187,23 @@ const WORD_COMMAND_SCHEMAS = [
   },
   {
     type: 'object',
+    description:
+      'Turns bullets on or off in one command - the set_X-shaped alias for createParagraphBullets/deleteParagraphBullets, ' +
+      'matching set_bold/set_italic/set_heading. value:true (or omitted) adds bullets, value:false removes them.',
+    properties: {
+      kind: { const: 'set_bullet' },
+      target: TARGET_SCHEMA,
+      value: { type: 'boolean', description: 'Default true. true = add bullets, false = remove them.' },
+      bulletPreset: {
+        type: 'string',
+        enum: ['BULLET_DISC_CIRCLE_SQUARE', 'BULLET_DIAMOND_X', 'BULLET_CHECKBOX', 'NUMBERED_DECIMAL', 'NUMBERED_DECIMAL_ALPHA_ROMAN', 'NUMBERED_UPPERALPHA', 'NUMBERED_UPPERROMAN'],
+        description: 'Only meaningful with value:true. Same presets as createParagraphBullets.',
+      },
+    },
+    required: ['kind', 'target'],
+  },
+  {
+    type: 'object',
     properties: {
       kind: { const: 'deleteParagraphBullets' },
       target: TARGET_SCHEMA,

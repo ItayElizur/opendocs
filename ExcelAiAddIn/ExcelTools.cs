@@ -913,6 +913,25 @@ namespace ExcelAiAddIn
             ["set_data_validation"] = new[] { "range" },
         };
 
+        // Single source for the "what can I send?" answer in the
+        // unknown-kind error. Mirrors ProposeOperations' switch - edit both
+        // together.
+        private static readonly string[] KnownOperationKinds =
+        {
+            "set_cell", "set_formula", "set_range", "clear_cell", "clear_range", "find_replace",
+            "format_range", "sort_range", "merge_cells", "unmerge_cells",
+            "set_row_height", "set_col_width", "set_rows_hidden", "set_cols_hidden", "set_freeze",
+            "insert_rows", "delete_rows", "insert_cols", "delete_cols", "set_page_setup",
+            "add_sheet", "delete_sheet", "duplicate_sheet", "set_sheet_hidden", "move_sheet",
+            "protect_sheet", "rename_sheet",
+            "add_chart", "edit_chart", "delete_visual", "add_sparkline", "add_shape", "edit_shape",
+            "add_image", "add_table", "add_table_row", "add_table_column", "delete_table_row",
+            "delete_table_column", "delete_table", "add_pivot", "refresh_pivot",
+            "set_hyperlink", "set_note", "add_defined_name", "delete_defined_name",
+            "set_filter", "clear_filter", "set_filter_criteria",
+            "add_conditional_format", "clear_conditional_formats", "set_data_validation",
+        };
+
         private static ToolResult ProposeOperations(JsonElement input)
         {
             var lines = new System.Text.StringBuilder();
@@ -1033,7 +1052,14 @@ namespace ExcelAiAddIn
                         case "add_pivot": AddPivot(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "refresh_pivot": RefreshPivot(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         default:
-                            lines.AppendLine(kind + ": unknown operation kind"); anyError = true; break;
+                            // List what IS valid - a bare "unknown operation
+                            // kind" is a dead end the model cannot correct
+                            // itself from. RequiredFields is not the full set
+                            // (kinds with no required fields are absent), so
+                            // this reads the switch's own vocabulary.
+                            lines.AppendLine(kind + ": unknown operation kind. Valid kinds: " +
+                                             string.Join(", ", KnownOperationKinds) + ".");
+                            anyError = true; break;
                     }
                 }
                 catch (Exception ex)
