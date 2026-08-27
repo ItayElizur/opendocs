@@ -1825,6 +1825,20 @@ namespace WordAiAddIn
             ["insertToc"] = new[] { "afterBlockIndex" },
         };
 
+        // Fields where an explicit JSON null is a caller error rather than a
+        // value - e.g. set_bold's "value": null previously reached
+        // GetBoolean() and threw an opaque InvalidOperationException where
+        // this clean "missing required field" message belongs. Deliberately
+        // narrow: only add a field here after confirming null has no
+        // legitimate meaning for it (Excel's set_cell "value" is the
+        // counter-example - null there means "clear the cell").
+        private static readonly Dictionary<string, string[]> NonNullFields = new Dictionary<string, string[]>
+        {
+            ["set_bold"] = new[] { "value" },
+            ["set_italic"] = new[] { "value" },
+            ["set_heading"] = new[] { "level" },
+        };
+
         // PP-12 Task 3 (the half PP-5 Task 4 Step 1 did not cover): each
         // result line is prefixed with the command's 0-based position in the
         // batch, and a summary header states how many succeeded/failed - with
@@ -1850,7 +1864,7 @@ namespace WordAiAddIn
                     if (!cmd.TryGetProperty("kind", out kindEl) || kindEl.ValueKind != JsonValueKind.String)
                         throw new ArgumentException("Command is missing a string \"kind\" field.");
                     kind = kindEl.GetString();
-                    ToolArgs.ValidateRequired(kind, cmd, RequiredFields, "Command");
+                    ToolArgs.ValidateRequired(kind, cmd, RequiredFields, "Command", NonNullFields);
                     switch (kind)
                     {
                         case "set_bold":

@@ -12,14 +12,24 @@ namespace OfficeAi.Shared
     /// </summary>
     public static class ToolArgs
     {
-        public static void ValidateRequired(string kind, JsonElement element, IReadOnlyDictionary<string, string[]> requiredFields, string noun)
+        public static void ValidateRequired(string kind, JsonElement element, IReadOnlyDictionary<string, string[]> requiredFields, string noun,
+            IReadOnlyDictionary<string, string[]> nonNullFields = null)
         {
             string[] required;
             if (!requiredFields.TryGetValue(kind, out required)) return;
             foreach (string f in required)
             {
-                if (!element.TryGetProperty(f, out _))
+                JsonElement value;
+                if (!element.TryGetProperty(f, out value))
                     throw new System.ArgumentException(noun + " \"" + kind + "\" is missing required field \"" + f + "\".");
+
+                // Null is a MEANINGFUL value for some fields (Excel's set_cell
+                // uses it to clear a cell), so it is only rejected where the
+                // owning app has opted in - never globally.
+                if (value.ValueKind != JsonValueKind.Null || nonNullFields == null) continue;
+                string[] nonNull;
+                if (nonNullFields.TryGetValue(kind, out nonNull) && System.Array.IndexOf(nonNull, f) >= 0)
+                    throw new System.ArgumentException(noun + " \"" + kind + "\" requires a non-null value for field \"" + f + "\".");
             }
         }
 
