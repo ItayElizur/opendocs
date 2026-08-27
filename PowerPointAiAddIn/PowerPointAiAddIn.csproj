@@ -1,4 +1,4 @@
-<Project ToolsVersion="17.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+﻿<Project ToolsVersion="17.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <ProjectTypeGuids>{BAA0C2D2-18E2-41B9-852F-F413020CAA33};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
@@ -125,6 +125,42 @@
     </Compile>
     <Compile Include="PowerPointTools.cs">
       <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="PowerPointTools.Read.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>PowerPointTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="PowerPointTools.Elements.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>PowerPointTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="PowerPointTools.Slides.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>PowerPointTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="PowerPointTools.LayoutAnim.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>PowerPointTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="PowerPointTools.Styling.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>PowerPointTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="PowerPointTools.Tables.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>PowerPointTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="PowerPointTools.Charts.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>PowerPointTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="PowerPointTools.SmartArt.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>PowerPointTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="PowerPointTools.Images.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>PowerPointTools.cs</DependentUpon>
     </Compile>
     <Compile Include="Ribbon.cs">
       <SubType>Code</SubType>
