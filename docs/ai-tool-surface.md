@@ -159,6 +159,46 @@ web-based Office clone suite that this project ports its tool design from).
 > but no live Word instance was reachable to confirm a stacked bar chart
 > actually renders. Worth one manual check.
 
+> **Update 2026-08-27 (Phase 2 duplication cleared; PowerPoint SmartArt parity;
+> set_bullet):** three changes, at user request.
+>
+> **1 - Remaining cross-app duplication united into `OfficeAi.Shared`:**
+> `ComRetry` (was `TransientComHResults`+`RetryTransientCom`, duplicated
+> Word/PowerPoint - the copies differed only in whether they took a `label`)
+> and `SmartArtLayouts` (was `SmartArtLayoutNames`, byte-identical in both).
+> Resolving a layout key to a live object stays app-side: it walks
+> `Globals.ThisAddIn.Application`, and `Globals` is generated per project.
+> With the chart-type maps done earlier the same day, **the Phase 2
+> duplication inventory is now empty.** `dotnet test` 102 -> 114.
+>
+> **2 - PowerPoint gained `read_smartart` and `edit_smartart`**, reaching
+> parity with Word (which already had all three). One real adaptation, not a
+> copy: Word finds SmartArt in a flat document (`InlineShapes`+`Shapes`),
+> while PowerPoint's shapes are per-slide - so a diagram is addressed by
+> `(slideIndex, smartArtIndex-within-that-slide)`, matching how every other
+> PowerPoint tool addresses shapes. `read_smartart` is read-only and is
+> registered in **both** the client `READER_TOOLS` list and the C#
+> `AlwaysAllowedTools` gate; registering only one would have the client offer
+> a tool the server then refuses.
+> **NOT VERIFIED AGAINST LIVE POWERPOINT** - compiles clean in Debug and
+> Release, but the SmartArt COM paths (`Nodes.Add`/`Delete`,
+> `.Color`/`.QuickStyle`/`.Layout` assignment) were never exercised against a
+> running instance. `set_style` and `set_layout` resolve against the local
+> install's gallery **by English display name**, so a non-English Office will
+> fail them with the "not in gallery" error. Needs a manual pass.
+>
+> **3 - `apply_commands` accepts `set_bullet`.** A model sent that kind and
+> got back only "unknown command kind" - a dead end. The guess was reasonable:
+> its neighbours are `set_bold`/`set_italic`/`set_heading`, while the real
+> commands are camelCase `createParagraphBullets`/`deleteParagraphBullets`.
+> `set_bullet` is now an accepted alias (same `target`, plus
+> `value:true|false` picking which underlying command runs) and is in the
+> schema so it is discoverable, not merely forgiven. Separately, **both
+> Word's `apply_commands` and Excel's `propose_operations` now list every
+> valid kind when rejecting an unknown one**, so any wrong guess is
+> recoverable on retry - the same defect class as the malformed-hex-colour
+> error fixed in Phase 0.
+
 ## Architecture
 
 officeoffice drives the **real desktop Office applications** via VSTO + COM interop
