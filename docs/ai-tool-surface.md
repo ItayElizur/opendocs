@@ -132,6 +132,33 @@ web-based Office clone suite that this project ports its tool design from).
 > already used for color. Side effect: both apps' "unknown shapeType" error
 > now lists the full union of valid names, not just each app's own subset.
 
+> **Update 2026-08-27 (Word gains `barStacked`; chart types unified):** pulled
+> forward out of Phase 2 at user request, in two commits.
+> - **`feat(word)`:** Word's `edit_chart` now accepts **`barStacked`**
+>   (`xlBarStacked`, 58). Word's chart-type map had 7 entries to Excel's and
+>   PowerPoint's 8, so Word could not draw a stacked bar chart while the other
+>   two could. Word's `entry.ts` enum honestly advertised only 7, so schema and
+>   handler agreed — a genuine **capability gap**, not a mismatch. Its
+>   `chartType` enum gains the value. Secondary fix: `read_chart`'s reverse
+>   type-code lookup used the same map, so reading an existing stacked bar
+>   chart reported *"unrecognized chart type code 58"* instead of `barStacked`.
+> - **`refactor(shared)`:** the three per-app maps are now one
+>   `OfficeAi.Shared.ChartTypes.ByName`. Sequencing the Word fix first was
+>   deliberate — it made all three byte-identical, so the extraction itself
+>   changed no behavior at all. Tests assert the exact `xlChartType` codes
+>   (unlike `ShapeTypes`, where raw ints would be brittle): a wrong code here
+>   is a **silent** wrong result, and that bug has shipped here before —
+>   PowerPoint's copy mapped `"bar"` to `51`/`xlColumnClustered` instead of
+>   `57`, so `chartType:'bar'` drew a column chart *and reported success*.
+>   Tests also guard drift against every app's `entry.ts` enum in both
+>   directions. `dotnet test` 90 → 102.
+>
+> **Not verified against live Office** — `barStacked` follows the identical
+> code path as the seven chart types already supported (a `Dictionary` lookup
+> handing an int to the same COM property), and all three apps build clean,
+> but no live Word instance was reachable to confirm a stacked bar chart
+> actually renders. Worth one manual check.
+
 ## Architecture
 
 officeoffice drives the **real desktop Office applications** via VSTO + COM interop
