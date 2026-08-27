@@ -1,179 +1,217 @@
-import { AgentLoop, type AgentSkill, type AgentStreamHandle, type AgentTransport, type ToolExecution } from '@genoffice/agent-core'
-import { streamOpenAiCompatible, type AiProviderConfig } from '@genoffice/ai-provider'
-import { mountChatUI, type EditingMode } from '@officeai/chat-ui'
+import { startAddIn } from '@officeai/app-shell'
 
-// Spike 2: prove packages/agent-core's AgentLoop and packages/ai-provider's
-// streamOpenAiCompatible run unmodified inside a WebView2 page hosted in a
-// VSTO CustomTaskPane, talking to a real (local, for this spike) OpenAI-
-// compatible HTTP+SSE endpoint - no Electron IPC hop anywhere in this path.
-//
-// Spike 3: real tools, executed via the WebView2 <-> .NET WebMessage bridge
-// (chrome.webview.postMessage <-> CoreWebView2.PostWebMessageAsJson) instead
-// of Electron IPC. Tool execution itself is real COM automation against the
-// live Word document, handled in TaskPaneHost.cs / WordTools.cs.
+// Word add-in: tool definitions, system prompt, and starters are the only
+// app-specific pieces left here - everything else (WebView2 bridge, settings,
+// transport, chat-UI mount, AgentLoop event plumbing) lives once in
+// @officeai/app-shell (PP-0), shared with ExcelAiAddIn and PowerPointAiAddIn.
 
-declare const chrome: {
-  webview: {
-    postMessage(message: unknown): void
-    addEventListener(type: 'message', listener: (ev: { data: unknown }) => void): void
-  }
+// PP-5: structural per-kind schema for apply_commands, replacing the old
+// `items: { type: 'object' }` (no structure at all) + one prose paragraph.
+// This is documentation the model reads, not a validator that runs (not
+// every provider enforces oneOf/const) - the actual guarantee is the
+// required-field precheck in WordTools.cs's ApplyCommands (PP-5 Task 4).
+// Every kind below matches WordTools.cs's ApplyCommands switch exactly
+// (cross-checked in docs/ai-tool-surface.md) - do not add a kind here
+// without a matching case there, or vice versa.
+
+const TARGET_SCHEMA = {
+  type: 'object',
+  description:
+    'Selects paragraphs. Fields are AND-combined; at least one of nodeType/containsText/blockIndexes is required.',
+  properties: {
+    nodeType: { type: 'string', enum: ['heading', 'paragraph', 'listItem'] },
+    headingLevel: { type: 'number', minimum: 1, maximum: 6 },
+    containsText: { type: 'string' },
+    matchCase: { type: 'boolean' },
+    blockIndexes: { type: 'array', items: { type: 'number' }, description: '0-based paragraph indices' },
+    scope: { type: 'string', enum: ['document', 'selection'] },
+  },
 }
 
-interface ToolCallMessage {
-  kind: 'tool-call'
-  requestId: string
-  toolName: string
-  input: Record<string, unknown>
+// Exactly the 10 keys UpdateTextStyle (WordTools.cs) checks against `fields` -
+// PP-12 implemented `highlight` (was deliberately absent pre-PP-12).
+const TEXT_STYLE_FIELDS = ['bold', 'italic', 'underline', 'strike', 'sizeHalfPoints', 'font', 'color', 'baselineOffset', 'link', 'highlight']
+
+// Word's HighlightColors palette (WordTools.cs) - a fixed 16-entry
+// WdColorIndex palette, NOT arbitrary RGB like `color` above.
+const HIGHLIGHT_COLORS = [
+  'none', 'yellow', 'brightGreen', 'turquoise', 'pink', 'blue', 'red', 'darkBlue',
+  'teal', 'green', 'violet', 'darkRed', 'darkYellow', 'gray50', 'gray25', 'black', 'white',
+]
+
+const TEXT_STYLE_SCHEMA = {
+  type: 'object',
+  description: 'Only keys also listed in `fields` are applied. Any key not in fields/here errors instead of silently no-opping.',
+  properties: {
+    bold: { type: 'boolean' },
+    italic: { type: 'boolean' },
+    underline: { type: 'boolean' },
+    strike: { type: 'boolean' },
+    sizeHalfPoints: { type: 'number', description: 'Font size in half-points (e.g. 24 = 12pt).' },
+    font: { type: 'string' },
+    color: { type: 'string', description: 'Hex color, e.g. "#FF0000".' },
+    baselineOffset: { type: 'string', enum: ['SUPERSCRIPT', 'SUBSCRIPT', 'NONE'] },
+    link: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
+    highlight: { type: 'string', enum: HIGHLIGHT_COLORS, description: 'A fixed palette name, not a hex color - hex is rejected.' },
+  },
 }
 
-interface ToolResultMessage {
-  kind: 'tool-result'
-  requestId: string
-  output: string
-  isError?: boolean
-  mutated?: boolean
-  summary: string
+// Exactly the 10 keys UpdateParagraphStyle (WordTools.cs) checks against `fields`.
+const PARAGRAPH_STYLE_FIELDS = [
+  'align', 'lineSpacing', 'indentLeft', 'indentRight', 'indentFirstLine',
+  'spaceBefore', 'spaceAfter', 'pageBreakBefore', 'shadingFill', 'borders',
+]
+
+const PARAGRAPH_STYLE_SCHEMA = {
+  type: 'object',
+  description: 'Only keys also listed in `fields` are applied.',
+  properties: {
+    align: { type: 'string', enum: ['left', 'center', 'right', 'justify'] },
+    lineSpacing: { type: 'number' },
+    indentLeft: { type: 'number' },
+    indentRight: { type: 'number' },
+    indentFirstLine: { type: 'number' },
+    spaceBefore: { type: 'number' },
+    spaceAfter: { type: 'number' },
+    pageBreakBefore: { type: 'boolean' },
+    shadingFill: { type: 'string', description: 'Hex color, e.g. "#FFFF00".' },
+    borders: { type: 'boolean', description: 'true = single-line borders on all sides; false = no borders.' },
+  },
 }
 
-interface OtherMessage {
-  kind: string
-  [key: string]: unknown
+// Exactly the 3 keys UpdateImageProperties (WordTools.cs) checks against
+// `fields` - note align here is left/center/right only (no "justify"),
+// unlike updateParagraphStyle's align - the handler's own switch has no
+// justify case for images.
+const IMAGE_PROPERTIES_FIELDS = ['widthPx', 'heightPx', 'align']
+
+const IMAGE_PROPERTIES_SCHEMA = {
+  type: 'object',
+  description: 'Only keys also listed in `fields` are applied. Setting only one of widthPx/heightPx scales the other proportionally.',
+  properties: {
+    widthPx: { type: 'number' },
+    heightPx: { type: 'number' },
+    align: { type: 'string', enum: ['left', 'center', 'right'] },
+  },
 }
 
-const pendingToolCalls = new Map<string, (result: ToolExecution) => void>()
-
-// Task 12: cached selection state, updated live from the .NET-side
-// WindowSelectionChange handler (TaskPaneHost.OnSelectionChanged) and read by
-// wordSkill.buildContext() below. Module-level `let`, same pattern as Task
-// 11's `editingMode`.
-let latestSelection: { hasSelection: boolean; preview: string; fullText: string } = {
-  hasSelection: false,
-  preview: '',
-  fullText: '',
-}
-
-chrome.webview.addEventListener('message', (ev) => {
-  const data = ev.data as OtherMessage & ToolResultMessage
-  if (!data) return
-  if (data.kind === 'tool-result') {
-    const resolve = pendingToolCalls.get(data.requestId)
-    if (!resolve) return
-    pendingToolCalls.delete(data.requestId)
-    resolve({
-      output: data.output,
-      isError: data.isError,
-      mutated: data.mutated,
-      summary: data.summary,
-    })
-    return
-  }
-  if (data.kind === 'history-loaded') {
-    const messages = data.messages as Array<{ role: 'user' | 'assistant'; text: string }>
-    if (messages.length > 0) {
-      ui.showHistoric(messages)
-      loop.restore(messages.map((m) => ({ role: m.role, text: m.text })))
-    }
-    return
-  }
-  if (data.kind === 'selection-changed') {
-    latestSelection = data as unknown as typeof latestSelection
-    ui.setSelectionScope(latestSelection.hasSelection ? { hasSelection: true, preview: latestSelection.preview } : null)
-  }
-})
-
-function requestHistory(): void {
-  chrome.webview.postMessage({ kind: 'load-history' })
-}
-
-function persistMessage(role: 'user' | 'assistant', text: string): void {
-  chrome.webview.postMessage({ kind: 'append-message', role, text })
-}
-
-function callDotNetTool(toolName: string, input: Record<string, unknown>): Promise<ToolExecution> {
-  const requestId = crypto.randomUUID()
-  return new Promise((resolve) => {
-    pendingToolCalls.set(requestId, resolve)
-    const msg: ToolCallMessage = { kind: 'tool-call', requestId, toolName, input }
-    chrome.webview.postMessage(msg)
-  })
-}
-
-// Connection settings are user-editable via the panel's Settings dropdown
-// (onSettingsSave below) and persisted in this WebView2 profile's own
-// localStorage - each app has its own separate WebView2 user-data folder
-// (see WebViewBridgeHost's userDataFolder), so this never collides with or
-// shares storage across Word/Excel/PowerPoint.
-const SETTINGS_STORAGE_KEY = 'airchat-settings'
-
-interface StoredSettings {
-  baseUrl: string
-  apiKey: string
-  model: string
-  skipTlsVerify: boolean
-}
-
-function loadSettings(): StoredSettings {
-  const defaults: StoredSettings = { baseUrl: 'http://127.0.0.1:9000/v1', apiKey: 'test', model: 'test-model', skipTlsVerify: false }
-  try {
-    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY)
-    if (!raw) return defaults
-    return { ...defaults, ...JSON.parse(raw) }
-  } catch {
-    return defaults
-  }
-}
-
-function saveSettings(settings: StoredSettings): void {
-  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings))
-}
-
-let currentSettings = loadSettings()
-const MAX_TOKENS = 1024
-
-function makeTransport(): AgentTransport {
-  return {
-    stream(request, callbacks): AgentStreamHandle {
-      const controller = new AbortController()
-      const providerConfig: AiProviderConfig = { apiKey: currentSettings.apiKey, model: currentSettings.model }
-      streamOpenAiCompatible(
-        currentSettings.baseUrl,
-        providerConfig,
-        request.system,
-        request.messages,
-        request.tools,
-        MAX_TOKENS,
-        {
-          onDelta: callbacks.onDelta,
-          onToolCall: callbacks.onToolCall,
-          onStopReason: callbacks.onStopReason,
-          signal: controller.signal,
-        },
-      )
-        .then(() => callbacks.onDone())
-        .catch((e: unknown) => callbacks.onError(e instanceof Error ? e.message : String(e)))
-      return { cancel: () => controller.abort() }
+const WORD_COMMAND_SCHEMAS = [
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'set_bold' },
+      startIndex: { type: 'number', description: '0-based paragraph index' },
+      endIndex: { type: 'number', description: '0-based paragraph index, inclusive' },
+      value: { type: 'boolean' },
     },
-  }
-}
-
-// Task 11: editing-mode control. This is client-side filtering only (first
-// line of defense - smaller prompts, fewer wasted turns); the real
-// enforcement is server-side in WordTools.Execute (WordTools.cs), which gates
-// mutating tool calls even if the model somehow requests one that wasn't
-// offered here.
-let editingMode: EditingMode = 'fullAutonomy'
-
-const READ_ONLY_TOOL_NAMES = new Set(['get_document_context', 'read_blocks'])
-
-function toolsForMode(): typeof ALL_WORD_TOOLS {
-  if (editingMode === 'readOnly') {
-    return ALL_WORD_TOOLS.filter((t) => READ_ONLY_TOOL_NAMES.has(t.name))
-  }
-  if (editingMode === 'commentOnly') {
-    return ALL_WORD_TOOLS.filter((t) => READ_ONLY_TOOL_NAMES.has(t.name) || t.name === 'add_comment')
-  }
-  return ALL_WORD_TOOLS
-}
+    required: ['kind', 'startIndex', 'endIndex', 'value'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'set_italic' },
+      startIndex: { type: 'number', description: '0-based paragraph index' },
+      endIndex: { type: 'number', description: '0-based paragraph index, inclusive' },
+      value: { type: 'boolean' },
+    },
+    required: ['kind', 'startIndex', 'endIndex', 'value'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'set_heading' },
+      index: { type: 'number', description: '0-based paragraph index' },
+      level: { type: 'number', minimum: 0, maximum: 9, description: '0 = Normal style, 1-9 = Heading 1-9' },
+    },
+    required: ['kind', 'index', 'level'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'find_replace' },
+      find: { type: 'string' },
+      replace: { type: 'string' },
+      matchCase: { type: 'boolean' },
+    },
+    required: ['kind', 'find', 'replace'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'updateTextStyle' },
+      target: TARGET_SCHEMA,
+      style: TEXT_STYLE_SCHEMA,
+      fields: { type: 'array', items: { type: 'string', enum: TEXT_STYLE_FIELDS } },
+    },
+    required: ['kind', 'target', 'style', 'fields'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'updateParagraphStyle' },
+      target: TARGET_SCHEMA,
+      style: PARAGRAPH_STYLE_SCHEMA,
+      fields: { type: 'array', items: { type: 'string', enum: PARAGRAPH_STYLE_FIELDS } },
+    },
+    required: ['kind', 'target', 'style', 'fields'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'deleteBlocks' },
+      target: TARGET_SCHEMA,
+    },
+    required: ['kind', 'target'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'moveBlocks' },
+      blockIndexes: { type: 'array', items: { type: 'number' }, description: '0-based paragraph indices to move' },
+      afterBlockIndex: { type: 'number', description: '0-based paragraph index to insert after; -1 = start of document. Cannot be one of blockIndexes.' },
+    },
+    required: ['kind', 'blockIndexes', 'afterBlockIndex'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'createParagraphBullets' },
+      target: TARGET_SCHEMA,
+      bulletPreset: {
+        type: 'string',
+        enum: ['BULLET_DISC_CIRCLE_SQUARE', 'BULLET_DIAMOND_X', 'BULLET_CHECKBOX', 'NUMBERED_DECIMAL', 'NUMBERED_DECIMAL_ALPHA_ROMAN', 'NUMBERED_UPPERALPHA', 'NUMBERED_UPPERROMAN'],
+        description: 'Default plain bullet if omitted. An unrecognized value errors (PP-12) rather than silently collapsing to a generic bullet.',
+      },
+    },
+    required: ['kind', 'target'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'deleteParagraphBullets' },
+      target: TARGET_SCHEMA,
+    },
+    required: ['kind', 'target'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'updateImageProperties' },
+      imageIndex: { type: 'number', description: '0-based index into the document\'s inline images' },
+      properties: IMAGE_PROPERTIES_SCHEMA,
+      fields: { type: 'array', items: { type: 'string', enum: IMAGE_PROPERTIES_FIELDS } },
+    },
+    required: ['kind', 'imageIndex', 'properties', 'fields'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'insertToc' },
+      afterBlockIndex: { type: 'number', description: '0-based paragraph index to insert after; -1 = start of document. Requires at least one Heading-styled paragraph in the document.' },
+    },
+    required: ['kind', 'afterBlockIndex'],
+  },
+]
 
 const ALL_WORD_TOOLS = [
     {
@@ -183,59 +221,245 @@ const ALL_WORD_TOOLS = [
     },
     {
       name: 'insert_content',
-      description: 'Inserts a paragraph of text at the end of the active Word document.',
+      description:
+        'Inserts content into the active Word document. Supply exactly one of text (plain; newlines create separate paragraphs) ' +
+        'or html (restricted subset: <p> <h1>-<h3> <ul>/<ol>/<li> <b>/<strong> <i>/<em> <u> <br/> - must be well-formed XHTML, no attributes, no nesting of lists). ' +
+        'afterBlockIndex (0-based paragraph index) anchors the insertion after that paragraph; -1 = start of document; omit = end of document (the original behavior).',
       inputSchema: {
         type: 'object',
-        properties: { text: { type: 'string' } },
-        required: ['text'],
+        properties: {
+          text: { type: 'string' },
+          html: { type: 'string' },
+          afterBlockIndex: { type: 'number' },
+        },
+        required: [],
       },
     },
     {
       name: 'edit_chart',
       description:
-        'Creates (if none exists) or edits a native Word chart: sets its title and its first series values.',
+        'Creates or edits a native Word chart. Supply categories + one or more named series for a labeled chart. ' +
+        'chartIndex addresses an existing chart (0-based, inline shapes first then floating shapes, in document order); omit it to edit the first chart, ' +
+        'or pass create:true to always add a new one. With no afterBlockIndex, a newly created chart is a floating shape at document origin (unchanged legacy behavior); ' +
+        'with afterBlockIndex, it is inserted inline (flows with the text) after that paragraph.',
       inputSchema: {
         type: 'object',
         properties: {
           title: { type: 'string' },
-          values: { type: 'array', items: { type: 'number' } },
+          chartType: { type: 'string', enum: ['column', 'columnStacked', 'bar', 'barStacked', 'line', 'area', 'pie', 'doughnut'] },
+          categories: { type: 'array', items: { type: 'string' } },
+          series: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { name: { type: 'string' }, values: { type: 'array', items: { type: 'number' } } },
+              required: ['values'],
+            },
+          },
+          values: { type: 'array', items: { type: 'number' }, description: 'Legacy single-series shorthand; prefer series.' },
+          chartIndex: { type: 'number' },
+          create: { type: 'boolean' },
+          afterBlockIndex: { type: 'number', description: '0-based paragraph index to anchor a NEW chart after; -1 = start.' },
         },
-        required: ['title', 'values'],
+        required: [],
       },
     },
     {
-      name: 'read_blocks',
-      description: 'Reads paragraphs [startIndex, endIndex] (0-based, inclusive) of the active document, one per line prefixed with its index.',
+      name: 'read_chart',
+      description:
+        'Reads an existing chart\'s current title, type, categories, and per-series names/values. ' +
+        'Call this before an incremental edit_chart change (e.g. removing or renaming one category or series) - ' +
+        'edit_chart REPLACES the whole dataset when categories/series is given, so you need the current data to correctly resend everything you are keeping. ' +
+        'chartIndex addresses an existing chart (0-based, inline shapes first then floating shapes, in document order); omit it to read the first chart.',
       inputSchema: {
         type: 'object',
-        properties: { startIndex: { type: 'number' }, endIndex: { type: 'number' } },
+        properties: { chartIndex: { type: 'number' } },
+        required: [],
+      },
+    },
+    {
+      name: 'find_text',
+      description:
+        'Searches the document\'s paragraph text for a substring (or, with regex:true, a .NET regular expression) - read-only, never modifies the document. ' +
+        'Returns each match as "[index] full paragraph text" - that index is the EXACT SAME 0-based paragraph index read_blocks\'/replace_blocks\' ' +
+        'startIndex/endIndex and apply_commands\' Target.blockIndexes use, so pass it straight through with no translation (e.g. a hit "[42] ..." means ' +
+        'read_blocks({startIndex: 42, endIndex: 42}) or a Target of {blockIndexes: [42]}). Use this to locate the paragraphs you actually need instead of ' +
+        'reading a large range blindly or guessing indices before find_replace.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' },
+          regex: { type: 'boolean' },
+          matchCase: { type: 'boolean' },
+          max_results: { type: 'number' },
+        },
+        required: ['query', 'max_results'],
+      },
+    },
+    {
+      name: 'get_headings',
+      description:
+        'Lists every heading-styled paragraph in the document, in order, like Word\'s Navigation Pane - each line is "[index] H<level>: text". ' +
+        'Use this to see the document\'s outline/structure in one call instead of reading every paragraph via read_blocks.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'read_blocks',
+      description:
+        'Reads paragraphs [startIndex, endIndex] (0-based, inclusive) of the active document, one per line prefixed with its index - capped at 1000 paragraphs per call. ' +
+        'format:"html" emits the same restricted HTML subset insert_content/replace_blocks accept (headings/bold/italic/underline/list membership survive; ' +
+        'anything outside that subset, e.g. font color, does not) - capped lower, at 100 paragraphs per call (per-paragraph formatting reads are slower); strip the leading "[i] " markers before feeding the fragment back into html. ' +
+        'Prefer find_text to locate the paragraph indices you actually need instead of reading a large range blindly.',
+      inputSchema: {
+        type: 'object',
+        properties: { startIndex: { type: 'number' }, endIndex: { type: 'number' }, format: { type: 'string', enum: ['text', 'html'] } },
         required: ['startIndex', 'endIndex'],
       },
     },
     {
       name: 'replace_blocks',
-      description: 'Replaces paragraphs [startIndex, endIndex] (0-based, inclusive) with new text (empty text deletes the range).',
+      description:
+        'Replaces paragraphs [startIndex, endIndex] (0-based, inclusive) with new content. Supply exactly one of text or html (same restricted subset as insert_content). ' +
+        'Empty text deletes the range. preserveFormatting (default true) reapplies the first replaced paragraph\'s style (e.g. Heading 2) to the result - ' +
+        'pass false for the old strip-everything behavior. preserveFormatting has no effect when html is given (the fragment\'s own tags dictate style).',
       inputSchema: {
         type: 'object',
-        properties: { startIndex: { type: 'number' }, endIndex: { type: 'number' }, text: { type: 'string' } },
-        required: ['startIndex', 'endIndex', 'text'],
+        properties: {
+          startIndex: { type: 'number' },
+          endIndex: { type: 'number' },
+          text: { type: 'string' },
+          html: { type: 'string' },
+          preserveFormatting: { type: 'boolean' },
+        },
+        required: ['startIndex', 'endIndex'],
       },
+    },
+    {
+      name: 'add_image',
+      description:
+        'Inserts an image from a LOCAL FILE PATH into the document (no URLs - this deployment is air-gapped). ' +
+        'Inserts inline in the text flow by default, after the paragraph given by afterBlockIndex (0-based; -1 = start; omit = end of document). ' +
+        'Inline images are addressable afterwards by apply_commands/updateImageProperties via their 0-based index, which this tool returns; floating images (floating:true) are not.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          afterBlockIndex: { type: 'number' },
+          floating: { type: 'boolean' },
+          widthPoints: { type: 'number' },
+          heightPoints: { type: 'number' },
+          altText: { type: 'string' },
+        },
+        required: ['path'],
+      },
+    },
+    {
+      name: 'add_table',
+      description:
+        'Adds a native Word table, optionally pre-filled with cell text (row-major array of arrays; extra cells beyond rows/cols are ignored). ' +
+        'afterBlockIndex is the 0-based paragraph index to insert after (-1 = start of document; omit = end of document).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          rows: { type: 'number' },
+          cols: { type: 'number' },
+          cells: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
+          afterBlockIndex: { type: 'number' },
+        },
+        required: ['rows', 'cols'],
+      },
+    },
+    {
+      name: 'edit_table',
+      description:
+        'Edits an existing table. kind: "set_cell" (row,col,text), "insert_row"/"delete_row"/"insert_col"/"delete_col" (index,before?), ' +
+        '"set_style" (styleName?,headerRow?,bandedRows?,borders?,borderColor?), "set_shading" (scope,color,row?,col?) fills cell background color. ' +
+        'borders:true draws a single-line border on every table edge (default color black, override with borderColor); borders:false removes all table borders. ' +
+        'set_shading scope: "cell" (needs row+col), "row" (needs row, fills the whole row), "col" (needs col, fills the whole column), "table" (fills every cell) - color is a required hex string, e.g. "#FFFF00". ' +
+        'tableIndex addresses the table (0-based, document order); omit to target the first table. ' +
+        'Structural edits shift later indices - re-read the table (read_table) before a second structural edit in the same run.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          tableIndex: { type: 'number' },
+          kind: { type: 'string', enum: ['set_cell', 'insert_row', 'delete_row', 'insert_col', 'delete_col', 'set_style', 'set_shading'] },
+          row: { type: 'number' },
+          col: { type: 'number' },
+          text: { type: 'string' },
+          index: { type: 'number' },
+          before: { type: 'boolean' },
+          styleName: { type: 'string' },
+          headerRow: { type: 'boolean' },
+          bandedRows: { type: 'boolean' },
+          borders: { type: 'boolean' },
+          borderColor: { type: 'string', description: 'Hex color, e.g. "#000000". Only applied when borders:true.' },
+          scope: { type: 'string', enum: ['cell', 'row', 'col', 'table'], description: 'Required for kind:"set_shading".' },
+          color: { type: 'string', description: 'Hex color, e.g. "#FFFF00". Required for kind:"set_shading".' },
+        },
+        required: ['kind'],
+      },
+    },
+    {
+      name: 'read_table',
+      description: 'Reads an existing table\'s cell contents, one row per line. tableIndex addresses the table (0-based, document order); omit to read the first table.',
+      inputSchema: { type: 'object', properties: { tableIndex: { type: 'number' } }, required: [] },
+    },
+    {
+      name: 'add_smartart',
+      description:
+        'Adds a shape-composed SmartArt diagram. layout: "list"|"process"|"cycle"|"hierarchy"|"pyramid"|"matrix"|"venn". items are flat node texts, one per top-level node. ' +
+        'afterBlockIndex (0-based paragraph index, -1 = start, omit = end of document) inserts inline; omitting both x/y and afterBlockIndex places a floating shape at a default position.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          layout: { type: 'string', enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'] },
+          items: { type: 'array', items: { type: 'string' } },
+          x: { type: 'number' },
+          y: { type: 'number' },
+          w: { type: 'number' },
+          h: { type: 'number' },
+          afterBlockIndex: { type: 'number' },
+        },
+        required: ['layout', 'items'],
+      },
+    },
+    {
+      name: 'edit_smartart',
+      description:
+        'Edits an existing SmartArt diagram. kind: "set_text" (nodeIndex,text), "add_node" (text?), "delete_node" (nodeIndex), ' +
+        '"set_style" (colorName?,quickStyleName? - free-text, matched by substring against this Office install\'s actual color/quick-style gallery; ' +
+        'an unmatched name errors listing the real available names to retry with, e.g. try "Colorful" or "Accent" for colorName, "Intense" or "Simple" for quickStyleName), ' +
+        '"set_layout" (layout - same layout keys as add_smartart: list/process/cycle/hierarchy/pyramid/matrix/venn; changes an existing diagram\'s layout, keeping its current node text). ' +
+        'smartArtIndex addresses the diagram (0-based, document order); omit to target the first one. ' +
+        'delete_node shifts later node indices - re-read (read_smartart) before another node edit in the same run.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          smartArtIndex: { type: 'number' },
+          kind: { type: 'string', enum: ['set_text', 'add_node', 'delete_node', 'set_style', 'set_layout'] },
+          nodeIndex: { type: 'number' },
+          text: { type: 'string' },
+          colorName: { type: 'string' },
+          quickStyleName: { type: 'string' },
+          layout: { type: 'string', enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'] },
+        },
+        required: ['kind'],
+      },
+    },
+    {
+      name: 'read_smartart',
+      description: 'Reads SmartArt diagram node texts, one per line. smartArtIndex addresses a specific diagram (0-based, document order); omit to read every diagram in the document in one call.',
+      inputSchema: { type: 'object', properties: { smartArtIndex: { type: 'number' } }, required: [] },
     },
     {
       name: 'apply_commands',
       description:
-        'Applies a batch of formatting/editing commands. Each command has a "kind": ' +
-        '"set_bold"/"set_italic" (fields: startIndex, endIndex, value:boolean), ' +
-        '"set_heading" (fields: index, level:0-9, 0=Normal style), ' +
-        '"find_replace" (fields: find:string, replace:string, matchCase?:boolean), ' +
-        '"updateTextStyle"/"updateParagraphStyle" (fields: target:Target, style:object, fields:string[] - only listed style keys apply), ' +
-        '"deleteBlocks" (fields: target:Target), ' +
-        '"moveBlocks" (fields: blockIndexes:number[], afterBlockIndex:number, -1=start), ' +
-        '"createParagraphBullets"/"deleteParagraphBullets" (fields: target:Target, bulletPreset?:string), ' +
-        '"updateImageProperties" (fields: imageIndex:number, properties:object, fields:string[]), ' +
-        '"insertToc" (fields: afterBlockIndex:number, -1=start; requires at least one Heading-styled paragraph in the document). ' +
-        'Target = {nodeType?:"heading"|"paragraph"|"listItem", headingLevel?:1-6, containsText?:string, matchCase?:boolean, blockIndexes?:number[], scope?:"document"|"selection"} - at least one of nodeType/containsText/blockIndexes required.',
-      inputSchema: { type: 'object', properties: { commands: { type: 'array', items: { type: 'object' } } }, required: ['commands'] },
+        'Applies a batch of formatting/editing commands. Each command is one of the kinds described by the schema below - see each branch\'s properties for its exact fields.',
+      inputSchema: {
+        type: 'object',
+        properties: { commands: { type: 'array', items: { oneOf: WORD_COMMAND_SCHEMAS } } },
+        required: ['commands'],
+      },
     },
     {
       name: 'add_comment',
@@ -249,115 +473,104 @@ const ALL_WORD_TOOLS = [
     },
   ]
 
-const wordSkill: AgentSkill = {
-  id: 'word-tools',
-  systemPrompt:
-    'You are an AI assistant embedded in Microsoft Word via the Airchat Office add-in. ' +
-    'You can read the document, insert content, read and replace paragraph ranges, apply formatting and find/replace commands, add comments, and create or edit a native Word chart. ' +
-    "Your available tools depend on the user's current editing mode (Read only, Comment only, Track changes, or Full autonomy); only call tools that are currently offered to you. " +
-    'If the user has selected text in the document, it will be included in your context as "Content selected by the user."',
-  // Live getter (not a fixed array): AgentLoop.startTurn() reads
-  // `this.options.skill.tools` fresh every turn (see
-  // shared/web-src/agent-core/loop.ts), so this recomputes the tool list
-  // per-turn from the current editingMode without needing to rebuild the
-  // whole skill object or touch agent-core.
-  get tools() {
-    return toolsForMode()
+// FT-1 Task 5: settings-screen labels/descriptions, one entry per tool above.
+// These are short, user-facing sentences for a non-technical reader - NOT the
+// model-facing `description` strings above, which enumerate parameter shapes
+// and are the wrong register for this screen (Task 5 Step 2).
+const WORD_TOOL_DISPLAY = {
+  get_document_context: {
+    label: { en: 'Read document', he: 'קרא מסמך' },
+    description: { en: "Reads the document's structure and a short preview of its text.", he: 'קורא את מבנה המסמך ותצוגה מקדימה קצרה של הטקסט.' },
   },
-  // Task 12: injects the actual selected text (not just its position) into
-  // the per-turn context, so the model can act on "the selected text" even
-  // though our tool set is paragraph-index-based rather than selection-based.
-  // Mirrors genoffice's buildDocContext extension point (AgentLoop.run()
-  // calls skill.buildContext?.() once per run and appends it to the outgoing
-  // user message - see shared/web-src/agent-core/loop.ts).
-  buildContext: () =>
-    latestSelection.hasSelection ? `Content selected by the user:\n${latestSelection.fullText}` : '',
-  executeTool: (call) => callDotNetTool(call.name, call.input),
+  insert_content: {
+    label: { en: 'Insert content', he: 'הוספת תוכן' },
+    description: { en: 'Inserts new text or formatted content at a chosen position in the document.', he: 'מוסיף טקסט חדש או תוכן מעוצב במיקום נבחר במסמך.' },
+  },
+  edit_chart: {
+    label: { en: 'Create or edit chart', he: 'יצירה/עריכת תרשים' },
+    description: { en: 'Creates a new chart or edits an existing one, with categories and data series.', he: 'יוצר תרשים חדש או עורך תרשים קיים, כולל קטגוריות וסדרות נתונים.' },
+  },
+  read_chart: {
+    label: { en: 'Read chart data', he: 'קריאת נתוני תרשים' },
+    description: { en: 'Reads an existing chart\'s title, type, categories, and series values.', he: 'קורא את כותרת התרשים, סוגו, הקטגוריות וערכי הסדרות שלו.' },
+  },
+  find_text: {
+    label: { en: 'Search document', he: 'חיפוש במסמך' },
+    description: { en: 'Searches the document\'s text for a word or phrase.', he: 'מחפש מילה או ביטוי בטקסט המסמך.' },
+  },
+  get_headings: {
+    label: { en: 'List headings', he: 'רשימת כותרות' },
+    description: { en: 'Lists the document\'s headings, like the Navigation Pane.', he: 'מציג את כותרות המסמך, בדומה לחלונית הניווט.' },
+  },
+  read_blocks: {
+    label: { en: 'Read paragraphs', he: 'קריאת פסקאות' },
+    description: { en: 'Reads a range of paragraphs from the document.', he: 'קורא טווח פסקאות מהמסמך.' },
+  },
+  replace_blocks: {
+    label: { en: 'Replace paragraphs', he: 'החלפת פסקאות' },
+    description: { en: 'Replaces a range of paragraphs with new content.', he: 'מחליף טווח פסקאות בתוכן חדש.' },
+  },
+  add_image: {
+    label: { en: 'Insert image', he: 'הוספת תמונה' },
+    description: { en: 'Inserts an image from a local file into the document.', he: 'מוסיף תמונה מקובץ מקומי אל המסמך.' },
+  },
+  add_table: {
+    label: { en: 'Insert table', he: 'הוספת טבלה' },
+    description: { en: 'Adds a new table, optionally pre-filled with text.', he: 'מוסיף טבלה חדשה, ניתן למלא מראש בטקסט.' },
+  },
+  edit_table: {
+    label: { en: 'Edit table', he: 'עריכת טבלה' },
+    description: { en: 'Edits an existing table\'s cells, rows/columns, or style.', he: 'עורך את התאים, השורות/העמודות או העיצוב של טבלה קיימת.' },
+  },
+  read_table: {
+    label: { en: 'Read table', he: 'קריאת טבלה' },
+    description: { en: 'Reads an existing table\'s cell contents.', he: 'קורא את תוכן התאים של טבלה קיימת.' },
+  },
+  add_smartart: {
+    label: { en: 'Insert SmartArt', he: 'הוספת SmartArt' },
+    description: { en: 'Adds a SmartArt diagram (list, process, cycle, hierarchy, pyramid, matrix, or Venn).', he: 'מוסיף דיאגרמת SmartArt (רשימה, תהליך, מעגל, היררכיה, פירמידה, מטריצה או ון).' },
+  },
+  edit_smartart: {
+    label: { en: 'Edit SmartArt', he: 'עריכת SmartArt' },
+    description: { en: 'Edits an existing SmartArt diagram\'s node text.', he: 'עורך את טקסט הצמתים של דיאגרמת SmartArt קיימת.' },
+  },
+  read_smartart: {
+    label: { en: 'Read SmartArt', he: 'קריאת SmartArt' },
+    description: { en: 'Reads an existing SmartArt diagram\'s node text.', he: 'קורא את טקסט הצמתים של דיאגרמת SmartArt קיימת.' },
+  },
+  apply_commands: {
+    label: { en: 'Edit and format', he: 'עריכה ועיצוב' },
+    description: { en: 'Applies formatting and editing commands such as bold, headings, bullets, and find/replace.', he: 'מיישם פקודות עיצוב ועריכה כגון הדגשה, כותרות, תבליטים וחיפוש/החלפה.' },
+  },
+  add_comment: {
+    label: { en: 'Add comment', he: 'הוספת הערה' },
+    description: { en: 'Adds a comment anchored to text in the document, without changing its content.', he: 'מוסיף הערה מעוגנת לטקסט במסמך, מבלי לשנות את תוכנו.' },
+  },
 }
 
-const root = document.getElementById('root')!
-const ui = mountChatUI(root, {
+startAddIn({
+  skillId: 'word-tools',
+  tools: ALL_WORD_TOOLS,
+  toolDisplay: WORD_TOOL_DISPLAY,
+  systemPrompt:
+    'You are an AI assistant embedded in Microsoft Word via the Airchat Office add-in. ' +
+    'You can read the document, insert content at any position (plain text or a restricted HTML subset - headings, bold/italic/underline, bulleted/numbered lists), ' +
+    'read and non-destructively replace paragraph ranges, apply formatting and find/replace commands, insert images from local file paths, add comments, ' +
+    'search the document\'s text read-only with find_text, and list the document\'s heading outline with get_headings (like the Navigation Pane). ' +
+    'When you need to find something in the document rather than read it start-to-finish, call find_text FIRST rather than reading a large range with ' +
+    'read_blocks blindly (or worse, paging through the whole document) - the "[index]" it returns is the exact same paragraph index read_blocks/' +
+    'replace_blocks\' startIndex/endIndex and apply_commands\' Target.blockIndexes use, so pass it straight through with no translation. ' +
+    'create, read, or edit a native Word chart with labeled categories and named multi-series, create/read/edit native Word tables, and create/read/edit SmartArt diagrams. ' +
+    'edit_chart REPLACES the whole categories/series dataset when given, so before an incremental change to an existing chart (e.g. removing or renaming one category), call read_chart first to see the current data and resend everything you are keeping. ' +
+    'edit_table\'s insert_row/delete_row/insert_col/delete_col and edit_smartart\'s delete_node shift later row/column/node indices - re-read (read_table/read_smartart) before a second structural edit to the same table or diagram in the same run. ' +
+    "Your available tools depend on the user's current editing mode (Read only, Comment only, Track changes, or Full autonomy); only call tools that are currently offered to you. " +
+    'If the user has selected text in the document, it will be included in your context as "Content selected by the user."',
   starters: [
     { en: 'Summarize the key points of this document', he: 'סכם את הנקודות העיקריות במסמך' },
     { en: 'Polish the whole document for a more professional tone', he: 'לטש את כל המסמך לטון מקצועי יותר' },
     { en: 'Continue writing from where the document leaves off', he: 'המשך לכתוב מהיכן שהמסמך מסתיים' },
   ],
-  onCollapseChange: (collapsed) => {
-    chrome.webview.postMessage({ kind: collapsed ? 'collapse-pane' : 'expand-pane' })
-  },
-  initialSettings: currentSettings,
-  onSend: (text) => {
-    if (loop.busy) return
-    ui.addUserMessage(text)
-    ui.beginAssistantMessage()
-    ui.setBusy(true)
-    persistMessage('user', text)
-    loop.run(text)
-  },
-  onNewChat: () => {
-    chrome.webview.postMessage({ kind: 'new-chat-divider' })
-    loop.reset()
-    ui.resetToEmpty()
-  },
-  onModeChange: (mode: EditingMode) => {
-    editingMode = mode
-    chrome.webview.postMessage({ kind: 'set-mode', mode })
-  },
-  onSettingsSave: (settings) => {
-    currentSettings = {
-      baseUrl: settings.baseUrl || currentSettings.baseUrl,
-      apiKey: settings.apiKey || currentSettings.apiKey,
-      model: settings.model || currentSettings.model,
-      skipTlsVerify: settings.skipTlsVerify,
-    }
-    saveSettings(currentSettings)
-    chrome.webview.postMessage({ kind: 'set-tls-bypass', enabled: currentSettings.skipTlsVerify })
-  },
+  readOnlyTools: ['get_document_context', 'read_blocks', 'find_text', 'get_headings', 'read_chart', 'read_table', 'read_smartart'],
+  commentOnlyExtraTools: ['add_comment'],
+  useSelectionContext: true,
 })
-
-// Apply the persisted TLS-bypass preference on load too, not just after a
-// future Save - otherwise a user who enabled it last session would silently
-// go back to strict verification every time they reopen the document.
-chrome.webview.postMessage({ kind: 'set-tls-bypass', enabled: currentSettings.skipTlsVerify })
-
-let currentToolGroup: ReturnType<typeof ui.beginToolGroup> | null = null
-const activeSteps = new Map<string, ReturnType<ReturnType<typeof ui.beginToolGroup>['addStep']>>()
-
-const loop = new AgentLoop({
-  transport: makeTransport(),
-  skill: wordSkill,
-  events: {
-    onText: (text) => ui.updateAssistantMessage(text),
-    onToolStart: (call) => {
-      if (!currentToolGroup) currentToolGroup = ui.beginToolGroup()
-      activeSteps.set(call.id, currentToolGroup.addStep(call.name, call.input))
-    },
-    onToolExecuted: (event) => {
-      activeSteps.get(event.call.id)?.complete({
-        output: event.execution.output,
-        isError: event.execution.isError,
-        mutated: event.execution.mutated,
-      })
-      activeSteps.delete(event.call.id)
-    },
-    onTurnEnd: () => {
-      currentToolGroup?.end()
-      currentToolGroup = null
-    },
-    onDone: (result) => {
-      const finalText = result.text || '(no text)'
-      ui.endAssistantMessage(finalText)
-      ui.setBusy(false)
-      persistMessage('assistant', finalText)
-    },
-    onError: (error) => {
-      const placeholder = `[Error: ${error}]`
-      ui.endAssistantMessage(placeholder)
-      persistMessage('assistant', placeholder)
-      ui.showError(error)
-      ui.setBusy(false)
-    },
-  },
-})
-
-requestHistory()

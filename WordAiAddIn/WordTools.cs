@@ -188,6 +188,7 @@ namespace WordAiAddIn
             ["column"] = 51,        // xlColumnClustered
             ["columnStacked"] = 52, // xlColumnStacked
             ["bar"] = 57,           // xlBarClustered
+            ["barStacked"] = 58,    // xlBarStacked
             ["line"] = 4,           // xlLine
             ["area"] = 1,           // xlArea
             ["pie"] = 5,            // xlPie
