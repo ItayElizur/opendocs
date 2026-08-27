@@ -129,6 +129,42 @@
     <Compile Include="WordTools.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="WordTools.Html.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>WordTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="WordTools.Content.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>WordTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="WordTools.Charts.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>WordTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="WordTools.Tables.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>WordTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="WordTools.SmartArt.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>WordTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="WordTools.Commands.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>WordTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="WordTools.Commands.Style.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>WordTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="WordTools.Commands.Blocks.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>WordTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="WordTools.Images.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>WordTools.cs</DependentUpon>
+    </Compile>
     <Compile Include="Ribbon.cs">
       <SubType>Code</SubType>
     </Compile>
