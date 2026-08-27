@@ -38,7 +38,7 @@ dotnet test OfficeAi.Shared.Tests/OfficeAi.Shared.Tests.csproj --nologo -v q 2>&
 ```bash
 cd /c/dev/officeoffice
 mkdir -p .split-work
-inv() { grep -hnE '^        (private|public|internal)' $1 | sed -E 's/^[0-9]+:[[:space:]]*//' | sort; }
+inv() { grep -hnE '^        (private|public|internal)' "$@" | sed -E 's/^[0-9]+:[[:space:]]*//' | sort; }
 
 inv WordAiAddIn/WordTools.cs             > .split-work/word.before.txt
 inv ExcelAiAddIn/ExcelTools.cs           > .split-work/excel.before.txt

@@ -64,10 +64,10 @@ done
 
 ```bash
 cd /c/dev/officeoffice
-inv() { grep -hnE '^        (private|public|internal)' $1 | sed -E 's/^[0-9]+:[[:space:]]*//' | sort; }
-inv 'WordAiAddIn/WordTools*.cs' | uniq -d
-inv 'ExcelAiAddIn/ExcelTools*.cs' | uniq -d
-inv 'PowerPointAiAddIn/PowerPointTools*.cs' | uniq -d
+inv() { grep -hnE '^        (private|public|internal)' "$@" | sed -E 's/^[0-9]+:[[:space:]]*//' | sort; }
+inv WordAiAddIn/WordTools*.cs | uniq -d
+inv ExcelAiAddIn/ExcelTools*.cs | uniq -d
+inv PowerPointAiAddIn/PowerPointTools*.cs | uniq -d
 ```
 
 Any output = a duplicated member. Nothing = clean.

@@ -130,8 +130,8 @@ cd /c/dev/officeoffice
 
 ```bash
 cd /c/dev/officeoffice
-inv() { grep -hnE '^        (private|public|internal)' $1 | sed -E 's/^[0-9]+:[[:space:]]*//' | sort; }
-inv 'PowerPointAiAddIn/PowerPointTools*.cs' > .split-work/ppt.after.txt
+inv() { grep -hnE '^        (private|public|internal)' "$@" | sed -E 's/^[0-9]+:[[:space:]]*//' | sort; }
+inv PowerPointAiAddIn/PowerPointTools*.cs > .split-work/ppt.after.txt
 
 diff .split-work/ppt.before.txt .split-work/ppt.after.txt && echo "MEMBER SET IDENTICAL"
 ```
