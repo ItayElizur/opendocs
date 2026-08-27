@@ -858,8 +858,8 @@ namespace ExcelAiAddIn
                     if (rule.TryGetProperty("format", out var top10Format))
                     {
                         if (top10Format.TryGetProperty("bold", out var bold)) top10.Font.Bold = bold.ValueKind == JsonValueKind.True;
-                        if (top10Format.TryGetProperty("fontColor", out var fontColor)) top10.Font.Color = HexToOleColor(fontColor.GetString());
-                        if (top10Format.TryGetProperty("fillColor", out var fillColor)) top10.Interior.Color = HexToOleColor(fillColor.GetString());
+                        if (top10Format.TryGetProperty("fontColor", out var fontColor)) top10.Font.Color = ColorUtil.HexToOle(fontColor.GetString());
+                        if (top10Format.TryGetProperty("fillColor", out var fillColor)) top10.Interior.Color = ColorUtil.HexToOle(fillColor.GetString());
                     }
                     return "top10 range=" + range + " kind=top10 rank=" + rank + (percent ? "%" : "") + (bottom ? " bottom" : " top");
                     // Top10 doesn't implement FormatCondition in this PIA (confirmed via reflection) - format applied directly above, mirroring colorScale/dataBar's early-return pattern
@@ -871,9 +871,9 @@ namespace ExcelAiAddIn
                 case "colorScale":
                 {
                     Excel.ColorScale scale = target.FormatConditions.AddColorScale(3);
-                    if (rule.TryGetProperty("minColor", out var minC)) scale.ColorScaleCriteria[1].FormatColor.Color = HexToOleColor(minC.GetString());
-                    if (rule.TryGetProperty("midColor", out var midC)) scale.ColorScaleCriteria[2].FormatColor.Color = HexToOleColor(midC.GetString());
-                    if (rule.TryGetProperty("maxColor", out var maxC)) scale.ColorScaleCriteria[3].FormatColor.Color = HexToOleColor(maxC.GetString());
+                    if (rule.TryGetProperty("minColor", out var minC)) scale.ColorScaleCriteria[1].FormatColor.Color = ColorUtil.HexToOle(minC.GetString());
+                    if (rule.TryGetProperty("midColor", out var midC)) scale.ColorScaleCriteria[2].FormatColor.Color = ColorUtil.HexToOle(midC.GetString());
+                    if (rule.TryGetProperty("maxColor", out var maxC)) scale.ColorScaleCriteria[3].FormatColor.Color = ColorUtil.HexToOle(maxC.GetString());
                     return "colorScale range=" + range; // ColorScale/DataBar carry their own visual - no separate "format" object to apply below
                 }
                 case "dataBar":
@@ -881,7 +881,7 @@ namespace ExcelAiAddIn
                     Excel.Databar bar = target.FormatConditions.AddDatabar();
                     if (rule.TryGetProperty("color", out var barColor))
                     {
-                        bar.BarColor.Color = HexToOleColor(barColor.GetString());
+                        bar.BarColor.Color = ColorUtil.HexToOle(barColor.GetString());
                     }
                     return "dataBar range=" + range;
                 }
@@ -893,8 +893,8 @@ namespace ExcelAiAddIn
             if (fc != null && rule.TryGetProperty("format", out var format))
             {
                 if (format.TryGetProperty("bold", out var bold)) fc.Font.Bold = bold.ValueKind == JsonValueKind.True;
-                if (format.TryGetProperty("fontColor", out var fontColor)) fc.Font.Color = HexToOleColor(fontColor.GetString());
-                if (format.TryGetProperty("fillColor", out var fillColor)) fc.Interior.Color = HexToOleColor(fillColor.GetString());
+                if (format.TryGetProperty("fontColor", out var fontColor)) fc.Font.Color = ColorUtil.HexToOle(fontColor.GetString());
+                if (format.TryGetProperty("fillColor", out var fillColor)) fc.Interior.Color = ColorUtil.HexToOle(fillColor.GetString());
             }
             return kind + " range=" + range + " (" + detail + ")";
         }
@@ -1182,12 +1182,12 @@ namespace ExcelAiAddIn
             if (op.TryGetProperty("numberFormat", out var nf)) range.NumberFormat = nf.GetString();
             if (op.TryGetProperty("fillColor", out var fc) && fc.ValueKind == JsonValueKind.String)
             {
-                range.Interior.Color = HexToOleColor(fc.GetString());
+                range.Interior.Color = ColorUtil.HexToOle(fc.GetString());
             }
 
             if (op.TryGetProperty("fontName", out var fn) && fn.ValueKind == JsonValueKind.String) range.Font.Name = fn.GetString();
             if (op.TryGetProperty("fontSize", out var fs) && fs.ValueKind == JsonValueKind.Number) range.Font.Size = fs.GetDouble();
-            if (op.TryGetProperty("fontColor", out var fcol) && fcol.ValueKind == JsonValueKind.String) range.Font.Color = HexToOleColor(fcol.GetString());
+            if (op.TryGetProperty("fontColor", out var fcol) && fcol.ValueKind == JsonValueKind.String) range.Font.Color = ColorUtil.HexToOle(fcol.GetString());
             if (op.TryGetProperty("strikethrough", out var st)) range.Font.Strikethrough = st.ValueKind == JsonValueKind.True;
 
             if (op.TryGetProperty("underline", out var underline))
@@ -1304,7 +1304,7 @@ namespace ExcelAiAddIn
 
             int? oleColor = null;
             if (borders.TryGetProperty("color", out var colorEl) && colorEl.ValueKind == JsonValueKind.String)
-                oleColor = HexToOleColor(colorEl.GetString());
+                oleColor = ColorUtil.HexToOle(colorEl.GetString());
 
             bool singleCell = range.Cells.Count == 1;
             bool skippedInterior = false;
@@ -1492,7 +1492,7 @@ namespace ExcelAiAddIn
                 {
                     int seriesIndex = int.Parse(prop.Name);
                     dynamic series = chart.SeriesCollection(seriesIndex + 1);
-                    series.Format.Fill.ForeColor.RGB = HexToOleColor(prop.Value.GetString());
+                    series.Format.Fill.ForeColor.RGB = ColorUtil.HexToOle(prop.Value.GetString());
                 }
             }
 
@@ -1562,7 +1562,7 @@ namespace ExcelAiAddIn
             dynamic group = groups.Add(sparkType, dataRangeObj.Address[true, true, Excel.XlReferenceStyle.xlA1, true]);
             if (op.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
             {
-                group.SeriesColor.Color = HexToOleColor(color.GetString());
+                group.SeriesColor.Color = ColorUtil.HexToOle(color.GetString());
             }
             return "target=" + targetCell;
         }
@@ -1594,7 +1594,7 @@ namespace ExcelAiAddIn
             }
             if (op.TryGetProperty("fillColor", out var fill) && fill.ValueKind == JsonValueKind.String)
             {
-                shape.Fill.ForeColor.RGB = HexToOleColor(fill.GetString());
+                shape.Fill.ForeColor.RGB = ColorUtil.HexToOle(fill.GetString());
             }
             if (op.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
             {
@@ -1605,15 +1605,6 @@ namespace ExcelAiAddIn
                 shape.Name = nameEl.GetString();
             }
             return shape.Name;
-        }
-
-        private static int HexToOleColor(string hex)
-        {
-            hex = hex.TrimStart('#');
-            int r = Convert.ToInt32(hex.Substring(0, 2), 16);
-            int g = Convert.ToInt32(hex.Substring(2, 2), 16);
-            int b = Convert.ToInt32(hex.Substring(4, 2), 16);
-            return System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.FromArgb(r, g, b));
         }
 
         private static void SortRange(JsonElement op)
@@ -1832,7 +1823,7 @@ namespace ExcelAiAddIn
             catch (System.Runtime.InteropServices.COMException) { /* shape doesn't support a text frame */ }
             if (op.TryGetProperty("fillColor", out var fill) && fill.ValueKind == JsonValueKind.String)
             {
-                shape.Fill.ForeColor.RGB = HexToOleColor(fill.GetString());
+                shape.Fill.ForeColor.RGB = ColorUtil.HexToOle(fill.GetString());
             }
             if (op.TryGetProperty("anchorCell", out var anchorCell) && anchorCell.ValueKind == JsonValueKind.String)
             {

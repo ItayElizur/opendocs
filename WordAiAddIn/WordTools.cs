@@ -1198,8 +1198,8 @@ namespace WordAiAddIn
                     {
                         bool on = bordersEl.ValueKind == JsonValueKind.True;
                         Word.WdColor color = input.TryGetProperty("borderColor", out var bc) && bc.ValueKind == JsonValueKind.String
-                            ? HexToWdColor(bc.GetString())
-                            : HexToWdColor("#000000");
+                            ? (Word.WdColor)ColorUtil.HexToOle(bc.GetString())
+                            : (Word.WdColor)ColorUtil.HexToOle("#000000");
                         // Post-hoc fix (2026-08-24, user-reported): table.Borders
                         // is not just the 6 grid sides - it also includes
                         // wdBorderDiagonalDown/wdBorderDiagonalUp (the rare
@@ -1235,7 +1235,7 @@ namespace WordAiAddIn
                     // which does the identical per-cell loop for its
                     // shadingColor field).
                     string scope = input.GetProperty("scope").GetString();
-                    Word.WdColor color = HexToWdColor(input.GetProperty("color").GetString());
+                    Word.WdColor color = (Word.WdColor)ColorUtil.HexToOle(input.GetProperty("color").GetString());
                     int rowCount = table.Rows.Count, colCount = table.Columns.Count;
                     switch (scope)
                     {
@@ -2142,7 +2142,7 @@ namespace WordAiAddIn
                 if (fields.Contains("font") && style.TryGetProperty("font", out var font) && font.ValueKind == JsonValueKind.String)
                     range.Font.Name = font.GetString();
                 if (fields.Contains("color") && style.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
-                    range.Font.Color = HexToWdColor(color.GetString());
+                    range.Font.Color = (Word.WdColor)ColorUtil.HexToOle(color.GetString());
                 if (fields.Contains("baselineOffset") && style.TryGetProperty("baselineOffset", out var baseline) && baseline.ValueKind == JsonValueKind.String)
                 {
                     string b = baseline.GetString();
@@ -2163,15 +2163,6 @@ namespace WordAiAddIn
                     range.HighlightColorIndex = idx;
                 }
             }
-        }
-
-        private static Word.WdColor HexToWdColor(string hex)
-        {
-            hex = hex.TrimStart('#');
-            int r = Convert.ToInt32(hex.Substring(0, 2), 16);
-            int g = Convert.ToInt32(hex.Substring(2, 2), 16);
-            int b = Convert.ToInt32(hex.Substring(4, 2), 16);
-            return (Word.WdColor)System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.FromArgb(r, g, b));
         }
 
         private static void UpdateParagraphStyle(JsonElement cmd)
@@ -2215,7 +2206,7 @@ namespace WordAiAddIn
                 if (fields.Contains("pageBreakBefore") && style.TryGetProperty("pageBreakBefore", out var pbb))
                     fmt.PageBreakBefore = pbb.ValueKind == JsonValueKind.True ? 1 : 0;
                 if (fields.Contains("shadingFill") && style.TryGetProperty("shadingFill", out var shading) && shading.ValueKind == JsonValueKind.String)
-                    p.Shading.BackgroundPatternColor = HexToWdColor(shading.GetString());
+                    p.Shading.BackgroundPatternColor = (Word.WdColor)ColorUtil.HexToOle(shading.GetString());
                 if (fields.Contains("borders") && style.TryGetProperty("borders", out var borders))
                 {
                     bool on = borders.ValueKind == JsonValueKind.True;

@@ -485,7 +485,7 @@ namespace PowerPointAiAddIn
             }
             if (input.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
             {
-                range.Font.Color.RGB = HexToOle(color.GetString());
+                range.Font.Color.RGB = ColorUtil.HexToOle(color.GetString());
                 applied.Add("color");
             }
             if (input.TryGetProperty("fontName", out var fontName) && fontName.ValueKind == JsonValueKind.String)
@@ -1048,15 +1048,6 @@ namespace PowerPointAiAddIn
             }
         }
 
-        private static int HexToOle(string hex)
-        {
-            hex = hex.TrimStart('#');
-            int r = Convert.ToInt32(hex.Substring(0, 2), 16);
-            int g = Convert.ToInt32(hex.Substring(2, 2), 16);
-            int b = Convert.ToInt32(hex.Substring(4, 2), 16);
-            return System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.FromArgb(r, g, b));
-        }
-
         private static ToolResult SetElementFill(JsonElement input)
         {
             PowerPoint.Shape shape = ResolveShape(input);
@@ -1068,7 +1059,7 @@ namespace PowerPointAiAddIn
             else
             {
                 shape.Fill.Visible = Microsoft.Office.Core.MsoTriState.msoTrue;
-                shape.Fill.ForeColor.RGB = HexToOle(fill);
+                shape.Fill.ForeColor.RGB = ColorUtil.HexToOle(fill);
             }
             return new ToolResult { Output = "Fill updated.", Mutated = true, Summary = "set_element_fill" };
         }
@@ -1086,7 +1077,7 @@ namespace PowerPointAiAddIn
                 shape.Line.Visible = Microsoft.Office.Core.MsoTriState.msoTrue;
                 if (input.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
                 {
-                    shape.Line.ForeColor.RGB = HexToOle(color.GetString());
+                    shape.Line.ForeColor.RGB = ColorUtil.HexToOle(color.GetString());
                 }
                 shape.Line.Weight = input.TryGetProperty("widthPt", out var width) && width.ValueKind == JsonValueKind.Number ? (float)width.GetDouble() : 1f;
             }
@@ -1096,7 +1087,7 @@ namespace PowerPointAiAddIn
         private static ToolResult SetSlideBackground(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            int oleColor = HexToOle(input.GetProperty("color").GetString());
+            int oleColor = ColorUtil.HexToOle(input.GetProperty("color").GetString());
             PowerPoint.Slides slides = ActivePresentation.Slides;
 
             void Apply(PowerPoint.Slide s)
@@ -1227,7 +1218,7 @@ namespace PowerPointAiAddIn
             }
             if (input.TryGetProperty("shadingColor", out var shading) && shading.ValueKind == JsonValueKind.String)
             {
-                int color = HexToOle(shading.GetString());
+                int color = ColorUtil.HexToOle(shading.GetString());
                 foreach (PowerPoint.Row row in table.Rows)
                 {
                     foreach (PowerPoint.Cell cell in row.Cells)
@@ -1243,7 +1234,7 @@ namespace PowerPointAiAddIn
                     throw new ArgumentException("edit_table_style: unknown borderPreset '" + preset + "'. Valid: all, none, outline.");
                 bool visible = preset != "none";
                 float weight = input.TryGetProperty("borderWidthPt", out var bw) && bw.ValueKind == JsonValueKind.Number ? (float)bw.GetDouble() : 1f;
-                int color = input.TryGetProperty("borderColor", out var bc) && bc.ValueKind == JsonValueKind.String ? HexToOle(bc.GetString()) : HexToOle("#000000");
+                int color = input.TryGetProperty("borderColor", out var bc) && bc.ValueKind == JsonValueKind.String ? ColorUtil.HexToOle(bc.GetString()) : ColorUtil.HexToOle("#000000");
                 PowerPoint.PpBorderType[] sides = { PowerPoint.PpBorderType.ppBorderTop, PowerPoint.PpBorderType.ppBorderBottom, PowerPoint.PpBorderType.ppBorderLeft, PowerPoint.PpBorderType.ppBorderRight };
                 int rowCount = table.Rows.Count;
                 int colCount = table.Columns.Count;
