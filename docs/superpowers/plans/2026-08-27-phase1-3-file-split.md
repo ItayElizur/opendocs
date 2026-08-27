@@ -1,5 +1,18 @@
 # Phases 1 + 3 (unified) — Split the Giant Tool Files
 
+> **This document is the overview. Each task has its own step-by-step plan — follow those, not this.**
+>
+> | Task | Plan | Notes |
+> |---|---|---|
+> | 0 | [`p13-task0-harness.md`](2026-08-27-p13-task0-harness.md) | Verification baselines. **Do first.** Read-only. |
+> | 1 | [`p13-task1-powerpoint.md`](2026-08-27-p13-task1-powerpoint.md) | Easiest split — learn the mechanics here. **Config already validated end-to-end.** |
+> | 2 | [`p13-task2-excel.md`](2026-08-27-p13-task2-excel.md) | Biggest member count. |
+> | 3 | [`p13-task3-word.md`](2026-08-27-p13-task3-word.md) | Most interleaved, plus a BOM and two `internal` members. **Do last.** |
+> | 4 | [`p13-task4-reconcile.md`](2026-08-27-p13-task4-reconcile.md) | Whole-phase verification + docs. |
+> | 5 | [`p13-task5-archive.md`](2026-08-27-p13-task5-archive.md) | Archive stale plan docs. **Independent — any time.** |
+>
+> The mechanical work is done by **`tools/split-partial.py`**, which splits by member name and refuses to run unless every member is assigned exactly once. That guard caught two real bugs while these plans were being written; do not bypass it.
+
 > **For agentic workers:** Steps use checkbox (`- [ ]`) syntax. Each Task ends with its own build + test + commit and is independently revertable.
 
 **Goal:** Turn the three oversized `*Tools.cs` files into navigable `partial class` file sets grouped by tool area, with zero logic change. Done when all three add-ins build clean (Debug **and** Release), `dotnet test` still passes 90/90, and no file in the set exceeds ~450 lines.
