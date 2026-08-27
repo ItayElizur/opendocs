@@ -10,3 +10,4 @@ node_modules/
 **/web/bundle.css.map
 deploy/dist/
 deploy/*.zip
+.split-work/
