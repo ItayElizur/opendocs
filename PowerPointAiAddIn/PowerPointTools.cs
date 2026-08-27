@@ -605,57 +605,18 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = "Text box added.", Mutated = true, Summary = "add_text_box" };
         }
 
-        // PP-20 Task 2: ported from ExcelAiAddIn/ExcelTools.cs's ShapeTypeMap -
-        // keep the two in sync. Same PIA-omission note applies: msoShapePlus/
-        // msoShapeMathPlus do not exist in this project's referenced
-        // Microsoft.Office.Core PIA (confirmed via CS0117 on the Excel side) -
-        // omitted here too, not re-attempted.
-        // rect/ellipse are Excel's (canonical) spellings; rectangle/oval are
-        // PowerPoint's pre-existing spellings, kept as aliases so every
-        // existing call/prompt keeps working - both map to the same
-        // MsoAutoShapeType. OrdinalIgnoreCase so a near-miss case still
-        // resolves instead of erroring unnecessarily.
-        private static readonly Dictionary<string, Microsoft.Office.Core.MsoAutoShapeType> ShapeTypeMap =
-            new Dictionary<string, Microsoft.Office.Core.MsoAutoShapeType>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["rect"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRectangle,
-            ["rectangle"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRectangle,
-            ["roundRect"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRoundedRectangle,
-            ["ellipse"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeOval,
-            ["oval"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeOval,
-            ["triangle"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeIsoscelesTriangle,
-            ["rtTriangle"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRightTriangle,
-            ["parallelogram"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeParallelogram,
-            ["trapezoid"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeTrapezoid,
-            ["diamond"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeDiamond,
-            ["pentagon"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapePentagon,
-            ["hexagon"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeHexagon,
-            ["octagon"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeOctagon,
-            ["pie"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapePie,
-            ["chord"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeChord,
-            ["donut"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeDonut,
-            ["foldedCorner"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeFoldedCorner,
-            ["heart"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeHeart,
-            ["lightningBolt"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeLightningBolt,
-            ["sun"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeSun,
-            ["moon"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeMoon,
-            ["cloud"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeCloud,
-            ["arc"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeArc,
-            ["star5"] = Microsoft.Office.Core.MsoAutoShapeType.msoShape5pointStar,
-            ["rightArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRightArrow,
-            ["leftArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeLeftArrow,
-            ["upArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeUpArrow,
-            ["downArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeDownArrow,
-        };
-
+        // Shape-name lookup now lives in OfficeAi.Shared.ShapeTypes (Phase 0) -
+        // union of this map and Excel's near-identical copy, including this
+        // app's rectangle/oval aliases for rect/ellipse.
         private static ToolResult AddShape(JsonElement input)
         {
             PowerPoint.Slide slide = ActivePresentation.Slides[input.GetProperty("slideIndex").GetInt32() + 1];
             string shapeType = input.GetProperty("shapeType").GetString();
-            Microsoft.Office.Core.MsoAutoShapeType autoShapeType;
-            if (!ShapeTypeMap.TryGetValue(shapeType, out autoShapeType))
+            int autoShapeTypeInt;
+            if (!ShapeTypes.ByName.TryGetValue(shapeType, out autoShapeTypeInt))
                 throw new ArgumentException("add_shape: unknown shapeType '" + shapeType + "'. Valid: " +
-                                            string.Join(", ", ShapeTypeMap.Keys) + ".");
+                                            string.Join(", ", ShapeTypes.ByName.Keys) + ".");
+            Microsoft.Office.Core.MsoAutoShapeType autoShapeType = (Microsoft.Office.Core.MsoAutoShapeType)autoShapeTypeInt;
             float left = (float)input.GetProperty("left").GetDouble();
             float top = (float)input.GetProperty("top").GetDouble();
             float width = (float)input.GetProperty("width").GetDouble();

@@ -31,45 +31,11 @@ namespace ExcelAiAddIn
             "get_workbook_context", "read_range", "read_cells", "select_range", "read_formats", "read_sheet_features", "find_cells", "trace_precedents", "trace_dependents",
         };
 
-        // Note: the brief's source table also lists "plus"/"mathPlus" (MsoAutoShapeType.msoShapePlus/
-        // msoShapeMathPlus), but those enum members do not exist in this project's referenced
-        // Microsoft.Office.Core PIA (confirmed via CS0117 compile failure) - omitted; requests for
-        // either shape type fall back to msoShapeRectangle per the table's existing fallback behavior.
-        // PP-16: mirrors EXCEL_SHAPE_TYPES / add_shape's shapeType enum in
+        // Shape-name lookup now lives in OfficeAi.Shared.ShapeTypes (Phase 0) -
+        // union of this map and PowerPoint's near-identical copy. PP-16:
+        // mirrors EXCEL_SHAPE_TYPES / add_shape's shapeType enum in
         // ExcelAiAddIn/web-src/entry.ts exactly, plus the separately-handled
-        // "textbox". Edit both together. OrdinalIgnoreCase so a near-miss
-        // case (e.g. "Star5") still resolves instead of silently becoming a
-        // rectangle or now erroring unnecessarily.
-        private static readonly Dictionary<string, Microsoft.Office.Core.MsoAutoShapeType> ShapeTypeMap =
-            new Dictionary<string, Microsoft.Office.Core.MsoAutoShapeType>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["rect"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRectangle,
-            ["roundRect"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRoundedRectangle,
-            ["ellipse"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeOval,
-            ["triangle"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeIsoscelesTriangle,
-            ["rtTriangle"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRightTriangle,
-            ["parallelogram"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeParallelogram,
-            ["trapezoid"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeTrapezoid,
-            ["diamond"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeDiamond,
-            ["pentagon"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapePentagon,
-            ["hexagon"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeHexagon,
-            ["octagon"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeOctagon,
-            ["pie"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapePie,
-            ["chord"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeChord,
-            ["donut"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeDonut,
-            ["foldedCorner"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeFoldedCorner,
-            ["heart"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeHeart,
-            ["lightningBolt"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeLightningBolt,
-            ["sun"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeSun,
-            ["moon"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeMoon,
-            ["cloud"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeCloud,
-            ["arc"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeArc,
-            ["star5"] = Microsoft.Office.Core.MsoAutoShapeType.msoShape5pointStar,
-            ["rightArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeRightArrow,
-            ["leftArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeLeftArrow,
-            ["upArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeUpArrow,
-            ["downArrow"] = Microsoft.Office.Core.MsoAutoShapeType.msoShapeDownArrow,
-        };
+        // "textbox". Edit both together.
 
         // PP-15: the single chart-type vocabulary source for BOTH add_chart and
         // edit_chart (AddChart previously ignored this map entirely). Cross-
@@ -1122,7 +1088,8 @@ namespace ExcelAiAddIn
         }
 
         // PP-13: horizontal/vertical alignment name -> XlHAlign/XlVAlign, mirroring
-        // this file's existing ShapeTypeMap/ExcelChartTypeMap pattern.
+        // this file's existing ExcelChartTypeMap pattern (ShapeTypes moved to
+        // OfficeAi.Shared in Phase 0).
         private static readonly Dictionary<string, Excel.XlHAlign> HAlignMap = new Dictionary<string, Excel.XlHAlign>
         {
             ["general"] = Excel.XlHAlign.xlHAlignGeneral,
@@ -1575,11 +1542,11 @@ namespace ExcelAiAddIn
             }
             else
             {
-                Microsoft.Office.Core.MsoAutoShapeType msoType;
-                if (!ShapeTypeMap.TryGetValue(shapeType, out msoType))
+                int msoTypeInt;
+                if (!ShapeTypes.ByName.TryGetValue(shapeType, out msoTypeInt))
                     throw new ArgumentException("add_shape: unknown shapeType '" + shapeType + "'. Valid: textbox, " +
-                                                string.Join(", ", ShapeTypeMap.Keys) + ".");
-                shape = Sheet(op).Shapes.AddShape(msoType, left, top, width, height);
+                                                string.Join(", ", ShapeTypes.ByName.Keys) + ".");
+                shape = Sheet(op).Shapes.AddShape((Microsoft.Office.Core.MsoAutoShapeType)msoTypeInt, left, top, width, height);
             }
             if (op.TryGetProperty("fillColor", out var fill) && fill.ValueKind == JsonValueKind.String)
             {
