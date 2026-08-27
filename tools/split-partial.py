@@ -83,6 +83,20 @@ def member_name(line):
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
+
+    # `--list <file.cs> [encoding]` prints every member in source order.
+    # Useful for building or refreshing a config after the source changes -
+    # a stale member list is the one thing that makes the split guard fire.
+    if sys.argv[1] == '--list':
+        path = sys.argv[2]
+        enc = sys.argv[3] if len(sys.argv) > 3 else 'utf-8'
+        lines = read_lines(path, enc)
+        blocks = find_blocks(lines)
+        for name, s, e in blocks:
+            print('%-36s %5d' % (name, s + 1))
+        print('--- %d members, %d lines' % (len(blocks), len(lines)))
+        return
+
     cfg = json.load(io.open(sys.argv[1], encoding='utf-8'))
     dry = '--dry-run' in sys.argv
 

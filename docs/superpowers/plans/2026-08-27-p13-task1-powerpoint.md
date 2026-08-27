@@ -1,11 +1,11 @@
 # P13 · Task 1 — Split `PowerPointTools.cs`
 
 **Part of:** `2026-08-27-phase1-3-file-split.md` (Phases 1+3).
-**Prerequisite:** Task 0 done — `.split-work/ppt.before.txt` exists (62 members).
+**Prerequisite:** Task 0 done — `.split-work/ppt.before.txt` exists (65 members).
 
 **Do this file first.** PowerPoint's members are already almost perfectly contiguous, so this is the least fiddly of the three splits. Learn the mechanics here before touching Excel or Word.
 
-**Result:** 1 file of 1,683 lines → 10 files, largest ~303 lines. Zero logic change.
+**Result:** 1 file of 1,821 lines → 10 files, largest ~300 lines. Zero logic change.
 
 > **This exact split has already been executed and verified once** (2026-08-27, on a throwaway copy and then in-repo): it compiles, and the member set comes out identical. The config below is the one that was validated. If you follow it literally you should get the same result.
 
@@ -28,8 +28,8 @@ Create `.split-work/ppt.json` with **exactly** this content:
     "LayoutAnim": ["SlideLayoutMap","ResolveCustomLayout","SetSlideLayout","TransitionEffectMap","SetSlideTransition","AnimationEffectMap","AnimationTriggerMap","AddAnimation","ReadAnimations","EditAnimation"],
     "Styling":    ["SetElementFill","SetElementStroke","SetSlideBackground","UngroupElement"],
     "Tables":     ["AddTable","ResolveTable","EditTableCell","EditTableStructure","EditTableStyle"],
-    "Charts":     ["TransientComHResults","RetryTransientCom","AddChartPpt","PptLegendPositions","EditChartPpt"],
-    "SmartArt":   ["SmartArtLayoutNames","ResolveSmartArtLayout","AddSmartArt"],
+    "Charts":     ["AddChartPpt","PptLegendPositions","EditChartPpt"],
+    "SmartArt":   ["ResolveSmartArtLayout","ListSmartArtShapesOnSlide","ResolveSmartArtOnSlide","ResolveSmartArtGalleryItem","ReadSmartArt","ReadOneSmartArt","EditSmartArt","AddSmartArt"],
     "Images":     ["CropImage","ReplaceImagePpt","SetPictureOpacity"]
   }
 }
@@ -52,7 +52,7 @@ python tools/split-partial.py .split-work/ppt.json --dry-run
 **Expected:**
 
 ```
-source        : PowerPointAiAddIn/PowerPointTools.cs (1683 lines, 62 members)
+source        : PowerPointAiAddIn/PowerPointTools.cs (1821 lines, 65 members)
 stays in core : 8 members
   .Read.cs          5 members
   .Elements.cs      15 members
@@ -60,8 +60,8 @@ stays in core : 8 members
   .LayoutAnim.cs    10 members
   .Styling.cs       4 members
   .Tables.cs        5 members
-  .Charts.cs        5 members
-  .SmartArt.cs      3 members
+  .Charts.cs        3 members
+  .SmartArt.cs      8 members
   .Images.cs        3 members
 ```
 
@@ -157,7 +157,7 @@ dotnet test OfficeAi.Shared.Tests/OfficeAi.Shared.Tests.csproj --nologo -v q 2>&
 wc -l PowerPointAiAddIn/PowerPointTools*.cs | sort -n
 ```
 
-**Expected:** `Total: 102` passing (unchanged — this task adds no testable logic), and no file over ~310 lines.
+**Expected:** `Total: 114` passing (unchanged — this task adds no testable logic), and no file over ~310 lines.
 
 Reference sizes from the validated run:
 
@@ -197,7 +197,7 @@ P13 Task 1 of docs/superpowers/plans/2026-08-27-phase1-3-file-split.md."
 - [ ] csproj has 15 `<Compile` entries.
 - [ ] PowerPoint add-in builds clean.
 - [ ] `MEMBER SET IDENTICAL`.
-- [ ] `dotnet test` still 102.
+- [ ] `dotnet test` still 114.
 - [ ] One commit, containing only this task's files.
 
 **Next:** `2026-08-27-p13-task2-excel.md`

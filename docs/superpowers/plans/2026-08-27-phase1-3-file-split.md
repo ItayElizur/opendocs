@@ -100,11 +100,19 @@ Phase 0 could not test the pure helpers *in place* (they are `private static` in
 
 The member inventory surfaced **cross-app duplication between Word and PowerPoint** that Phase 0 did not catch:
 
-| Duplicated | Word | Excel | PowerPoint | Status |
-|---|---|---|---|---|
-| ~~Chart-type maps~~ | ~~186~~ | ~~48~~ | ~~1243~~ | **DONE 2026-08-27** — united into `OfficeAi.Shared.ChartTypes`; Word gained `barStacked` first. See below. |
-| `TransientComHResults` + `RetryTransientCom` | 211 / 224 | — | 1263 / 1270 | **Near**-identical — Word's takes a `label` param, PowerPoint's does not |
-| `SmartArtLayoutNames` + `ResolveSmartArtLayout` | 1333 / 1344 | — | 1543 / 1561 | Same shape, different layout key sets |
+> **This inventory is now empty — all of it was completed 2026-08-27 at user request, ahead of this phase.** Kept as a record of what was found and where it went.
+
+| Duplicated | Status |
+|---|---|
+| ~~Chart-type maps~~ (Word/Excel/PowerPoint) | **DONE** — united into `OfficeAi.Shared.ChartTypes`; Word gained `barStacked` first so the merge was a zero-behavior extraction. |
+| ~~`TransientComHResults` + `RetryTransientCom`~~ (Word/PowerPoint) | **DONE** — united into `OfficeAi.Shared.ComRetry`. The copies had drifted only in whether they took a `label`; the shared version keeps it, defaulted. |
+| ~~`SmartArtLayoutNames`~~ (Word/PowerPoint) | **DONE** — united into `OfficeAi.Shared.SmartArtLayouts`, along with the two shared error constructions. `ResolveSmartArtLayout` stays app-side: it walks `Globals.ThisAddIn.Application`, and `Globals` is generated per add-in project. |
+
+**Two things were also fixed while completing the above**, both recorded in `docs/ai-tool-surface.md`:
+- **PowerPoint gained `read_smartart` + `edit_smartart`** — Word already had all three SmartArt tools, PowerPoint only `add_smartart`. Note the gap ran the *opposite* way to how it was first described; parity meant porting Word→PowerPoint, not the reverse. **Not verified against live PowerPoint.**
+- **`set_bullet` is now an accepted `apply_commands` alias**, and both Word and Excel now list every valid kind when they reject an unknown one.
+
+Line-number references below are pre-2026-08-27 and are stale; locate by name.
 
 > **Chart types were pulled forward out of Phase 2 (user request, 2026-08-27)** and are already done — two commits, ahead of this phase:
 > 1. `feat(word): add barStacked chart type` — Word's map had 7 entries to the others' 8, so Word could not draw a stacked bar chart. Ordering this **first** was deliberate: it made all three maps byte-identical, which turned step 2 into a pure zero-behavior extraction. It also fixed a `read_chart` gap (the reverse type-code lookup reported *"unrecognized chart type code 58"*).

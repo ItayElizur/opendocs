@@ -24,9 +24,9 @@ git status --short | grep -E "Tools\.cs|\.csproj" || echo "no tool/csproj change
 dotnet test OfficeAi.Shared.Tests/OfficeAi.Shared.Tests.csproj --nologo -v q 2>&1 | tail -3
 ```
 
-**Expected:** tests report `Passed! ... Total: 102`.
+**Expected:** tests report `Passed! ... Total: 114`.
 
-- **If the test count is not 102**, stop. Something landed since this plan was written. Re-read `docs/superpowers/plans/STATUS.md` and reconcile before continuing.
+- **If the test count is not 114**, stop. Something landed since this plan was written. Re-read `docs/superpowers/plans/STATUS.md` and reconcile before continuing.
 - **If `*Tools.cs` files show as modified**, commit or stash them first. Starting from a dirty tool file makes every later diff untrustworthy.
 
 ---
@@ -50,9 +50,9 @@ wc -l .split-work/word.before.txt .split-work/excel.before.txt .split-work/ppt.b
 **Expected output** (member counts):
 
 ```
-   65 .split-work/word.before.txt
-   82 .split-work/excel.before.txt
-   62 .split-work/ppt.before.txt
+   63 .split-work/word.before.txt
+   83 .split-work/excel.before.txt
+   65 .split-work/ppt.before.txt
 ```
 
 - **If a count differs from the above**, the code has changed since this plan was written. That is fine — **your freshly captured numbers are the correct baseline**. Write down what you actually got and use that. Do not try to force the numbers to match this document.
@@ -68,7 +68,7 @@ wc -l WordAiAddIn/WordTools.cs ExcelAiAddIn/ExcelTools.cs PowerPointAiAddIn/Powe
 grep -c "<Compile" WordAiAddIn/WordAiAddIn.csproj ExcelAiAddIn/ExcelAiAddIn.csproj PowerPointAiAddIn/PowerPointAiAddIn.csproj
 ```
 
-**Expected:** 2543 / 2157 / 1683 lines; `6` Compile entries in each csproj.
+**Expected:** 2532 / 2184 / 1821 lines; `6` Compile entries in each csproj.
 
 Write these down — Task 4 reconciles against them.
 
@@ -102,8 +102,8 @@ If you get `FAIL`, the `inv` function is wrong — most likely a copy-paste erro
 - [ ] Step 4 printed `PASS`.
 - [ ] No source file was modified (`git status --short` shows nothing new).
 
-**Nothing to commit in this task.** The baseline files live in `/tmp` and are throwaway.
+**Nothing to commit in this task.** The baseline files live in `.split-work/` and are throwaway.
 
-> **If your shell session ends before Task 3 finishes**, `/tmp` may be cleared. Just re-run Step 2 against the *current* state of any file you have not split yet — the baseline only needs to be captured before *that particular file* is touched.
+> **If your shell session ends before Task 3 finishes**, `.split-work/` may be stale. Just re-run Step 2 against the *current* state of any file you have not split yet — the baseline only needs to be captured before *that particular file* is touched.
 
 **Next:** `2026-08-27-p13-task1-powerpoint.md`

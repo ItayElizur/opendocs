@@ -37,7 +37,7 @@ cd /c/dev/officeoffice
 dotnet test OfficeAi.Shared.Tests/OfficeAi.Shared.Tests.csproj --nologo -v q 2>&1 | tail -3
 ```
 
-**Expected:** `Total: 102` passed. This phase adds no testable logic, so the count must be **unchanged** — a *higher* number means someone added tests that were not part of this phase, and a lower one means something was lost.
+**Expected:** `Total: 114` passed. This phase adds no testable logic, so the count must be **unchanged** — a *higher* number means someone added tests that were not part of this phase, and a lower one means something was lost.
 
 ---
 
@@ -136,7 +136,7 @@ Insert immediately **above** the `## Architecture` heading, matching the existin
 > file sets - Word 2,543 lines -> 10 files, Excel 2,157 -> 10, PowerPoint
 > 1,683 -> 10, largest file now under 450 lines. **Structure only: no method
 > body, tool schema, `entry.ts`, or system prompt changed**, and `dotnet test`
-> stayed at 102. Each split was verified by an order-independent member-set
+> stayed at 114. Each split was verified by an order-independent member-set
 > diff (sorted declaration list identical before and after), which is what
 > makes an otherwise unreviewable move-diff trustworthy.
 >
@@ -194,7 +194,7 @@ P13 Task 4 of docs/superpowers/plans/2026-08-27-phase1-3-file-split.md."
 ## Definition of done
 
 - [ ] All three apps build clean in **Debug and Release**.
-- [ ] `dotnet test` = 102, unchanged.
+- [ ] `dotnet test` = 114, unchanged.
 - [ ] Line growth 5–10%; `uniq -d` finds no duplicated member.
 - [ ] No file over ~450 lines.
 - [ ] Three `OK` lines from the disk-vs-csproj cross-check.
