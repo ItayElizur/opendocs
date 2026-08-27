@@ -962,17 +962,6 @@ namespace ExcelAiAddIn
             ["set_data_validation"] = new[] { "range" },
         };
 
-        private static void ValidateRequired(string kind, JsonElement op)
-        {
-            string[] required;
-            if (!RequiredFields.TryGetValue(kind, out required)) return;
-            foreach (string f in required)
-            {
-                if (!op.TryGetProperty(f, out _))
-                    throw new ArgumentException("Operation \"" + kind + "\" is missing required field \"" + f + "\".");
-            }
-        }
-
         private static ToolResult ProposeOperations(JsonElement input)
         {
             var lines = new System.Text.StringBuilder();
@@ -987,7 +976,7 @@ namespace ExcelAiAddIn
                     if (!op.TryGetProperty("kind", out kindEl) || kindEl.ValueKind != JsonValueKind.String)
                         throw new ArgumentException("Operation is missing a string \"kind\" field.");
                     kind = kindEl.GetString();
-                    ValidateRequired(kind, op);
+                    ToolArgs.ValidateRequired(kind, op, RequiredFields, "Operation");
                     switch (kind)
                     {
                         case "set_cell":

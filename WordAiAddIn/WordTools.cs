@@ -1825,17 +1825,6 @@ namespace WordAiAddIn
             ["insertToc"] = new[] { "afterBlockIndex" },
         };
 
-        private static void ValidateRequired(string kind, JsonElement cmd)
-        {
-            string[] required;
-            if (!RequiredFields.TryGetValue(kind, out required)) return;
-            foreach (string f in required)
-            {
-                if (!cmd.TryGetProperty(f, out _))
-                    throw new ArgumentException("Command \"" + kind + "\" is missing required field \"" + f + "\".");
-            }
-        }
-
         // PP-12 Task 3 (the half PP-5 Task 4 Step 1 did not cover): each
         // result line is prefixed with the command's 0-based position in the
         // batch, and a summary header states how many succeeded/failed - with
@@ -1861,7 +1850,7 @@ namespace WordAiAddIn
                     if (!cmd.TryGetProperty("kind", out kindEl) || kindEl.ValueKind != JsonValueKind.String)
                         throw new ArgumentException("Command is missing a string \"kind\" field.");
                     kind = kindEl.GetString();
-                    ValidateRequired(kind, cmd);
+                    ToolArgs.ValidateRequired(kind, cmd, RequiredFields, "Command");
                     switch (kind)
                     {
                         case "set_bold":
@@ -2104,22 +2093,13 @@ namespace WordAiAddIn
         private static readonly HashSet<string> KnownParagraphStyleFields = new HashSet<string>
         { "align", "lineSpacing", "indentLeft", "indentRight", "indentFirstLine", "spaceBefore", "spaceAfter", "pageBreakBefore", "shadingFill", "borders" };
 
-        private static void ValidateKnownFields(HashSet<string> fields, HashSet<string> known, string commandName)
-        {
-            foreach (string f in fields)
-            {
-                if (!known.Contains(f))
-                    throw new ArgumentException(commandName + ": unknown style field '" + f + "'. Valid: " + string.Join(", ", known) + ".");
-            }
-        }
-
         private static void UpdateTextStyle(JsonElement cmd)
         {
             var matches = ResolveTargetParagraphs(cmd.GetProperty("target"));
             JsonElement style = cmd.GetProperty("style");
             HashSet<string> fields = new HashSet<string>();
             foreach (JsonElement f in cmd.GetProperty("fields").EnumerateArray()) fields.Add(f.GetString());
-            ValidateKnownFields(fields, KnownTextStyleFields, "updateTextStyle");
+            ToolArgs.ValidateKnownFields(fields, KnownTextStyleFields, "updateTextStyle");
 
             if (matches.Count == 0)
             {
@@ -2171,7 +2151,7 @@ namespace WordAiAddIn
             JsonElement style = cmd.GetProperty("style");
             HashSet<string> fields = new HashSet<string>();
             foreach (JsonElement f in cmd.GetProperty("fields").EnumerateArray()) fields.Add(f.GetString());
-            ValidateKnownFields(fields, KnownParagraphStyleFields, "updateParagraphStyle");
+            ToolArgs.ValidateKnownFields(fields, KnownParagraphStyleFields, "updateParagraphStyle");
 
             if (matches.Count == 0)
             {
