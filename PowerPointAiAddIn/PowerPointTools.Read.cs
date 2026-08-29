@@ -121,7 +121,15 @@ namespace PowerPointAiAddIn
             int shapeIndex = 0;
             foreach (PowerPoint.Shape shape in slide.Shapes)
             {
-                sb.AppendLine($"[{shapeIndex}] {shape.Name}: {ShapeText(shape)}");
+                if (shape.Type == Microsoft.Office.Core.MsoShapeType.msoGroup)
+                {
+                    int n = shape.GroupItems.Count;
+                    sb.AppendLine($"[{shapeIndex}] {shape.Name}: (group, {n} child{(n == 1 ? "" : "ren")} - call read_group for its contents)");
+                }
+                else
+                {
+                    sb.AppendLine($"[{shapeIndex}] {shape.Name}: {ShapeText(shape)}");
+                }
                 shapeIndex++;
             }
 
@@ -129,6 +137,48 @@ namespace PowerPointAiAddIn
             if (!string.IsNullOrWhiteSpace(notesText)) sb.AppendLine("Notes: " + notesText.Replace("\r", " ").Trim());
 
             return new ToolResult { Output = sb.ToString(), Summary = "read_slide" };
+        }
+
+        // Recursive listing of a group's contents, one shape per line, nested
+        // groups indented and expanded in place. Each line's "[path]" is the
+        // dotted shapeIndex (e.g. "3.1.0") that set_element_text/_style/_fill/
+        // _stroke accept directly - so the model can restyle or retext a
+        // labeled child without ungrouping. Positional/structural edits still
+        // require ungroup_element first.
+        private static ToolResult ReadGroup(JsonElement input)
+        {
+            ShapeRef r;
+            try { r = ResolveShapeRef(input); }
+            catch (Exception ex) { return new ToolResult { Output = ex.Message, IsError = true, Summary = "read_group" }; }
+
+            if (r.Shape.Type != Microsoft.Office.Core.MsoShapeType.msoGroup)
+                return new ToolResult { Output = "Shape " + r.Path + " is a " + ShapeKindLabel(r.Shape) + ", not a group. Call read_slide to see which shapes are groups.", IsError = true, Summary = "read_group" };
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"[{r.Path}] {r.Shape.Name} (group, {r.Shape.GroupItems.Count} children)");
+            AppendGroupChildren(sb, r.Shape, r.Path, 1);
+            return new ToolResult { Output = sb.ToString(), Summary = "read_group" };
+        }
+
+        private static void AppendGroupChildren(StringBuilder sb, PowerPoint.Shape group, string parentPath, int depth)
+        {
+            string indent = new string(' ', depth * 2);
+            int i = 0;
+            foreach (PowerPoint.Shape child in group.GroupItems)
+            {
+                string path = parentPath + "." + i;
+                if (child.Type == Microsoft.Office.Core.MsoShapeType.msoGroup)
+                {
+                    sb.AppendLine($"{indent}[{path}] {child.Name} (group, {child.GroupItems.Count} children)");
+                    AppendGroupChildren(sb, child, path, depth + 1);
+                }
+                else
+                {
+                    string txt = ShapeText(child).Replace("\r", " ").Trim();
+                    sb.AppendLine($"{indent}[{path}] {child.Name} ({ShapeKindLabel(child)}){(txt.Length > 0 ? ": " + txt : "")}");
+                }
+                i++;
+            }
         }
 
         // Read-only search across every slide's shape text (via the existing

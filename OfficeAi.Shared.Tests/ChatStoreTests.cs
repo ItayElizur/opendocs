@@ -23,6 +23,25 @@ public class ChatStoreTests : IDisposable
     }
 
     [Fact]
+    public void ChatIdForKey_IsStableSixteenHexAndDistinctPerKey()
+    {
+        string a1 = ChatStore.ChatIdForKey("alice@corp.local");
+        string a2 = ChatStore.ChatIdForKey("alice@corp.local");
+        string b = ChatStore.ChatIdForKey("bob@corp.local");
+
+        Assert.Equal(a1, a2);
+        Assert.NotEqual(a1, b);
+        Assert.Equal(16, a1.Length);
+        Assert.Matches("^[0-9a-f]{16}$", a1);
+    }
+
+    [Fact]
+    public void ChatIdForKey_MatchesChatIdForFileForTheSameString()
+    {
+        Assert.Equal(ChatStore.ChatIdForFile(@"C:\x\y.docx"), ChatStore.ChatIdForKey(@"C:\x\y.docx"));
+    }
+
+    [Fact]
     public void LoadSinceLastDivider_ReturnsEmptyForMissingFile()
     {
         var result = ChatStore.LoadSinceLastDivider(_testFolder, "nochat");
@@ -67,5 +86,56 @@ public class ChatStoreTests : IDisposable
         var result = ChatStore.LoadSinceLastDivider(_testFolder, chatId);
 
         Assert.Empty(result);
+    }
+
+    // ---- FT-1 Task 7b: Migrate ----
+
+    [Fact]
+    public void Migrate_MovesProvisionalHistoryToFreshTarget()
+    {
+        ChatStore.AppendMessage(_testFolder, "unsaved-1-100", "user", "hello from provisional");
+        ChatStore.Migrate(_testFolder, "unsaved-1-100", "realid1");
+
+        var migrated = ChatStore.LoadSinceLastDivider(_testFolder, "realid1");
+        Assert.Single(migrated);
+        Assert.Equal("hello from provisional", migrated[0].Text);
+
+        var oldStillThere = ChatStore.LoadSinceLastDivider(_testFolder, "unsaved-1-100");
+        Assert.Empty(oldStillThere); // source file deleted after migration
+    }
+
+    [Fact]
+    public void Migrate_AppendsOntoAnExistingTargetInChronologicalOrder()
+    {
+        ChatStore.AppendMessage(_testFolder, "realid2", "user", "existing question");
+        ChatStore.AppendMessage(_testFolder, "realid2", "assistant", "existing answer");
+
+        ChatStore.AppendMessage(_testFolder, "unsaved-2", "user", "provisional question");
+        ChatStore.Migrate(_testFolder, "unsaved-2", "realid2");
+
+        var result = ChatStore.LoadSinceLastDivider(_testFolder, "realid2");
+        Assert.Equal(3, result.Count);
+        Assert.Equal("existing question", result[0].Text);
+        Assert.Equal("existing answer", result[1].Text);
+        Assert.Equal("provisional question", result[2].Text);
+    }
+
+    [Fact]
+    public void Migrate_MissingSourceIsANoOp()
+    {
+        ChatStore.Migrate(_testFolder, "never-existed", "realid3");
+        var result = ChatStore.LoadSinceLastDivider(_testFolder, "realid3");
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void Migrate_RunTwiceIsANoOpTheSecondTime()
+    {
+        ChatStore.AppendMessage(_testFolder, "unsaved-3", "user", "once");
+        ChatStore.Migrate(_testFolder, "unsaved-3", "realid4");
+        ChatStore.Migrate(_testFolder, "unsaved-3", "realid4");
+
+        var result = ChatStore.LoadSinceLastDivider(_testFolder, "realid4");
+        Assert.Single(result);
     }
 }

@@ -524,7 +524,11 @@ export class AgentLoop<TSnapshot = unknown> {
         text: this.turnText,
         cancelled: this.cancelled,
         turnLimit: this.finalizing,
-        // set only when true so exact-shape consumers/tests stay unaffected
+        // set only when true so exact-shape consumers/tests stay unaffected.
+        // PP-4: the shared shell's onDone handler (shared/web-src/app-shell/
+        // bootstrap.ts, consumed by all three apps) depends on this flag to
+        // surface truncation honestly instead of a bare "(no text)" - do not
+        // drop this as "unused" in a future refactor.
         ...(this.turnStopReason === 'max_tokens' && !this.cancelled ? { truncated: true } : {}),
       })
       return

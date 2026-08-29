@@ -4,12 +4,12 @@
 # zip up and copy to another computer.
 #
 # Usage:
-#   .\package.ps1                  # packages Word, Excel, and PowerPoint
+#   .\package.ps1                  # packages Word, Excel, PowerPoint, and Outlook
 #   .\package.ps1 -App Word        # packages just Word
 #   .\package.ps1 -OutDir C:\tmp\airchat-package
 
 param(
-    [ValidateSet('Word', 'Excel', 'PowerPoint', 'All')]
+    [ValidateSet('Word', 'Excel', 'PowerPoint', 'Outlook', 'All')]
     [string]$App = 'All',
     [string]$OutDir = "$PSScriptRoot\dist"
 )
@@ -23,7 +23,7 @@ if (-not (Test-Path $MSBuild)) {
     throw "MSBuild not found at $MSBuild - update the path in this script if Visual Studio is installed elsewhere."
 }
 
-$Apps = if ($App -eq 'All') { @('Word', 'Excel', 'PowerPoint') } else { @($App) }
+$Apps = if ($App -eq 'All') { @('Word', 'Excel', 'PowerPoint', 'Outlook') } else { @($App) }
 
 if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null

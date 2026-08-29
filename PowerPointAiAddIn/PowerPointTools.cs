@@ -32,7 +32,7 @@ namespace PowerPointAiAddIn
 
         // Tools always allowed regardless of editing mode (read-only, no document mutation).
         private static readonly System.Collections.Generic.HashSet<string> AlwaysAllowedTools =
-            new System.Collections.Generic.HashSet<string> { "get_deck_context", "read_slide", "read_animations", "find_text", "read_smartart" };
+            new System.Collections.Generic.HashSet<string> { "get_deck_context", "read_slide", "read_group", "read_animations", "find_text", "read_smartart" };
 
         public static ToolResult Execute(string docKey, string name, JsonElement input)
         {
@@ -53,6 +53,7 @@ namespace PowerPointAiAddIn
                 {
                     case "get_deck_context": return GetDeckContext();
                     case "read_slide": return ReadSlide(input);
+                    case "read_group": return ReadGroup(input);
                     case "find_text": return FindTextPpt(input);
                     case "replace_text": return ReplaceTextPpt(input);
                     case "set_element_text": return SetElementText(input);
@@ -68,6 +69,7 @@ namespace PowerPointAiAddIn
                     case "set_element_stroke": return SetElementStroke(input);
                     case "set_slide_background": return SetSlideBackground(input);
                     case "ungroup_element": return UngroupElement(input);
+                    case "group_element": return GroupElement(input);
                     case "add_table": return AddTable(input);
                     case "edit_table_cell": return EditTableCell(input);
                     case "edit_table_structure": return EditTableStructure(input);

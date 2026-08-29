@@ -76,6 +76,41 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = "Shape ungrouped - re-read the slide (read_slide) to get updated shape indices before addressing the promoted children.", Mutated = true, Summary = "ungroup_element" };
         }
 
+        private static ToolResult GroupElement(JsonElement input)
+        {
+            int slideIndex = input.GetProperty("slideIndex").GetInt32();
+            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+
+            if (!input.TryGetProperty("shapeIndexes", out var idxArr) || idxArr.ValueKind != JsonValueKind.Array)
+                return new ToolResult { Output = "group_element needs shapeIndexes: an array of at least two 0-based top-level shape indices.", IsError = true, Summary = "group_element" };
+
+            var seen = new HashSet<int>();
+            var comIndexes = new List<object>();
+            foreach (JsonElement el in idxArr.EnumerateArray())
+            {
+                int i = el.GetInt32();
+                if (i < 0 || i >= slide.Shapes.Count)
+                    return new ToolResult { Output = "group_element: shapeIndex " + i + " is out of range (slide has " + slide.Shapes.Count + " shapes).", IsError = true, Summary = "group_element" };
+                if (seen.Add(i)) comIndexes.Add(i + 1); // ShapeRange is 1-based
+            }
+            if (comIndexes.Count < 2)
+                return new ToolResult { Output = "group_element needs at least two distinct shapeIndexes.", IsError = true, Summary = "group_element" };
+
+            PowerPoint.ShapeRange range = slide.Shapes.Range(comIndexes.ToArray());
+            PowerPoint.Shape group = range.Group();
+
+            string named = ApplyOptionalName(group, input);
+            int newIndex = group.ZOrderPosition - 1;
+            return new ToolResult
+            {
+                Output = "Grouped " + comIndexes.Count + " shapes into " + (named ?? group.Name) + " at shapeIndex " + newIndex +
+                         ". Other shapes' indices on this slide shifted - call read_slide before addressing another shape by index in the same run. " +
+                         "Address the grouped children with a dotted path (e.g. \"" + newIndex + ".0\") via read_group.",
+                Mutated = true,
+                Summary = "group_element",
+            };
+        }
+
     }
 }
 

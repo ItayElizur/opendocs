@@ -10,11 +10,126 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
-        private static PowerPoint.Shape ResolveShape(JsonElement input)
+        // A shape reference resolved from a tool's slideIndex + shapeIndex.
+        // shapeIndex is normally a 0-based number (a top-level shape on the
+        // slide). It may also be a dotted-path STRING like "3.1.0" - shape 3 on
+        // the slide, its child 1 (a group), that group's child 0 - to address a
+        // shape nested inside one or more groups. read_group prints these paths.
+        private struct ShapeRef
+        {
+            public PowerPoint.Shape Shape;
+            public bool IsNested;   // true when the path descended into a group
+            public string Path;     // normalized dotted path, for messages
+            public int TopIndex;    // 0-based index of the top-level ancestor
+        }
+
+        private static int[] ParseShapePath(JsonElement shapeIndexEl)
+        {
+            if (shapeIndexEl.ValueKind == JsonValueKind.Number)
+                return new[] { shapeIndexEl.GetInt32() };
+            if (shapeIndexEl.ValueKind == JsonValueKind.String)
+            {
+                string raw = shapeIndexEl.GetString() ?? "";
+                string[] parts = raw.Split('.');
+                var path = new int[parts.Length];
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (!int.TryParse(parts[i].Trim(), out path[i]) || path[i] < 0)
+                        throw new ArgumentException("shapeIndex '" + raw + "' is not valid - use a 0-based number, or a dotted path like \"3.1.0\" for a shape inside a group.");
+                }
+                return path;
+            }
+            throw new ArgumentException("shapeIndex must be a 0-based number, or a dotted path string like \"3.1.0\" for a shape inside a group.");
+        }
+
+        private static ShapeRef ResolveShapeRef(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            int shapeIndex = input.GetProperty("shapeIndex").GetInt32();
-            return ActivePresentation.Slides[slideIndex + 1].Shapes[shapeIndex + 1];
+            int[] path = ParseShapePath(input.GetProperty("shapeIndex"));
+            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+
+            PowerPoint.Shape shape = slide.Shapes[path[0] + 1];
+            for (int i = 1; i < path.Length; i++)
+            {
+                if (shape.Type != Microsoft.Office.Core.MsoShapeType.msoGroup)
+                    throw new ArgumentException("shapeIndex path '" + string.Join(".", path) + "' - the shape at ." +
+                                                string.Join(".", path.Take(i)) + " is not a group, so it has no children.");
+                shape = shape.GroupItems[path[i] + 1];
+            }
+            return new ShapeRef { Shape = shape, IsNested = path.Length > 1, Path = string.Join(".", path), TopIndex = path[0] };
+        }
+
+        private static PowerPoint.Shape ResolveShape(JsonElement input)
+        {
+            return ResolveShapeRef(input).Shape;
+        }
+
+        // For tools whose behavior is undefined or confusing on a shape nested
+        // inside a group (positional/structural edits): resolve, but refuse a
+        // path target with a message that tells the model how to proceed.
+        private static PowerPoint.Shape ResolveTopLevelShape(JsonElement input, string toolName)
+        {
+            ShapeRef r = ResolveShapeRef(input);
+            if (r.IsNested)
+                throw new ArgumentException(toolName + ": shape " + r.Path + " is inside a group. Call ungroup_element on shapeIndex " +
+                                            r.TopIndex + " first, then address the promoted shape by its new top-level index.");
+            return r.Shape;
+        }
+
+        private static PowerPoint.Slide ShapeSlide(PowerPoint.Shape shape)
+        {
+            try { return shape.Parent as PowerPoint.Slide; } catch { return null; }
+        }
+
+        // Optional model-chosen shape name. PowerPoint permits duplicate names,
+        // but read_slide/read_group key their output on the name, so a collision
+        // on the same slide is disambiguated with a numeric suffix. Returns the
+        // name actually applied, or null when none was requested.
+        private static string ApplyOptionalName(PowerPoint.Shape shape, JsonElement input)
+        {
+            if (!input.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String)
+                return null;
+            string desired = (nameEl.GetString() ?? "").Trim();
+            if (desired.Length == 0) return null;
+            if (desired.Length > 120) desired = desired.Substring(0, 120);
+
+            PowerPoint.Slide slide = ShapeSlide(shape);
+            string unique = desired;
+            if (slide != null)
+            {
+                var taken = new HashSet<string>();
+                foreach (PowerPoint.Shape s in slide.Shapes)
+                    if (s.Id != shape.Id) taken.Add(s.Name);
+                int suffix = 2;
+                while (taken.Contains(unique)) unique = desired + " " + suffix++;
+            }
+            shape.Name = unique;
+            return unique;
+        }
+
+        private static string ShapeKindLabel(PowerPoint.Shape shape)
+        {
+            try
+            {
+                switch (shape.Type)
+                {
+                    case Microsoft.Office.Core.MsoShapeType.msoGroup: return "group";
+                    case Microsoft.Office.Core.MsoShapeType.msoTextBox: return "text box";
+                    case Microsoft.Office.Core.MsoShapeType.msoPicture: return "picture";
+                    case Microsoft.Office.Core.MsoShapeType.msoLinkedPicture: return "picture";
+                    case Microsoft.Office.Core.MsoShapeType.msoLine: return "line";
+                    case Microsoft.Office.Core.MsoShapeType.msoFreeform: return "freeform";
+                    case Microsoft.Office.Core.MsoShapeType.msoAutoShape: return "shape";
+                    case Microsoft.Office.Core.MsoShapeType.msoPlaceholder: return "placeholder";
+                    case Microsoft.Office.Core.MsoShapeType.msoChart: return "chart";
+                    case Microsoft.Office.Core.MsoShapeType.msoTable: return "table";
+                    case Microsoft.Office.Core.MsoShapeType.msoSmartArt: return "SmartArt";
+                    case Microsoft.Office.Core.MsoShapeType.msoDiagram: return "SmartArt";
+                    case Microsoft.Office.Core.MsoShapeType.msoMedia: return "media";
+                    default: return shape.Type.ToString();
+                }
+            }
+            catch { return "shape"; }
         }
 
         // The notes body is a placeholder on the slide's NotesPage (a separate
@@ -197,7 +312,7 @@ namespace PowerPointAiAddIn
 
         private static ToolResult SetElementTransform(JsonElement input)
         {
-            PowerPoint.Shape shape = ResolveShape(input);
+            PowerPoint.Shape shape = ResolveTopLevelShape(input, "set_element_transform");
             if (input.TryGetProperty("left", out var left)) shape.Left = (float)left.GetDouble();
             if (input.TryGetProperty("top", out var top)) shape.Top = (float)top.GetDouble();
             if (input.TryGetProperty("width", out var width)) shape.Width = (float)width.GetDouble();
@@ -224,7 +339,7 @@ namespace PowerPointAiAddIn
 
         private static ToolResult SetElementOrder(JsonElement input)
         {
-            PowerPoint.Shape shape = ResolveShape(input);
+            PowerPoint.Shape shape = ResolveTopLevelShape(input, "set_element_order");
             string kind = input.GetProperty("kind").GetString();
             Microsoft.Office.Core.MsoZOrderCmd cmd;
             if (!ZOrderMap.TryGetValue(kind, out cmd))
@@ -252,7 +367,8 @@ namespace PowerPointAiAddIn
             range.Text = text;
             ApplyAutoDirection(range, text);
             ApplyBulletSetting(range, input);
-            return new ToolResult { Output = "Text box added.", Mutated = true, Summary = "add_text_box" };
+            string named = ApplyOptionalName(shape, input);
+            return new ToolResult { Output = "Text box added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true, Summary = "add_text_box" };
         }
 
         // Shape-name lookup now lives in OfficeAi.Shared.ShapeTypes (Phase 0) -
@@ -273,12 +389,13 @@ namespace PowerPointAiAddIn
             float height = (float)input.GetProperty("height").GetDouble();
             PowerPoint.Shape shape = slide.Shapes.AddShape(autoShapeType, left, top, width, height);
             if (input.TryGetProperty("text", out var text)) shape.TextFrame.TextRange.Text = text.GetString();
-            return new ToolResult { Output = "Shape added.", Mutated = true, Summary = "add_shape" };
+            string named = ApplyOptionalName(shape, input);
+            return new ToolResult { Output = "Shape added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true, Summary = "add_shape" };
         }
 
         private static ToolResult DeleteElement(JsonElement input)
         {
-            ResolveShape(input).Delete();
+            ResolveTopLevelShape(input, "delete_element").Delete();
             return new ToolResult { Output = "Shape deleted.", Mutated = true, Summary = "delete_element" };
         }
 

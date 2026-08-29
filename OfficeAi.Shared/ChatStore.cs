@@ -17,15 +17,23 @@ namespace OfficeAi.Shared
 
     public static class ChatStore
     {
-        public static string ChatIdForFile(string filePath)
+        // Derives the 8-hex chat id from an arbitrary stable key. Word/Excel/
+        // PowerPoint pass a document file path (see ChatIdForFile); Outlook has
+        // no file, so it passes the mailbox's primary SMTP address instead.
+        public static string ChatIdForKey(string key)
         {
             using (SHA256 sha = SHA256.Create())
             {
-                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(filePath));
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(key ?? ""));
                 StringBuilder sb = new StringBuilder();
                 for (int i = 0; i < 8; i++) sb.Append(hash[i].ToString("x2"));
                 return sb.ToString();
             }
+        }
+
+        public static string ChatIdForFile(string filePath)
+        {
+            return ChatIdForKey(filePath);
         }
 
         private static string ChatPath(string appDataFolderName, string chatId)
@@ -92,6 +100,33 @@ namespace OfficeAi.Shared
                 if (all[i].Role == "divider") lastDivider = i;
             }
             return all.Skip(lastDivider + 1).Where(r => r.Role != "divider").ToList();
+        }
+
+        // FT-1 Task 7b: called once a provisional ("unsaved-...") chat id has
+        // just resolved to a real, path-derived one. This store is append-only
+        // JSONL, so concatenating the provisional file's lines onto whatever
+        // the target already has (the user may have saved over a path they'd
+        // chatted about before) is trivially valid and chronologically
+        // correct - no merge logic needed beyond "append, then remove the
+        // source". A missing source is a silent no-op (nothing to migrate).
+        public static void Migrate(string appDataFolderName, string oldChatId, string newChatId)
+        {
+            string oldPath = ChatPath(appDataFolderName, oldChatId);
+            if (!File.Exists(oldPath)) return;
+
+            try
+            {
+                string newPath = ChatPath(appDataFolderName, newChatId);
+                string oldContent = File.ReadAllText(oldPath);
+                File.AppendAllText(newPath, oldContent);
+                File.Delete(oldPath);
+            }
+            catch (Exception)
+            {
+                // Non-fatal: this runs inside pane operations (see
+                // DocSettingsStore.Migrate's identical rationale) - an
+                // exception here must not kill the add-in.
+            }
         }
     }
 }

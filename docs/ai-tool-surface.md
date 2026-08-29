@@ -1,10 +1,13 @@
 # AI Tool Surface Reference — officeoffice
 
 This document catalogs every mechanism by which the LLM (the AI assistant embedded in
-the Word/Excel/PowerPoint VSTO add-ins) can read or mutate a real Microsoft Office
-document in this repo, and compares it against the equivalent surface already
-documented for `genoffice` (`C:\dev\genoffice\docs\ai-tool-surface.md`, a from-scratch
-web-based Office clone suite that this project ports its tool design from).
+the Word/Excel/PowerPoint/Outlook VSTO add-ins) can read or mutate a real Microsoft
+Office document — or, for Outlook, the mailbox and calendar — in this repo. The
+Word/Excel/PowerPoint sections compare against the equivalent surface documented for
+`genoffice` (`C:\dev\genoffice\docs\ai-tool-surface.md`, a from-scratch web-based
+Office clone suite that this project ports its tool design from); the **Outlook**
+section (added 2026-08-27) has no genoffice counterpart and mirrors
+`C:\dev\mcp-outlook` instead.
 
 > **Note on `docs/tool-surface-todo.md`**: that checklist has been retired (see
 > PP-8, `docs/superpowers/plans/2026-08-23-pp08-retire-stale-todo.md`, 2026-08-24)
@@ -230,11 +233,14 @@ web-based Office clone suite that this project ports its tool design from).
 ## Architecture
 
 officeoffice drives the **real desktop Office applications** via VSTO + COM interop
-(`Microsoft.Office.Interop.{Word,Excel,PowerPoint}`), unlike genoffice's from-scratch
-web renderers. The chat UI runs in a WebView2 page inside a CustomTaskPane; tool calls
-cross a `chrome.webview.postMessage` ⇄ `CoreWebView2.PostWebMessageAsJson` JSON bridge
-(`OfficeAi.Shared/ToolProtocol.cs`) into C# handlers that call the COM object model
-directly — there is no Electron/IPC hop.
+(`Microsoft.Office.Interop.{Word,Excel,PowerPoint,Outlook}`), unlike genoffice's
+from-scratch web renderers. The chat UI runs in a WebView2 page inside a CustomTaskPane;
+tool calls cross a `chrome.webview.postMessage` ⇄ `CoreWebView2.PostWebMessageAsJson`
+JSON bridge (`OfficeAi.Shared/ToolProtocol.cs`) into C# handlers that call the COM
+object model directly — there is no Electron/IPC hop. Word/Excel/PowerPoint attach one
+pane per document window (keyed by `Hwnd`); Outlook attaches one pane per `Explorer`
+window (keyed by COM identity, since `Explorer` has no `Hwnd`) and nothing to
+Inspectors — see the Outlook section.
 
 `packages/agent-core` and `packages/ai-provider` from genoffice are copied verbatim
 into `shared/web-src/{agent-core,ai-provider}` (same `AgentLoop`, same `AgentSkill`
@@ -245,11 +251,21 @@ three add-ins actually wire up provider selection yet** — each `entry.ts` hard
 and `onSettingsSave` is a stub ("Not yet wired to the transport/provider config —
 deferred"). So the provider-abstraction layer exists but is not live.
 
+> **Stale (PP-0, 2026-08):** the paragraph above predates the shared-app-shell
+> refactor. Provider/model/key selection, the settings screen, and the transport
+> now live once in `shared/web-src/app-shell/` (`getSettings` / `makeTransport` /
+> `onSettingsSave`, persisted in WebView `localStorage`), shared by all four
+> add-ins including Outlook — not re-audited tool-by-tool here.
+
 There is **no `packages/ai-search` equivalent** in officeoffice: no `web_search`,
-`image_search`, `generate_image`, `analyze_media`, or `read_attachment` anywhere in
-the repo. This is a deliberate scope decision (the deployment target is air-gapped —
-see `add_image`/`replace_image`'s explicit rejection of remote URLs below), not an
-oversight.
+`image_search`, `generate_image`, or `analyze_media` anywhere in the repo. This is a
+deliberate scope decision (the deployment target is air-gapped — see
+`add_image`/`replace_image`'s explicit rejection of remote URLs below), not an
+oversight. **`read_attachment` is a partial exception:** Outlook's `get_attachment`
+(added 2026-08-27) saves an email attachment to a local file and extracts text from
+text-family and OpenXML (`.docx/.xlsx/.pptx`) types via `OfficeAi.Shared/AttachmentText/`
+— but never fetches anything remote, never handles PDF or images, and cannot feed a
+binary to the model. See the Outlook section.
 
 Each add-in has a governance layer genoffice's docs surface doesn't have in this
 form: a shared `EditingMode` enum (`ReadOnly | CommentOnly | TrackChanges |
@@ -390,6 +406,141 @@ index otherwise.
 
 ---
 
+## Outlook (`OutlookAiAddIn/OutlookTools.*.cs`)
+
+> **Added 2026-08-27 — current as of this section.** genoffice has no mail or
+> calendar app, so there is no "vs. genoffice" column here. The tool set mirrors
+> `C:\dev\mcp-outlook` (a self-hostable EWS MCP server) as closely as the Outlook
+> COM object model allows — but this add-in drives the **already-running, already-
+> authenticated desktop Outlook client** via `Microsoft.Office.Interop.Outlook`, not
+> EWS. There is no `Namespace`/credential setup; it acts as the signed-in user.
+
+### Shape of the integration (differs from Word/Excel/PowerPoint)
+
+- **Explorer-only.** The chat pane docks in the main Outlook window (`Explorer`).
+  There is **no task pane in Inspector windows** (pop-out read/compose). The ribbon
+  button is on the Explorer's Mail tab (`idMso="TabMail"`, via a new
+  `RibbonBase.HomeTabIdMso` / `ProvidesRibbonFor` hook) and suppressed on every
+  Inspector ribbon surface.
+- **Per-mailbox chat.** `GetChatId()` returns `mbx-` + `SHA256(primary SMTP)[:16]` —
+  one rolling conversation per mailbox. No file path, so none of Word/Excel/
+  PowerPoint's provisional-id / `ChatStore.Migrate` / `DocSettingsStore` save
+  lifecycle applies. Primary SMTP is resolved lazily (`ExchangeUser.PrimarySmtpAddress`
+  → `PR_SMTP_ADDRESS` proptag → `AddressEntry.Address` → first account → display name).
+- **Pane lifecycle.** `Explorer` has no `Hwnd`, so panes are keyed by the COM
+  identity pointer (`Marshal.GetIUnknownForObject`). Creation is **lazy** — on an
+  explorer's first `Activate` or the ribbon button, never in `ThisAddIn_Startup` —
+  because Outlook auto-disables add-ins whose median startup exceeds ~1 s, and
+  `install.ps1` also writes `Resiliency\DoNotDisableAddinList`.
+- **Editing modes.** Only `ReadOnly` and `FullAutonomy` are meaningful; `CommentOnly`
+  and `TrackChanges` have no mail analogue and the mode gate treats them as
+  `ReadOnly`. `entry.ts` passes `availableModes: ['readOnly','fullAutonomy']` so the
+  chat-UI mode menu (now `.map`-generated over `options.modes ?? MODES`) hides the
+  other two.
+- **Selection context.** The Explorer's `SelectionChange` pushes the selected mail
+  item(s) / conversation into per-turn context as a `mail` `SelectionContext` variant
+  (`shared/web-src/app-shell/bootstrap.ts`) carrying each item's `EntryID`, so the
+  model prefers the selection over searching. The scope pill shows the subject (one
+  message) or a count (`scopeUnit: 'mailbox'`).
+- **`message_id` / `event_id` / `task_id` = Outlook `EntryID`**, re-resolved via
+  `Namespace.GetItemFromID` on every call. EntryID is stable within a folder but
+  **changes on `Move` and across stores** — `move_email` / `delete_email` return the
+  new id. Recurring calendar instances all share the master appointment's EntryID.
+- **Native query APIs are mandatory** (see the `native-query-apis` memory / the slow
+  Word-search incident): `list_*` use `Folder.GetTable` (an in-memory rowset, no
+  per-item COM object); `search_emails` uses `Items.Sort` → `Items.Restrict("@SQL=" + DASL)`;
+  a capped linear scan is a fallback only when `Restrict` rejects the filter. The
+  DASL builder is pure and unit-tested (`OfficeAi.Shared/OutlookDasl.cs`).
+
+### Read tools (10 — always allowed, never gated)
+
+| Tool | Notes |
+|---|---|
+| `list_emails` | `Folder.GetTable`; columns EntryID/Subject/ReceivedTime/SenderName/UnRead + `PR_HASATTACH` proptag; `[UnRead] = true` restriction when `unread_only`; sorted newest-first; non-mail rows filtered by `MessageClass` not starting `IPM.Note`. Args: `folder`, `limit` (20), `unread_only`. |
+| `search_emails` | `Items.Sort("[ReceivedTime]")` then `Restrict("@SQL=" + BuildSearchFilter(...))`. `LIKE '%q%'` on subject + body; UTC-ISO date range; sender by `fromemail =` OR `fromname LIKE` (Exchange senders carry `legacyExchangeDN`, not SMTP — display-name fuzzy match). `ci_phrasematch`/`ci_startswith` are **not** usable via `Restrict` (they throw). `recipient` is a client-side filter, capped 500. Fallback: capped linear scan on a malformed filter. |
+| `get_email` | Full `Body` (≤ 40k), To/CC via `Recipient.Type`, `ConversationID`/`ConversationTopic`, importance, unread, and an `attachments` array — `{index (1-based), name, type (byValue/embeddedItem/ole/reference), size}` — feed the index to `get_attachment`. |
+| `get_attachment` | `Attachment.SaveAsFile` into `%LOCALAPPDATA%\OutlookAiAddIn\Attachments\`; returns the path. `extracted_text` (≤ 40k) is populated **only** for text-family extensions (`.txt .csv .tsv .md .json .xml .log`, `.html` tag-stripped) and OpenXML (`.docx .xlsx .pptx`), via the swappable `OfficeAi.Shared/AttachmentText/` module (`DocumentFormat.OpenXml` 2.20.0). **No PDF, no images, no vision** — those return the path + type only. `olOLE` throws (rejected); `olByReference` has no data (rejected); `olEmbeddedItem` saves as `.msg`. |
+| `list_folders` | Recursive walk of every store's `Folders`, mail folders only (`DefaultItemType == olMailItem`), with item + unread counts; capped ~800 / depth 8. |
+| `search_contacts` | `Namespace.CreateRecipient(query).Resolve()` (GAL / configured address books) **+ every contact folder in every store** — `Namespace.Folders` is walked recursively for `DefaultItemType == olContactItem` (custom folders, shared mailboxes, subfolders; capped ~60 folders / depth 8), each queried server-side via `Items.Restrict` on a DASL matching fileAs / email1–3 / givenName / sn. Merged and deduped by email (falls back to name for email-less contacts). Optional `folder` arg narrows to one named contact folder and skips the GAL. |
+| `list_events` | `Items.Sort("[Start]")` → `Items.IncludeRecurrences = true` → `Items.Restrict("[Start] <= end AND [End] >= start")` — **this order is load-bearing** and rules out `GetTable`. Recurring instances share the master `event_id`; each row carries its own `start` to disambiguate. Args: `start_date` (today), `end_date` (+7d), `limit` (50). |
+| `get_event` | `Body` (≤ 40k), `RequiredAttendees`/`OptionalAttendees`, organizer, response status, recurring flag. |
+| `find_meeting_slots` | `Recipient.FreeBusy(anchor, 30, true)` — a per-30-min status string — for `Namespace.CurrentUser` + each resolved attendee; then `OfficeAi.Shared.MeetingSlots.Rank` (pure, unit-tested) slides a `duration_minutes` window in 30-min steps across each work day's `[start_hour, end_hour)` and scores each candidate by how many people are free (so a best partial match still comes back). Work week is Sun–Thu (mirrors mcp-outlook); default range is today→Thursday (or next week if today is Fri/Sat), max 28 days. Times past the returned free/busy window are assumed free. Args: `attendees` (req), `duration_minutes` (req), `start_date`, `end_date`, `start_hour` (9), `end_hour` (18), `limit` (5). |
+| `list_tasks` | `Folder.GetTable` over the default Tasks folder; open tasks only unless `include_completed`. Columns EntryID/Subject/Due/Start/Status/PercentComplete/Complete/ReminderTime. |
+
+### Mutating tools (11 — Full autonomy only; `Mutated = true`)
+
+| Tool | Notes |
+|---|---|
+| `mark_email_read` / `mark_email_unread` | `MailItem.UnRead` + `.Save()`. |
+| `flag_email_important` | `Importance = olImportanceHigh/Normal` + `.Save()`. `important` defaults true. |
+| `move_email` | `MailItem.Move(ResolveFolder(destination))`; returns `{message_id: <new EntryID>, old_message_id}`. |
+| `delete_email` | Non-permanent → `Move` to Deleted Items (returns new id); `permanent: true` → then `.Delete()` from there (no single-call hard delete in the OM — documented as "may still be server-recoverable"). |
+| `accept_meeting` / `decline_meeting` | Resolves to `AppointmentItem` (via `MeetingItem.GetAssociatedAppointment(false)` when the id is a meeting request), `appt.Respond(olMeetingAccepted/Declined, true, false)`, then `.Send()` on the response if non-null. |
+| `create_task` | `Application.CreateItem(olTaskItem)` + `.Save()` — no window (a task doesn't send anything, so it follows the mutate-directly pattern, not draft-and-display). Args: `subject` (req), `body`, `due_date`, `start_date`, `reminder_time`, `importance`. |
+| `update_task` | `(TaskItem)GetItemFromID`; only passed fields change; `mark_complete: true` → `Complete = true` + `PercentComplete = 100`. |
+| `set_reminder` | `ReminderSet` / `ReminderTime` on an appointment **or** task, addressed by its `item_id` (EntryID); `clear: true` turns it off. |
+| `set_email_reminder` | `MailItem.MarkAsTask(mapped interval)` + `TaskStartDate`/`TaskDueDate` + `ReminderSet`/`ReminderTime` + `.Save()` — the confirmed COM path for "flag an email for follow-up with a reminder". `MailItem` does expose `ReminderSet`/`ReminderTime`. |
+
+### Draft-and-display tools (5 — Full autonomy; open a native Outlook window for the user to review and send; `Mutated = false`)
+
+| Tool | Notes |
+|---|---|
+| `draft_email` | `CreateItem(olMailItem)` → set `To`/`Subject`/`Body` → `Display(false)`. `"— Written with Airchat"` appended to a non-empty body (mirrors mcp-outlook's signature seed). |
+| `reply_email` | `orig.Reply()` (sender only); `body` HTML-encoded and prepended above the quoted original; `Display(false)`. |
+| `reply_all_email` | `orig.ReplyAll()`. A **distinct tool**, not a `reply_all` boolean on `reply_email` — clearer for the model, and the user sees the full recipient list before sending. |
+| `forward_email` | `orig.Forward()`, optional `To`, `body` prepended; `Display(false)`. |
+| `draft_event` | `CreateItem(olAppointmentItem)`; with `required_attendees`/`optional_attendees` → `MeetingStatus = olMeeting`, `Recipients.Add(...).Type`, `Recipients.ResolveAll()`; `Display(false)`. |
+
+**These never call `.Send()` (mail) or save a calendar event.** The user sends from the
+opened Outlook window.
+
+### Excluded / deferred
+
+- **`send_email`, `create_event`** — mcp-outlook marks these widget/app-only (the
+  model has no way to trigger a send). The equivalent here is draft-and-display +
+  the user pressing Send; there is deliberately no auto-send tool.
+- **`update_event` / `delete_event`** — present in mcp-outlook's `server.py` but not
+  its README; not ported. Trivial parity adds if wanted.
+
+(`find_meeting_slots`, deferred in the first cut, is now implemented — see the Read
+tools table. `Recipient.FreeBusy` is all local-time, so no cross-timezone math was
+needed; the ranking is a pure, unit-tested helper.)
+
+### Object Model Guard
+
+In-process VSTO add-ins that use the **VSTO-supplied `Application`** object are trusted
+by default — reading `Body` / `Recipients` / `SenderEmailAddress` /
+`AddressEntry.PrimarySmtpAddress`, calling `PropertyAccessor.GetProperty` or
+`Attachment.SaveAsFile` do **not** raise the "a program is trying to access…" prompt on
+default settings. Prompts appear only under Trust Center → Programmatic Access set to
+"Always warn", or an Exchange public-folder security form. `MailItem.Send` — the
+highest-risk call — is never used.
+
+### Structural fragility
+
+Everything is addressed by `EntryID`. It is stable while an item stays put but changes
+on `Move` and is store-specific; the mutating tools that move items return the new id,
+and every other tool re-resolves via `GetItemFromID` each call. All recurring
+occurrences of a calendar series **share one `EntryID`**, so `get_event` /
+`accept_meeting` / `decline_meeting` cannot target a single occurrence unambiguously —
+`list_events` carries each occurrence's `start` as the disambiguator.
+
+### Unproven at runtime (as of 2026-08-28)
+
+The project builds clean (MSBuild Debug + Release, 0 warnings; `dotnet test` 136 pass
+including the DASL and meeting-slot helpers). But **most COM paths have not been
+exercised in a real Outlook** — the Explorer pane lifecycle / IUnknown-identity
+keying, WebView2 rendering inside an Explorer task pane, `Folder.GetTable` column
+names, the `list_events` recurrence ordering, `Recipient.FreeBusy`'s string format /
+month coverage (`find_meeting_slots`), and several enum-name / method-signature
+assumptions (`olEmbeddeditem` casing, `AppointmentItem.Respond` argument types,
+`MailItem.MarkAsTask`) compiled against the interop assembly but are not yet confirmed
+live. Early manual testing via the mock server has exercised `list_emails`,
+`search_emails`, `list_folders`, `list_events`, and `list_tasks` against a real
+mailbox successfully.
+
+---
+
 ## Explicitly out of scope everywhere (per project scope, not gaps)
 
 > This scope boundary originated in the project's original feasibility report and
@@ -398,8 +549,10 @@ index otherwise.
 > `docs/superpowers/plans/2026-08-23-pp08-retire-stale-todo.md`); this is now its
 > canonical location.
 
-- `web_search`, `image_search`, `generate_image`, `analyze_media`, `read_attachment`
-  — no `ai-search` equivalent; air-gapped deployment target.
+- `web_search`, `image_search`, `generate_image`, `analyze_media` — no `ai-search`
+  equivalent; air-gapped deployment target. (`read_attachment` is a partial exception
+  for Outlook — `get_attachment` reads local + OpenXML attachment text, nothing
+  remote, no PDF/images; see the Outlook section.)
 - The PDF app and the Markdown app have no officeoffice counterpart (Markdown's
   scope is folded into Word).
 - PowerPoint's `execute_slide_script` DSL and entire deck-generation pipeline (see

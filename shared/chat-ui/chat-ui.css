@@ -140,7 +140,11 @@
     background: var(--color-bg-page); color: var(--color-text-secondary); cursor: pointer; font-size: 13px;
   }
   .ai-lang-toggle button.active { border-color: var(--docs-brand-ring); background: var(--docs-brand-ghost-weak); color: var(--color-brand-secondary); }
-  .ai-settings-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  /* PP-6: connection test result, shown between the fields and the action row. */
+  .ai-settings-test-result { font-size: 12px; margin-top: 10px; min-height: 1em; }
+  .ai-settings-test-result.success { color: var(--docs-ok-ink); }
+  .ai-settings-test-result.error { color: var(--docs-ai-error); }
+  .ai-settings-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 16px; }
   .ai-btn-primary, .ai-btn-secondary {
     padding: 7px 14px; border-radius: var(--radius-8); font-size: 13px; cursor: pointer; border: none;
   }
@@ -149,8 +153,87 @@
 
   .ai-chat { flex: 1; overflow-y: auto; padding: 32px 16px; display: flex; flex-direction: column; gap: 16px; }
 
+  /* FT-1: full settings view. Replaces .ai-chat + .ai-composer (both hidden
+     via .settings-open below) rather than a separate window - same pane,
+     different view. Reuses the .ai-chat shape (flex:1; overflow-y:auto) so
+     scrolling behaves identically. */
+  .ai-settings-view { display: none; flex: 1; overflow-y: auto; padding: 16px; }
+  .ai-panel.settings-open .ai-settings-view { display: block; }
+  .ai-panel.settings-open .ai-chat,
+  .ai-panel.settings-open .ai-composer,
+  .ai-panel.settings-open [data-t-title="newChat"] { display: none; }
+
+  .ai-more-settings-btn {
+    display: block; width: 100%; margin-top: 10px; padding: 7px 0; border: none; background: none;
+    color: var(--color-brand-secondary); font-size: 12px; cursor: pointer; text-align: center;
+  }
+  .ai-more-settings-btn:hover { text-decoration: underline; }
+  /* This class's own `display: block` above has the same specificity as the
+     browser's built-in [hidden] rule, so element.hidden = true alone did
+     nothing here (confirmed repro: the button stayed visible inside the
+     settings view, where it makes no sense since the user is already there).
+     A compound selector has strictly higher specificity than the plain class
+     rule, so this wins regardless of source order without needing !important. */
+  .ai-more-settings-btn[hidden] { display: none; }
+
+  .ai-settings-section { margin-bottom: 24px; }
+  .ai-settings-section h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--color-text-tertiary); }
+  .ai-settings-section-note { margin: 0 0 10px; font-size: 11px; color: var(--color-text-tertiary); }
+
+  /* Relocated #settingsPanel, shown inline inside a section rather than as an
+     absolutely-positioned dropdown - same element, same PP-6 logic, just a
+     different container/position (Task 2: "do not build the connection
+     section twice"). */
+  .ai-settings-panel.inline {
+    position: static; width: auto; border: none; box-shadow: none; padding: 0; display: block;
+  }
+  .ai-settings-panel.inline h4 { display: none; } /* the section already has its own h4 title via sectionConnection - avoid a duplicate */
+
+  .ai-scope-control { display: flex; flex-direction: column; gap: 6px; }
+  .ai-scope-option {
+    padding: 9px 12px; border-radius: var(--radius-8); border: 1px solid var(--color-border-default);
+    font-size: 13px; cursor: pointer; color: var(--color-text-secondary);
+  }
+  .ai-scope-option:hover { background: var(--color-bg-subtle); }
+  .ai-scope-option.selected { border-color: var(--docs-brand-ring); background: var(--docs-brand-ghost-weak); color: var(--color-text-primary); font-weight: 600; }
+  .ai-scope-option .desc { display: block; font-size: 11px; font-weight: 400; color: var(--color-text-tertiary); margin-top: 1px; }
+
+  .ai-tools-list { display: flex; flex-direction: column; gap: 2px; }
+  .ai-tools-group-label { font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); margin: 10px 0 2px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .ai-tools-group-label:first-child { margin-top: 0; }
+  .ai-tool-row { padding: 6px 0; border-bottom: 1px solid var(--color-border-default); }
+  .ai-tool-row:last-child { border-bottom: none; }
+  .ai-tool-row label { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+  .ai-tool-row.out-of-scope { opacity: 0.5; }
+  .ai-tool-row.out-of-scope label { cursor: help; }
+  .ai-tool-row input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
+  .ai-tool-info { flex: 1; min-width: 0; }
+  .ai-tool-label { font-size: 13px; color: var(--color-text-primary); }
+  .ai-tool-desc { font-size: 11px; color: var(--color-text-tertiary); margin-top: 1px; }
+  .ai-tools-count { font-weight: 400; color: var(--color-text-tertiary); }
+
+  .ai-doc-message {
+    display: block; width: 100%; min-height: 90px; resize: vertical; padding: 8px 10px;
+    border-radius: var(--radius-8); border: 1px solid var(--color-border-default);
+    font-size: 13px; font-family: inherit; background: var(--color-bg-page); color: var(--color-text-primary);
+  }
+  .ai-doc-message:focus { outline: none; border-color: var(--docs-brand-ring); }
+
+  .ai-settings-view-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 8px; }
+  .ai-settings-saved-note { font-size: 12px; color: var(--docs-ok-ink); opacity: 0; transition: opacity 150ms; }
+  .ai-settings-saved-note.visible { opacity: 1; }
+
   /* ---- empty state ---- */
-  .ai-chat-empty { margin-top: 36px; padding: 0 10px; text-align: center; }
+  .ai-chat-empty {
+    position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 12% 10px 0; text-align: center; overflow: hidden;
+  }
+  /* A real (opaque) image sitting above the title in normal flow, not a
+     low-opacity absolute-positioned watermark - a prior version centered it
+     behind the title/pills via position:absolute + low opacity, which meant
+     the pills' opaque backgrounds simply covered most of it. */
+  .ai-chat-empty-bg { width: 120px; max-width: 50%; height: auto; margin-bottom: 16px; pointer-events: none; user-select: none; }
+  [data-theme='dark'] .ai-chat-empty-bg { filter: brightness(1.6); }
   .ai-chat-empty-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
   .ai-chat-empty-body { color: var(--color-text-secondary); font-size: 14px; line-height: 1.5; margin-bottom: 20px; }
   .ai-starters { display: flex; flex-direction: column; gap: 8px; align-items: center; }
@@ -166,10 +249,11 @@
     align-self: flex-end; background: var(--color-bg-subtle); padding: 8px 16px;
     border-radius: var(--radius-16) var(--radius-16) 4px var(--radius-16);
     max-width: 80%; line-height: 1.5; font-size: 16px;
+    overflow-wrap: break-word;
   }
   [dir='rtl'] .ai-msg-user { align-self: flex-start; border-radius: var(--radius-16) var(--radius-16) var(--radius-16) 4px; }
 
-  .ai-msg-assistant { align-self: stretch; max-width: 100%; font-size: 16px; line-height: 1.6; }
+  .ai-msg-assistant { align-self: stretch; max-width: 100%; font-size: 16px; line-height: 1.6; overflow-wrap: break-word; }
   /* In RTL, the user bubble's align-self:flex-start (Task feedback) sits at the
      same physical right edge the assistant's full-width text starts from too -
      without an inset they visually collide/read as one block. LTR wasn't
@@ -178,6 +262,42 @@
   [dir='rtl'] .ai-msg-assistant { margin-inline-start: 14px; }
   .ai-msg-assistant p { margin: 0 0 16px; }
   .ai-msg-assistant p:last-child { margin-bottom: 0; }
+  .ai-msg-assistant > *:last-child { margin-bottom: 0; }
+  .ai-msg-assistant h1, .ai-msg-assistant h2, .ai-msg-assistant h3,
+  .ai-msg-assistant h4, .ai-msg-assistant h5, .ai-msg-assistant h6 {
+    margin: 20px 0 8px; line-height: 1.3; font-weight: 600;
+  }
+  .ai-msg-assistant h1 { font-size: 1.3em; }
+  .ai-msg-assistant h2 { font-size: 1.18em; }
+  .ai-msg-assistant h3 { font-size: 1.08em; }
+  .ai-msg-assistant h4, .ai-msg-assistant h5, .ai-msg-assistant h6 { font-size: 1em; }
+  .ai-msg-assistant ul, .ai-msg-assistant ol { margin: 0 0 16px; padding-inline-start: 22px; }
+  .ai-msg-assistant li { margin: 4px 0; }
+  .ai-msg-assistant li > ul, .ai-msg-assistant li > ol { margin: 4px 0 0; }
+  .ai-msg-assistant hr { border: none; border-top: 1px solid var(--color-border-default); margin: 16px 0; }
+  .ai-msg-assistant blockquote {
+    margin: 0 0 16px; padding: 2px 14px; border-inline-start: 3px solid var(--color-border-strong);
+    color: var(--color-text-secondary);
+  }
+  .ai-msg-assistant blockquote > *:last-child { margin-bottom: 0; }
+  .ai-msg-assistant code {
+    background: var(--color-bg-subtle); border-radius: var(--radius-6); padding: 1px 5px;
+    font-size: 0.9em; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    overflow-wrap: break-word;
+  }
+  .ai-msg-assistant pre {
+    background: var(--color-bg-subtle); border: 1px solid var(--color-border-default); border-radius: var(--radius-12);
+    padding: 10px 14px; margin: 0 0 16px; overflow-x: auto;
+  }
+  .ai-msg-assistant pre code { background: none; padding: 0; font-size: 13px; line-height: 1.5; }
+  .ai-msg-assistant a { color: var(--color-brand-secondary); }
+  .ai-msg-assistant table {
+    border-collapse: collapse; margin: 0 0 16px; font-size: 0.95em; max-width: 100%; display: block; overflow-x: auto;
+  }
+  .ai-msg-assistant th, .ai-msg-assistant td {
+    border: 1px solid var(--color-border-default); padding: 6px 10px; text-align: start;
+  }
+  .ai-msg-assistant th { background: var(--color-bg-subtle); font-weight: 600; }
   .ai-msg-assistant.streaming::after {
     content: ''; display: inline-block; width: 6px; height: 1em; margin-inline-start: 2px;
     background: var(--color-text-secondary); border-radius: 1px;
@@ -204,13 +324,35 @@
   }
   .ai-step-icon { width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--color-text-secondary); font-size: 13px; }
   .ai-step-icon.error { color: var(--docs-ai-error); }
+  /* Pulses the hourglass while the tool's C# COM call is running. */
+  .ai-step-icon.pending { animation: step-pulse 1.3s ease-in-out infinite; }
+  @keyframes step-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
   .ai-step-title { color: var(--color-text-secondary); padding-top: 1px; overflow-wrap: anywhere; }
   .ai-step-title code { background: var(--color-bg-subtle); border-radius: var(--radius-6); padding: 1px 5px; font-size: 13px; }
-  .ai-tool-output {
-    background: var(--color-bg-subtle); border-radius: var(--radius-12); font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-    font-size: 13px; padding: 12px 16px; margin: 6px 0 0 32px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; color: var(--color-text-secondary);
+  /* PP-3: per-step tool output, collapsed by default. .has-output/.output-open
+     are toggled from chat-ui.ts; the disclosure caret mirrors
+     .ai-work-group-summary's pattern below rather than introducing a new one. */
+  .ai-step-row.has-output .ai-step-title { cursor: pointer; padding-inline-start: 14px; position: relative; }
+  .ai-step-row.has-output .ai-step-title::before {
+    content: '\25B8'; position: absolute; inset-inline-start: 0; top: 1px; font-size: 10px;
+    color: var(--color-text-tertiary); transition: transform 0.15s; display: inline-block;
   }
-  [dir='rtl'] .ai-tool-output { margin: 6px 32px 0 0; }
+  .ai-step-row.output-open .ai-step-title::before { transform: rotate(90deg); }
+  [dir='rtl'] .ai-step-row.has-output .ai-step-title::before { transform: rotate(180deg); }
+  [dir='rtl'] .ai-step-row.output-open .ai-step-title::before { transform: rotate(90deg); }
+  .ai-step-output {
+    display: none;
+    background: var(--color-bg-subtle); border: 1px solid var(--color-border-default); border-radius: var(--radius-12);
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5;
+    padding: 10px 14px; margin: 6px 0 0; max-height: 220px; overflow: auto;
+    white-space: pre-wrap; word-break: break-word; color: var(--color-text-secondary);
+  }
+  .ai-step-row.output-open .ai-step-output { display: block; }
+  .ai-step-output.error { color: var(--docs-ai-error); }
+  .ai-step-output-more {
+    display: block; margin-top: 4px; padding: 2px 0; border: none; background: none;
+    color: var(--color-brand-secondary); font-size: 12px; cursor: pointer; text-decoration: underline;
+  }
   .ai-applied-tag {
     display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 2px 9px; font-size: 11px;
     background: var(--docs-ok-bg); color: var(--docs-ok-ink); margin-inline-start: 32px;
@@ -228,7 +370,33 @@
   .ai-typing-dots span:nth-child(3) { animation-delay: 0.6s; }
   @keyframes dot-grow { 0%, 100% { transform: scale(1); opacity: 0.45; } 50% { transform: scale(3); opacity: 1; } }
 
+  /* "Thinking..." indicator - always visible while a run is active EXCEPT
+     while an assistant reply is streaming in token-by-token. Sits at the very
+     bottom of the transcript. */
+  .ai-thinking { display: flex; align-items: center; padding: 6px 2px 14px; }
+
+  /* While a tool group is still running, shimmer its always-visible summary
+     label (the step rows themselves are inside a collapsed accordion). */
+  .ai-work-group.running .ai-work-group-summary .label {
+    background: linear-gradient(90deg, var(--docs-shimmer-base) 0%, var(--docs-shimmer-hi) 50%, var(--docs-shimmer-base) 100%);
+    background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: shimmer 1.2s infinite alternate linear;
+  }
+
   .ai-msg-error { color: var(--docs-ai-error); font-size: 13px; }
+
+  /* PP-4: informational, non-alarming notice row (truncation / turn-limit) -
+     visually distinct from .ai-msg-error, which signals a real failure. */
+  .ai-msg-notice {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    color: var(--color-text-tertiary); font-size: 13px; padding: 4px 0;
+  }
+  .ai-notice-action {
+    border: 1px solid var(--color-border-default); border-radius: var(--radius-30);
+    background: var(--color-bg-page); color: var(--color-brand-secondary);
+    padding: 3px 12px; font-size: 12px; cursor: pointer;
+  }
+  .ai-notice-action:hover { background: var(--color-bg-subtle); }
 
   .ai-composer { padding: 8px 12px 12px; background: var(--color-bg-page); flex-shrink: 0; }
 
@@ -290,8 +458,18 @@
   .ai-mode-menu-item.selected { color: var(--color-text-primary); font-weight: 600; }
   .ai-mode-menu-item .desc { display: block; font-size: 11px; font-weight: 400; color: var(--color-text-tertiary); margin-top: 1px; }
 
+  /* Post-hoc fix (2026-08-24, user-reported): margin-inline-start: auto on
+     .ai-stop-btn only pushed the row right while the stop button was
+     visible - [hidden] removes an element from layout entirely, so with no
+     stop button shown (the normal state) nothing had the auto margin any
+     more and .ai-send-btn drifted left, next to the mode button. Moved the
+     auto margin onto this always-present wrapper instead, so the push-right
+     behavior no longer depends on which of its children happen to be
+     visible. */
+  .ai-send-group { margin-inline-start: auto; display: flex; align-items: center; gap: 6px; }
+
   .ai-send-btn {
-    margin-inline-start: auto; width: 32px; height: 32px; border: none; border-radius: 35%;
+    width: 32px; height: 32px; border: none; border-radius: 35%;
     background: var(--color-text-primary); color: var(--color-bg-page);
     display: flex; align-items: center; justify-content: center; cursor: pointer; transition: var(--transition-fast); font-size: 14px;
   }
@@ -299,3 +477,14 @@
   .ai-send-btn:hover { filter: brightness(0.92); }
   .ai-send-btn:active { filter: brightness(0.88); transform: scale(0.98); }
   [dir='rtl'] .ai-send-btn:active { transform: scaleX(-1) scale(0.98); }
+  /* Post-hoc addition (2026-08-24, user-requested): a separate stop button
+     next to send, shown only while a run is in flight ([hidden] when not
+     busy). A square glyph never needs RTL mirroring. */
+  .ai-stop-btn {
+    width: 32px; height: 32px; border: none; border-radius: 35%;
+    background: var(--color-danger, #c0392b); color: var(--color-bg-page);
+    display: flex; align-items: center; justify-content: center; cursor: pointer; transition: var(--transition-fast); font-size: 14px;
+  }
+  .ai-stop-btn:hover { filter: brightness(0.92); }
+  .ai-stop-btn:active { filter: brightness(0.88); transform: scale(0.98); }
+  .ai-stop-btn[hidden] { display: none; }

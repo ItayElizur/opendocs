@@ -162,7 +162,8 @@ namespace PowerPointAiAddIn
                 chart.HasTitle = true;
                 chart.ChartTitle.Text = title.GetString();
             }
-            return new ToolResult { Output = "Chart added at shapeIndex " + newShapeIndex + ".", Mutated = true, Summary = "add_chart" };
+            string named = ApplyOptionalName(slide.Shapes[newShapeIndex + 1], input);
+            return new ToolResult { Output = "Chart added at shapeIndex " + newShapeIndex + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true, Summary = "add_chart" };
         }
 
         // PP-21: legendPos's natural names (a model will say "right", not the

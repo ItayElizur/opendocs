@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -28,6 +30,43 @@ namespace OfficeAi.Shared
         // certificate in Windows' certificate store instead.
         private bool _skipTlsVerify;
 
+        // One CoreWebView2Environment per app-data-folder name, shared across
+        // every pane created in this process (keyed defensively; in practice
+        // one VSTO add-in's AppDomain only ever passes its own fixed name).
+        // Before PP-1 there was only ever one TaskPaneHost/WebViewBridgeHost
+        // per process, so CreateAsync was only ever called once - never
+        // exercised. PP-1 creates one pane per open document window, so
+        // opening (or Office internally re-activating) more than one window
+        // can call this constructor again while the first pane's environment
+        // is still initializing. Calling CoreWebView2Environment.CreateAsync
+        // a second time for the SAME user-data-folder before the first call
+        // has finished is exactly what WebView2 rejects with "the group or
+        // resource is not in the correct state" (HRESULT 0x8007139F,
+        // confirmed repro) - sharing one environment (the officially
+        // documented pattern for multiple WebView2 controls against one
+        // profile) eliminates the race by construction rather than trying to
+        // serialize around it. Caching the in-flight Task (not just the
+        // eventual result) matters: a second pane's constructor runs
+        // synchronously up to this dictionary check/insert, before any
+        // `await`, so it sees and awaits the SAME in-flight task instead of
+        // starting a second CreateAsync. Only ever touched from the single
+        // STA UI thread all Office COM callbacks run on, so no lock is needed.
+        private static readonly Dictionary<string, Task<CoreWebView2Environment>> _environments =
+            new Dictionary<string, Task<CoreWebView2Environment>>();
+
+        private static Task<CoreWebView2Environment> GetOrCreateEnvironment(string appDataFolderName)
+        {
+            Task<CoreWebView2Environment> existing;
+            if (_environments.TryGetValue(appDataFolderName, out existing)) return existing;
+
+            string userDataFolder = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                appDataFolderName, "WebView2");
+            Task<CoreWebView2Environment> created = CoreWebView2Environment.CreateAsync(null, userDataFolder);
+            _environments[appDataFolderName] = created;
+            return created;
+        }
+
         public WebView2 WebView => _webView;
 
         public WebViewBridgeHost(
@@ -51,10 +90,7 @@ namespace OfficeAi.Shared
         {
             try
             {
-                string userDataFolder = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    appDataFolderName, "WebView2");
-                CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
+                CoreWebView2Environment environment = await GetOrCreateEnvironment(appDataFolderName);
                 await _webView.EnsureCoreWebView2Async(environment);
 
                 string webRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "web");
@@ -62,6 +98,25 @@ namespace OfficeAi.Shared
                     "appassets.local",
                     webRoot,
                     CoreWebView2HostResourceAccessKind.Allow);
+
+                // Post-hoc fix (2026-08-24, user-reported a CSS fix not
+                // taking effect after rebuild + close/reopen Word): the
+                // CoreWebView2Environment here uses a PERSISTENT
+                // userDataFolder (see GetOrCreateEnvironment below), so its
+                // HTTP disk cache survives across Word restarts even though
+                // the C# DLLs themselves reload correctly - closing and
+                // reopening Word recreates the WebView2 CONTROL, but not its
+                // cache. bundle.js/bundle.css/index.html are referenced with
+                // no cache-busting query string, so a rebuilt bundle can be
+                // silently served stale from cache indefinitely. Force every
+                // request to this virtual host to bypass cache and
+                // revalidate, matching what a browser's hard-refresh does.
+                _webView.CoreWebView2.AddWebResourceRequestedFilter("https://appassets.local/*", CoreWebView2WebResourceContext.All);
+                _webView.CoreWebView2.WebResourceRequested += (sender, args) =>
+                {
+                    args.Request.Headers.SetHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+                    args.Request.Headers.SetHeader("Pragma", "no-cache");
+                };
 
                 _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
                 _webView.CoreWebView2.ServerCertificateErrorDetected += OnServerCertificateErrorDetected;
@@ -99,13 +154,15 @@ namespace OfficeAi.Shared
                     if (kind == "tool-call")
                     {
                         var (requestId, toolName, input) = ToolProtocol.ParseToolCall(e.WebMessageAsJson);
-                        _setStatus("Executing tool: " + toolName);
+                        // Tool execution no longer flashes a status-bar message - the
+                        // chat UI's own "Running N tools..." work-group (chat-ui.ts)
+                        // already shows this inline, so the top-of-pane label stayed
+                        // reserved for real problems (init/message-handling errors).
                         ToolResult result = _executor(toolName, input);
                         if (_webView.CoreWebView2 != null)
                         {
                             _webView.CoreWebView2.PostWebMessageAsJson(ToolProtocol.SerializeToolResult(requestId, result));
                         }
-                        _setStatus("ready");
                     }
                     else if (kind == "set-tls-bypass")
                     {

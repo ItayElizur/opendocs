@@ -14,6 +14,10 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <!-- AttachmentText/OpenXmlReader.cs only. 2.20.0 is the last line with clean
+         net48 support; 3.x is netstandard2.0-only and drags extra transitive
+         System.IO.Packaging refs. Keep the dependency confined to AttachmentText/. -->
+    <PackageReference Include="DocumentFormat.OpenXml" Version="2.20.0" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System.Drawing" />

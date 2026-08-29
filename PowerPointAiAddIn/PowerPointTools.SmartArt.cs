@@ -246,7 +246,8 @@ namespace PowerPointAiAddIn
                 dynamic node = smartArt.Nodes.Add();
                 node.TextFrame2.TextRange.Text = item.GetString();
             }
-            return new ToolResult { Output = "SmartArt added.", Mutated = true, Summary = "add_smartart" };
+            string named = ApplyOptionalName((PowerPoint.Shape)shape, input);
+            return new ToolResult { Output = "SmartArt added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true, Summary = "add_smartart" };
         }
 
     }

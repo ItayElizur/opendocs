@@ -221,6 +221,8 @@
   }
   .ai-step-icon { width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--color-text-secondary); font-size: 13px; }
   .ai-step-icon.error { color: var(--docs-ai-error); }
+  .ai-step-icon.pending { animation: step-pulse 1.3s ease-in-out infinite; }
+  @keyframes step-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
   .ai-step-title { color: var(--color-text-secondary); padding-top: 1px; }
   .ai-step-title code { background: var(--color-bg-subtle); border-radius: var(--radius-6); padding: 1px 5px; font-size: 13px; }
   .ai-tool-output {
@@ -244,6 +246,12 @@
   .ai-typing-dots span:nth-child(2) { animation-delay: 0.3s; }
   .ai-typing-dots span:nth-child(3) { animation-delay: 0.6s; }
   @keyframes dot-grow { 0%, 100% { transform: scale(1); opacity: 0.45; } 50% { transform: scale(3); opacity: 1; } }
+  .ai-thinking { display: flex; align-items: center; padding: 6px 2px 14px; }
+  .ai-work-group.running .ai-work-group-summary .label {
+    background: linear-gradient(90deg, var(--docs-shimmer-base) 0%, var(--docs-shimmer-hi) 50%, var(--docs-shimmer-base) 100%);
+    background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: shimmer 1.2s infinite alternate linear;
+  }
 
   .ai-msg-error { color: var(--docs-ai-error); font-size: 13px; }
 

@@ -3,21 +3,21 @@
 # per-app WordAiAddIn/ExcelAiAddIn/PowerPointAiAddIn build-output folders).
 #
 # Usage:
-#   .\install.ps1                  # installs Word, Excel, and PowerPoint
+#   .\install.ps1                  # installs Word, Excel, PowerPoint, and Outlook
 #   .\install.ps1 -App Word        # installs just Word
 #
 # No internet access is required or used by this script.
 
 param(
-    [ValidateSet('Word', 'Excel', 'PowerPoint', 'All')]
+    [ValidateSet('Word', 'Excel', 'PowerPoint', 'Outlook', 'All')]
     [string]$App = 'All',
     [string]$InstallRoot = "$env:LOCALAPPDATA\AirchatOffice"
 )
 
 $ErrorActionPreference = 'Stop'
 $PackageDir = $PSScriptRoot
-$Apps = if ($App -eq 'All') { @('Word', 'Excel', 'PowerPoint') } else { @($App) }
-$OfficeApps = @{ Word = 'Word'; Excel = 'Excel'; PowerPoint = 'PowerPoint' }
+$Apps = if ($App -eq 'All') { @('Word', 'Excel', 'PowerPoint', 'Outlook') } else { @($App) }
+$OfficeApps = @{ Word = 'Word'; Excel = 'Excel'; PowerPoint = 'PowerPoint'; Outlook = 'Outlook' }
 
 function Test-Prerequisites {
     $problems = @()
@@ -102,6 +102,27 @@ foreach ($appName in $Apps) {
     Set-ItemProperty -Path $regKey -Name 'FriendlyName' -Value $projName
     Set-ItemProperty -Path $regKey -Name 'LoadBehavior' -Value 3 -Type DWord
     Set-ItemProperty -Path $regKey -Name 'Manifest' -Value $manifestUri
+
+    # Outlook (2013+) auto-disables add-ins it deems slow to start or that
+    # threw during a previous load. Whitelist this one and clear any stale
+    # disabled/crashing entries so a single bad dev launch doesn't stick.
+    if ($appName -eq 'Outlook') {
+        foreach ($ver in @('16.0', '15.0')) {
+            $res = "HKCU:\Software\Microsoft\Office\$ver\Outlook\Resiliency"
+            $dna = "$res\DoNotDisableAddinList"
+            New-Item -Path $dna -Force | Out-Null
+            Set-ItemProperty -Path $dna -Name $projName -Value 1 -Type DWord
+            foreach ($bucket in @('DisabledItems', 'CrashingAddinList')) {
+                $bpath = "$res\$bucket"
+                if (Test-Path $bpath) {
+                    Get-Item $bpath | Select-Object -ExpandProperty Property | ForEach-Object {
+                        Remove-ItemProperty -Path $bpath -Name $_ -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+        }
+        Write-Host "Whitelisted $projName against Outlook's slow/crashing add-in resiliency."
+    }
 
     Write-Host "$projName installed and registered."
 }

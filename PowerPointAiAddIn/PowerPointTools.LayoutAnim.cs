@@ -179,7 +179,7 @@ namespace PowerPointAiAddIn
 
         private static ToolResult AddAnimation(JsonElement input)
         {
-            PowerPoint.Shape shape = ResolveShape(input);
+            PowerPoint.Shape shape = ResolveTopLevelShape(input, "add_animation");
             PowerPoint.Slide slide = (PowerPoint.Slide)shape.Parent;
             PowerPoint.Sequence sequence = slide.TimeLine.MainSequence;
 

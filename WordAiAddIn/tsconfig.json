@@ -11,7 +11,8 @@
     "paths": {
       "@genoffice/agent-core": ["../shared/web-src/agent-core/index.ts"],
       "@genoffice/ai-provider": ["../shared/web-src/ai-provider/index.ts"],
-      "@officeai/chat-ui": ["../shared/chat-ui/chat-ui.ts"]
+      "@officeai/chat-ui": ["../shared/chat-ui/chat-ui.ts"],
+      "@officeai/app-shell": ["../shared/web-src/app-shell/index.ts"]
     }
   },
   "include": ["web-src/**/*.ts"]

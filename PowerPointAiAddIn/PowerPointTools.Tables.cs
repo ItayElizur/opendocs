@@ -39,12 +39,19 @@ namespace PowerPointAiAddIn
                     r++;
                 }
             }
-            return new ToolResult { Output = "Table added.", Mutated = true, Summary = "add_table" };
+            int newShapeIndex = slide.Shapes.Count - 1;
+            string named = ApplyOptionalName(tableShape, input);
+            return new ToolResult { Output = "Table added at shapeIndex " + newShapeIndex + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true, Summary = "add_table" };
         }
 
         private static PowerPoint.Table ResolveTable(JsonElement input)
         {
-            return ResolveShape(input).Table;
+            PowerPoint.Shape shape = ResolveShape(input);
+            if (shape.HasTable != Microsoft.Office.Core.MsoTriState.msoTrue)
+                throw new InvalidOperationException("shape " + input.GetProperty("shapeIndex").GetInt32() +
+                                                    " on slide " + input.GetProperty("slideIndex").GetInt32() +
+                                                    " is not a table. Call read_slide to find the table's shapeIndex.");
+            return shape.Table;
         }
 
         private static ToolResult EditTableCell(JsonElement input)

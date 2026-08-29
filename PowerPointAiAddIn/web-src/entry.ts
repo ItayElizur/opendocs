@@ -20,8 +20,20 @@ const READER_TOOLS = [
   },
   {
     name: 'read_slide',
-    description: 'Reads full text of every shape on one slide (0-based index), plus its layout, transition, animation count, and speaker notes (if any). Shapes are listed back-to-front (z-order/stacking order) - use set_element_order to change it.',
+    description: 'Reads full text of every shape on one slide (0-based index), plus its layout, transition, animation count, and speaker notes (if any). Shapes are listed back-to-front (z-order/stacking order) - use set_element_order to change it. A group shape is shown as one line with a child count - call read_group to see inside it.',
     inputSchema: { type: 'object', properties: { slideIndex: { type: 'number' } }, required: ['slideIndex'] },
+  },
+  {
+    name: 'read_group',
+    description:
+      'Lists the shapes inside a group, recursively (nested groups are expanded in place). shapeIndex points at the group - a 0-based number, or a dotted path like "3.1" for a group nested inside another group. ' +
+      'Each child line is prefixed with its dotted path (e.g. "3.1.0"); pass that path as shapeIndex to set_element_text / set_element_style / set_element_fill / set_element_stroke to edit a child in place. ' +
+      'Positional or structural edits (set_element_transform, set_element_order, delete_element, add_animation) require ungroup_element on the top-level group first.',
+    inputSchema: {
+      type: 'object',
+      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: ['number', 'string'] } },
+      required: ['slideIndex', 'shapeIndex'],
+    },
   },
   {
     name: 'read_animations',
@@ -88,7 +100,9 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, text: { type: 'string' },
+        slideIndex: { type: 'number' },
+        shapeIndex: { type: ['number', 'string'], description: '0-based shape index, or a dotted path like "3.1.0" for a shape inside a group (from read_group).' },
+        text: { type: 'string' },
         bulleted: { type: 'boolean' },
       },
       required: ['slideIndex', 'shapeIndex', 'text'],
@@ -112,7 +126,7 @@ const MUTATION_TOOLS = [
       type: 'object',
       properties: {
         slideIndex: { type: 'number' },
-        shapeIndex: { type: 'number' },
+        shapeIndex: { type: ['number', 'string'], description: '0-based shape index, or a dotted path like "3.1.0" for a shape inside a group (from read_group).' },
         bold: { type: 'boolean' },
         italic: { type: 'boolean' },
         underline: { type: 'boolean' },
@@ -174,6 +188,7 @@ const MUTATION_TOOLS = [
         height: { type: 'number' },
         text: { type: 'string' },
         bulleted: { type: 'boolean' },
+        name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_slide/read_group - use a short, meaningful label (e.g. "CTA button").' },
       },
       required: ['slideIndex', 'left', 'top', 'width', 'height', 'text'],
     },
@@ -202,6 +217,7 @@ const MUTATION_TOOLS = [
         width: { type: 'number' },
         height: { type: 'number' },
         text: { type: 'string' },
+        name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_slide/read_group - use a short, meaningful label (e.g. "Arrow to Q3").' },
       },
       required: ['slideIndex', 'shapeType', 'left', 'top', 'width', 'height'],
     },
@@ -326,7 +342,11 @@ const MUTATION_TOOLS = [
     description: 'Sets a shape\'s solid fill color, or "none" to remove its fill.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, fill: { type: 'string' } },
+      properties: {
+        slideIndex: { type: 'number' },
+        shapeIndex: { type: ['number', 'string'], description: '0-based shape index, or a dotted path like "3.1.0" for a shape inside a group (from read_group).' },
+        fill: { type: 'string' },
+      },
       required: ['slideIndex', 'shapeIndex', 'fill'],
     },
   },
@@ -336,7 +356,8 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' }, shapeIndex: { type: 'number' },
+        slideIndex: { type: 'number' },
+        shapeIndex: { type: ['number', 'string'], description: '0-based shape index, or a dotted path like "3.1.0" for a shape inside a group (from read_group).' },
         color: { type: 'string' }, widthPt: { type: 'number' }, remove: { type: 'boolean' },
       },
       required: ['slideIndex', 'shapeIndex'],
@@ -356,8 +377,23 @@ const MUTATION_TOOLS = [
     description: 'Promotes a group shape\'s direct children to top-level shapes. Shape indices change after this call - re-read the slide before addressing the promoted shapes.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' } },
+      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: ['number', 'string'] } },
       required: ['slideIndex', 'shapeIndex'],
+    },
+  },
+  {
+    name: 'group_element',
+    description:
+      'Groups two or more top-level shapes on a slide into a single group shape. shapeIndexes is an array of 0-based indices (as shown by read_slide). ' +
+      'Every other shape\'s index on the slide shifts afterward - re-read the slide before addressing another shape by index in the same run. Use ungroup_element to reverse it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' },
+        shapeIndexes: { type: 'array', items: { type: 'number' }, description: 'Two or more distinct 0-based top-level shape indices.' },
+        name: { type: 'string', description: 'Optional. Sets the new group\'s name, shown in read_slide/read_group - use a short, meaningful label (e.g. "Logo lockup").' },
+      },
+      required: ['slideIndex', 'shapeIndexes'],
     },
   },
   {
@@ -369,6 +405,7 @@ const MUTATION_TOOLS = [
         slideIndex: { type: 'number' }, rows: { type: 'number' }, cols: { type: 'number' },
         cells: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
         x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
+        name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_slide/read_group.' },
       },
       required: ['slideIndex', 'rows', 'cols'],
     },
@@ -421,6 +458,7 @@ const MUTATION_TOOLS = [
         categories: { type: 'array', items: { type: 'string' } },
         series: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, values: { type: 'array', items: { type: 'number' } } } } },
         x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
+        name: { type: 'string', description: 'Optional. Sets the chart shape\'s name, shown in read_slide/read_group.' },
       },
       required: ['slideIndex', 'kind', 'categories', 'series'],
     },
@@ -451,6 +489,7 @@ const MUTATION_TOOLS = [
         layout: { type: 'string', enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'] },
         items: { type: 'array', items: { type: 'string' } },
         x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
+        name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_slide/read_group.' },
       },
       required: ['slideIndex', 'layout', 'items'],
     },
@@ -518,6 +557,10 @@ const POWERPOINT_TOOL_DISPLAY = {
   read_slide: {
     label: { en: 'Read slide', he: 'קריאת שקופית' },
     description: { en: 'Reads the full text of every shape on one slide.', he: 'קורא את הטקסט המלא של כל האובייקטים בשקופית.' },
+  },
+  read_group: {
+    label: { en: 'Read group', he: 'קריאת קבוצה' },
+    description: { en: 'Lists the shapes inside a group, including nested groups.', he: 'מציג את האובייקטים בתוך קבוצה, כולל קבוצות מקוננות.' },
   },
   find_text: {
     label: { en: 'Search deck', he: 'חיפוש במצגת' },
@@ -607,6 +650,10 @@ const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'Ungroup shapes', he: 'פירוק קבוצת אובייקטים' },
     description: { en: 'Breaks a grouped shape into its individual parts.', he: 'מפרק אובייקט מקובץ לחלקיו הבודדים.' },
   },
+  group_element: {
+    label: { en: 'Group shapes', he: 'קיבוץ אובייקטים' },
+    description: { en: 'Combines two or more shapes into a single group.', he: 'מאחד שני אובייקטים או יותר לקבוצה אחת.' },
+  },
   add_table: {
     label: { en: 'Add table', he: 'הוספת טבלה' },
     description: { en: 'Adds a table to a slide, optionally pre-filled with data.', he: 'מוסיף טבלה לשקופית, ניתן למלא אותה מראש בנתונים.' },
@@ -667,7 +714,10 @@ startAddIn({
     'You can search every slide\'s text and speaker notes for a word or phrase with find_text (read-only), and replace every occurrence across the whole deck with replace_text - use find_text first to confirm what you\'re about to change and locate slideIndex/shapeIndex, instead of reading every slide via read_slide. ' +
     'You can edit text and shapes: set_element_text, set_element_style, set_element_transform, set_element_order (stacking/z-order - which shape is drawn in front of which), add_text_box, add_shape, and delete_element. ' +
     'For bulleted text, use set_element_text/add_text_box\'s bulleted:true/false parameter - NEVER type a literal "•"/"-"/"*" at the start of a line yourself. Many placeholders (e.g. a "Title and Content" layout\'s body) already render their own native bullet per paragraph, so typing one too produces two bullets per line. ' +
-    'You can manage slides and shape styling: add_slide, delete_slide, move_slide, duplicate_slide, set_element_fill, set_element_stroke, set_slide_background, and ungroup_element. ' +
+    'You can manage slides and shape styling: add_slide, delete_slide, move_slide, duplicate_slide, set_element_fill, set_element_stroke, and set_slide_background. ' +
+    'You can group and ungroup shapes: group_element (two or more shapeIndexes into one group) and ungroup_element. ' +
+    'read_slide shows a group as one line; call read_group to list its contents recursively. Each child line gives a dotted path (e.g. "3.1.0") that you can pass as shapeIndex to set_element_text/set_element_style/set_element_fill/set_element_stroke to edit that child in place. To move, resize, reorder, delete, or animate a shape inside a group, call ungroup_element on the top-level group first. ' +
+    'Whenever you add a shape (add_text_box, add_shape, add_table, add_chart, add_smartart) or create a group, pass a short, meaningful name so later read_slide/read_group output is self-explanatory. ' +
     'You can add and edit tables: add_table, edit_table_cell, edit_table_structure, and edit_table_style. ' +
     'You can create and edit charts: add_chart and edit_chart. ' +
     'You can add, read and edit SmartArt diagrams: add_smartart, read_smartart, edit_smartart. ' +
