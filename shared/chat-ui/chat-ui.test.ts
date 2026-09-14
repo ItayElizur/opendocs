@@ -53,6 +53,14 @@ describe('mountChatUI', () => {
     expect(root.querySelector('[data-mode="trackChanges"]')!.classList.contains('selected')).toBe(true)
   })
 
+  it('clicking outside the open mode menu closes it, same as the settings dropdown', () => {
+    const { root } = setup()
+    root.querySelector<HTMLButtonElement>('.ai-mode-btn')!.click()
+    expect(root.querySelector('#modeMenu')!.classList.contains('open')).toBe(true)
+    root.querySelector<HTMLTextAreaElement>('.ai-textarea')!.click()
+    expect(root.querySelector('#modeMenu')!.classList.contains('open')).toBe(false)
+  })
+
   it('settings only call onSettingsSave when Save is clicked, not on field input', () => {
     const { root, onSettingsSave } = setup()
     root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
@@ -646,6 +654,42 @@ describe('mountChatUI', () => {
     expect(onSettingsSave).toHaveBeenCalledWith(
       expect.objectContaining({ docSystemMessage: 'Always cite sources.', registeredTools: ['get_document_context', 'apply_commands'] }),
     )
+  })
+
+  it('clicking a theme option updates .active but does not call onSettingsSave until Save is clicked', () => {
+    const { root, onSettingsSave } = setup()
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(root.querySelector('[data-theme-choice="default"]')!.classList.contains('active')).toBe(true)
+
+    root.querySelector<HTMLButtonElement>('[data-theme-choice="dark"]')!.click()
+    expect(root.querySelector('[data-theme-choice="dark"]')!.classList.contains('active')).toBe(true)
+    expect(root.querySelector('[data-theme-choice="default"]')!.classList.contains('active')).toBe(false)
+    expect(onSettingsSave).not.toHaveBeenCalled()
+
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+    expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ theme: 'dark' }))
+  })
+
+  it('initialSettings.theme seeds the selected theme button on mount', () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    mountChatUI(root, {
+      onSend: vi.fn(), onModeChange: vi.fn(), onSettingsSave: vi.fn(), onNewChat: vi.fn(),
+      starters: [], onCollapseChange: vi.fn(),
+      initialSettings: { theme: 'light' },
+    })
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(root.querySelector('[data-theme-choice="light"]')!.classList.contains('active')).toBe(true)
+    expect(root.querySelector('[data-theme-choice="default"]')!.classList.contains('active')).toBe(false)
+  })
+
+  it('handle.setTheme sets/removes data-theme on the panel root', () => {
+    const { root, handle } = setup()
+    const dock = root.querySelector('.ai-dock')!
+    handle.setTheme('dark')
+    expect(dock.getAttribute('data-theme')).toBe('dark')
+    handle.setTheme('light')
+    expect(dock.hasAttribute('data-theme')).toBe(false)
   })
 
   it('a document guidelines message containing HTML renders as literal text (XSS guard), not markup', () => {
