@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Threading.Tasks;
 using OfficeAi.Shared;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
@@ -18,9 +19,9 @@ namespace OutlookAiAddIn
         {
         }
 
-        protected override ToolResult ExecuteTool(string name, JsonElement input)
+        protected override Task<ToolResult> ExecuteTool(string name, JsonElement input)
         {
-            return OutlookTools.Execute(GetChatId(), name, input);
+            return OutlookTools.ExecuteAsync(GetChatId(), name, input);
         }
 
         protected override string GetChatId()

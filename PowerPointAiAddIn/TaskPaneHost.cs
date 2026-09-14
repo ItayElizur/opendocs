@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Threading.Tasks;
 using OfficeAi.Shared;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 
@@ -22,9 +23,9 @@ namespace PowerPointAiAddIn
             _hwnd = hwnd;
         }
 
-        protected override ToolResult ExecuteTool(string name, JsonElement input)
+        protected override Task<ToolResult> ExecuteTool(string name, JsonElement input)
         {
-            return PowerPointTools.Execute(GetChatId(), name, input);
+            return Task.FromResult(PowerPointTools.Execute(GetChatId(), name, input));
         }
 
         protected override string GetChatId()

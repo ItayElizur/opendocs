@@ -1,0 +1,176 @@
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Threading.Tasks;
+using Ews = Microsoft.Exchange.WebServices.Data;
+
+namespace OutlookAiAddIn
+{
+    // The one non-COM call in the Outlook add-in. search_contacts resolves a
+    // name/email fragment through EWS ResolveName - a server-side Ambiguous Name
+    // Resolution over the mailbox's Contacts folder then the GAL, exactly what
+    // the native Address Book dialog does and what the mcp-outlook reference
+    // (account.protocol.resolve_names) does. It is deliberately NOT
+    // Microsoft.Office.Interop.Outlook: the COM object model cannot do a
+    // multi-result directory search, and EWS is plain HTTP with no STA affinity
+    // so the call runs off the UI thread (Task.Run) and never freezes Outlook.
+    //
+    // Auth is ExchangeService.UseDefaultCredentials (Windows Integrated Auth as
+    // the signed-in user) - the .NET equivalent of mcp-outlook's auth_type=sspi.
+    // No stored credentials, no impersonation. On-prem Exchange only.
+    //
+    // This file has no `using Microsoft.Office.Interop.Outlook`: the two
+    // namespaces collide on Contact, EmailAddress, Folder, Task, Item, ...
+    internal static class OutlookEws
+    {
+        private const int TimeoutMs = 15000;
+
+        static OutlookEws()
+        {
+            // EWS over HTTPS to on-prem Exchange fails with "The underlying connection
+            // was closed: An unexpected error occurred on a send" when the process's
+            // default security protocol doesn't offer TLS 1.2 - the .NET Framework
+            // default and the EWS Managed API 2.2 (2014) vintage can both leave it off.
+            // OR it in without disturbing anything already enabled.
+            try
+            {
+                ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            }
+            catch { }
+        }
+
+        // Resolved once per process. Written on the UI thread after the first
+        // successful discovery (the agent loop runs tool calls sequentially, so
+        // there is never a concurrent writer).
+        internal static Uri CachedUrl { get; set; }
+
+        private static bool AllowHttpsRedirection(string redirectionUrl)
+        {
+            return redirectionUrl != null &&
+                   redirectionUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static Ews.ExchangeService NewService(Uri url)
+        {
+            var svc = new Ews.ExchangeService(Ews.ExchangeVersion.Exchange2010_SP2)
+            {
+                UseDefaultCredentials = true, // do NOT also set Credentials
+                Timeout = TimeoutMs,
+                Url = url,
+            };
+            return svc;
+        }
+
+        // Autodiscover fallback for when Account.AutoDiscoverXml was empty or
+        // unparseable. Runs the AD SCP lookup + HTTP off the UI thread.
+        public static Task<Uri> DiscoverUrlAsync(string smtp)
+        {
+            return Task.Run(() =>
+            {
+                var svc = new Ews.ExchangeService(Ews.ExchangeVersion.Exchange2010_SP2)
+                {
+                    UseDefaultCredentials = true,
+                    Timeout = TimeoutMs,
+                };
+                svc.AutodiscoverUrl(smtp, AllowHttpsRedirection);
+                return svc.Url;
+            });
+        }
+
+        public static Task<IReadOnlyList<KeyValuePair<string, string>>> ResolveNamesAsync(Uri url, string query)
+        {
+            return Task.Run(() => ResolveNames(url, query));
+        }
+
+        private static IReadOnlyList<KeyValuePair<string, string>> ResolveNames(Uri url, string query)
+        {
+            var results = new List<KeyValuePair<string, string>>();
+
+            Ews.ExchangeService svc = NewService(url);
+            Ews.NameResolutionCollection col;
+            try
+            {
+                col = svc.ResolveName(query, Ews.ResolveNameSearchLocation.ContactsThenDirectory, true);
+            }
+            catch (Ews.ServiceResponseException)
+            {
+                // ErrorNameResolutionNoResults / NoMailbox surface here on some
+                // servers rather than as an empty collection - treat as "no matches".
+                return results;
+            }
+
+            foreach (Ews.NameResolution nr in col)
+            {
+                string email = SmtpFrom(nr);
+                if (string.IsNullOrEmpty(email)) continue; // mirror mcp-outlook: drop entries with no address
+
+                string name = DisplayNameFrom(nr, email);
+                results.Add(new KeyValuePair<string, string>(name, email));
+            }
+
+            return results;
+        }
+
+        private static string SmtpFrom(Ews.NameResolution nr)
+        {
+            Ews.EmailAddress mb = nr.Mailbox;
+            if (mb != null && !string.IsNullOrEmpty(mb.Address) && mb.Address.Contains("@") &&
+                (string.IsNullOrEmpty(mb.RoutingType) || mb.RoutingType.Equals("SMTP", StringComparison.OrdinalIgnoreCase)))
+            {
+                return mb.Address;
+            }
+
+            // GAL hits often carry an X500/legacyExchangeDN Address (RoutingType
+            // "EX", no "@"); fall back to the resolved contact's own addresses.
+            Ews.Contact contact = nr.Contact;
+            if (contact != null && contact.EmailAddresses != null)
+            {
+                foreach (Ews.EmailAddressKey key in new[]
+                {
+                    Ews.EmailAddressKey.EmailAddress1,
+                    Ews.EmailAddressKey.EmailAddress2,
+                    Ews.EmailAddressKey.EmailAddress3,
+                })
+                {
+                    Ews.EmailAddress ea;
+                    if (contact.EmailAddresses.TryGetValue(key, out ea) &&
+                        ea != null && !string.IsNullOrEmpty(ea.Address) && ea.Address.Contains("@"))
+                    {
+                        return ea.Address;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static string DisplayNameFrom(Ews.NameResolution nr, string emailFallback)
+        {
+            Ews.Contact contact = nr.Contact;
+            if (contact != null)
+            {
+                if (!string.IsNullOrEmpty(contact.DisplayName)) return contact.DisplayName;
+                string given = contact.GivenName ?? "";
+                string surname = contact.Surname ?? "";
+                string joined = (given + " " + surname).Trim();
+                if (joined.Length > 0) return joined;
+            }
+            if (nr.Mailbox != null && !string.IsNullOrEmpty(nr.Mailbox.Name)) return nr.Mailbox.Name;
+            return emailFallback;
+        }
+
+        // Timeouts surface inconsistently across EWS Managed API paths - as a
+        // bare TimeoutException, or a WebException(Timeout), or either wrapped in
+        // a ServiceRequestException. Walk the whole inner chain.
+        public static bool IsTimeout(Exception ex)
+        {
+            for (Exception e = ex; e != null; e = e.InnerException)
+            {
+                if (e is TimeoutException) return true;
+                var web = e as WebException;
+                if (web != null && web.Status == WebExceptionStatus.Timeout) return true;
+            }
+            return false;
+        }
+    }
+}
