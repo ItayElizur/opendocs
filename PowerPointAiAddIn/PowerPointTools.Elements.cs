@@ -399,6 +399,47 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = "Shape deleted.", Mutated = true, Summary = "delete_element" };
         }
 
+        // Shape.Duplicate() is a native in-place COM clone independent of
+        // Shape.Type - unlike copy_element/move_element (PowerPointTools.
+        // CrossSlide.cs), it needs no shape-kind dispatch at all and works
+        // uniformly for every kind, including groups/pictures/tables/charts/
+        // SmartArt. Positioning of the duplicate by Duplicate() itself is
+        // unverified, so this always computes the new position from the
+        // ORIGINAL shape's Left/Top, never from the duplicate's own
+        // post-Duplicate() position.
+        private static ToolResult DuplicateElement(JsonElement input)
+        {
+            PowerPoint.Shape shape = ResolveTopLevelShape(input, "duplicate_element");
+            PowerPoint.ShapeRange range = shape.Duplicate();
+            PowerPoint.Shape dup = range[1];
+
+            if (input.TryGetProperty("left", out var leftEl) || input.TryGetProperty("top", out var topEl))
+            {
+                dup.Left = input.TryGetProperty("left", out var l) ? (float)l.GetDouble() : shape.Left;
+                dup.Top = input.TryGetProperty("top", out var t) ? (float)t.GetDouble() : shape.Top;
+            }
+            else
+            {
+                float offsetX = input.TryGetProperty("offsetX", out var ox) ? (float)ox.GetDouble() : 12f;
+                float offsetY = input.TryGetProperty("offsetY", out var oy) ? (float)oy.GetDouble() : 12f;
+                dup.Left = shape.Left + offsetX;
+                dup.Top = shape.Top + offsetY;
+            }
+
+            string named = ApplyOptionalName(dup, input);
+            // ZOrderPosition, not slide.Shapes.Count - Duplicate()'s exact
+            // insertion point (end of collection vs. adjacent to the source)
+            // is unverified; ZOrderPosition is correct either way, same
+            // reasoning SetElementOrder/GroupElement already rely on.
+            int newShapeIndex = dup.ZOrderPosition - 1;
+            return new ToolResult
+            {
+                Output = "Shape duplicated" + (named != null ? " (\"" + named + "\")" : "") + " - new shape at shapeIndex " + newShapeIndex +
+                         ". Other shapes' indices on this slide may have shifted - re-read the slide (read_slide) before addressing another shape by index in the same run.",
+                Mutated = true,
+                Summary = "duplicate_element",
+            };
+        }
     }
 }
 
