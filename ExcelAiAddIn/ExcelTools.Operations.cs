@@ -34,6 +34,8 @@ namespace ExcelAiAddIn
             ["sort_range"] = new[] { "range", "byColumn", "order" },
             ["merge_cells"] = new[] { "range" },
             ["unmerge_cells"] = new[] { "range" },
+            ["copy_range"] = new[] { "sourceRange", "targetCell" },
+            ["move_range"] = new[] { "sourceRange", "targetCell" },
             ["set_row_height"] = new[] { "row", "heightPoints" },
             ["set_col_width"] = new[] { "column", "widthPx" },
             ["set_rows_hidden"] = new[] { "row", "hidden" },
@@ -78,7 +80,7 @@ namespace ExcelAiAddIn
         private static readonly string[] KnownOperationKinds =
         {
             "set_cell", "set_formula", "set_range", "clear_cell", "clear_range", "find_replace",
-            "format_range", "sort_range", "merge_cells", "unmerge_cells",
+            "format_range", "sort_range", "merge_cells", "unmerge_cells", "copy_range", "move_range",
             "set_row_height", "set_col_width", "set_rows_hidden", "set_cols_hidden", "set_freeze",
             "insert_rows", "delete_rows", "insert_cols", "delete_cols", "set_page_setup",
             "add_sheet", "delete_sheet", "duplicate_sheet", "set_sheet_hidden", "move_sheet",
@@ -165,6 +167,8 @@ namespace ExcelAiAddIn
                         case "unmerge_cells":
                             Sheet(op).Range[op.GetProperty("range").GetString()].UnMerge();
                             lines.AppendLine(kind + ": ok"); anyMutated = true; break;
+                        case "copy_range": { string detail = CopyOrMoveRange(op, cut: false); lines.AppendLine(kind + ": ok (" + detail + ")"); anyMutated = true; break; }
+                        case "move_range": { string detail = CopyOrMoveRange(op, cut: true); lines.AppendLine(kind + ": ok (" + detail + ")"); anyMutated = true; break; }
                         case "set_row_height": SetRowHeight(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "set_col_width": SetColWidth(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
                         case "set_rows_hidden": SetRowsHidden(op); lines.AppendLine(kind + ": ok"); anyMutated = true; break;
