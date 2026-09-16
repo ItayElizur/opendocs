@@ -46,6 +46,52 @@ namespace WordAiAddIn
         private static readonly HashSet<string> KnownParagraphStyleFields = new HashSet<string>
         { "align", "lineSpacing", "indentLeft", "indentRight", "indentFirstLine", "spaceBefore", "spaceAfter", "pageBreakBefore", "shadingFill", "borders" };
 
+        // Shared by UpdateTextStyle (parses these from JSON) and CopyFormatCmd
+        // (reads these live from a source paragraph's Font, no JSON round
+        // trip). Native-enum params, not the JSON-facing bool/string shapes,
+        // so a copy never loses fidelity a JSON-driven caller doesn't need
+        // anyway - e.g. `underline` can be any real WdUnderline style here,
+        // not just the true/false-&gt;Single/None the schema knows.
+        private static void ApplyTextStyle(
+            Word.Range range, bool? bold, bool? italic, Word.WdUnderline? underline, bool? strike,
+            float? sizePoints, string font, Word.WdColor? color, bool? superscript, bool? subscript,
+            Word.WdColorIndex? highlight)
+        {
+            if (bold.HasValue) range.Font.Bold = bold.Value ? 1 : 0;
+            if (italic.HasValue) range.Font.Italic = italic.Value ? 1 : 0;
+            if (underline.HasValue) range.Font.Underline = underline.Value;
+            if (strike.HasValue) range.Font.StrikeThrough = strike.Value ? 1 : 0;
+            if (sizePoints.HasValue) range.Font.Size = sizePoints.Value;
+            if (font != null) range.Font.Name = font;
+            if (color.HasValue) range.Font.Color = color.Value;
+            if (superscript.HasValue) range.Font.Superscript = superscript.Value ? 1 : 0;
+            if (subscript.HasValue) range.Font.Subscript = subscript.Value ? 1 : 0;
+            if (highlight.HasValue) range.HighlightColorIndex = highlight.Value;
+        }
+
+        // Shared by UpdateParagraphStyle and CopyFormatCmd - see ApplyTextStyle's
+        // comment above. Borders are deliberately NOT here - CopyFormatCmd
+        // copies them per-side (Top/Left/Bottom/Right) directly, since this
+        // method's all-on/all-off boolean shape is a disclosed simplification
+        // for WRITING, not something a READ of mixed border sides should be
+        // forced through.
+        private static void ApplyParagraphStyle(
+            Word.Paragraph p, Word.WdParagraphAlignment? align, float? lineSpacing, float? indentLeft,
+            float? indentRight, float? indentFirstLine, float? spaceBefore, float? spaceAfter,
+            bool? pageBreakBefore, Word.WdColor? shadingFill)
+        {
+            Word.ParagraphFormat fmt = p.Format;
+            if (align.HasValue) fmt.Alignment = align.Value;
+            if (lineSpacing.HasValue) fmt.LineSpacing = lineSpacing.Value;
+            if (indentLeft.HasValue) fmt.LeftIndent = indentLeft.Value;
+            if (indentRight.HasValue) fmt.RightIndent = indentRight.Value;
+            if (indentFirstLine.HasValue) fmt.FirstLineIndent = indentFirstLine.Value;
+            if (spaceBefore.HasValue) fmt.SpaceBefore = spaceBefore.Value;
+            if (spaceAfter.HasValue) fmt.SpaceAfter = spaceAfter.Value;
+            if (pageBreakBefore.HasValue) fmt.PageBreakBefore = pageBreakBefore.Value ? 1 : 0;
+            if (shadingFill.HasValue) p.Shading.BackgroundPatternColor = shadingFill.Value;
+        }
+
         private static void UpdateTextStyle(JsonElement cmd)
         {
             var matches = ResolveTargetParagraphs(cmd.GetProperty("target"));
@@ -62,39 +108,43 @@ namespace WordAiAddIn
             foreach (var (_, p) in matches)
             {
                 Word.Range range = p.Range;
-                if (fields.Contains("bold") && style.TryGetProperty("bold", out var bold))
-                    range.Font.Bold = bold.ValueKind == JsonValueKind.True ? 1 : 0;
-                if (fields.Contains("italic") && style.TryGetProperty("italic", out var italic))
-                    range.Font.Italic = italic.ValueKind == JsonValueKind.True ? 1 : 0;
-                if (fields.Contains("underline") && style.TryGetProperty("underline", out var underline))
-                    range.Font.Underline = underline.ValueKind == JsonValueKind.True ? Word.WdUnderline.wdUnderlineSingle : Word.WdUnderline.wdUnderlineNone;
-                if (fields.Contains("strike") && style.TryGetProperty("strike", out var strike))
-                    range.Font.StrikeThrough = strike.ValueKind == JsonValueKind.True ? 1 : 0;
-                if (fields.Contains("sizeHalfPoints") && style.TryGetProperty("sizeHalfPoints", out var size) && size.ValueKind == JsonValueKind.Number)
-                    range.Font.Size = (float)(size.GetDouble() / 2.0);
-                if (fields.Contains("font") && style.TryGetProperty("font", out var font) && font.ValueKind == JsonValueKind.String)
-                    range.Font.Name = font.GetString();
-                if (fields.Contains("color") && style.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
-                    range.Font.Color = (Word.WdColor)ColorUtil.HexToOle(color.GetString());
+                bool? bold = fields.Contains("bold") && style.TryGetProperty("bold", out var boldEl)
+                    ? boldEl.ValueKind == JsonValueKind.True : (bool?)null;
+                bool? italic = fields.Contains("italic") && style.TryGetProperty("italic", out var italicEl)
+                    ? italicEl.ValueKind == JsonValueKind.True : (bool?)null;
+                Word.WdUnderline? underline = fields.Contains("underline") && style.TryGetProperty("underline", out var underlineEl)
+                    ? (underlineEl.ValueKind == JsonValueKind.True ? Word.WdUnderline.wdUnderlineSingle : Word.WdUnderline.wdUnderlineNone)
+                    : (Word.WdUnderline?)null;
+                bool? strike = fields.Contains("strike") && style.TryGetProperty("strike", out var strikeEl)
+                    ? strikeEl.ValueKind == JsonValueKind.True : (bool?)null;
+                float? sizePoints = fields.Contains("sizeHalfPoints") && style.TryGetProperty("sizeHalfPoints", out var sizeEl) && sizeEl.ValueKind == JsonValueKind.Number
+                    ? (float)(sizeEl.GetDouble() / 2.0) : (float?)null;
+                string font = fields.Contains("font") && style.TryGetProperty("font", out var fontEl) && fontEl.ValueKind == JsonValueKind.String
+                    ? fontEl.GetString() : null;
+                Word.WdColor? color = fields.Contains("color") && style.TryGetProperty("color", out var colorEl) && colorEl.ValueKind == JsonValueKind.String
+                    ? (Word.WdColor)ColorUtil.HexToOle(colorEl.GetString()) : (Word.WdColor?)null;
+                bool? superscript = null, subscript = null;
                 if (fields.Contains("baselineOffset") && style.TryGetProperty("baselineOffset", out var baseline) && baseline.ValueKind == JsonValueKind.String)
                 {
                     string b = baseline.GetString();
-                    range.Font.Superscript = b == "SUPERSCRIPT" ? 1 : 0;
-                    range.Font.Subscript = b == "SUBSCRIPT" ? 1 : 0;
+                    superscript = b == "SUPERSCRIPT";
+                    subscript = b == "SUBSCRIPT";
                 }
                 if (fields.Contains("link") && style.TryGetProperty("link", out var link) && link.ValueKind == JsonValueKind.Object)
                 {
                     string url = link.GetProperty("url").GetString();
                     ActiveDoc.Hyperlinks.Add(range, url);
                 }
-                if (fields.Contains("highlight") && style.TryGetProperty("highlight", out var highlight) && highlight.ValueKind == JsonValueKind.String)
+                Word.WdColorIndex? highlight = null;
+                if (fields.Contains("highlight") && style.TryGetProperty("highlight", out var highlightEl) && highlightEl.ValueKind == JsonValueKind.String)
                 {
                     Word.WdColorIndex idx;
-                    if (!HighlightColors.TryGetValue(highlight.GetString(), out idx))
-                        throw new ArgumentException("updateTextStyle: unknown highlight color '" + highlight.GetString() +
+                    if (!HighlightColors.TryGetValue(highlightEl.GetString(), out idx))
+                        throw new ArgumentException("updateTextStyle: unknown highlight color '" + highlightEl.GetString() +
                                                     "'. Valid: " + string.Join(", ", HighlightColors.Keys) + ".");
-                    range.HighlightColorIndex = idx;
+                    highlight = idx;
                 }
+                ApplyTextStyle(range, bold, italic, underline, strike, sizePoints, font, color, superscript, subscript, highlight);
             }
         }
 
@@ -113,33 +163,35 @@ namespace WordAiAddIn
 
             foreach (var (_, p) in matches)
             {
-                Word.ParagraphFormat fmt = p.Format;
-                if (fields.Contains("align") && style.TryGetProperty("align", out var align) && align.ValueKind == JsonValueKind.String)
+                Word.WdParagraphAlignment? align = null;
+                if (fields.Contains("align") && style.TryGetProperty("align", out var alignEl) && alignEl.ValueKind == JsonValueKind.String)
                 {
-                    switch (align.GetString())
+                    switch (alignEl.GetString())
                     {
-                        case "left": fmt.Alignment = Word.WdParagraphAlignment.wdAlignParagraphLeft; break;
-                        case "center": fmt.Alignment = Word.WdParagraphAlignment.wdAlignParagraphCenter; break;
-                        case "right": fmt.Alignment = Word.WdParagraphAlignment.wdAlignParagraphRight; break;
-                        case "justify": fmt.Alignment = Word.WdParagraphAlignment.wdAlignParagraphJustify; break;
+                        case "left": align = Word.WdParagraphAlignment.wdAlignParagraphLeft; break;
+                        case "center": align = Word.WdParagraphAlignment.wdAlignParagraphCenter; break;
+                        case "right": align = Word.WdParagraphAlignment.wdAlignParagraphRight; break;
+                        case "justify": align = Word.WdParagraphAlignment.wdAlignParagraphJustify; break;
                     }
                 }
-                if (fields.Contains("lineSpacing") && style.TryGetProperty("lineSpacing", out var ls) && ls.ValueKind == JsonValueKind.Number)
-                    fmt.LineSpacing = (float)ls.GetDouble();
-                if (fields.Contains("indentLeft") && style.TryGetProperty("indentLeft", out var il) && il.ValueKind == JsonValueKind.Number)
-                    fmt.LeftIndent = (float)il.GetDouble();
-                if (fields.Contains("indentRight") && style.TryGetProperty("indentRight", out var ir) && ir.ValueKind == JsonValueKind.Number)
-                    fmt.RightIndent = (float)ir.GetDouble();
-                if (fields.Contains("indentFirstLine") && style.TryGetProperty("indentFirstLine", out var ifl) && ifl.ValueKind == JsonValueKind.Number)
-                    fmt.FirstLineIndent = (float)ifl.GetDouble();
-                if (fields.Contains("spaceBefore") && style.TryGetProperty("spaceBefore", out var sb) && sb.ValueKind == JsonValueKind.Number)
-                    fmt.SpaceBefore = (float)sb.GetDouble();
-                if (fields.Contains("spaceAfter") && style.TryGetProperty("spaceAfter", out var sa) && sa.ValueKind == JsonValueKind.Number)
-                    fmt.SpaceAfter = (float)sa.GetDouble();
-                if (fields.Contains("pageBreakBefore") && style.TryGetProperty("pageBreakBefore", out var pbb))
-                    fmt.PageBreakBefore = pbb.ValueKind == JsonValueKind.True ? 1 : 0;
-                if (fields.Contains("shadingFill") && style.TryGetProperty("shadingFill", out var shading) && shading.ValueKind == JsonValueKind.String)
-                    p.Shading.BackgroundPatternColor = (Word.WdColor)ColorUtil.HexToOle(shading.GetString());
+                float? lineSpacing = fields.Contains("lineSpacing") && style.TryGetProperty("lineSpacing", out var ls) && ls.ValueKind == JsonValueKind.Number
+                    ? (float)ls.GetDouble() : (float?)null;
+                float? indentLeft = fields.Contains("indentLeft") && style.TryGetProperty("indentLeft", out var il) && il.ValueKind == JsonValueKind.Number
+                    ? (float)il.GetDouble() : (float?)null;
+                float? indentRight = fields.Contains("indentRight") && style.TryGetProperty("indentRight", out var ir) && ir.ValueKind == JsonValueKind.Number
+                    ? (float)ir.GetDouble() : (float?)null;
+                float? indentFirstLine = fields.Contains("indentFirstLine") && style.TryGetProperty("indentFirstLine", out var ifl) && ifl.ValueKind == JsonValueKind.Number
+                    ? (float)ifl.GetDouble() : (float?)null;
+                float? spaceBefore = fields.Contains("spaceBefore") && style.TryGetProperty("spaceBefore", out var sb) && sb.ValueKind == JsonValueKind.Number
+                    ? (float)sb.GetDouble() : (float?)null;
+                float? spaceAfter = fields.Contains("spaceAfter") && style.TryGetProperty("spaceAfter", out var sa) && sa.ValueKind == JsonValueKind.Number
+                    ? (float)sa.GetDouble() : (float?)null;
+                bool? pageBreakBefore = fields.Contains("pageBreakBefore") && style.TryGetProperty("pageBreakBefore", out var pbb)
+                    ? pbb.ValueKind == JsonValueKind.True : (bool?)null;
+                Word.WdColor? shadingFill = fields.Contains("shadingFill") && style.TryGetProperty("shadingFill", out var shading) && shading.ValueKind == JsonValueKind.String
+                    ? (Word.WdColor)ColorUtil.HexToOle(shading.GetString()) : (Word.WdColor?)null;
+                ApplyParagraphStyle(p, align, lineSpacing, indentLeft, indentRight, indentFirstLine, spaceBefore, spaceAfter, pageBreakBefore, shadingFill);
+
                 if (fields.Contains("borders") && style.TryGetProperty("borders", out var borders))
                 {
                     bool on = borders.ValueKind == JsonValueKind.True;
@@ -148,6 +200,91 @@ namespace WordAiAddIn
                         border.LineStyle = on ? Word.WdLineStyle.wdLineStyleSingle : Word.WdLineStyle.wdLineStyleNone;
                     }
                 }
+            }
+        }
+
+        // Format painter: copies ALL of sourceBlockIndex's character (Font)
+        // and paragraph (ParagraphFormat/Shading/4-side Borders) formatting
+        // onto every paragraph matched by `target`, atomically. Whole-
+        // paragraph granularity only - no sub-paragraph text-run targeting.
+        // Hyperlinks are deliberately never copied (real Word Format Painter
+        // doesn't carry them either - a hyperlink is a document part, not a
+        // font/paragraph attribute).
+        private static void CopyFormatCmd(JsonElement cmd)
+        {
+            int sourceBlockIndex = cmd.GetProperty("sourceBlockIndex").GetInt32();
+            Word.Paragraphs paragraphs = ActiveDoc.Paragraphs;
+            int count = paragraphs.Count;
+            if (sourceBlockIndex < 0 || sourceBlockIndex >= count)
+                throw new ArgumentOutOfRangeException("sourceBlockIndex",
+                    "copyFormat: sourceBlockIndex must be between 0 and " + (count - 1) + " (" + count + " paragraph(s) in the document).");
+
+            Word.Paragraph source = paragraphs[sourceBlockIndex + 1];
+            Word.Range srcRange = source.Range;
+            Word.ParagraphFormat srcFmt = source.Format;
+
+            // One read, one consistent snapshot, applied identically to every
+            // target below - the atomicity guarantee. NOTE: a source range
+            // spanning non-uniform character formatting (e.g. half-bold) can
+            // return Word's "mixed value" sentinel for some of these
+            // properties rather than a real value - unverified against real
+            // Word from this codebase (see the plan's Risks section); this
+            // reads the raw live values without a mixed-value guard for now.
+            bool bold = srcRange.Font.Bold == -1;
+            bool italic = srcRange.Font.Italic == -1;
+            Word.WdUnderline underline = srcRange.Font.Underline;
+            bool strike = srcRange.Font.StrikeThrough == -1;
+            float sizePoints = srcRange.Font.Size;
+            string font = srcRange.Font.Name;
+            Word.WdColor color = srcRange.Font.Color;
+            bool superscript = srcRange.Font.Superscript == -1;
+            bool subscript = srcRange.Font.Subscript == -1;
+            Word.WdColorIndex highlight = srcRange.HighlightColorIndex;
+
+            Word.WdParagraphAlignment align = srcFmt.Alignment;
+            float lineSpacing = srcFmt.LineSpacing;
+            float indentLeft = srcFmt.LeftIndent;
+            float indentRight = srcFmt.RightIndent;
+            float indentFirstLine = srcFmt.FirstLineIndent;
+            float spaceBefore = srcFmt.SpaceBefore;
+            float spaceAfter = srcFmt.SpaceAfter;
+            bool pageBreakBefore = srcFmt.PageBreakBefore == -1;
+            Word.WdColor shadingFill = source.Shading.BackgroundPatternColor;
+
+            // Explicit 4-named-side copy - NOT a foreach over p.Borders (that
+            // collection's all-on/all-off write-path shape, used by
+            // UpdateParagraphStyle above, would misrepresent a paragraph with
+            // mixed border sides if reused for a read). Mirrors PP-23's table-
+            // border fix: only Top/Left/Bottom/Right, never the diagonal
+            // entries.
+            Word.WdLineStyle topStyle = source.Borders[Word.WdBorderType.wdBorderTop].LineStyle;
+            Word.WdColor topColor = source.Borders[Word.WdBorderType.wdBorderTop].Color;
+            Word.WdLineStyle leftStyle = source.Borders[Word.WdBorderType.wdBorderLeft].LineStyle;
+            Word.WdColor leftColor = source.Borders[Word.WdBorderType.wdBorderLeft].Color;
+            Word.WdLineStyle bottomStyle = source.Borders[Word.WdBorderType.wdBorderBottom].LineStyle;
+            Word.WdColor bottomColor = source.Borders[Word.WdBorderType.wdBorderBottom].Color;
+            Word.WdLineStyle rightStyle = source.Borders[Word.WdBorderType.wdBorderRight].LineStyle;
+            Word.WdColor rightColor = source.Borders[Word.WdBorderType.wdBorderRight].Color;
+
+            var targets = ResolveTargetParagraphs(cmd.GetProperty("target"));
+            if (targets.Count == 0)
+            {
+                throw new InvalidOperationException("copyFormat: no paragraphs matched target.");
+            }
+
+            foreach (var (_, p) in targets)
+            {
+                ApplyTextStyle(p.Range, bold, italic, underline, strike, sizePoints, font, color, superscript, subscript, highlight);
+                ApplyParagraphStyle(p, align, lineSpacing, indentLeft, indentRight, indentFirstLine, spaceBefore, spaceAfter, pageBreakBefore, shadingFill);
+
+                p.Borders[Word.WdBorderType.wdBorderTop].LineStyle = topStyle;
+                if (topStyle != Word.WdLineStyle.wdLineStyleNone) p.Borders[Word.WdBorderType.wdBorderTop].Color = topColor;
+                p.Borders[Word.WdBorderType.wdBorderLeft].LineStyle = leftStyle;
+                if (leftStyle != Word.WdLineStyle.wdLineStyleNone) p.Borders[Word.WdBorderType.wdBorderLeft].Color = leftColor;
+                p.Borders[Word.WdBorderType.wdBorderBottom].LineStyle = bottomStyle;
+                if (bottomStyle != Word.WdLineStyle.wdLineStyleNone) p.Borders[Word.WdBorderType.wdBorderBottom].Color = bottomColor;
+                p.Borders[Word.WdBorderType.wdBorderRight].LineStyle = rightStyle;
+                if (rightStyle != Word.WdLineStyle.wdLineStyleNone) p.Borders[Word.WdBorderType.wdBorderRight].Color = rightColor;
             }
         }
 
