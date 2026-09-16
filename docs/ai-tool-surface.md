@@ -354,7 +354,7 @@ or PowerPoint chart tools).
 
 ## PowerPoint (`PowerPointAiAddIn/PowerPointTools.cs`)
 
-> **Stale as of PP-24 (2026-08-24):** this section predates PP-19 through PP-24 and undercounts the tool list (now 31: the table below plus `delete_slide`/`move_slide`/`duplicate_slide` from PP-19, and `set_slide_layout`/`set_slide_transition`/`add_animation`/`read_animations`/`edit_animation` from PP-24 — slide layout, transitions, and shape animations, none of which existed when this doc was written). Not rewritten line-by-line here; see `docs/superpowers/plans/2026-08-24-pp24-powerpoint-layout-transitions-animations.md` and `docs/superpowers/plans/STATUS.md` for the current, accurate state.
+> **Stale as of PP-24 (2026-08-24):** this section predates PP-19 through PP-24 and undercounts the tool list (now 35: the table below plus `delete_slide`/`move_slide`/`duplicate_slide` from PP-19, `set_slide_layout`/`set_slide_transition`/`add_animation`/`read_animations`/`edit_animation` from PP-24, and `duplicate_element`/`copy_element`/`move_element`/`copy_element_style` — same-slide shape duplication, cross-slide shape copy/move via property-based reconstruction (no clipboard; text boxes/autoshapes/tables/charts/SmartArt only), and a shape-level format painter). Not rewritten line-by-line here; see `docs/superpowers/plans/2026-08-24-pp24-powerpoint-layout-transitions-animations.md`, this plan's own doc, and `docs/superpowers/plans/STATUS.md` for the current, accurate state.
 
 ### Tools (23 total, all genuinely implemented) — pre-PP-19/PP-24 snapshot, see note above
 
