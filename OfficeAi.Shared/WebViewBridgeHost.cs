@@ -111,7 +111,7 @@ namespace OfficeAi.Shared
                 // silently served stale from cache indefinitely. Force every
                 // request to this virtual host to bypass cache and
                 // revalidate, matching what a browser's hard-refresh does.
-                _webView.CoreWebView2.AddWebResourceRequestedFilter("https://appassets.local/*", CoreWebView2WebResourceContext.All);
+                _webView.CoreWebView2.AddWebResourceRequestedFilter("http://appassets.local/*", CoreWebView2WebResourceContext.All);
                 _webView.CoreWebView2.WebResourceRequested += (sender, args) =>
                 {
                     args.Request.Headers.SetHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -121,7 +121,21 @@ namespace OfficeAi.Shared
                 _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
                 _webView.CoreWebView2.ServerCertificateErrorDetected += OnServerCertificateErrorDetected;
 
-                _webView.Source = new Uri("https://appassets.local/index.html");
+                // http, not https: appassets.local serves local files only (no
+                // real network transport), so the scheme is a free choice - and
+                // an insecure page fetching an insecure resource is not mixed
+                // content, unlike a secure page doing the same. Without this, a
+                // user-configured remote LLM endpoint reachable only over plain
+                // HTTP gets silently blocked by Chromium as mixed content
+                // before the request ever leaves the process (confirmed via
+                // WebView2 DevTools: "Mixed Content: ... was loaded over
+                // HTTPS, but requested an insecure resource"). Fetching an
+                // HTTPS endpoint from this now-insecure origin is unaffected -
+                // mixed content is one-directional. The trade-off is
+                // crypto.randomUUID() (secure-context-gated) - see
+                // agent-core/id.ts's randomId() fallback, used everywhere this
+                // codebase previously called crypto.randomUUID() directly.
+                _webView.Source = new Uri("http://appassets.local/index.html");
                 _setStatus("ready");
             }
             catch (Exception ex)
