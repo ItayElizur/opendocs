@@ -111,6 +111,11 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <!-- search_contacts only: EWS ResolveName (server-side ANR over Contacts + GAL),
+         the one non-COM call in the Outlook add-in. 2.2.0 is the last official
+         release; on-prem Exchange speaks the same EWS SOAP, and it has no
+         transitive NuGet dependencies. See OutlookEws.cs / docs/ai-tool-surface.md. -->
+    <PackageReference Include="Microsoft.Exchange.WebServices" Version="2.2.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -130,6 +135,9 @@
       <SubType>UserControl</SubType>
     </Compile>
     <Compile Include="OutlookTools.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="OutlookEws.cs">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="OutlookTools.Mail.cs">

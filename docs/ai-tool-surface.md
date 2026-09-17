@@ -419,6 +419,8 @@ index otherwise.
 > COM object model allows — but this add-in drives the **already-running, already-
 > authenticated desktop Outlook client** via `Microsoft.Office.Interop.Outlook`, not
 > EWS. There is no `Namespace`/credential setup; it acts as the signed-in user.
+> **One exception:** `search_contacts` makes a single EWS call (see below) — the COM
+> object model cannot do a multi-result directory search.
 
 ### Shape of the integration (differs from Word/Excel/PowerPoint)
 
@@ -455,7 +457,24 @@ index otherwise.
   Word-search incident): `list_*` use `Folder.GetTable` (an in-memory rowset, no
   per-item COM object); `search_emails` uses `Items.Sort` → `Items.Restrict("@SQL=" + DASL)`;
   a capped linear scan is a fallback only when `Restrict` rejects the filter. The
-  DASL builder is pure and unit-tested (`OfficeAi.Shared/OutlookDasl.cs`).
+  DASL builder is pure and unit-tested (`OfficeAi.Shared/OutlookDasl.cs`). `search_contacts`
+  is the deliberate, documented exception: server-side EWS ANR (`ResolveName`), not a COM
+  scan — see the EWS carve-out below.
+- **`search_contacts` is the one EWS call.** Every other Outlook tool is pure
+  `Microsoft.Office.Interop.Outlook` COM against the running client. Contact resolution
+  calls **EWS `ResolveName(query, ContactsThenDirectory, returnContactDetails: true)`**
+  (EWS Managed API 2.2, `Microsoft.Exchange.WebServices` 2.2.0) with
+  `ExchangeService.UseDefaultCredentials` (Windows Integrated Auth as the signed-in user —
+  the .NET equivalent of `mcp-outlook`'s `auth_type=sspi`; no stored credentials). Endpoint
+  is parsed from the cached `Outlook.Account.AutoDiscoverXml` (`<EwsUrl>`/`<ASUrl>`, `EXCH`
+  preferred over `EXPR`; pure parser `OfficeAi.Shared/EwsAutodiscoverXml.cs`), falling back
+  to `ExchangeService.AutodiscoverUrl`, then cached in a process-static `Uri`. The call
+  runs off the UI thread (`await Task.Run`, `svc.Timeout` 15 s) so Outlook stays
+  responsive. **On-prem Exchange only.** EWS unreachable / SSPI failure / endpoint not
+  found / timeout → a clear `IsError` result, never a silent COM fallback. This is also
+  the pilot for async tool execution — the shared `ToolExecutor` delegate is now
+  `Task<ToolResult>`-returning (`WebViewBridgeHost.OnWebMessageReceived` is `async`); every
+  other tool in all four add-ins is still synchronous, wrapped in `Task.FromResult`.
 
 ### Read tools (10 — always allowed, never gated)
 
@@ -466,7 +485,7 @@ index otherwise.
 | `get_email` | Full `Body` (≤ 40k), To/CC via `Recipient.Type`, `ConversationID`/`ConversationTopic`, importance, unread, and an `attachments` array — `{index (1-based), name, type (byValue/embeddedItem/ole/reference), size}` — feed the index to `get_attachment`. |
 | `get_attachment` | `Attachment.SaveAsFile` into `%LOCALAPPDATA%\OutlookAiAddIn\Attachments\`; returns the path. `extracted_text` (≤ 40k) is populated **only** for text-family extensions (`.txt .csv .tsv .md .json .xml .log`, `.html` tag-stripped) and OpenXML (`.docx .xlsx .pptx`), via the swappable `OfficeAi.Shared/AttachmentText/` module (`DocumentFormat.OpenXml` 2.20.0). **No PDF, no images, no vision** — those return the path + type only. `olOLE` throws (rejected); `olByReference` has no data (rejected); `olEmbeddedItem` saves as `.msg`. |
 | `list_folders` | Recursive walk of every store's `Folders`, mail folders only (`DefaultItemType == olMailItem`), with item + unread counts; capped ~800 / depth 8. |
-| `search_contacts` | `Namespace.CreateRecipient(query).Resolve()` (GAL / configured address books) **+ every contact folder in every store** — `Namespace.Folders` is walked recursively for `DefaultItemType == olContactItem` (custom folders, shared mailboxes, subfolders; capped ~60 folders / depth 8), each queried server-side via `Items.Restrict` on a DASL matching fileAs / email1–3 / givenName / sn. Merged and deduped by email (falls back to name for email-less contacts). Optional `folder` arg narrows to one named contact folder and skips the GAL. |
+| `search_contacts` | **EWS `ResolveName` over Contacts then GAL** (server-side ANR), run off the UI thread via EWS Managed API 2.2 with `UseDefaultCredentials`. Endpoint discovery: `Account.AutoDiscoverXml` → `AutodiscoverUrl` → process-static `Uri` cache. Each `NameResolution` mapped to `(name, email)` — GAL X500/`EX` addresses fall back to the resolved contact's own `EmailAddress1..3`; entries with no `@` address are dropped (mirrors `mcp-outlook`). Deduped by lowercased address (name fallback), capped at `limit` (default 10). Pure helpers `EwsAutodiscoverXml.ParseEwsUrl` + `ContactSearchFormat.Format` are unit-tested. **No `folder`/scope arg.** On-prem Exchange only; unreachable / auth failure / no endpoint / 15 s timeout → a specific `IsError` message, no COM fallback. (The pre-2026-09 recursive multi-store contact-folder crawl froze then crashed Outlook — removed.) |
 | `list_events` | `Items.Sort("[Start]")` → `Items.IncludeRecurrences = true` → `Items.Restrict("[Start] <= end AND [End] >= start")` — **this order is load-bearing** and rules out `GetTable`. Recurring instances share the master `event_id`; each row carries its own `start` to disambiguate. Args: `start_date` (today), `end_date` (+7d), `limit` (50). |
 | `get_event` | `Body` (≤ 40k), `RequiredAttendees`/`OptionalAttendees`, organizer, response status, recurring flag. |
 | `find_meeting_slots` | `Recipient.FreeBusy(anchor, 30, true)` — a per-30-min status string — for `Namespace.CurrentUser` + each resolved attendee; then `OfficeAi.Shared.MeetingSlots.Rank` (pure, unit-tested) slides a `duration_minutes` window in 30-min steps across each work day's `[start_hour, end_hour)` and scores each candidate by how many people are free (so a best partial match still comes back). Work week is Sun–Thu (mirrors mcp-outlook); default range is today→Thursday (or next week if today is Fri/Sat), max 28 days. Times past the returned free/busy window are assumed free. Args: `attendees` (req), `duration_minutes` (req), `start_date`, `end_date`, `start_hour` (9), `end_hour` (18), `limit` (5). |
@@ -543,6 +562,16 @@ assumptions (`olEmbeddeditem` casing, `AppointmentItem.Respond` argument types,
 live. Early manual testing via the mock server has exercised `list_emails`,
 `search_emails`, `list_folders`, `list_events`, and `list_tasks` against a real
 mailbox successfully.
+
+`search_contacts`'s EWS path (added 2026-09) is likewise **compiled but not confirmed
+against a live on-prem Exchange**: the `ResolveName` call and its `NameResolution`
+mapping, `ExchangeService.UseDefaultCredentials` (Windows Integrated Auth to on-prem
+CAS), `Account.AutoDiscoverXml` shape / `EwsAutodiscoverXml.ParseEwsUrl`, the
+`AutodiscoverUrl` fallback, and the off-thread `Task.Run` actually keeping Outlook
+responsive during the call. The async delegate refactor (`ToolExecutor` →
+`Task<ToolResult>`, `async void OnWebMessageReceived`) builds clean for all four
+add-ins; a runtime smoke of one tool per app confirms nothing regressed is still
+pending.
 
 ---
 

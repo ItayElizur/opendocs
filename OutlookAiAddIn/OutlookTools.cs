@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
+using System.Threading.Tasks;
 using OfficeAi.Shared;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
@@ -32,7 +33,7 @@ namespace OutlookAiAddIn
             "list_events", "get_event", "list_tasks", "get_attachment", "find_meeting_slots",
         };
 
-        public static ToolResult Execute(string mbxKey, string name, JsonElement input)
+        public static async Task<ToolResult> ExecuteAsync(string mbxKey, string name, JsonElement input)
         {
             try
             {
@@ -54,7 +55,7 @@ namespace OutlookAiAddIn
                     case "search_emails": return SearchEmails(input);
                     case "get_email": return GetEmail(input);
                     case "list_folders": return ListFolders(input);
-                    case "search_contacts": return SearchContacts(input);
+                    case "search_contacts": return await SearchContactsAsync(input);
                     case "list_events": return ListEvents(input);
                     case "get_event": return GetEvent(input);
                     case "find_meeting_slots": return FindMeetingSlots(input);
