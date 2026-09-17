@@ -1,4 +1,5 @@
 import type { ToolExecution } from '@genoffice/agent-core'
+import { randomId } from '@genoffice/agent-core'
 
 // WebView2 <-> .NET WebMessage bridge (chrome.webview.postMessage <->
 // CoreWebView2.PostWebMessageAsJson). This is the ONLY file in the app-shell
@@ -179,7 +180,7 @@ export function persistMessage(role: 'user' | 'assistant', text: string): void {
 }
 
 export function callDotNetTool(toolName: string, input: Record<string, unknown>): Promise<ToolExecution> {
-  const requestId = crypto.randomUUID()
+  const requestId = randomId()
   return new Promise((resolve) => {
     pendingToolCalls.set(requestId, resolve)
     const msg: ToolCallMessage = { kind: 'tool-call', requestId, toolName, input }
