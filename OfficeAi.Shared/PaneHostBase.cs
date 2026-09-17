@@ -185,6 +185,11 @@ namespace OfficeAi.Shared
                         : "";
                     DocSettingsStore.Save(_appDataFolderName, GetChatId(), new DocSettings { SystemMessage = systemMessage });
                     break;
+                // One-shot: Office's theme is read once when the pane boots,
+                // never re-checked afterward (by design - see OfficeTheme.cs).
+                case "load-theme":
+                    PostMessage(new { kind = "office-theme", theme = OfficeTheme.ReadEffectiveTheme() });
+                    break;
             }
         }
     }
