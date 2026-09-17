@@ -172,6 +172,10 @@
       <SubType>Code</SubType>
       <DependentUpon>OutlookTools.cs</DependentUpon>
     </Compile>
+    <Compile Include="OutlookTools.Categories.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>OutlookTools.cs</DependentUpon>
+    </Compile>
     <Compile Include="Ribbon.cs">
       <SubType>Code</SubType>
     </Compile>
