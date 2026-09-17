@@ -334,7 +334,10 @@ charts, table, pivot, data — 51 distinct named kinds across those groups) has 
 handler in the `ProposeOperations` switch. This directly contradicts the now-retired
 `tool-surface-todo.md`'s "9 of 65 implemented" claim — that count was from an earlier
 snapshot; the current source is functionally complete against genoffice's named op
-list.
+list. The switch now has **53** kinds total: the 51 above, plus `copy_range`/
+`move_range` (arbitrary-block relocation via `Range.Copy`/`Range.Cut`), a superset
+addition beyond genoffice's own list — genoffice has no equivalent named kind for
+duplicating or relocating an arbitrary rectangular range.
 
 Where officeoffice's version is **narrower** than genoffice's:
 
