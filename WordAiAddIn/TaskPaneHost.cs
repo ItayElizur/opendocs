@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Threading.Tasks;
 using OfficeAi.Shared;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -27,9 +28,9 @@ namespace WordAiAddIn
             _hwnd = hwnd;
         }
 
-        protected override ToolResult ExecuteTool(string name, JsonElement input)
+        protected override Task<ToolResult> ExecuteTool(string name, JsonElement input)
         {
-            return WordTools.Execute(GetChatId(), name, input);
+            return Task.FromResult(WordTools.Execute(GetChatId(), name, input));
         }
 
         protected override string GetChatId()

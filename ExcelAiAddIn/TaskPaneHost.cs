@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Threading.Tasks;
 using OfficeAi.Shared;
 using Excel = Microsoft.Office.Interop.Excel;
 
@@ -21,9 +22,9 @@ namespace ExcelAiAddIn
             _hwnd = hwnd;
         }
 
-        protected override ToolResult ExecuteTool(string name, JsonElement input)
+        protected override Task<ToolResult> ExecuteTool(string name, JsonElement input)
         {
-            return ExcelTools.Execute(GetChatId(), name, input);
+            return Task.FromResult(ExcelTools.Execute(GetChatId(), name, input));
         }
 
         protected override string GetChatId()

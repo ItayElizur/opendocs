@@ -228,6 +228,30 @@ const WORD_COMMAND_SCHEMAS = [
     },
     required: ['kind', 'afterBlockIndex'],
   },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'copyBlocks' },
+      target: TARGET_SCHEMA,
+      afterBlockIndex: {
+        type: 'number',
+        description: "0-based paragraph index to insert the copies after; -1 = start of document. May be one of the copied paragraphs' own indices - duplicating a paragraph directly after itself is allowed, unlike moveBlocks.",
+      },
+    },
+    required: ['kind', 'target', 'afterBlockIndex'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'copyFormat' },
+      sourceBlockIndex: {
+        type: 'number',
+        description: "0-based paragraph index to copy ALL character and paragraph formatting FROM (Format Painter semantics - whole paragraph only, not sub-paragraph text runs). Does not copy hyperlinks.",
+      },
+      target: TARGET_SCHEMA,
+    },
+    required: ['kind', 'sourceBlockIndex', 'target'],
+  },
 ]
 
 const ALL_WORD_TOOLS = [
@@ -580,6 +604,7 @@ startAddIn({
     'create, read, or edit a native Word chart with labeled categories and named multi-series, create/read/edit native Word tables, and create/read/edit SmartArt diagrams. ' +
     'edit_chart REPLACES the whole categories/series dataset when given, so before an incremental change to an existing chart (e.g. removing or renaming one category), call read_chart first to see the current data and resend everything you are keeping. ' +
     'edit_table\'s insert_row/delete_row/insert_col/delete_col and edit_smartart\'s delete_node shift later row/column/node indices - re-read (read_table/read_smartart) before a second structural edit to the same table or diagram in the same run. ' +
+    'apply_commands\' copyBlocks duplicates one or more paragraphs elsewhere in the document without removing the originals (unlike moveBlocks, which relocates them), and copyFormat copies one paragraph\'s complete formatting onto one or more others in a single call - like Format Painter, whole paragraphs only, and it never copies hyperlinks. ' +
     "Your available tools depend on the user's current editing mode (Read only, Comment only, Track changes, or Full autonomy); only call tools that are currently offered to you. " +
     'If the user has selected text in the document, it will be included in your context as "Content selected by the user."',
   starters: [

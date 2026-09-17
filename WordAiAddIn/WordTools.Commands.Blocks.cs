@@ -87,6 +87,50 @@ namespace WordAiAddIn
             }
         }
 
+        // copy-equivalent of MoveBlocksCmd above - deliberately uses the
+        // richer Target matcher (not moveBlocks' raw blockIndexes shape),
+        // since copying never shifts source-side indices (nothing is
+        // deleted), so there's no reason to deny it deleteBlocks-style
+        // matching (e.g. containsText) instead of forcing a pre-resolved
+        // index list.
+        private static void CopyBlocksCmd(JsonElement cmd)
+        {
+            var matches = ResolveTargetParagraphs(cmd.GetProperty("target"));
+            if (matches.Count == 0)
+            {
+                throw new InvalidOperationException("copyBlocks: no paragraphs matched target.");
+            }
+
+            int afterBlockIndex = cmd.GetProperty("afterBlockIndex").GetInt32();
+            int count = ActiveDoc.Paragraphs.Count;
+            if (afterBlockIndex < -1 || afterBlockIndex >= count)
+            {
+                throw new ArgumentException("copyBlocks: afterBlockIndex out of range.");
+            }
+            // Deliberately no "afterBlockIndex cannot be one of the copied
+            // blocks" check (moveBlocks has one) - duplicating a paragraph
+            // directly after itself is a reasonable request, and nothing is
+            // ever invalidated by it since copying never deletes anything.
+
+            // ResolveTargetParagraphs already walks the document forward via
+            // its own enumerator, so `matches` comes back in ascending
+            // original-index order for free - no re-sort needed here (unlike
+            // moveBlocks/deleteBlocks, which sort a raw caller-supplied index
+            // array).
+            var captured = matches.Select(m => m.Paragraph.Range.WordOpenXML).ToList();
+
+            Word.Range insertionPoint = afterBlockIndex == -1
+                ? ActiveDoc.Range(0, 0)
+                : ActiveDoc.Paragraphs[afterBlockIndex + 1].Range;
+            insertionPoint.Collapse(afterBlockIndex == -1 ? Word.WdCollapseDirection.wdCollapseStart : Word.WdCollapseDirection.wdCollapseEnd);
+
+            foreach (string xml in captured)
+            {
+                insertionPoint.InsertXML(xml);
+                insertionPoint.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            }
+        }
+
         private static void UpdateImageProperties(JsonElement cmd)
         {
             int imageIndex = cmd.GetProperty("imageIndex").GetInt32(); // 0-based index into doc.InlineShapes

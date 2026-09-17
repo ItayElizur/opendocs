@@ -47,6 +47,13 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   sectionLanguage:      { en: 'Language', he: 'שפה' },
   sectionScope:         { en: 'Edit scope', he: 'היקף עריכה' },
   sectionTools:         { en: 'Tools', he: 'כלים' },
+  // Machine-authored Hebrew, pending native-speaker review (same flag as the
+  // existing FT-1/FT-2 strings above).
+  sectionTheme:         { en: 'Theme', he: 'ערכת נושא' },
+  themeNote:            { en: "Default follows Office's own theme setting, checked once when the panel opens.", he: 'ברירת המחדל עוקבת אחר ערכת הנושא של Office, נבדקת פעם אחת עם פתיחת החלונית.' },
+  themeLight:           { en: 'Light', he: 'בהיר' },
+  themeDark:            { en: 'Dark', he: 'כהה' },
+  themeDefault:         { en: 'Default', he: 'ברירת מחדל' },
   sectionDocMessage:    { en: 'Document guidelines', he: 'הנחיות למסמך' },
   scopeNote:            { en: 'Applies immediately and resets tool registration below.', he: 'חל מיידית ומאפס את רישום הכלים למטה.' },
   docMessagePlaceholder:{ en: 'Background and guidelines about this document - included at the start of every new conversation.', he: 'רקע והנחיות לגבי המסמך הזה - ייכלל בתחילת כל שיחה חדשה.' },
@@ -113,6 +120,8 @@ export interface SettingsSavePayload {
   baseUrl: string
   skipTlsVerify: boolean
   lang: Lang
+  /** 'light'/'dark'/'default', Save-gated like every other field here - see chat-ui.ts's Theme section. */
+  theme: 'light' | 'dark' | 'default'
   /** only present when saved from the full settings view (FT-1), not the quick dropdown */
   docSystemMessage?: string
   /** only present when saved from the full settings view (FT-1) - registration itself already took effect live via onToolRegistrationChange; this is an echo for symmetry with the other fields */
@@ -136,6 +145,8 @@ export interface InitialSettings {
   skipTlsVerify?: boolean
   /** per-provider saved values, so switching providers restores that provider's own key/model */
   providers?: Record<string, { apiKey: string; model: string; baseUrl?: string }>
+  /** Seeds the Theme section's selected button. Defaults to 'default' if omitted. */
+  theme?: 'light' | 'dark' | 'default'
 }
 
 export interface ChatUIOptions {
@@ -211,6 +222,13 @@ export interface ChatUIHandle {
   setDocSystemMessage(message: string): void
   /** Opens the full settings view programmatically (FT-1 Task 1) - the "More settings" button already does this; exposed for completeness. */
   openSettings(): void
+  /**
+   * Paints the already-resolved binary theme - the host (bootstrap.ts) has
+   * already turned a 'default' preference into a real light/dark answer
+   * using Office's theme before calling this; chat-ui.ts never resolves
+   * 'default' itself, since it has no access to Office's registry state.
+   */
+  setTheme(theme: 'light' | 'dark'): void
 }
 
 const MODES: EditingMode[] = ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy']
@@ -429,7 +447,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           </div>
           <div class="ai-field">
             <label data-t="settingsLanguage">Language</label>
-            <div class="ai-lang-toggle">
+            <div class="ai-lang-toggle" id="langToggle">
               <button data-lang="en" class="active">English</button>
               <button data-lang="he">עברית</button>
             </div>
@@ -444,6 +462,15 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       </div>
       <div class="ai-chat"></div>
       <div class="ai-settings-view" id="settingsView">
+        <div class="ai-settings-section">
+          <h4 data-t="sectionTheme">Theme</h4>
+          <p class="ai-settings-section-note" data-t="themeNote">Default follows Office's own theme setting, checked once when the panel opens.</p>
+          <div class="ai-lang-toggle" id="themeToggle">
+            <button data-theme-choice="light" data-t="themeLight">Light</button>
+            <button data-theme-choice="dark" data-t="themeDark">Dark</button>
+            <button class="active" data-theme-choice="default" data-t="themeDefault">Default</button>
+          </div>
+        </div>
         <div class="ai-settings-section">
           <h4 data-t="sectionScope">Edit scope</h4>
           <p class="ai-settings-section-note" data-t="scopeNote">Applies immediately and resets tool registration below.</p>
@@ -674,7 +701,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     dockEl.setAttribute('lang', l)
     dockEl.setAttribute('dir', l === 'he' ? 'rtl' : 'ltr')
     currentLang = l
-    root.querySelectorAll<HTMLButtonElement>('.ai-lang-toggle button').forEach((b) => {
+    root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((b) => {
       b.classList.toggle('active', b.dataset.lang === l)
     })
     applyStrings()
@@ -690,10 +717,38 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     }
   }
 
+  // Scoped to .ai-dock, never document.documentElement - same rule as
+  // setLang's dir/lang attributes above (docs/superpowers/plans/
+  // 2026-08-22-addin-ux-fixes.md). Light = absence of the attribute,
+  // matching how chat-ui.css is authored (only a [data-theme='dark']
+  // override block exists). Takes the already-resolved binary value only -
+  // resolving a 'default' preference against Office's real theme is the
+  // host's (bootstrap.ts's) job, not this component's.
+  function applyTheme(theme: 'light' | 'dark'): void {
+    if (theme === 'dark') dockEl.setAttribute('data-theme', 'dark')
+    else dockEl.removeAttribute('data-theme')
+  }
+
   applyStrings()
 
   let assistantBubble: HTMLDivElement | null = null
   let pendingLang: Lang = 'en'
+  let pendingTheme: 'light' | 'dark' | 'default' = 'default'
+  if (options.initialSettings?.theme) {
+    pendingTheme = options.initialSettings.theme
+    root.querySelectorAll<HTMLButtonElement>('#themeToggle button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.themeChoice === pendingTheme)
+    })
+  }
+  // Save-gated, exactly like the language toggle above: a click only updates
+  // the pending value and its own .active class - no visual effect, no
+  // callback, until the settings view's Save button is clicked (below).
+  root.querySelectorAll<HTMLButtonElement>('#themeToggle button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      pendingTheme = btn.dataset.themeChoice as 'light' | 'dark' | 'default'
+      root.querySelectorAll('#themeToggle button').forEach((b) => b.classList.toggle('active', b === btn))
+    })
+  })
 
   // "Thinking..." indicator: a shimmer label + pulsing dots. Shown whenever the
   // run is busy and no assistant text is currently streaming - so it stays up
@@ -838,10 +893,10 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // A second listener was briefly wired here too; removed - two listeners on
   // the same button each toggling .open cancelled each other out on every
   // click (confirmed repro: the button appeared completely unresponsive).
-  root.querySelectorAll<HTMLButtonElement>('.ai-lang-toggle button').forEach((btn) => {
+  root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((btn) => {
     btn.addEventListener('click', () => {
       pendingLang = btn.dataset.lang as 'en' | 'he'
-      root.querySelectorAll('.ai-lang-toggle button').forEach((b) => b.classList.toggle('active', b === btn))
+      root.querySelectorAll('#langToggle button').forEach((b) => b.classList.toggle('active', b === btn))
     })
   })
   root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.addEventListener('click', () => {
@@ -853,6 +908,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       model: root.querySelector<HTMLInputElement>('[data-field="model"]')!.value,
       skipTlsVerify: root.querySelector<HTMLInputElement>('[data-field="skipTlsVerify"]')!.checked,
       lang: pendingLang,
+      theme: pendingTheme,
     })
     settingsPanel.classList.remove('open')
   })
@@ -871,6 +927,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         model: root.querySelector<HTMLInputElement>('[data-field="model"]')!.value,
         skipTlsVerify: root.querySelector<HTMLInputElement>('[data-field="skipTlsVerify"]')!.checked,
         lang: pendingLang,
+        theme: pendingTheme,
       }
       testBtn.disabled = true
       testResultEl.className = 'ai-settings-test-result'
@@ -1070,6 +1127,16 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     settingsPanel.classList.remove('open')
   })
 
+  // Same outside-click-to-close behavior as the settings dropdown above -
+  // the mode menu had no equivalent handler (bug report: clicking outside it
+  // left it open, unlike Settings).
+  document.addEventListener('click', (e) => {
+    if (!modeMenu.classList.contains('open')) return
+    const target = e.target as Node
+    if (modeMenu.contains(target) || modeBtn.contains(target)) return
+    modeMenu.classList.remove('open')
+  })
+
   settingsViewSaveBtn.addEventListener('click', () => {
     setLang(pendingLang)
     options.onSettingsSave({
@@ -1079,6 +1146,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       model: root.querySelector<HTMLInputElement>('[data-field="model"]')!.value,
       skipTlsVerify: root.querySelector<HTMLInputElement>('[data-field="skipTlsVerify"]')!.checked,
       lang: pendingLang,
+      theme: pendingTheme,
       docSystemMessage: docMessageInput.value,
       registeredTools: registeredToolNames,
     })
@@ -1352,6 +1420,9 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     },
     openSettings() {
       openSettingsView()
+    },
+    setTheme(theme) {
+      applyTheme(theme)
     },
   }
 }

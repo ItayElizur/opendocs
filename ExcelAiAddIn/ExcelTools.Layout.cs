@@ -155,6 +155,49 @@ namespace ExcelAiAddIn
             }
         }
 
+        // copy_range/move_range share this one method (cut:false/true), same
+        // shape as InsertDeleteRows/InsertDeleteCols above. The 2000-cell cap
+        // matches ReadRange's, but is unmeasured for a Copy/Cut-based op
+        // specifically - ReadRange's cap exists because of Value2 marshaling
+        // cost back across COM, which a native Copy/Cut (Excel-side only)
+        // doesn't incur, so this may be needlessly conservative once tested
+        // against real Excel.
+        private static string CopyOrMoveRange(JsonElement op, bool cut)
+        {
+            string sourceAddr = op.GetProperty("sourceRange").GetString();
+            Excel.Worksheet sourceSheet = Sheet(op);
+            Excel.Range source = sourceSheet.Range[sourceAddr];
+
+            if (source.Cells.Count > 2000)
+                throw new ArgumentException((cut ? "move_range" : "copy_range") + ": source range exceeds 2000-cell cap.");
+
+            string targetCellAddr = op.GetProperty("targetCell").GetString();
+            Excel.Worksheet targetSheet = op.TryGetProperty("targetSheetId", out var tsid) && tsid.ValueKind == JsonValueKind.String
+                ? (Excel.Worksheet)Globals.ThisAddIn.Application.ActiveWorkbook.Sheets[tsid.GetString()]
+                : sourceSheet;
+            // Fresh, plain indexer lookup - never a .Resize/.Offset-chained
+            // object passed as another COM method's argument. See
+            // Chart.SetSourceData's E_INVALIDARG scar (STATUS.md's "Live
+            // debugging session") - Destination is documented to genuinely
+            // accept a Range here, so this exact failure isn't expected to
+            // recur, but a plain lookup costs nothing and removes a variable.
+            Excel.Range destination = targetSheet.Range[targetCellAddr];
+
+            int rows = source.Rows.Count;
+            int cols = source.Columns.Count;
+
+            // Cut(Destination:) already empties the source as part of the
+            // call (Cut = move) - no follow-up ClearContents(): redundant on
+            // success, and wrong on a hypothetical partial failure (would
+            // destroy data that was never actually relocated).
+            if (cut) source.Cut(Destination: destination);
+            else source.Copy(Destination: destination);
+
+            string detail = rows + "x" + cols + " cell(s) " + (cut ? "moved" : "copied") + " to " + targetCellAddr;
+            if (targetSheet != sourceSheet) detail += " on " + targetSheet.Name;
+            return detail;
+        }
+
         private static void AddSheet(JsonElement op)
         {
             Excel.Workbook wb = Globals.ThisAddIn.Application.ActiveWorkbook;

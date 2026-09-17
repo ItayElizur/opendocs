@@ -157,41 +157,93 @@ namespace OfficeAi.Shared
                 : CoreWebView2ServerCertificateErrorAction.Default;
         }
 
-        private void OnWebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs e)
+        // async void: this is an event handler bound to CoreWebView2.WebMessageReceived,
+        // raised on the UI thread. The tool-call branch awaits the (now Task-returning)
+        // executor so a slow tool - e.g. Outlook's search_contacts, which does its EWS
+        // call off the UI thread - no longer blocks the message pump. The outer try/catch
+        // is mandatory: an exception escaping an async void crashes the process. The
+        // continuation after `await _executor(...)` is NOT guaranteed to resume on the UI
+        // thread (an Office host thread may carry no WinForms SynchronizationContext, so a
+        // tool that awaited Task.Run resumes on a threadpool thread) - so the result is
+        // posted back through PostToolResult, which marshals onto the control's thread.
+        private async void OnWebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
+            // Read the payload into a local before the first await - the event args can
+            // be invalidated once the handler yields.
+            string json = e.WebMessageAsJson;
             try
             {
-                using (JsonDocument doc = JsonDocument.Parse(e.WebMessageAsJson))
+                string kind;
+                using (JsonDocument doc = JsonDocument.Parse(json))
                 {
-                    JsonElement root = doc.RootElement;
-                    string kind = root.GetProperty("kind").GetString();
-                    if (kind == "tool-call")
+                    kind = doc.RootElement.GetProperty("kind").GetString();
+                    if (kind != "tool-call")
                     {
-                        var (requestId, toolName, input) = ToolProtocol.ParseToolCall(e.WebMessageAsJson);
-                        // Tool execution no longer flashes a status-bar message - the
-                        // chat UI's own "Running N tools..." work-group (chat-ui.ts)
-                        // already shows this inline, so the top-of-pane label stayed
-                        // reserved for real problems (init/message-handling errors).
-                        ToolResult result = _executor(toolName, input);
-                        if (_webView.CoreWebView2 != null)
+                        if (kind == "set-tls-bypass")
                         {
-                            _webView.CoreWebView2.PostWebMessageAsJson(ToolProtocol.SerializeToolResult(requestId, result));
+                            _skipTlsVerify = doc.RootElement.TryGetProperty("enabled", out var enabled) && enabled.GetBoolean();
                         }
-                    }
-                    else if (kind == "set-tls-bypass")
-                    {
-                        _skipTlsVerify = root.TryGetProperty("enabled", out var enabled) && enabled.GetBoolean();
-                    }
-                    else
-                    {
-                        _onOtherMessage?.Invoke(kind, root.Clone());
+                        else
+                        {
+                            _onOtherMessage?.Invoke(kind, doc.RootElement.Clone());
+                        }
+                        return;
                     }
                 }
+
+                var (requestId, name, input) = ToolProtocol.ParseToolCall(json);
+                // Tool execution no longer flashes a status-bar message - the
+                // chat UI's own "Running N tools..." work-group (chat-ui.ts)
+                // already shows this inline, so the top-of-pane label stayed
+                // reserved for real problems (init/message-handling errors).
+                ToolResult result;
+                try
+                {
+                    result = await _executor(name, input);
+                }
+                catch (Exception ex)
+                {
+                    // No _setStatus here - the continuation may be on a threadpool
+                    // thread and touching the status Label off-thread would throw.
+                    // A tool error surfaces in the chat UI from the IsError result.
+                    result = new ToolResult { Output = ex.Message, IsError = true, Summary = name };
+                }
+
+                PostToolResult(requestId, result);
             }
             catch (Exception ex)
             {
+                // Only reachable from the synchronous pre-await section (JSON parse,
+                // ParseToolCall, _onOtherMessage) - all on the UI thread - so _setStatus
+                // is safe here. PostToolResult swallows its own failures.
                 _setStatus("message handling error: " + ex.Message);
             }
+        }
+
+        // Marshals the tool-result post back onto the WebView2 control's own thread and
+        // never throws - touching the control (or CoreWebView2) from a threadpool
+        // continuation would otherwise throw, and a re-throw from here would escape the
+        // async void handler and take the host process down.
+        private void PostToolResult(string requestId, ToolResult result)
+        {
+            try
+            {
+                if (_webView.IsDisposed || !_webView.IsHandleCreated) return;
+                if (_webView.InvokeRequired)
+                    _webView.BeginInvoke((Action)(() => RawPostToolResult(requestId, result)));
+                else
+                    RawPostToolResult(requestId, result);
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException("WebViewBridgeHost.PostToolResult", ex);
+            }
+        }
+
+        private void RawPostToolResult(string requestId, ToolResult result)
+        {
+            if (_webView.CoreWebView2 != null)
+                _webView.CoreWebView2.PostWebMessageAsJson(ToolProtocol.SerializeToolResult(requestId, result));
         }
     }
 }

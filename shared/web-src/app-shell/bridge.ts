@@ -112,6 +112,13 @@ export interface BridgeHandlers {
   onSelectionChanged(selection: RawSelectionPayload): void
   /** FT-1 Task 7/8: the per-document system message, sent once in response to postLoadDocSettings(). */
   onDocSettingsLoaded(systemMessage: string): void
+  /**
+   * Office's own theme, read once from the registry when the pane boots and
+   * sent once in response to requestOfficeTheme() - never re-sent later (by
+   * design, see OfficeAi.Shared/OfficeTheme.cs), so this fires exactly once
+   * per pane lifetime.
+   */
+  onOfficeThemeLoaded(theme: 'light' | 'dark'): void
 }
 
 const pendingToolCalls = new Map<string, (result: ToolExecution) => void>()
@@ -143,6 +150,11 @@ export function initBridge(handlers: BridgeHandlers): void {
     }
     if (data.kind === 'doc-settings-loaded') {
       handlers.onDocSettingsLoaded((data as unknown as { systemMessage: string }).systemMessage ?? '')
+      return
+    }
+    if (data.kind === 'office-theme') {
+      const theme = (data as unknown as { theme: string }).theme
+      handlers.onOfficeThemeLoaded(theme === 'dark' ? 'dark' : 'light')
     }
   })
 }
@@ -153,6 +165,10 @@ export function requestHistory(): void {
 
 export function requestDocSettings(): void {
   chrome.webview.postMessage({ kind: 'load-doc-settings' })
+}
+
+export function requestOfficeTheme(): void {
+  chrome.webview.postMessage({ kind: 'load-theme' })
 }
 
 export function saveDocSettings(systemMessage: string): void {

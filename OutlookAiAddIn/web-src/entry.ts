@@ -74,12 +74,11 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'search_contacts',
     description:
-      'Searches contacts by name or email fragment. By default it covers the Global Address List plus every contact folder across every store (custom folders, shared mailboxes, subfolders). Pass folder to restrict to one named contact folder. Returns {name, email} entries.',
+      'Resolves a name or email fragment against Exchange via server-side ambiguous-name resolution (EWS ResolveName): your personal Contacts first, then the Global Address List. Returns {name, email} entries. On-prem Exchange only; returns a clear error if Exchange cannot be reached.',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string' },
-        folder: { type: 'string', description: 'Optional: limit the search to this contact folder by name (also skips the GAL).' },
+        query: { type: 'string', description: 'Name or email fragment (2+ characters recommended).' },
         limit: { type: 'number', description: 'Default 10.' },
       },
       required: ['query'],

@@ -11,6 +11,7 @@ import {
   postTlsBypass,
   requestDocSettings,
   requestHistory,
+  requestOfficeTheme,
   saveDocSettings,
   type RawSelectionPayload,
 } from './bridge'
@@ -428,6 +429,19 @@ export function startAddIn(config: AddInConfig): void {
     executeTool: (call) => callDotNetTool(call.name, call.input),
   }
 
+  // Theme reconciliation. `currentThemePref` is the persisted 3-way choice;
+  // `lastKnownOfficeTheme` is Office's real theme, read exactly once from the
+  // registry (via requestOfficeTheme() below) and cached for this pane's
+  // whole lifetime - not re-checked while the pane stays open, by design.
+  // C# never sees `currentThemePref`; it only ever reports "what does Office
+  // look like right now", and this file alone decides whether that answer
+  // gets applied (only when the preference is 'default').
+  let currentThemePref: 'light' | 'dark' | 'default' = getSettings().theme
+  let lastKnownOfficeTheme: 'light' | 'dark' = 'light'
+  function effectiveTheme(pref: 'light' | 'dark' | 'default'): 'light' | 'dark' {
+    return pref === 'default' ? lastKnownOfficeTheme : pref
+  }
+
   const root = document.getElementById('root')!
   const ui = mountChatUI(root, {
     starters: config.starters,
@@ -448,6 +462,7 @@ export function startAddIn(config: AddInConfig): void {
         baseUrl: slot.baseUrl,
         skipTlsVerify: s.skipTlsVerify,
         providers: s.ai.providers,
+        theme: s.theme,
       }
     })(),
     // Post-hoc addition (2026-08-24, user-requested): AgentLoop.cancel()
@@ -508,8 +523,14 @@ export function startAddIn(config: AddInConfig): void {
           baseUrl: settings.baseUrl || current.ai.providers[settings.provider]?.baseUrl,
         },
       }
-      setSettings({ ai: { provider: settings.provider, providers }, skipTlsVerify: settings.skipTlsVerify })
+      setSettings({ ai: { provider: settings.provider, providers }, skipTlsVerify: settings.skipTlsVerify, theme: settings.theme })
       postTlsBypass(settings.skipTlsVerify)
+      // Unlike `lang` (a pre-existing gap - threaded into the payload but
+      // never persisted here), theme must actually be folded into
+      // setSettings() above, and applied immediately so Save's effect is
+      // visible without waiting for anything async.
+      currentThemePref = settings.theme
+      ui.setTheme(effectiveTheme(settings.theme))
       // Task 9: registration itself already took effect live via
       // onToolRegistrationChange above - settings.registeredTools is an echo,
       // not applied here again. The doc message, however, is Save-gated (Task
@@ -565,6 +586,14 @@ export function startAddIn(config: AddInConfig): void {
   // future Save - otherwise a user who enabled it last session would silently
   // go back to strict verification every time they reopen the document.
   postTlsBypass(getSettings().skipTlsVerify)
+
+  // Same idea for theme: an explicit Light/Dark preference is known
+  // synchronously from localStorage, so apply it immediately to avoid a
+  // flash of the wrong theme. 'default' has no synchronous answer (only C#
+  // knows Office's real theme) - left as-is until the async reply below
+  // resolves it; a one-frame flash there is accepted, not fixable without
+  // delaying first paint.
+  if (currentThemePref !== 'default') ui.setTheme(currentThemePref)
 
   // Post-hoc addition (2026-08-24, user-requested): a message sent while a
   // run is already busy is queued here rather than dropped, and dispatched
@@ -715,6 +744,13 @@ export function startAddIn(config: AddInConfig): void {
       ui.setDocSystemMessage(systemMessage)
       beginConversation()
     },
+    // Fires exactly once per pane lifetime - the one-shot reply to
+    // requestOfficeTheme() below (see OfficeAi.Shared/OfficeTheme.cs; there
+    // is no later push to handle, by design).
+    onOfficeThemeLoaded: (officeTheme) => {
+      lastKnownOfficeTheme = officeTheme
+      if (currentThemePref === 'default') ui.setTheme(officeTheme)
+    },
   })
 
   // Task 4: push the initial (scope-default, no override) tool registration
@@ -723,4 +759,5 @@ export function startAddIn(config: AddInConfig): void {
 
   requestHistory()
   requestDocSettings()
+  requestOfficeTheme()
 }

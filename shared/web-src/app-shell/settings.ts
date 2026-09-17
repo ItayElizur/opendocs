@@ -17,6 +17,13 @@ const SETTINGS_STORAGE_KEY = 'airchat-settings'
 export interface PanelSettings {
   ai: AiSettings
   skipTlsVerify: boolean
+  /**
+   * 'light'/'dark' are explicit overrides; 'default' follows Office's own
+   * theme, read once at pane startup (see OfficeAi.Shared/OfficeTheme.cs) -
+   * not re-checked while the pane stays open. Save-gated: only written here
+   * by bootstrap.ts's onSettingsSave handler, never live on click.
+   */
+  theme: 'light' | 'dark' | 'default'
 }
 
 // PP-0's flat { baseUrl, apiKey, model, skipTlsVerify } shape, kept only as
@@ -41,11 +48,17 @@ function defaultsForThisRepo(): AiSettings {
   return defaults
 }
 
+const VALID_THEMES = ['light', 'dark', 'default'] as const
+
+function normalizeTheme(value: unknown): PanelSettings['theme'] {
+  return (VALID_THEMES as readonly unknown[]).includes(value) ? (value as PanelSettings['theme']) : 'default'
+}
+
 function loadSettings(): PanelSettings {
   const defaults = defaultsForThisRepo()
   try {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY)
-    if (!raw) return { ai: defaults, skipTlsVerify: false }
+    if (!raw) return { ai: defaults, skipTlsVerify: false, theme: 'default' }
     const parsed = JSON.parse(raw) as Partial<PanelSettings> & LegacyStoredSettings
     return {
       // resolveAiSettings migrates the legacy flat {baseUrl, apiKey, model}
@@ -53,9 +66,10 @@ function loadSettings(): PanelSettings {
       // configuration survives this change instead of silently resetting.
       ai: resolveAiSettings(parsed.ai ?? parsed, defaults),
       skipTlsVerify: !!parsed.skipTlsVerify,
+      theme: normalizeTheme(parsed.theme),
     }
   } catch {
-    return { ai: defaults, skipTlsVerify: false }
+    return { ai: defaults, skipTlsVerify: false, theme: 'default' }
   }
 }
 

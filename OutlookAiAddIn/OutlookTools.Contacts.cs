@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
+using System.Net;
 using System.Text.Json;
+using System.Threading.Tasks;
 using OfficeAi.Shared;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
@@ -9,118 +10,145 @@ namespace OutlookAiAddIn
 {
     public static partial class OutlookTools
     {
-        private static ToolResult SearchContacts(JsonElement input)
+        // search_contacts resolves a name/email fragment through EWS ResolveName
+        // (server-side ANR over Contacts then the GAL) - the same thing the
+        // native Address Book does, and what the mcp-outlook reference does. It
+        // is the ONE tool that isn't Outlook COM: the object model can't do a
+        // multi-result directory search, and running EWS off the UI thread
+        // (OutlookEws.ResolveNamesAsync -> Task.Run) is what keeps Outlook
+        // responsive during the call. The previous implementation walked every
+        // contact folder in every store on the UI thread and froze/crashed
+        // Outlook. See docs/ai-tool-surface.md and OutlookEws.cs.
+        private static async Task<ToolResult> SearchContactsAsync(JsonElement input)
         {
             string query = ReqStr(input, "query");
             int limit = Math.Max(1, Int(input, "limit", 10));
-            string folderName = Str(input, "folder", null);
 
-            var results = new List<KeyValuePair<string, string>>();
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            // 1) Resolve the query against the GAL / configured address books
-            //    (skipped when the caller scoped the search to one folder).
-            if (folderName == null)
+            // 1) Resolve the EWS endpoint (cached for the process). The
+            //    AutoDiscoverXml read is COM and stays on the UI thread; it is a
+            //    cached property, effectively instant.
+            Uri url = OutlookEws.CachedUrl;
+            if (url == null)
             {
+                string smtp;
+                string autodiscoverXml;
                 try
                 {
-                    Outlook.Recipient r = Ns.CreateRecipient(query);
-                    r.Resolve();
-                    if (r.Resolved)
-                    {
-                        string addr = SmtpOf(r.AddressEntry);
-                        if (!string.IsNullOrEmpty(addr) && seen.Add(addr))
-                            results.Add(new KeyValuePair<string, string>(r.Name ?? query, addr));
-                    }
+                    var info = FindExchangeAccountInfo();
+                    smtp = info.smtp;
+                    autodiscoverXml = info.autodiscoverXml;
                 }
-                catch { }
-            }
-
-            // 2) Contact folders, each queried server-side via Restrict (DASL).
-            //    Default: every contact folder across every store (custom
-            //    folders, shared mailboxes, subfolders). `folder` narrows it
-            //    to one named folder.
-            string q = query.Replace("'", "''");
-            string dasl = "@SQL=(\"urn:schemas:contacts:fileas\" LIKE '%" + q + "%'" +
-                          " OR \"urn:schemas:contacts:email1\" LIKE '%" + q + "%'" +
-                          " OR \"urn:schemas:contacts:email2\" LIKE '%" + q + "%'" +
-                          " OR \"urn:schemas:contacts:email3\" LIKE '%" + q + "%'" +
-                          " OR \"urn:schemas:contacts:givenName\" LIKE '%" + q + "%'" +
-                          " OR \"urn:schemas:contacts:sn\" LIKE '%" + q + "%')";
-
-            var folders = new List<Outlook.Folder>();
-            if (folderName != null)
-            {
-                folders.Add(ResolveContactFolder(folderName));
-            }
-            else
-            {
-                try { CollectContactFolders(Ns.Folders, folders, 0); } catch { }
-                if (folders.Count == 0)
-                    folders.Add((Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderContacts));
-            }
-
-            foreach (Outlook.Folder folder in folders)
-            {
-                if (results.Count >= limit) break;
-                try
+                catch (InvalidOperationException ex)
                 {
-                    Outlook.Items found;
-                    try { found = folder.Items.Restrict(dasl); }
-                    catch { found = folder.Items; }
+                    return Err(ex.Message);
+                }
 
-                    int scanned = 0;
-                    foreach (object o in found)
+                string parsed = EwsAutodiscoverXml.ParseEwsUrl(autodiscoverXml);
+                if (!string.IsNullOrEmpty(parsed))
+                {
+                    try { url = new Uri(parsed); }
+                    catch (UriFormatException) { url = null; }
+                }
+
+                if (url == null)
+                {
+                    if (string.IsNullOrEmpty(smtp))
+                        return Err("Could not determine the Exchange EWS endpoint: no autodiscover data and no SMTP address to probe.");
+                    try
                     {
-                        if (results.Count >= limit || scanned++ > 500) break;
-                        Outlook.ContactItem c = o as Outlook.ContactItem;
-                        if (c == null) continue;
-                        string email = c.Email1Address ?? c.Email2Address ?? c.Email3Address ?? "";
-                        string name = c.FullName;
-                        if (string.IsNullOrEmpty(name)) name = c.FileAs ?? "";
-                        string key = !string.IsNullOrEmpty(email) ? email : name;
-                        if (string.IsNullOrEmpty(key) || !seen.Add(key)) continue;
-                        results.Add(new KeyValuePair<string, string>(name, email));
+                        url = await OutlookEws.DiscoverUrlAsync(smtp);
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugLog.WriteException("search_contacts AutodiscoverUrl", ex);
+                        return Err("Could not reach Exchange autodiscover to find the EWS endpoint (" + ex.Message + ").");
                     }
                 }
-                catch (Exception ex) { DebugLog.WriteException("SearchContacts folder " + folder.Name, ex); }
+
+                OutlookEws.CachedUrl = url; // back on the UI thread after the await
             }
 
-            if (results.Count == 0)
-                return new ToolResult { Output = "No contacts matched \"" + query + "\".", Summary = "search_contacts" };
-
-            var sb = new StringBuilder();
-            foreach (var kv in results)
-                sb.AppendLine(string.IsNullOrEmpty(kv.Value) ? "- " + kv.Key : "- " + kv.Key + " <" + kv.Value + ">");
-            return new ToolResult { Output = sb.ToString(), Summary = "search_contacts" };
-        }
-
-        private static void CollectContactFolders(Outlook.Folders folders, List<Outlook.Folder> into, int depth)
-        {
-            if (folders == null || depth > 8 || into.Count > 60) return;
-            foreach (Outlook.Folder f in folders)
+            // 2) ResolveName, off the UI thread.
+            IReadOnlyList<KeyValuePair<string, string>> matches;
+            try
             {
-                bool isContacts = false;
-                try { isContacts = f.DefaultItemType == Outlook.OlItemType.olContactItem; } catch { }
-                if (isContacts) into.Add(f);
-                CollectContactFolders(f.Folders, into, depth + 1);
+                matches = await OutlookEws.ResolveNamesAsync(url, query);
             }
+            catch (Exception ex) when (OutlookEws.IsTimeout(ex))
+            {
+                DebugLog.WriteException("search_contacts ResolveName timeout", ex);
+                return Err("The Exchange contact search timed out after 15s. Try again, or check your network / VPN connection.");
+            }
+            catch (Microsoft.Exchange.WebServices.Data.ServiceRequestException ex)
+            {
+                DebugLog.WriteException("search_contacts ResolveName", ex);
+                return Err("Exchange rejected the contact search: " + ex.Message +
+                           " (Windows authentication to Exchange may have failed - are you on the domain network?)");
+            }
+            catch (WebException ex)
+            {
+                DebugLog.WriteException("search_contacts ResolveName WebException", ex);
+                return Err(ex.Status == WebExceptionStatus.ProtocolError
+                    ? "Windows authentication to Exchange failed (are you connected to the domain network / VPN?)."
+                    : "Could not reach the Exchange server (" + ex.Status + ").");
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException("search_contacts ResolveName (unexpected)", ex);
+                return Err("Contact search failed: " + ex.Message);
+            }
+
+            // 3) Format (pure, back on the UI thread).
+            return new ToolResult
+            {
+                Output = ContactSearchFormat.Format(matches, query, limit),
+                Summary = "search_contacts",
+            };
         }
 
-        private static Outlook.Folder ResolveContactFolder(string name)
+        // COM, UI thread. Picks the Exchange account to discover the EWS endpoint
+        // and SMTP from: the one matching the signed-in user when there is a
+        // match, else the first Exchange account in the profile.
+        private static (string smtp, string autodiscoverXml) FindExchangeAccountInfo()
         {
-            if (WellKnownContacts(name)) return (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderContacts);
-            var all = new List<Outlook.Folder>();
-            CollectContactFolders(Ns.Folders, all, 0);
-            foreach (Outlook.Folder f in all)
-                if (string.Equals(f.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)) return f;
-            throw new ArgumentException("Contact folder not found: " + name);
+            Outlook.NameSpace ns = Ns;
+
+            string currentSmtp = null;
+            try { currentSmtp = SmtpOf(ns.CurrentUser.AddressEntry); }
+            catch (Exception ex) { DebugLog.WriteException("search_contacts CurrentUser SMTP", ex); }
+
+            Outlook.Account chosen = null;
+            Outlook.Accounts accounts = ns.Accounts;
+            for (int i = 1; i <= accounts.Count; i++)
+            {
+                Outlook.Account a = accounts[i];
+                if (a.AccountType != Outlook.OlAccountType.olExchange) continue;
+                if (chosen == null) chosen = a;
+                if (!string.IsNullOrEmpty(currentSmtp) &&
+                    string.Equals(a.SmtpAddress, currentSmtp, StringComparison.OrdinalIgnoreCase))
+                {
+                    chosen = a;
+                    break;
+                }
+            }
+
+            if (chosen == null)
+                throw new InvalidOperationException(
+                    "search_contacts needs an on-prem Exchange mailbox in this Outlook profile. " +
+                    "No Exchange account was found (Gmail / IMAP / POP profiles are not supported for contact search).");
+
+            string smtp = !string.IsNullOrEmpty(chosen.SmtpAddress) ? chosen.SmtpAddress : currentSmtp;
+
+            string xml = null;
+            try { xml = chosen.AutoDiscoverXml; }
+            catch (Exception ex) { DebugLog.WriteException("search_contacts Account.AutoDiscoverXml", ex); }
+
+            return (smtp, xml);
         }
 
-        private static bool WellKnownContacts(string name)
+        private static ToolResult Err(string message)
         {
-            string n = (name ?? "").Trim().ToLowerInvariant();
-            return n == "contacts" || n == "";
+            return new ToolResult { Output = message, IsError = true, Summary = "search_contacts" };
         }
     }
 }

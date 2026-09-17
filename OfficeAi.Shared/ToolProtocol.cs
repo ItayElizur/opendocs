@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace OfficeAi.Shared
 {
@@ -11,7 +12,7 @@ namespace OfficeAi.Shared
         public string Summary;
     }
 
-    public delegate ToolResult ToolExecutor(string toolName, JsonElement input);
+    public delegate Task<ToolResult> ToolExecutor(string toolName, JsonElement input);
     public delegate void OtherMessageHandler(string kind, JsonElement root);
 
     public static class ToolProtocol

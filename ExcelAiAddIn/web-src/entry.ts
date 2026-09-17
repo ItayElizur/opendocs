@@ -208,6 +208,26 @@ const EXCEL_OPS: OpSpec[] = [
   { kind: 'merge_cells', group: 'Layout', props: { range: { type: 'string' } }, required: ['range'] },
   { kind: 'unmerge_cells', group: 'Layout', props: { range: { type: 'string' } }, required: ['range'] },
   {
+    kind: 'copy_range', group: 'Layout',
+    props: {
+      sourceRange: { type: 'string' },
+      targetCell: { type: 'string', description: 'Top-left anchor of the destination - size is implied by sourceRange.' },
+      targetSheetId: { type: 'string', description: 'Defaults to the source sheet.' },
+    },
+    required: ['sourceRange', 'targetCell'],
+    note: 'Preserves values, formulas, and formatting. Source range capped at 2000 cells. Floating objects (charts/shapes/images) inside the range are not moved.',
+  },
+  {
+    kind: 'move_range', group: 'Layout',
+    props: {
+      sourceRange: { type: 'string' },
+      targetCell: { type: 'string', description: 'Top-left anchor of the destination - size is implied by sourceRange.' },
+      targetSheetId: { type: 'string', description: 'Defaults to the source sheet.' },
+    },
+    required: ['sourceRange', 'targetCell'],
+    note: 'Clears sourceRange as part of the move (native Excel Cut behavior) - no separate clear_range call needed. Other formulas referencing the moved cells auto-update to the new location. Source range capped at 2000 cells. Floating objects (charts/shapes/images) inside the range are not moved.',
+  },
+  {
     kind: 'set_row_height', group: 'Layout',
     props: { row: { type: 'number', description: '1-based' }, count: { type: 'number', description: 'Default 1.' }, heightPoints: { type: 'number' } },
     required: ['row', 'heightPoints'],

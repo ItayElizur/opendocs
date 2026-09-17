@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace OfficeAi.Shared
@@ -110,7 +111,7 @@ namespace OfficeAi.Shared
         // each subclass closes over its own GetChatId() to thread the
         // per-document key through to e.g. WordTools.Execute(docKey, name, input)
         // without changing the shared ToolExecutor delegate's signature.
-        protected abstract ToolResult ExecuteTool(string name, JsonElement input);
+        protected abstract Task<ToolResult> ExecuteTool(string name, JsonElement input);
 
         // The per-document chat-history/mode key. Lazily computed and cached
         // by each subclass on first actual use (never in the constructor -
@@ -184,6 +185,11 @@ namespace OfficeAi.Shared
                         ? sm.GetString()
                         : "";
                     DocSettingsStore.Save(_appDataFolderName, GetChatId(), new DocSettings { SystemMessage = systemMessage });
+                    break;
+                // One-shot: Office's theme is read once when the pane boots,
+                // never re-checked afterward (by design - see OfficeTheme.cs).
+                case "load-theme":
+                    PostMessage(new { kind = "office-theme", theme = OfficeTheme.ReadEffectiveTheme() });
                     break;
             }
         }
