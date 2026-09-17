@@ -34,6 +34,8 @@ namespace WordAiAddIn
             ["deleteParagraphBullets"] = new[] { "target" },
             ["updateImageProperties"] = new[] { "imageIndex", "properties", "fields" },
             ["insertToc"] = new[] { "afterBlockIndex" },
+            ["copyBlocks"] = new[] { "target", "afterBlockIndex" },
+            ["copyFormat"] = new[] { "sourceBlockIndex", "target" },
         };
 
         // Fields where an explicit JSON null is a caller error rather than a
@@ -59,6 +61,7 @@ namespace WordAiAddIn
             "set_bold", "set_italic", "set_heading", "set_bullet", "find_replace",
             "updateTextStyle", "updateParagraphStyle", "deleteBlocks", "moveBlocks",
             "createParagraphBullets", "deleteParagraphBullets", "updateImageProperties", "insertToc",
+            "copyBlocks", "copyFormat",
         };
 
         // PP-12 Task 3 (the half PP-5 Task 4 Step 1 did not cover): each
@@ -155,6 +158,12 @@ namespace WordAiAddIn
                             lines.AppendLine($"[{commandIndex}] {kind}: ok"); anyMutated = true; break;
                         case "insertToc":
                             InsertTocCmd(cmd);
+                            lines.AppendLine($"[{commandIndex}] {kind}: ok"); anyMutated = true; break;
+                        case "copyBlocks":
+                            CopyBlocksCmd(cmd);
+                            lines.AppendLine($"[{commandIndex}] {kind}: ok"); anyMutated = true; break;
+                        case "copyFormat":
+                            CopyFormatCmd(cmd);
                             lines.AppendLine($"[{commandIndex}] {kind}: ok"); anyMutated = true; break;
                         default:
                             // List what IS valid. A bare "unknown command kind"
