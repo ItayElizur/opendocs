@@ -1,6 +1,6 @@
 import { AgentLoop, type AgentSkill } from '@genoffice/agent-core'
 import { streamForProvider, type AiProviderConfig } from '@genoffice/ai-provider'
-import { mountChatUI, type EditingMode, type SelectionExtent, type ToolDisplayEntry } from '@officeai/chat-ui'
+import { defaultModeFor, mountChatUI, resolveModes, type EditingMode, type ModeOverrides, type SelectionExtent, type ToolDisplayEntry } from '@officeai/chat-ui'
 import {
   callDotNetTool,
   initBridge,
@@ -320,6 +320,16 @@ export interface AddInConfig {
   readOnlyTools: string[]
   /** additionally available in Comment only mode (Word's add_comment; empty/absent elsewhere) */
   commentOnlyExtraTools?: string[]
+  /**
+   * Additionally available in Track changes mode, ON TOP OF Comment only's
+   * set (not a replacement) - `null`/absent (every app but Outlook) keeps
+   * Track changes' original meaning: every tool, since Word/Excel/
+   * PowerPoint's real edit tools are legitimately usable under native
+   * track-changes recording. Outlook sets this to unlock
+   * accept_meeting/decline_meeting on top of its own "Draft only"
+   * (commentOnly) tier - see availableForMode() below.
+   */
+  trackChangesExtraTools?: string[]
   /** inject the user's current selection into per-turn context (Word, Excel, PowerPoint - FT-2) */
   useSelectionContext?: boolean
   /** FT-2 Task 4 Step 2: overrides the default per-kind context sentence, if an app ever needs different wording. */
@@ -328,11 +338,17 @@ export interface AddInConfig {
   scopeUnit?: 'doc' | 'sheet' | 'deck' | 'mailbox'
   /**
    * Restricts the editing-mode menu to this subset, in this order. Defaults to
-   * all four modes (Word/Excel/PowerPoint). Outlook passes
-   * ['readOnly', 'fullAutonomy'] - Comment only / Track changes have no meaning
-   * for mail.
+   * all four modes (Word/Excel/PowerPoint). Outlook passes all four too, with
+   * commentOnly/trackChanges repurposed as "Draft only"/"Automate approvals"
+   * (see modeOverrides) rather than their Word-ish original meaning.
    */
   availableModes?: EditingMode[]
+  /** Per-app relabeling of a mode's menu text - see ChatUIOptions.modeOverrides. */
+  modeOverrides?: ModeOverrides
+  /** The mode a fresh session starts in - see defaultModeFor() in chat-ui.ts. Defaults to 'trackChanges'. */
+  defaultMode?: EditingMode
+  /** Tool names that send/create something externally with no review step - see ChatUIOptions.autoSendTools. */
+  autoSendTools?: string[]
 }
 
 /**
@@ -348,14 +364,24 @@ export function startAddIn(config: AddInConfig): void {
   // enforcement is server-side in each app's *Tools.Execute, which gates
   // mutating tool calls even if the model somehow requests one that wasn't
   // offered here.
-  let editingMode: EditingMode = 'fullAutonomy'
+  // A fresh session no longer starts in Full Autonomy by default - see
+  // defaultModeFor() in chat-ui.ts. This must resolve identically to
+  // mountChatUI's own `defaultMode` computation below (same helper, same
+  // inputs) or the UI's initial selection and this filtering state disagree
+  // about what's actually available before the user ever touches the mode
+  // menu.
+  let editingMode: EditingMode = defaultModeFor(resolveModes(config.availableModes), config.defaultMode ?? 'trackChanges')
 
   const readOnlySet = new Set(config.readOnlyTools)
   const commentOnlySet = new Set([...config.readOnlyTools, ...(config.commentOnlyExtraTools ?? [])])
+  // null (every app but Outlook) = "no opinion" - trackChanges falls through
+  // to "everything", unchanged from before this field existed.
+  const trackChangesSet = config.trackChangesExtraTools ? new Set([...commentOnlySet, ...config.trackChangesExtraTools]) : null
 
   function availableForMode(): string[] {
     if (editingMode === 'readOnly') return config.tools.filter((t) => readOnlySet.has(t.name)).map((t) => t.name)
     if (editingMode === 'commentOnly') return config.tools.filter((t) => commentOnlySet.has(t.name)).map((t) => t.name)
+    if (editingMode === 'trackChanges' && trackChangesSet) return config.tools.filter((t) => trackChangesSet.has(t.name)).map((t) => t.name)
     return config.tools.map((t) => t.name)
   }
 
@@ -448,6 +474,9 @@ export function startAddIn(config: AddInConfig): void {
     tools: toolDisplayList,
     scopeUnit: config.scopeUnit,
     modes: config.availableModes,
+    modeOverrides: config.modeOverrides,
+    defaultMode: config.defaultMode,
+    autoSendTools: config.autoSendTools,
     onToolRegistrationChange: (registered) => {
       registeredTools = new Set(registered)
     },

@@ -439,11 +439,28 @@ index otherwise.
   explorer's first `Activate` or the ribbon button, never in `ThisAddIn_Startup` —
   because Outlook auto-disables add-ins whose median startup exceeds ~1 s, and
   `install.ps1` also writes `Resiliency\DoNotDisableAddinList`.
-- **Editing modes.** Only `ReadOnly` and `FullAutonomy` are meaningful; `CommentOnly`
-  and `TrackChanges` have no mail analogue and the mode gate treats them as
-  `ReadOnly`. `entry.ts` passes `availableModes: ['readOnly','fullAutonomy']` so the
-  chat-UI mode menu (now `.map`-generated over `options.modes ?? MODES`) hides the
-  other two.
+- **Editing modes — four tiers, added 2026-09-19.** Outlook repurposes all four
+  `EditingMode` slots with its own meaning, rather than dropping two (previously only
+  `ReadOnly`/`FullAutonomy` were used): `ReadOnly` → **Read only** (unchanged);
+  `CommentOnly` → **Draft only** (every mutating/drafting tool that never leaves the
+  mailbox unreviewed — `mark_email_read`/`unread`, `flag_email_important`,
+  `move_email`, `delete_email`, `create_task`, `update_task`, `set_reminder`,
+  `set_email_reminder`, `draft_email`, `reply_email`, `reply_all_email`,
+  `forward_email`, `draft_event`); `TrackChanges` → **Automate approvals** (adds
+  `accept_meeting`/`decline_meeting` — these already call `resp.Send()` to notify the
+  organizer, so they get their own explicit tier rather than hiding in Draft only or
+  Full autonomy); `FullAutonomy` → unchanged name, adds the five auto-send tools (see
+  below). Each tier is a strict superset of the one before it. `entry.ts` passes
+  `availableModes: ['readOnly','commentOnly','trackChanges','fullAutonomy']` and a
+  `modeOverrides` map so the mode menu shows Outlook's own labels/descriptions instead
+  of Word/Excel/PowerPoint's generic "Comment only"/"Track changes" text — those two
+  apps' own use of `CommentOnly`/`TrackChanges` for real editing is untouched (Outlook's
+  relabeling is purely its own `entry.ts` config, not a shared-string change). Gate
+  logic (`OutlookTools.cs`'s `ExecuteAsync`) is an ordinal check on the enum's own
+  declared order (`ReadOnly < CommentOnly < TrackChanges < FullAutonomy`). A fresh
+  session now defaults to **Draft only**, not Full autonomy (`defaultMode: 'commentOnly'`,
+  resolved via `chat-ui.ts`'s `defaultModeFor()` — the same helper Word/Excel/PowerPoint
+  use to default to their own `trackChanges`).
 - **Selection context.** The Explorer's `SelectionChange` pushes the selected mail
   item(s) / conversation into per-turn context as a `mail` `SelectionContext` variant
   (`shared/web-src/app-shell/bootstrap.ts`) carrying each item's `EntryID`, so the
@@ -505,7 +522,7 @@ index otherwise.
 | `set_reminder` | `ReminderSet` / `ReminderTime` on an appointment **or** task, addressed by its `item_id` (EntryID); `clear: true` turns it off. |
 | `set_email_reminder` | `MailItem.MarkAsTask(mapped interval)` + `TaskStartDate`/`TaskDueDate` + `ReminderSet`/`ReminderTime` + `.Save()` — the confirmed COM path for "flag an email for follow-up with a reminder". `MailItem` does expose `ReminderSet`/`ReminderTime`. |
 
-### Draft-and-display tools (5 — Full autonomy; open a native Outlook window for the user to review and send; `Mutated = false`)
+### Draft-and-display tools (5 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
 
 | Tool | Notes |
 |---|---|
@@ -516,13 +533,31 @@ index otherwise.
 | `draft_event` | `CreateItem(olAppointmentItem)`; with `required_attendees`/`optional_attendees` → `MeetingStatus = olMeeting`, `Recipients.Add(...).Type`, `Recipients.ResolveAll()`; `Display(false)`. |
 
 **These never call `.Send()` (mail) or save a calendar event.** The user sends from the
-opened Outlook window.
+opened Outlook window. Available from Draft only mode upward (tier 2 — see "Editing
+modes" above), not gated behind Full autonomy.
+
+### Auto-send tools (5 — Full autonomy only; send/create immediately, no review window; `Mutated = true`)
+
+> **Added 2026-09-19**, reversing part of the "no auto-send tool" decision below —
+> narrowed to Full autonomy specifically, not removed generally. Every draft/compose
+> tool above is unaffected and stays draft-and-display-only in every mode.
+
+| Tool | Notes |
+|---|---|
+| `send_email` | Same construction as `draft_email`, but `m.Send()` instead of `m.Display(false)`. |
+| `send_reply` | Same as `reply_email`, but `.Send()`. |
+| `send_reply_all` | Same as `reply_all_email`, but `.Send()`. |
+| `send_forward` | Same as `forward_email`, but `.Send()`; `to` is required (unlike `forward_email`, where it's optional). |
+| `create_event` | Same construction as `draft_event`. No attendees → `a.Save()` (a plain calendar entry, nobody to notify). Attendees present → `MeetingStatus = olMeeting` then `a.Send()`, dispatching the invite. Both `AppointmentItem.Send()`/`.Save()` confirmed present via .NET reflection against the referenced PIA before writing this — not assumed from `draft_event`'s non-sending shape. |
+
+Gated by `OutlookTools.cs`'s `SendTierTools` set, requiring `EditingMode.FullAutonomy`
+exactly (the ordinal check's top tier) — not reachable from Draft only or Automate
+approvals. `accept_meeting`/`decline_meeting` are **not** in this table; they live one
+tier down, in Automate approvals (see "Editing modes" above), since they already
+existed before this addition and already call `resp.Send()`.
 
 ### Excluded / deferred
 
-- **`send_email`, `create_event`** — mcp-outlook marks these widget/app-only (the
-  model has no way to trigger a send). The equivalent here is draft-and-display +
-  the user pressing Send; there is deliberately no auto-send tool.
 - **`update_event` / `delete_event`** — present in mcp-outlook's `server.py` but not
   its README; not ported. Trivial parity adds if wanted.
 

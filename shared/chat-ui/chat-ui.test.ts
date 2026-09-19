@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mountChatUI, type ToolDisplayEntry } from './chat-ui'
+import { defaultModeFor, mountChatUI, type ToolDisplayEntry } from './chat-ui'
 
 const TEST_TOOLS: ToolDisplayEntry[] = [
   { name: 'get_document_context', label: { en: 'Read document', he: 'קרא מסמך' }, description: { en: 'Reads a summary of the document.', he: 'קורא תקציר של המסמך.' } },
@@ -103,6 +103,25 @@ describe('mountChatUI', () => {
     const step = group.addStep('insert_content', { text: 'hi' })
     step.complete({ output: 'Inserted text: hi', mutated: true })
     expect(root.querySelector('.ai-applied-tag')).not.toBeNull()
+  })
+
+  it('an auto-send tool step gets the distinct autosend tag/icon instead of the routine applied tag', () => {
+    const { root, handle } = setup({ autoSendTools: ['send_email'] })
+    const group = handle.beginToolGroup()
+    const step = group.addStep('send_email', { to: 'a@example.com' })
+    step.complete({ output: 'Sent to a@example.com', mutated: true })
+    expect(root.querySelector('.ai-autosend-tag')).not.toBeNull()
+    expect(root.querySelector('.ai-applied-tag')).toBeNull()
+    expect(root.querySelector('.ai-step-icon')!.classList.contains('autosend')).toBe(true)
+  })
+
+  it('a non-auto-send tool step still gets the routine applied tag, not the autosend one', () => {
+    const { root, handle } = setup({ autoSendTools: ['send_email'] })
+    const group = handle.beginToolGroup()
+    const step = group.addStep('draft_email', { to: 'a@example.com' })
+    step.complete({ output: 'Opened a draft', mutated: true })
+    expect(root.querySelector('.ai-applied-tag')).not.toBeNull()
+    expect(root.querySelector('.ai-autosend-tag')).toBeNull()
   })
 
   it('a pending tool step pulses its hourglass, then drops .pending on completion', () => {
@@ -895,5 +914,19 @@ describe('mountChatUI', () => {
 
     handle.setSelectionScope(null)
     expect(root.querySelector('#scopeHintLabel')!.textContent).toBe('כל הגיליון')
+  })
+})
+
+describe('defaultModeFor', () => {
+  it('picks the preferred mode when the app offers it (Word/Excel/PowerPoint: trackChanges)', () => {
+    expect(defaultModeFor(['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'])).toBe('trackChanges')
+  })
+
+  it('picks an explicit preferred mode when given (Outlook: commentOnly, its "Draft only" tier)', () => {
+    expect(defaultModeFor(['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'], 'commentOnly')).toBe('commentOnly')
+  })
+
+  it('falls back to the first offered mode when the preferred one is not in the list', () => {
+    expect(defaultModeFor(['readOnly', 'fullAutonomy'], 'commentOnly')).toBe('readOnly')
   })
 })
