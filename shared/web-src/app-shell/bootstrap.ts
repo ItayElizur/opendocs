@@ -335,6 +335,29 @@ export interface AddInConfig {
   availableModes?: EditingMode[]
 }
 
+// Fix for: relative-date tool args (draft_event, find_meeting_slots, etc.)
+// were resolved by the model with no ground truth for "today" anywhere in
+// the system prompt - it had to guess both the date and the weekday from
+// training data, which is exactly how "next Tuesday" turned into
+// Wednesday. Computed once per conversation (see beginConversation() below)
+// - not worth recomputing every turn for a value that only changes at
+// midnight; a conversation spanning midnight keeps its start-of-chat date.
+function todayContextLine(): string {
+  try {
+    const now = new Date()
+    const weekday = now.toLocaleDateString('en-US', { weekday: 'long' })
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, '0')
+    const d = String(now.getDate()).padStart(2, '0')
+    const hh = String(now.getHours()).padStart(2, '0')
+    const mm = String(now.getMinutes()).padStart(2, '0')
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return `Today is ${weekday}, ${y}-${m}-${d}, ${hh}:${mm} (${tz}).`
+  } catch {
+    return `Today is ${new Date().toDateString()}.`
+  }
+}
+
 /**
  * Boots one add-in's chat panel: WebView2 bridge, settings, transport,
  * chat-UI mount, and AgentLoop event plumbing. Everything here was
@@ -399,10 +422,14 @@ export function startAddIn(config: AddInConfig): void {
   // frozen by beginConversation() at conversation-start boundaries only
   // (initial load, New chat), never read live per-turn, so editing the
   // guidelines mid-conversation cannot retroactively change a run in progress.
+  // `activeDateContext` (todayContextLine()) is frozen the same way and for
+  // the same reason - see its own comment above.
   let savedDocMessage = ''
   let activeDocMessage = ''
+  let activeDateContext = ''
   function beginConversation(): void {
     activeDocMessage = savedDocMessage
+    activeDateContext = todayContextLine()
   }
 
   const skill: AgentSkill = {
@@ -654,12 +681,12 @@ export function startAddIn(config: AddInConfig): void {
   const loop = new AgentLoop({
     transport: makeTransport(),
     skill,
-    // Task 8 Step 2/4: appended to the system prompt every turn, but the
-    // value it reads (activeDocMessage) only changes at conversation-start
-    // boundaries - see beginConversation() above. Labeled explicitly as
-    // user-supplied so the model treats it as standing instructions from the
-    // user, not as system policy.
-    systemSuffix: () => (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
+    // Called every turn, but both pieces it reads (activeDateContext,
+    // activeDocMessage) only change at conversation-start boundaries - see
+    // beginConversation() above. The doc-guidelines half is labeled
+    // explicitly as user-supplied so the model treats it as standing
+    // instructions from the user, not as system policy.
+    systemSuffix: () => '\n\n' + activeDateContext + (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
     events: {
       onText: (text) => {
         textStreamedSinceGroup = true
