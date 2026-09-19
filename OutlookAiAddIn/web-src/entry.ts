@@ -52,6 +52,11 @@ const ALL_OUTLOOK_TOOLS = [
     inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, folder: FOLDER }, required: ['message_id'] },
   },
   {
+    name: 'open_email',
+    description: 'Opens a message in its own Outlook reading window (like double-clicking it) so the user can see it directly. Read-only.',
+    inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, folder: FOLDER }, required: ['message_id'] },
+  },
+  {
     name: 'get_attachment',
     description:
       'Saves one attachment to a local file and returns its path. For text files and Office documents (.docx/.xlsx/.pptx) it also returns extracted_text. PDFs and images return the path only. OLE and linked attachments cannot be fetched.',
@@ -292,6 +297,7 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   list_emails: d('List emails', 'רשימת הודעות', 'Lists recent messages from a folder.', 'מציג הודעות אחרונות מתיקייה.'),
   search_emails: d('Search emails', 'חיפוש הודעות', 'Searches a folder by text, date, or sender.', 'מחפש בתיקייה לפי טקסט, תאריך או שולח.'),
   get_email: d('Read email', 'קריאת הודעה', 'Reads one message in full, including its attachment list.', 'קורא הודעה אחת במלואה, כולל רשימת הקבצים המצורפים.'),
+  open_email: d('Open email', 'פתיחת הודעה', 'Opens a message in Outlook.', 'פותח הודעה ב-Outlook.'),
   get_attachment: d('Get attachment', 'קבלת קובץ מצורף', 'Saves an attachment and extracts text from documents.', 'שומר קובץ מצורף ומחלץ טקסט ממסמכים.'),
   list_folders: d('List folders', 'רשימת תיקיות', 'Lists the available mail folders.', 'מציג את תיקיות הדואר הזמינות.'),
   search_contacts: d('Search contacts', 'חיפוש אנשי קשר', 'Finds people by name or email.', 'מוצא אנשים לפי שם או דוא"ל.'),
@@ -323,7 +329,7 @@ startAddIn({
   toolDisplay: OUTLOOK_TOOL_DISPLAY,
   systemPrompt:
     'You are an AI assistant embedded in Microsoft Outlook via the Airchat Office add-in. You work from the main Outlook window (Explorer). ' +
-    'You can read and search mail, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations), ' +
+    'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
     'Drafting tools open a normal Outlook compose or appointment window pre-filled - you never send mail or create events directly; the user reviews and sends. ' +
     'message_id / event_id / task_id values are Outlook EntryIDs. When the user has one or more messages selected, that selection (with its message_id) is in your context - prefer it over searching. ' +
@@ -338,6 +344,7 @@ startAddIn({
     'list_emails',
     'search_emails',
     'get_email',
+    'open_email',
     'get_attachment',
     'list_folders',
     'search_contacts',

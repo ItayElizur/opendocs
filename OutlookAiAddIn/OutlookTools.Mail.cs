@@ -113,6 +113,16 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "get_email" };
         }
 
+        private static ToolResult OpenEmail(JsonElement input)
+        {
+            string id = ReqStr(input, "message_id");
+            Outlook.MailItem mail = ItemById(id, StoreOf(input)) as Outlook.MailItem;
+            if (mail == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "open_email" };
+
+            mail.Display(false);
+            return new ToolResult { Output = "Opened \"" + (mail.Subject ?? "") + "\" in Outlook.", Summary = "open_email" };
+        }
+
         internal static string AttachmentTypeName(Outlook.OlAttachmentType t)
         {
             switch (t)
