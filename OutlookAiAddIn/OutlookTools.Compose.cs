@@ -10,7 +10,7 @@ namespace OutlookAiAddIn
     {
         // Draft-and-display only. These NEVER call .Send() - a native Outlook
         // compose/appointment window is opened for the user to review and send.
-        private const string Signature = "\n\n— Written with Airchat";
+        private const string Signature = "\n\n— Created with OpenDocs";
 
         private static string SeedSignature(string body)
         {
@@ -75,7 +75,7 @@ namespace OutlookAiAddIn
             Outlook.AppointmentItem a = (Outlook.AppointmentItem)App.CreateItem(Outlook.OlItemType.olAppointmentItem);
             a.Subject = Str(input, "subject", "");
             a.Location = Str(input, "location", "");
-            a.Body = Str(input, "body", "");
+            a.Body = SeedSignature(Str(input, "body", ""));
 
             DateTime? start = DateArg(input, "start");
             DateTime? end = DateArg(input, "end");

@@ -509,11 +509,11 @@ index otherwise.
 
 | Tool | Notes |
 |---|---|
-| `draft_email` | `CreateItem(olMailItem)` → set `To`/`Subject`/`Body` → `Display(false)`. `"— Written with Airchat"` appended to a non-empty body (mirrors mcp-outlook's signature seed). |
+| `draft_email` | `CreateItem(olMailItem)` → set `To`/`Subject`/`Body` → `Display(false)`. `"— Created with OpenDocs"` appended to a non-empty body (mirrors mcp-outlook's signature seed). |
 | `reply_email` | `orig.Reply()` (sender only); `body` HTML-encoded and prepended above the quoted original; `Display(false)`. |
 | `reply_all_email` | `orig.ReplyAll()`. A **distinct tool**, not a `reply_all` boolean on `reply_email` — clearer for the model, and the user sees the full recipient list before sending. |
 | `forward_email` | `orig.Forward()`, optional `To`, `body` prepended; `Display(false)`. |
-| `draft_event` | `CreateItem(olAppointmentItem)`; with `required_attendees`/`optional_attendees` → `MeetingStatus = olMeeting`, `Recipients.Add(...).Type`, `Recipients.ResolveAll()`; `Display(false)`. |
+| `draft_event` | `CreateItem(olAppointmentItem)`; with `required_attendees`/`optional_attendees` → `MeetingStatus = olMeeting`, `Recipients.Add(...).Type`, `Recipients.ResolveAll()`; `Display(false)`. Same `"— Created with OpenDocs"` signature appended to a non-empty body. |
 
 **These never call `.Send()` (mail) or save a calendar event.** The user sends from the
 opened Outlook window.
