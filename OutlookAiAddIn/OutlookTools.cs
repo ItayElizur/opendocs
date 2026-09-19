@@ -30,7 +30,7 @@ namespace OutlookAiAddIn
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
             "list_emails", "search_emails", "get_email", "list_folders", "search_contacts",
-            "list_events", "get_event", "list_tasks", "get_attachment", "find_meeting_slots",
+            "list_events", "get_event", "list_tasks", "get_attachment", "find_meeting_slots", "apply_search",
         };
 
         public static async Task<ToolResult> ExecuteAsync(string mbxKey, string name, JsonElement input)
@@ -53,6 +53,7 @@ namespace OutlookAiAddIn
                 {
                     case "list_emails": return ListEmails(input);
                     case "search_emails": return SearchEmails(input);
+                    case "apply_search": return ApplySearch(input);
                     case "get_email": return GetEmail(input);
                     case "list_folders": return ListFolders(input);
                     case "search_contacts": return await SearchContactsAsync(input);
