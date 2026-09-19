@@ -58,7 +58,7 @@ namespace OutlookAiAddIn
                     case "search_contacts": return await SearchContactsAsync(input);
                     case "list_events": return ListEvents(input);
                     case "get_event": return GetEvent(input);
-                    case "find_meeting_slots": return FindMeetingSlots(input);
+                    case "find_meeting_slots": return await FindMeetingSlotsAsync(input);
                     case "list_tasks": return ListTasks(input);
                     case "get_attachment": return GetAttachment(input);
 

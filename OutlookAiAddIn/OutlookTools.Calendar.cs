@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using OfficeAi.Shared;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
@@ -69,17 +70,80 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "get_event" };
         }
 
+        // Cached once per process, same lifetime/posture as OutlookEws.CachedUrl
+        // - the mailbox's configured work days/hours don't change mid-session,
+        // and each lookup is a network round trip via EWS. null (not yet
+        // resolved) vs a value with Days == null (resolved, but unavailable -
+        // e.g. non-Exchange profile) are distinguished so a failed lookup
+        // isn't retried on every single find_meeting_slots call either.
+        private static OutlookEws.WorkWeekInfo? _cachedWorkWeek;
+        private static bool _workWeekResolved;
+
+        private static readonly HashSet<DayOfWeek> FallbackWorkDays = new HashSet<DayOfWeek>
+        {
+            DayOfWeek.Sunday, DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday,
+        };
+
+        // Best-effort: the real work week/hours come from EWS's
+        // GetUserAvailability (see OutlookEws.GetWorkingHoursAsync's own
+        // comment for why - no COM equivalent exists). On-prem Exchange only,
+        // same as search_contacts; any failure (no Exchange account, EWS
+        // unreachable, etc.) falls back to the Sun-Thu/9-18 default that was
+        // hardcoded here before, rather than failing the tool.
+        private static async Task<OutlookEws.WorkWeekInfo?> ResolveWorkWeekAsync()
+        {
+            if (_workWeekResolved) return _cachedWorkWeek;
+            _workWeekResolved = true;
+            try
+            {
+                Uri url = OutlookEws.CachedUrl;
+                string smtp;
+                if (url == null)
+                {
+                    var info = FindExchangeAccountInfo();
+                    smtp = info.smtp;
+                    string parsed = EwsAutodiscoverXml.ParseEwsUrl(info.autodiscoverXml);
+                    if (!string.IsNullOrEmpty(parsed))
+                    {
+                        try { url = new Uri(parsed); } catch (UriFormatException) { url = null; }
+                    }
+                    if (url == null)
+                    {
+                        if (string.IsNullOrEmpty(smtp)) return null;
+                        url = await OutlookEws.DiscoverUrlAsync(smtp);
+                    }
+                    OutlookEws.CachedUrl = url;
+                }
+                else
+                {
+                    smtp = FindExchangeAccountInfo().smtp;
+                }
+                _cachedWorkWeek = await OutlookEws.GetWorkingHoursAsync(url, smtp);
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException("ResolveWorkWeekAsync", ex);
+                _cachedWorkWeek = null;
+            }
+            return _cachedWorkWeek;
+        }
+
         // Ranks candidate meeting times by attendee availability, using
         // Recipient.FreeBusy (a per-30-min status string). Pure ranking lives
         // in OfficeAi.Shared.MeetingSlots; this is the COM half.
-        private static ToolResult FindMeetingSlots(JsonElement input)
+        private static async Task<ToolResult> FindMeetingSlotsAsync(JsonElement input)
         {
             string attendeesRaw = ReqStr(input, "attendees");
             int duration = Int(input, "duration_minutes", 0);
             if (duration <= 0)
                 return new ToolResult { Output = "duration_minutes is required and must be positive.", IsError = true, Summary = "find_meeting_slots" };
-            int startHour = Int(input, "start_hour", 9);
-            int endHour = Int(input, "end_hour", 18);
+
+            OutlookEws.WorkWeekInfo? workWeek = await ResolveWorkWeekAsync();
+            HashSet<DayOfWeek> workDays = workWeek.HasValue ? workWeek.Value.Days : FallbackWorkDays;
+            string workDaysLabel = workWeek.HasValue ? string.Join(",", workDays) : "Sun-Thu (default - could not read the mailbox's actual work week)";
+
+            int startHour = Int(input, "start_hour", workWeek.HasValue ? workWeek.Value.StartHour : 9);
+            int endHour = Int(input, "end_hour", workWeek.HasValue ? workWeek.Value.EndHour : 18);
             if (endHour <= startHour)
                 return new ToolResult { Output = "end_hour must be after start_hour.", IsError = true, Summary = "find_meeting_slots" };
             int limit = Math.Max(1, Int(input, "limit", 5));
@@ -94,15 +158,15 @@ namespace OutlookAiAddIn
             }
             else
             {
-                DefaultWorkRange(DateTime.Today, out rangeStart, out rangeEnd);
+                DefaultWorkRange(DateTime.Today, workDays, out rangeStart, out rangeEnd);
             }
             if (rangeEnd < rangeStart)
                 return new ToolResult { Output = "end_date is before start_date.", IsError = true, Summary = "find_meeting_slots" };
             if ((rangeEnd - rangeStart).TotalDays > 28) rangeEnd = rangeStart.AddDays(28);
 
-            List<DateTime> days = WorkDays(rangeStart, rangeEnd);
+            List<DateTime> days = WorkDays(rangeStart, rangeEnd, workDays);
             if (days.Count == 0)
-                return new ToolResult { Output = "No work days (Sun-Thu) between " + rangeStart.ToShortDateString() + " and " + rangeEnd.ToShortDateString() + ".", Summary = "find_meeting_slots" };
+                return new ToolResult { Output = "No work days (" + workDaysLabel + ") between " + rangeStart.ToShortDateString() + " and " + rangeEnd.ToShortDateString() + ".", Summary = "find_meeting_slots" };
 
             DateTime anchor = days[0].Date;
 
@@ -164,29 +228,35 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "find_meeting_slots" };
         }
 
-        // Mirrors mcp-outlook's scheduling.default_range: today through Thursday
-        // of this work week, rolling to next Sun-Thu if today is Fri/Sat.
-        private static void DefaultWorkRange(DateTime today, out DateTime start, out DateTime end)
+        // Generalization of mcp-outlook's scheduling.default_range (originally
+        // "today through Thursday of this work week, rolling to next Sun-Thu
+        // if today is Fri/Sat") for an arbitrary work-days set: walk forward
+        // from today to the next work day (today itself if it already is
+        // one), then extend through the following contiguous run of work
+        // days (capped at a week) - correct for any shape, including a
+        // work week that wraps past a calendar-week boundary.
+        private static void DefaultWorkRange(DateTime today, HashSet<DayOfWeek> workDays, out DateTime start, out DateTime end)
         {
-            int idx = (int)today.Date.DayOfWeek; // Sun=0 .. Sat=6
-            if (idx <= 4)
+            DateTime d = today.Date;
+            for (int guard = 0; guard < 14 && !workDays.Contains(d.DayOfWeek); guard++) d = d.AddDays(1);
+            start = d;
+
+            DateTime e = start;
+            for (int i = 0; i < 6; i++)
             {
-                start = today.Date;
-                end = today.Date.AddDays(4 - idx);
+                DateTime next = e.AddDays(1);
+                if (!workDays.Contains(next.DayOfWeek)) break;
+                e = next;
             }
-            else
-            {
-                start = today.Date.AddDays(7 - idx);
-                end = start.AddDays(4);
-            }
+            end = e;
         }
 
-        private static List<DateTime> WorkDays(DateTime start, DateTime end)
+        private static List<DateTime> WorkDays(DateTime start, DateTime end, HashSet<DayOfWeek> workDays)
         {
             var days = new List<DateTime>();
             for (DateTime d = start.Date; d <= end.Date; d = d.AddDays(1))
             {
-                if (d.DayOfWeek != DayOfWeek.Friday && d.DayOfWeek != DayOfWeek.Saturday)
+                if (workDays.Contains(d.DayOfWeek))
                     days.Add(d);
             }
             return days;

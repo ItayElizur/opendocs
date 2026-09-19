@@ -82,6 +82,76 @@ namespace OutlookAiAddIn
             return Task.Run(() => ResolveNames(url, query));
         }
 
+        internal struct WorkWeekInfo
+        {
+            public HashSet<DayOfWeek> Days;
+            public int StartHour;
+            public int EndHour;
+        }
+
+        // GetUserAvailability's WorkingHours is EWS's documented, server-side
+        // source for a mailbox's configured work days/hours - the same data
+        // Outlook itself uses to shade "outside working hours" in the
+        // scheduling assistant. Unlike Outlook's local Calendar Options
+        // dialog, this has no COM equivalent at all: confirmed via .NET
+        // reflection against the referenced Microsoft.Office.Interop.Outlook
+        // PIA that no Application.CalendarOptions property (or any
+        // WorkDay*/FirstDayOfWeek member) exists anywhere in that assembly,
+        // so this EWS call is the only real, non-hardcoded source for it.
+        public static Task<WorkWeekInfo?> GetWorkingHoursAsync(Uri url, string smtp)
+        {
+            return Task.Run(() => GetWorkingHours(url, smtp));
+        }
+
+        private static WorkWeekInfo? GetWorkingHours(Uri url, string smtp)
+        {
+            Ews.ExchangeService svc = NewService(url);
+            var window = new Ews.TimeWindow(DateTime.Today, DateTime.Today.AddDays(7));
+            Ews.GetUserAvailabilityResults results;
+            try
+            {
+                results = svc.GetUserAvailability(
+                    new[] { new Ews.AttendeeInfo(smtp) },
+                    window,
+                    Ews.AvailabilityData.FreeBusy);
+            }
+            catch (Ews.ServiceResponseException)
+            {
+                return null;
+            }
+
+            foreach (Ews.AttendeeAvailability a in results.AttendeesAvailability)
+            {
+                if (a.WorkingHours == null) continue;
+                var days = new HashSet<DayOfWeek>();
+                foreach (Ews.DayOfTheWeek d in a.WorkingHours.DaysOfTheWeek)
+                {
+                    switch (d)
+                    {
+                        case Ews.DayOfTheWeek.Sunday: days.Add(DayOfWeek.Sunday); break;
+                        case Ews.DayOfTheWeek.Monday: days.Add(DayOfWeek.Monday); break;
+                        case Ews.DayOfTheWeek.Tuesday: days.Add(DayOfWeek.Tuesday); break;
+                        case Ews.DayOfTheWeek.Wednesday: days.Add(DayOfWeek.Wednesday); break;
+                        case Ews.DayOfTheWeek.Thursday: days.Add(DayOfWeek.Thursday); break;
+                        case Ews.DayOfTheWeek.Friday: days.Add(DayOfWeek.Friday); break;
+                        case Ews.DayOfTheWeek.Saturday: days.Add(DayOfWeek.Saturday); break;
+                        // Day/Weekday/WeekendDay are input-only aggregate
+                        // values per the enum's own shape (confirmed via
+                        // reflection) - never expected back from the server,
+                        // so deliberately not expanded here.
+                    }
+                }
+                if (days.Count == 0) continue;
+                return new WorkWeekInfo
+                {
+                    Days = days,
+                    StartHour = (int)a.WorkingHours.StartTime.TotalHours,
+                    EndHour = (int)a.WorkingHours.EndTime.TotalHours,
+                };
+            }
+            return null;
+        }
+
         private static IReadOnlyList<KeyValuePair<string, string>> ResolveNames(Uri url, string query)
         {
             var results = new List<KeyValuePair<string, string>>();
