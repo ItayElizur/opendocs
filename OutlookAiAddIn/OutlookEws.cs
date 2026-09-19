@@ -6,14 +6,20 @@ using Ews = Microsoft.Exchange.WebServices.Data;
 
 namespace OutlookAiAddIn
 {
-    // The one non-COM call in the Outlook add-in. search_contacts resolves a
-    // name/email fragment through EWS ResolveName - a server-side Ambiguous Name
-    // Resolution over the mailbox's Contacts folder then the GAL, exactly what
-    // the native Address Book dialog does and what the mcp-outlook reference
-    // (account.protocol.resolve_names) does. It is deliberately NOT
-    // Microsoft.Office.Interop.Outlook: the COM object model cannot do a
-    // multi-result directory search, and EWS is plain HTTP with no STA affinity
-    // so the call runs off the UI thread (Task.Run) and never freezes Outlook.
+    // The non-COM calls in the Outlook add-in - the raw EWS wire layer.
+    // Tool-facing orchestration built on top of this (which account/endpoint
+    // to use, turning a result into a ToolResult) lives in
+    // OutlookTools.Ews.cs, not here; this file only wraps the EWS Managed API
+    // itself. Two operations: ResolveNamesAsync (search_contacts - a
+    // server-side Ambiguous Name Resolution over Contacts then the GAL,
+    // exactly what the native Address Book dialog does and what the
+    // mcp-outlook reference's account.protocol.resolve_names does) and
+    // GetWorkingHoursAsync (find_meeting_slots' work-week default - see its
+    // own comment). Both are deliberately NOT Microsoft.Office.Interop.Outlook:
+    // the COM object model can do neither a multi-result directory search nor
+    // expose a mailbox's configured work week, and EWS is plain HTTP with no
+    // STA affinity so both run off the UI thread (Task.Run) and never freeze
+    // Outlook.
     //
     // Auth is ExchangeService.UseDefaultCredentials (Windows Integrated Auth as
     // the signed-in user) - the .NET equivalent of mcp-outlook's auth_type=sspi.

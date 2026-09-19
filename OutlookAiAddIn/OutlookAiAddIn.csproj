@@ -152,7 +152,7 @@
       <SubType>Code</SubType>
       <DependentUpon>OutlookTools.cs</DependentUpon>
     </Compile>
-    <Compile Include="OutlookTools.Contacts.cs">
+    <Compile Include="OutlookTools.Ews.cs">
       <SubType>Code</SubType>
       <DependentUpon>OutlookTools.cs</DependentUpon>
     </Compile>

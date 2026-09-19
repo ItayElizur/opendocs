@@ -460,18 +460,27 @@ index otherwise.
   DASL builder is pure and unit-tested (`OfficeAi.Shared/OutlookDasl.cs`). `search_contacts`
   is the deliberate, documented exception: server-side EWS ANR (`ResolveName`), not a COM
   scan — see the EWS carve-out below.
-- **`search_contacts` is the one EWS call.** Every other Outlook tool is pure
-  `Microsoft.Office.Interop.Outlook` COM against the running client. Contact resolution
+- **`search_contacts` and `find_meeting_slots`' work-week default are the two things that
+  touch EWS.** Every other Outlook tool is pure `Microsoft.Office.Interop.Outlook` COM
+  against the running client. All EWS-dependent code lives apart from the pure-COM tool
+  files, in two layers: `OutlookEws.cs` (the raw EWS Managed API wire calls —
+  `ResolveNamesAsync`, `GetWorkingHoursAsync`) and `OutlookTools.Ews.cs` (2026-09-19,
+  split out of the file this section used to describe — the tool-facing orchestration on
+  top: `SearchContactsAsync`, `ResolveWorkWeekAsync`, and the shared endpoint/account
+  resolution both call, `ResolveEwsUrlAsync`/`FindExchangeAccountInfo`). Contact resolution
   calls **EWS `ResolveName(query, ContactsThenDirectory, returnContactDetails: true)`**
   (EWS Managed API 2.2, `Microsoft.Exchange.WebServices` 2.2.0) with
   `ExchangeService.UseDefaultCredentials` (Windows Integrated Auth as the signed-in user —
   the .NET equivalent of `mcp-outlook`'s `auth_type=sspi`; no stored credentials). Endpoint
   is parsed from the cached `Outlook.Account.AutoDiscoverXml` (`<EwsUrl>`/`<ASUrl>`, `EXCH`
   preferred over `EXPR`; pure parser `OfficeAi.Shared/EwsAutodiscoverXml.cs`), falling back
-  to `ExchangeService.AutodiscoverUrl`, then cached in a process-static `Uri`. The call
-  runs off the UI thread (`await Task.Run`, `svc.Timeout` 15 s) so Outlook stays
-  responsive. **On-prem Exchange only.** EWS unreachable / SSPI failure / endpoint not
-  found / timeout → a clear `IsError` result, never a silent COM fallback. This is also
+  to `ExchangeService.AutodiscoverUrl`, then cached in a process-static `Uri` shared by both
+  EWS-dependent tools. The call runs off the UI thread (`await Task.Run`, `svc.Timeout` 15 s)
+  so Outlook stays responsive. **On-prem Exchange only.** EWS unreachable / SSPI failure /
+  endpoint not found / timeout → a clear `IsError` result for `search_contacts` (EWS isn't
+  optional there); `find_meeting_slots` instead falls back to its old hardcoded Sun-Thu/9-18
+  default, since EWS is an enhancement over an already-working COM-only path there, not the
+  only way to do the job. This is also
   the pilot for async tool execution — the shared `ToolExecutor` delegate is now
   `Task<ToolResult>`-returning (`WebViewBridgeHost.OnWebMessageReceived` is `async`).
   `find_meeting_slots` is the second Outlook tool to go async (2026-09-19, for its own

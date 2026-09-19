@@ -105,3 +105,17 @@ Update the comment above it (currently Task-8-specific) to note it now carries t
 - Modified: `docs/ai-tool-surface.md` — `find_meeting_slots` row and the async-tool-execution note updated.
 
 **Verification:** `dotnet build`/MSBuild clean, `tsc --noEmit` clean, bundle rebuilds. **Not yet exercised against a live Exchange mailbox** (none reachable in this environment) — first live use should confirm `WorkingHours` actually populates for a real on-prem account and that a non-default work week (e.g. Mon–Fri) changes `find_meeting_slots`' default range/hours accordingly; on failure, confirm it falls back to Sun–Thu/9–18 with no error surfaced to the model.
+
+### Task 3 (follow-up, user-requested) — split every EWS-dependent tool into its own file
+
+**Why:** `search_contacts` and now `find_meeting_slots`' work-week lookup are qualitatively different from every other Outlook tool — they depend on Exchange/EWS being reachable and can fail or degrade for reasons that have nothing to do with the local Outlook client, whereas every COM-only tool works identically regardless of mailbox type or network state. Keeping that distinction visible in the file layout (not just in comments) makes it obvious at a glance which tools carry that extra failure mode.
+
+**Files:**
+- **New: `OutlookAiAddIn/OutlookTools.Ews.cs`** — every tool-level thing that needs EWS: `SearchContactsAsync` (moved from the now-deleted `OutlookTools.Contacts.cs`), `ResolveWorkWeekAsync`/`_cachedWorkWeek`/`_workWeekResolved`/`FallbackWorkDays` (moved from `OutlookTools.Calendar.cs`), and `FindExchangeAccountInfo`/`Err` (moved from `OutlookTools.Contacts.cs`). A new shared `ResolveEwsUrlAsync()` consolidates the endpoint-resolution logic both `SearchContactsAsync` and `ResolveWorkWeekAsync` used to duplicate inline — it always throws `InvalidOperationException` with a specific message on failure (no Exchange account / no autodiscover data / autodiscover unreachable), which `SearchContactsAsync` surfaces directly and `ResolveWorkWeekAsync` just catches and discards (graceful `null`). This is a pure refactor of existing logic, not a behavior change — every original error message is preserved verbatim.
+- **Deleted: `OutlookAiAddIn/OutlookTools.Contacts.cs`** — everything in it moved to the new file.
+- **Modified: `OutlookAiAddIn/OutlookTools.Calendar.cs`** — the moved work-week state/method removed; `FindMeetingSlotsAsync` still calls `ResolveWorkWeekAsync()` (same partial class, no new dependency needed).
+- **Modified: `OutlookAiAddIn/OutlookEws.cs`** — top comment updated (was written when `ResolveNamesAsync` was the only thing here; now also describes `GetWorkingHoursAsync` and points at the new orchestration layer above it).
+- **Modified: `OutlookAiAddIn/OutlookAiAddIn.csproj`** — `<Compile Include>` swapped from `OutlookTools.Contacts.cs` to `OutlookTools.Ews.cs` (this project has no globbing — every file must be listed by hand).
+- **Modified: `docs/ai-tool-surface.md`** — the "one EWS call" bullet updated to describe both tools and the two-layer file split.
+
+**Verification:** `dotnet build`/MSBuild clean, `tsc --noEmit` clean, bundle rebuilds, `OfficeAi.Shared.Tests` 165/165 (unaffected, but re-run since `OfficeAi.Shared` rebuilds as a dependency). Grepped for every moved identifier (`FindExchangeAccountInfo`, `ResolveWorkWeekAsync`, `FallbackWorkDays`) to confirm exactly one definition and no dangling references to the deleted file. Not re-exercised against a live mailbox beyond what Task 2 already noted as pending.

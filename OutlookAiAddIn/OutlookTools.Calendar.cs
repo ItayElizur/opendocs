@@ -70,64 +70,6 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "get_event" };
         }
 
-        // Cached once per process, same lifetime/posture as OutlookEws.CachedUrl
-        // - the mailbox's configured work days/hours don't change mid-session,
-        // and each lookup is a network round trip via EWS. null (not yet
-        // resolved) vs a value with Days == null (resolved, but unavailable -
-        // e.g. non-Exchange profile) are distinguished so a failed lookup
-        // isn't retried on every single find_meeting_slots call either.
-        private static OutlookEws.WorkWeekInfo? _cachedWorkWeek;
-        private static bool _workWeekResolved;
-
-        private static readonly HashSet<DayOfWeek> FallbackWorkDays = new HashSet<DayOfWeek>
-        {
-            DayOfWeek.Sunday, DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday,
-        };
-
-        // Best-effort: the real work week/hours come from EWS's
-        // GetUserAvailability (see OutlookEws.GetWorkingHoursAsync's own
-        // comment for why - no COM equivalent exists). On-prem Exchange only,
-        // same as search_contacts; any failure (no Exchange account, EWS
-        // unreachable, etc.) falls back to the Sun-Thu/9-18 default that was
-        // hardcoded here before, rather than failing the tool.
-        private static async Task<OutlookEws.WorkWeekInfo?> ResolveWorkWeekAsync()
-        {
-            if (_workWeekResolved) return _cachedWorkWeek;
-            _workWeekResolved = true;
-            try
-            {
-                Uri url = OutlookEws.CachedUrl;
-                string smtp;
-                if (url == null)
-                {
-                    var info = FindExchangeAccountInfo();
-                    smtp = info.smtp;
-                    string parsed = EwsAutodiscoverXml.ParseEwsUrl(info.autodiscoverXml);
-                    if (!string.IsNullOrEmpty(parsed))
-                    {
-                        try { url = new Uri(parsed); } catch (UriFormatException) { url = null; }
-                    }
-                    if (url == null)
-                    {
-                        if (string.IsNullOrEmpty(smtp)) return null;
-                        url = await OutlookEws.DiscoverUrlAsync(smtp);
-                    }
-                    OutlookEws.CachedUrl = url;
-                }
-                else
-                {
-                    smtp = FindExchangeAccountInfo().smtp;
-                }
-                _cachedWorkWeek = await OutlookEws.GetWorkingHoursAsync(url, smtp);
-            }
-            catch (Exception ex)
-            {
-                DebugLog.WriteException("ResolveWorkWeekAsync", ex);
-                _cachedWorkWeek = null;
-            }
-            return _cachedWorkWeek;
-        }
-
         // Ranks candidate meeting times by attendee availability, using
         // Recipient.FreeBusy (a per-30-min status string). Pure ranking lives
         // in OfficeAi.Shared.MeetingSlots; this is the COM half.
