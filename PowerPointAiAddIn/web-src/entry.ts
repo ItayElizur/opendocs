@@ -232,6 +232,63 @@ const MUTATION_TOOLS = [
     },
   },
   {
+    name: 'duplicate_element',
+    description:
+      'Creates a copy of a shape on the SAME slide - works for every shape kind, including groups/pictures/tables/charts/SmartArt. For a DIFFERENT slide, use copy_element/move_element instead. ' +
+      'Positions the duplicate offsetX/offsetY points from the original (default 12/12) unless left/top is given, which places it at an exact position instead. ' +
+      'If you don\'t pass name, the duplicate is automatically given a unique name (e.g. "Rectangle 5" -> "Rectangle 5 2") instead of colliding with the original\'s name.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' },
+        shapeIndex: { type: 'number' },
+        offsetX: { type: 'number', description: 'Points. Default 12. Ignored if left/top is given.' },
+        offsetY: { type: 'number', description: 'Points. Default 12. Ignored if left/top is given.' },
+        left: { type: 'number', description: 'Exact destination position - overrides offsetX/offsetY.' },
+        top: { type: 'number', description: 'Exact destination position - overrides offsetX/offsetY.' },
+        name: { type: 'string', description: 'Optional. Sets the duplicate\'s name, shown in read_slide/read_group.' },
+      },
+      required: ['slideIndex', 'shapeIndex'],
+    },
+  },
+  {
+    name: 'copy_element',
+    description:
+      'Copies a shape to a DIFFERENT slide, leaving the original in place, using PowerPoint\'s own native copy/paste - so EVERY shape kind is supported with full native fidelity, exactly as it already exists (pictures, video/audio, OLE objects, freeform, tables with merged cells/per-cell shading/borders, charts, SmartArt, and groups of any of these, including a group nesting a SmartArt - since this clones the existing shape tree rather than rebuilding it). ' +
+      'For a same-slide copy, use duplicate_element instead - this tool refuses targetSlideIndex equal to slideIndex. ' +
+      'Inherits the source shape\'s own name (auto-suffixed if it collides on the destination slide) unless you pass an explicit name. Optional left/top override the position PowerPoint\'s own paste chose.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' },
+        shapeIndex: { type: 'number' },
+        targetSlideIndex: { type: 'number' },
+        left: { type: 'number', description: 'Destination position. Defaults to the source shape\'s own position.' },
+        top: { type: 'number', description: 'Destination position. Defaults to the source shape\'s own position.' },
+        name: { type: 'string', description: 'Optional. Sets the new shape\'s name (otherwise inherits the source\'s, deduped).' },
+      },
+      required: ['slideIndex', 'shapeIndex', 'targetSlideIndex'],
+    },
+  },
+  {
+    name: 'move_element',
+    description:
+      'Same as copy_element, but also removes the shape from its original slide - equivalent to copy_element followed by deleting the original. ' +
+      'The original is only removed once the copy has fully succeeded; on any error nothing is changed. Same kind support, formatting fidelity, and limitations as copy_element.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' },
+        shapeIndex: { type: 'number' },
+        targetSlideIndex: { type: 'number' },
+        left: { type: 'number', description: 'Destination position. Defaults to the source shape\'s own position.' },
+        top: { type: 'number', description: 'Destination position. Defaults to the source shape\'s own position.' },
+        name: { type: 'string', description: 'Optional. Sets the new shape\'s name (otherwise inherits the source\'s, deduped).' },
+      },
+      required: ['slideIndex', 'shapeIndex', 'targetSlideIndex'],
+    },
+  },
+  {
     name: 'add_slide',
     description: 'Clones an existing slide\'s layout as a new blank (or templated) slide inserted right after it.',
     inputSchema: {
@@ -361,6 +418,30 @@ const MUTATION_TOOLS = [
         color: { type: 'string' }, widthPt: { type: 'number' }, remove: { type: 'boolean' },
       },
       required: ['slideIndex', 'shapeIndex'],
+    },
+  },
+  {
+    name: 'copy_element_style',
+    description:
+      'Format painter: applies PowerPoint\'s own native format painter (Shape.PickUp/Apply, NOT the clipboard) for broad, generic fidelity (fill, outline, shadow, 3-D/bevel, and anything else native formatting covers), plus targeted copies for the specifics this needs guaranteed - text formatting PER RUN (bold/italic/size/color/font/underline/shadow/alignment/superscript-subscript - reproduces mixed formatting within the text exactly, not just a single sampled value), ' +
+      'text outline/strikethrough/glow/reflection/bevel, text box vertical+horizontal anchor and margins, gradient/patterned fill, dash/arrowhead outlines, rotation, flip, and AutoShape adjustment handles - from one shape onto one or more others, ' +
+      'not position or size. Each target can be on ANY slide, including the source\'s own.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number' },
+        shapeIndex: { type: 'number', description: 'The source shape to copy formatting FROM.' },
+        targets: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' } },
+            required: ['slideIndex', 'shapeIndex'],
+          },
+          description: 'One or more {slideIndex, shapeIndex} shapes to copy formatting TO - can span multiple slides.',
+        },
+      },
+      required: ['slideIndex', 'shapeIndex', 'targets'],
     },
   },
   {
@@ -598,6 +679,18 @@ const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'Delete shape', he: 'מחיקת אובייקט' },
     description: { en: 'Deletes a shape from a slide.', he: 'מוחק אובייקט משקופית.' },
   },
+  duplicate_element: {
+    label: { en: 'Duplicate shape', he: 'שכפול אובייקט' },
+    description: { en: 'Creates a copy of a shape on the same slide.', he: 'יוצר עותק של אובייקט באותה שקופית.' },
+  },
+  copy_element: {
+    label: { en: 'Copy shape to another slide', he: 'העתקת אובייקט לשקופית אחרת' },
+    description: { en: 'Copies a shape to a different slide, with full native formatting.', he: 'מעתיק אובייקט לשקופית אחרת, כולל כל העיצוב המקורי.' },
+  },
+  move_element: {
+    label: { en: 'Move shape to another slide', he: 'העברת אובייקט לשקופית אחרת' },
+    description: { en: 'Moves a shape to a different slide, removing it from its original slide.', he: 'מעביר אובייקט לשקופית אחרת, ומסיר אותו מהשקופית המקורית.' },
+  },
   add_slide: {
     label: { en: 'Add slide', he: 'הוספת שקופית' },
     description: { en: "Adds a new slide, based on an existing slide's layout.", he: 'מוסיף שקופית חדשה, בהתבסס על פריסה של שקופית קיימת.' },
@@ -641,6 +734,10 @@ const POWERPOINT_TOOL_DISPLAY = {
   set_element_stroke: {
     label: { en: 'Set shape outline', he: 'מתאר אובייקט' },
     description: { en: "Sets or removes a shape's outline color and width.", he: 'מגדיר או מסיר את צבע ועובי המתאר של אובייקט.' },
+  },
+  copy_element_style: {
+    label: { en: 'Copy shape formatting', he: 'העתקת עיצוב אובייקט' },
+    description: { en: 'Copies text, fill, and outline formatting from one shape onto others (like a format painter).', he: 'מעתיק עיצוב טקסט, מילוי ומתאר מאובייקט אחד לאובייקטים אחרים (כמו מכחול עיצוב).' },
   },
   set_slide_background: {
     label: { en: 'Set slide background', he: 'רקע שקופית' },
@@ -717,6 +814,7 @@ startAddIn({
     'You can manage slides and shape styling: add_slide, delete_slide, move_slide, duplicate_slide, set_element_fill, set_element_stroke, and set_slide_background. ' +
     'You can group and ungroup shapes: group_element (two or more shapeIndexes into one group) and ungroup_element. ' +
     'read_slide shows a group as one line; call read_group to list its contents recursively. Each child line gives a dotted path (e.g. "3.1.0") that you can pass as shapeIndex to set_element_text/set_element_style/set_element_fill/set_element_stroke to edit that child in place. To move, resize, reorder, delete, or animate a shape inside a group, call ungroup_element on the top-level group first. ' +
+    'You can duplicate a shape on the same slide (duplicate_element) and copy or move a shape to a different slide (copy_element, move_element) - all three work for every shape kind (pictures, tables with merged cells, charts, SmartArt, groups of anything, etc.) with full native fidelity. copy_element_style copies one shape\'s text (per-run)/fill/outline/rotation/flip formatting onto one or more other shapes on any slide (not position or size) - like a format painter. ' +
     'Whenever you add a shape (add_text_box, add_shape, add_table, add_chart, add_smartart) or create a group, pass a short, meaningful name so later read_slide/read_group output is self-explanatory. ' +
     'You can add and edit tables: add_table, edit_table_cell, edit_table_structure, and edit_table_style. ' +
     'You can create and edit charts: add_chart and edit_chart. ' +

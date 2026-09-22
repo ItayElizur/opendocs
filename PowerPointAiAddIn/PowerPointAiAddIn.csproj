@@ -162,6 +162,14 @@
       <SubType>Code</SubType>
       <DependentUpon>PowerPointTools.cs</DependentUpon>
     </Compile>
+    <Compile Include="PowerPointTools.FormatPainter.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>PowerPointTools.cs</DependentUpon>
+    </Compile>
+    <Compile Include="PowerPointTools.CrossSlide.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>PowerPointTools.cs</DependentUpon>
+    </Compile>
     <Compile Include="Ribbon.cs">
       <SubType>Code</SubType>
     </Compile>
