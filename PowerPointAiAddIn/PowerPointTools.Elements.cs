@@ -81,6 +81,28 @@ namespace PowerPointAiAddIn
             try { return shape.Parent as PowerPoint.Slide; } catch { return null; }
         }
 
+        // Shared by ApplyOptionalName below and DuplicateElement/CopyOrMoveElement
+        // (PowerPointTools.CrossSlide.cs) - disambiguates `desired` against every
+        // OTHER shape's current Name on `shape`'s own slide with a numeric suffix
+        // ("Rectangle 5" -> "Rectangle 5 2"), the same convention read_slide/
+        // read_group key their output on. No-ops (returns desired unchanged) for a
+        // shape whose parent isn't a Slide (e.g. a Slide Master shape) - same
+        // documented limitation ApplyOptionalName already had.
+        private static string MakeUniqueNameOnSlide(PowerPoint.Shape shape, string desired)
+        {
+            PowerPoint.Slide slide = ShapeSlide(shape);
+            string unique = desired;
+            if (slide != null)
+            {
+                var taken = new HashSet<string>();
+                foreach (PowerPoint.Shape s in slide.Shapes)
+                    if (s.Id != shape.Id) taken.Add(s.Name);
+                int suffix = 2;
+                while (taken.Contains(unique)) unique = desired + " " + suffix++;
+            }
+            return unique;
+        }
+
         // Optional model-chosen shape name. PowerPoint permits duplicate names,
         // but read_slide/read_group key their output on the name, so a collision
         // on the same slide is disambiguated with a numeric suffix. Returns the
@@ -93,16 +115,7 @@ namespace PowerPointAiAddIn
             if (desired.Length == 0) return null;
             if (desired.Length > 120) desired = desired.Substring(0, 120);
 
-            PowerPoint.Slide slide = ShapeSlide(shape);
-            string unique = desired;
-            if (slide != null)
-            {
-                var taken = new HashSet<string>();
-                foreach (PowerPoint.Shape s in slide.Shapes)
-                    if (s.Id != shape.Id) taken.Add(s.Name);
-                int suffix = 2;
-                while (taken.Contains(unique)) unique = desired + " " + suffix++;
-            }
+            string unique = MakeUniqueNameOnSlide(shape, desired);
             shape.Name = unique;
             return unique;
         }
@@ -427,6 +440,21 @@ namespace PowerPointAiAddIn
             }
 
             string named = ApplyOptionalName(dup, input);
+            if (named == null)
+            {
+                // Real-user-confirmed (2026-09-22, live testing): Shape.Duplicate()
+                // keeps the EXACT source Name (unlike a UI Ctrl+D/paste, which
+                // auto-renames) - two shapes end up identically named, confusing
+                // read_slide/read_group output. Dedupe it the same way an explicit
+                // name would be, using the duplicate's own (source-inherited) name
+                // as the "desired" one.
+                string unique = MakeUniqueNameOnSlide(dup, dup.Name);
+                if (unique != dup.Name)
+                {
+                    dup.Name = unique;
+                    named = unique;
+                }
+            }
             // ZOrderPosition, not slide.Shapes.Count - Duplicate()'s exact
             // insertion point (end of collection vs. adjacent to the source)
             // is unverified; ZOrderPosition is correct either way, same
