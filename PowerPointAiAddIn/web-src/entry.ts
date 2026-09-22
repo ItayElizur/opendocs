@@ -254,12 +254,9 @@ const MUTATION_TOOLS = [
   {
     name: 'copy_element',
     description:
-      'Copies a shape to a DIFFERENT slide, leaving the original in place. Supports text boxes, ANY autoshape preset (not a curated subset), lines, tables, charts, ANY SmartArt layout (not a curated subset), and groups of any of these (recursively - a group can contain groups). ' +
-      'PowerPoint has no clipboard-free way to move a shape to another slide\'s Shapes collection, so this reconstructs the shape there instead of using the clipboard, applying PowerPoint\'s own native format painter (Shape.PickUp/Apply) plus targeted copies for per-run text formatting (not just uniform "first character"), text outline/strikethrough/glow/reflection/shadow/soft-edge/bevel, text box anchor+margins, gradient/patterned fill, dash/arrowhead outlines, rotation/flip/AutoShape adjustments, table cell text formatting+table style, and SmartArt color+3D style. ' +
-      'Pictures, linked pictures, video/audio, and embedded/linked OLE objects error clearly (reconstructing them would need an export step this tool doesn\'t do yet) rather than being silently dropped or approximated - same for freeform/custom-geometry shapes (no reconstruction primitive exists for arbitrary vertex data). If ANY shape inside a group is one of these, the whole group copy is refused, naming the offending child. A SmartArt inside a group is handled differently: PowerPoint itself refuses to group a SmartArt with any other shape, so it\'s reconstructed as a separate, ungrouped sibling shape at the same position instead of failing the whole copy - the result names its shapeIndex. ' +
+      'Copies a shape to a DIFFERENT slide, leaving the original in place, using PowerPoint\'s own native copy/paste - so EVERY shape kind is supported with full native fidelity, exactly as it already exists (pictures, video/audio, OLE objects, freeform, tables with merged cells/per-cell shading/borders, charts, SmartArt, and groups of any of these, including a group nesting a SmartArt - since this clones the existing shape tree rather than rebuilding it). ' +
       'For a same-slide copy, use duplicate_element instead - this tool refuses targetSlideIndex equal to slideIndex. ' +
-      'Per-cell table shading/borders/merged-cell structure (a merged source cell copies as blank instead of crashing), chart features beyond basic data+layout, gradient/picture fill image content, and text reflection offset are not copied. ' +
-      'Inherits the source shape\'s own name (auto-suffixed if it collides on the destination slide) unless you pass an explicit name.',
+      'Inherits the source shape\'s own name (auto-suffixed if it collides on the destination slide) unless you pass an explicit name. Optional left/top override the position PowerPoint\'s own paste chose.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -688,7 +685,7 @@ const POWERPOINT_TOOL_DISPLAY = {
   },
   copy_element: {
     label: { en: 'Copy shape to another slide', he: 'העתקת אובייקט לשקופית אחרת' },
-    description: { en: 'Copies a shape to a different slide, with full formatting (not pictures, video, or OLE objects).', he: 'מעתיק אובייקט לשקופית אחרת, כולל כל העיצוב (לא תמונות, וידאו או אובייקטי OLE).' },
+    description: { en: 'Copies a shape to a different slide, with full native formatting.', he: 'מעתיק אובייקט לשקופית אחרת, כולל כל העיצוב המקורי.' },
   },
   move_element: {
     label: { en: 'Move shape to another slide', he: 'העברת אובייקט לשקופית אחרת' },
@@ -817,7 +814,7 @@ startAddIn({
     'You can manage slides and shape styling: add_slide, delete_slide, move_slide, duplicate_slide, set_element_fill, set_element_stroke, and set_slide_background. ' +
     'You can group and ungroup shapes: group_element (two or more shapeIndexes into one group) and ungroup_element. ' +
     'read_slide shows a group as one line; call read_group to list its contents recursively. Each child line gives a dotted path (e.g. "3.1.0") that you can pass as shapeIndex to set_element_text/set_element_style/set_element_fill/set_element_stroke to edit that child in place. To move, resize, reorder, delete, or animate a shape inside a group, call ungroup_element on the top-level group first. ' +
-    'You can duplicate a shape on the same slide (duplicate_element, works for every shape kind) and copy or move a shape to a different slide (copy_element, move_element) - cross-slide copy/move supports text boxes, any autoshape preset, lines, tables, charts, any SmartArt layout, and groups of these (recursively); pictures, video/audio, OLE objects, and freeform/custom-geometry shapes are not supported and return a specific error naming the shape kind. copy_element_style copies one shape\'s text (per-run)/fill/outline/rotation/flip formatting onto one or more other shapes on any slide (not position or size) - like a format painter. ' +
+    'You can duplicate a shape on the same slide (duplicate_element) and copy or move a shape to a different slide (copy_element, move_element) - all three work for every shape kind (pictures, tables with merged cells, charts, SmartArt, groups of anything, etc.) with full native fidelity. copy_element_style copies one shape\'s text (per-run)/fill/outline/rotation/flip formatting onto one or more other shapes on any slide (not position or size) - like a format painter. ' +
     'Whenever you add a shape (add_text_box, add_shape, add_table, add_chart, add_smartart) or create a group, pass a short, meaningful name so later read_slide/read_group output is self-explanatory. ' +
     'You can add and edit tables: add_table, edit_table_cell, edit_table_structure, and edit_table_style. ' +
     'You can create and edit charts: add_chart and edit_chart. ' +

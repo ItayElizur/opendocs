@@ -9,9 +9,11 @@ namespace PowerPointAiAddIn
     public static partial class PowerPointTools
     {
         // Plain Shape-to-Shape native-value copies (no JSON parsing, no hex
-        // round trip) - shared by copy_element_style below and by
-        // PowerPointTools.CrossSlide.cs's reconstruction paths, which call
-        // these for full fidelity after building the destination shape.
+        // round trip) - power copy_element_style below. copy_element/
+        // move_element (PowerPointTools.CrossSlide.cs) used to share these
+        // too, back when they reconstructed a destination shape property by
+        // property; that approach was replaced (2026-09-23) with native
+        // Shape.Copy()/Slide.Shapes.Paste(), which needs none of this.
 
         // User-asked (2026-09-23): "isn't there a way to just copy all
         // formatting generically instead of hardcoding every property?" -
@@ -119,9 +121,12 @@ namespace PowerPointAiAddIn
         // itself for '\r', PowerPoint's own paragraph separator when reading
         // TextRange.Text - avoids relying on Paragraphs(start,length)'s own
         // indexing semantics, which were never independently verified).
-        // Replaying onto the SAME character offsets on the destination is
-        // valid because the destination was built from this exact, unmodified
-        // text string (see ReconstructTextBox/ReconstructAutoShape).
+        // Replaying onto the SAME character offsets on the destination text
+        // is a best-effort match, not a guaranteed one, since the target is
+        // an independently-existing shape with its own (possibly shorter,
+        // possibly longer) text - each write is individually caught
+        // (ApplyFontRun) so a length mismatch just stops applying formatting
+        // past the target's own text length rather than throwing.
         //
         // Real cost, not hidden: this is O(text length) COM round trips (one
         // Font read per character, up to 9 properties each) to detect
@@ -288,24 +293,44 @@ namespace PowerPointAiAddIn
                 }
                 catch { }
 
+                // GlowFormat has no Visible gate (confirmed via reflection -
+                // just Radius/Transparency/Color), so a zero Radius IS the
+                // "no glow" state; only touching destFont2.Glow at all when
+                // the source has a real (>0) radius avoids materializing a
+                // glow effect on text that shouldn't have one.
                 try
                 {
-                    destFont2.Glow.Radius = srcFont2.Glow.Radius;
-                    destFont2.Glow.Transparency = srcFont2.Glow.Transparency;
-                    destFont2.Glow.Color.RGB = srcFont2.Glow.Color.RGB;
+                    if (srcFont2.Glow.Radius > 0)
+                    {
+                        destFont2.Glow.Radius = srcFont2.Glow.Radius;
+                        destFont2.Glow.Transparency = srcFont2.Glow.Transparency;
+                        destFont2.Glow.Color.RGB = srcFont2.Glow.Color.RGB;
+                    }
                 }
                 catch { }
 
-                // Real-user-confirmed gap (2026-09-23): text reflection wasn't
-                // copied at all - Font2.Reflection (Type/Size/Transparency/
-                // Blur) confirmed via reflection. Offset is deliberately left
-                // alone (its exact type wasn't independently verified).
+                // Real-user-confirmed bug (2026-09-23): reflection came out
+                // "always set" regardless of the source. Root cause:
+                // ReflectionFormat also has no Visible gate - msoReflection-
+                // TypeNone (confirmed via reflection to be the real "off"
+                // value, =0) is the only off switch, but the previous version
+                // wrote Type/Size/Transparency/Blur unconditionally every
+                // time, which - like Glow above - risked materializing a
+                // reflection effect on the destination merely by touching
+                // these properties at all, independent of which Type value
+                // was written. Now only writes anything when the source's
+                // own Type is affirmatively NOT None. Offset is deliberately
+                // left alone (its exact type wasn't independently verified).
                 try
                 {
-                    destFont2.Reflection.Type = srcFont2.Reflection.Type;
-                    destFont2.Reflection.Size = srcFont2.Reflection.Size;
-                    destFont2.Reflection.Transparency = srcFont2.Reflection.Transparency;
-                    destFont2.Reflection.Blur = srcFont2.Reflection.Blur;
+                    Microsoft.Office.Core.MsoReflectionType srcReflType = srcFont2.Reflection.Type;
+                    if (srcReflType != Microsoft.Office.Core.MsoReflectionType.msoReflectionTypeNone)
+                    {
+                        destFont2.Reflection.Type = srcReflType;
+                        destFont2.Reflection.Size = srcFont2.Reflection.Size;
+                        destFont2.Reflection.Transparency = srcFont2.Reflection.Transparency;
+                        destFont2.Reflection.Blur = srcFont2.Reflection.Blur;
+                    }
                 }
                 catch { }
 
