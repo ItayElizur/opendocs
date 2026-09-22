@@ -132,24 +132,41 @@ namespace PowerPointAiAddIn
             {
                 PowerPoint.Shape dest = CopyPasteShape(source, destSlide);
 
-                // A native paste lands wherever PowerPoint's own paste logic
-                // puts it (typically the same Left/Top as the source, on top
-                // of whatever's already on the destination slide) - honor an
-                // explicit left/top override the same way duplicate_element
-                // does, otherwise leave PowerPoint's own placement alone.
-                if (input.TryGetProperty("left", out var l)) dest.Left = (float)l.GetDouble();
-                if (input.TryGetProperty("top", out var t)) dest.Top = (float)t.GetDouble();
-
-                string named = ApplyOptionalName(dest, input);
-                if (named == null)
+                // If anything from here fails, the paste already succeeded -
+                // the destination slide has a real, pasted shape on it, so
+                // just rethrowing (as the code did originally) would leave
+                // that shape as a silent orphan while reporting an error,
+                // contradicting move_element's own documented "on any error
+                // nothing is changed" guarantee. Delete it before rethrowing,
+                // matching the orphan-cleanup discipline the old
+                // reconstruction-based version of this file used to have.
+                try
                 {
-                    // Real-user-confirmed (2026-09-22, live testing, same
-                    // root cause as DuplicateElement's own fix): a pasted
-                    // shape can keep the exact source Name, colliding with
-                    // it on the destination slide if the source's own slide
-                    // happens to share names with the destination's.
-                    string unique = MakeUniqueNameOnSlide(dest, source.Name);
-                    if (unique != dest.Name) dest.Name = unique;
+                    // A native paste lands wherever PowerPoint's own paste
+                    // logic puts it (typically the same Left/Top as the
+                    // source, on top of whatever's already on the
+                    // destination slide) - honor an explicit left/top
+                    // override the same way duplicate_element does,
+                    // otherwise leave PowerPoint's own placement alone.
+                    if (input.TryGetProperty("left", out var l)) dest.Left = (float)l.GetDouble();
+                    if (input.TryGetProperty("top", out var t)) dest.Top = (float)t.GetDouble();
+
+                    string named = ApplyOptionalName(dest, input);
+                    if (named == null)
+                    {
+                        // Real-user-confirmed (2026-09-22, live testing, same
+                        // root cause as DuplicateElement's own fix): a pasted
+                        // shape can keep the exact source Name, colliding with
+                        // it on the destination slide if the source's own slide
+                        // happens to share names with the destination's.
+                        string unique = MakeUniqueNameOnSlide(dest, source.Name);
+                        if (unique != dest.Name) dest.Name = unique;
+                    }
+                }
+                catch
+                {
+                    try { dest.Delete(); } catch { }
+                    throw;
                 }
 
                 int newShapeIndex = dest.ZOrderPosition - 1;
