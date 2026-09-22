@@ -61,18 +61,52 @@ namespace PowerPointAiAddIn
         // itself failed, or the clipboard was already empty in a way
         // GetDataObject couldn't wrap) - leaving our own shape's data there
         // is less destructive than guessing it's safe to wipe.
+        //
+        // Real-user-confirmed (2026-09-23): this whole operation was much
+        // slower than a manual Ctrl+C/Ctrl+V. Root cause: SetDataObject's
+        // second argument ("copy") - originally passed as true - tells
+        // Windows to eagerly render and flush EVERY format the data object
+        // exposes right now, so the clipboard survives even after the owning
+        // app exits. That's the right call for something like "user hit
+        // Ctrl+C, now leaving the app" but not for restoring a save taken a
+        // few milliseconds ago in the same still-running session - a
+        // multi-format payload (e.g. an image someone had copied, which
+        // carries bitmap/PNG/DIB/etc. simultaneously) can make that eager
+        // flush the dominant cost of the whole tool call. Passing false
+        // leaves the data lazily/delay-rendered (satisfied on demand by this
+        // same live IDataObject reference) - correct for restoring within an
+        // active session, and avoids the flush entirely.
         private static void RestoreClipboard(object saved)
         {
             var dataObj = saved as System.Windows.Forms.IDataObject;
             if (dataObj == null) return;
-            try { System.Windows.Forms.Clipboard.SetDataObject(dataObj, true); }
+            try { System.Windows.Forms.Clipboard.SetDataObject(dataObj, false); }
             catch { /* best-effort - see SaveClipboard's own comment */ }
         }
 
+        // Real-user-confirmed (2026-09-23): a completely empty default text
+        // box (no text, no fill, no other content) raised PowerPoint's own
+        // raw COM error - "Shapes (unknown member): Invalid request.
+        // Clipboard is empty or contains data which may not be pasted here."
+        // - because Copy() on a shape with nothing to render doesn't put a
+        // pasteable payload on the clipboard at all. Caught and re-thrown
+        // with the likely cause named plainly, instead of surfacing that
+        // cryptic native message as-is.
         private static PowerPoint.Shape CopyPasteShape(PowerPoint.Shape source, PowerPoint.Slide destSlide)
         {
-            source.Copy();
-            PowerPoint.ShapeRange pasted = destSlide.Shapes.Paste();
+            PowerPoint.ShapeRange pasted;
+            try
+            {
+                source.Copy();
+                pasted = destSlide.Shapes.Paste();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "Copy/paste failed for this shape - the most common cause is a completely empty shape " +
+                    "(no text, no fill, no other content), which PowerPoint's own Copy() doesn't put a pasteable payload on " +
+                    "the clipboard for. PowerPoint's own error: " + ex.Message, ex);
+            }
             if (pasted.Count != 1)
                 throw new InvalidOperationException("Paste produced " + pasted.Count + " shape(s) instead of exactly 1.");
             return pasted[1];
