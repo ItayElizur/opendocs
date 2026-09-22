@@ -1,13 +1,38 @@
-# Verification — `duplicate_element` / `copy_element` / `move_element` / `copy_element_style` (2026-09-16)
+# Verification — `duplicate_element` / `copy_element` / `move_element` / `copy_element_style`
+
+## History
+
+This started (2026-09-16) as a property-based reconstruction approach for
+`copy_element`/`move_element`: read a source shape's properties and manually
+rebuild an equivalent on the destination slide, avoiding the OS clipboard
+entirely (matching this codebase's rule for Word). After several rounds of
+live testing (2026-09-22 through 2026-09-23) that approach was abandoned:
+SmartArt has no COM API to read its layout's own placeholder structure,
+PowerPoint refuses to `Group()` a SmartArt with any other shape, table cell
+shading/borders/merged cells aren't fully readable through this PIA, and
+gradient fills don't round-trip cleanly through `GradientStops`. Each fix
+closed one gap and surfaced another.
+
+**Current approach (2026-09-23):** `copy_element`/`move_element` use
+PowerPoint's own native `Shape.Copy()` + `Slide.Shapes.Paste()`, which
+reproduces the exact underlying OOXML the same way Ctrl+C/Ctrl+V does — no
+shape kind can fail to support this. This **does use the real Windows
+clipboard**, an explicit, deliberate exception to this codebase's otherwise-
+universal "never the clipboard" rule; the clobbering/racing risk is
+mitigated (not eliminated) by saving and restoring the clipboard's prior
+contents around the operation. `duplicate_element` (`Shape.Duplicate()`) and
+`copy_element_style` (`Shape.PickUp()`/`Apply()`) were never part of the
+reconstruction problem and are unaffected by any of this - both are native,
+non-clipboard mechanisms.
 
 ## Registration cross-check (4 tools × 4 places)
 
 | Tool | `Execute` switch | `MUTATION_TOOLS` | `POWERPOINT_TOOL_DISPLAY` | `systemPrompt` |
 |---|---|---|---|---|
-| `duplicate_element` | `PowerPointTools.cs:93` | `entry.ts:235` | `entry.ts:674` | mentioned |
-| `copy_element` | `PowerPointTools.cs:94` | `entry.ts:254` | `entry.ts:678` | mentioned |
-| `move_element` | `PowerPointTools.cs:95` | `entry.ts:275` | `entry.ts:682` | mentioned |
-| `copy_element_style` | `PowerPointTools.cs:96` | `entry.ts:425` | `entry.ts:730` | mentioned |
+| `duplicate_element` | `PowerPointTools.cs:93` | `entry.ts:235` | `entry.ts:682` | mentioned |
+| `copy_element` | `PowerPointTools.cs:94` | `entry.ts:255` | `entry.ts:686` | mentioned |
+| `move_element` | `PowerPointTools.cs:95` | `entry.ts:274` | `entry.ts:690` | mentioned |
+| `copy_element_style` | `PowerPointTools.cs:96` | `entry.ts:424` | `entry.ts:738` | mentioned |
 
 All 4 present in all 4 locations. No `AlwaysAllowedTools` entry needed — none of the four is a read-only tool.
 
@@ -15,22 +40,20 @@ All 4 present in all 4 locations. No `AlwaysAllowedTools` entry needed — none 
 
 - `MSBuild PowerPointAiAddIn.csproj -t:Build -p:Configuration=Debug` — **clean.** Confirms:
   - `Shape.Duplicate()` → `ShapeRange` → 1-based indexer (`duplicate_element`).
-  - All 5 reconstruction paths' Interop calls (`HasTable`/`HasChart`/dynamic `HasSmartArt`, `AutoShapeType`, `Table.Cell(r,c)`, `Chart.SeriesCollection()`/`XValues`/`Values`/`Name`, `SmartArt.Layout.Name`/`Nodes`) resolve against the referenced PowerPoint PIA.
-  - The synthetic-JSON reuse of `AddTextBox`/`AddShape`/`AddTable`/`AddChartPpt`/`AddSmartArt` compiles (`PowerPointTools.CrossSlide.cs`'s `BuildJson` + `CallAddAndGetNewShape`).
-  - The 3 shared copy helpers (`CopyTextFormatting`/`CopyFillFormatting`/`CopyStrokeFormatting`, `PowerPointTools.FormatPainter.cs`) compile against `Font`/`Fill`/`Line`/`TextRange.Characters`/`.Paragraphs`.
-  - Both new `.csproj` `<Compile Include>` entries are correct.
+  - `Shape.Copy()` / `Slide.Shapes.Paste()` → `ShapeRange` → 1-based indexer, and `System.Windows.Forms.Clipboard.GetDataObject()`/`SetDataObject()` resolve (`copy_element`/`move_element`, `PowerPointTools.CrossSlide.cs`).
+  - `Shape.PickUp()`/`Shape.Apply()` (no-arg format painter) and every hand-rolled `Copy*Formatting` helper (`Font`/`Font2`/`Fill`/`FillFormat.GradientStops`/`Line`/`ThreeDFormat`/`TextRange.Characters`/`.Paragraphs`) compile against the referenced PIAs (`PowerPointTools.FormatPainter.cs`, used by `copy_element_style`).
+  - Both `.csproj` `<Compile Include>` entries are correct.
 - `tsc --noEmit` (PowerPointAiAddIn) — clean.
 - esbuild bundle rebuild — clean.
-- `dotnet test OfficeAi.Shared.Tests` — 136/136 passed, unaffected (zero `OfficeAi.Shared` changes — all reverse-lookup maps are local to `PowerPointAiAddIn`, by design).
+- Zero `OfficeAi.Shared` changes across this whole history — the shared test suite is unaffected by construction, not just by re-running it.
 
-## Deferred to real manual PowerPoint testing (not possible from this environment)
+## Live-tested (via the mock server's `FORCE_TOOL:` harness, across many rounds)
 
-Per the plan's Risks section, in priority order:
+- `duplicate_element` — works for every shape kind, auto-suffixes on name collision.
+- `copy_element`/`move_element` — confirmed working post-native-Copy/Paste-switch for: tables with merged cells and custom colors/borders, gradient-filled shapes, groups nesting SmartArt, cross-slide moves. Also fixed live: a slow clipboard restore (`SetDataObject`'s `copy` flag was eagerly flushing every format - see `PowerPointTools.CrossSlide.cs`'s `RestoreClipboard`), and a cryptic raw COM error copying a completely empty shape (no pasteable clipboard payload - see `CopyPasteShape`'s catch).
+- `copy_element_style` — cross-slide targets, per-run text formatting, and text effects (outline/strikethrough/glow/reflection/shadow/soft-edge/bevel) confirmed; also fixed live: reflection/glow effects coming out "always set" regardless of source (`ReflectionFormat`/`GlowFormat` have no `Visible` gate - both are now only touched when the source affirmatively has a real, non-default effect).
 
-1. **Chart cross-slide copy/move** — highest risk. Whether `SeriesCollection().Item(i).XValues`/`.Values` reliably marshal as usable `object[]` arrays, and round-trip correctly for a chart built by this same tool's own `SetSourceData` call, is genuinely unverified. **Suggested first test.**
-2. **`Shape.Duplicate()`'s exact positioning/indexing** — `duplicate_element`'s design (position from the original shape, index via `ZOrderPosition`) is chosen to tolerate either possible real behavior, but the actual behavior itself is unconfirmed.
-3. **Mixed-formatting `TextRange` reads** in `CopyTextFormatting` (`Characters(1,1)`/`Paragraphs(1,1)`) — PowerPoint's sentinel convention (if any) for a non-uniform range is unconfirmed and distinct from Word's.
-4. **`copy_element_style` on a `HasTextFrame`-true, zero-length-text shape** — the `Characters(1,1)` call is gated behind `TextFrame.HasText == msoTrue`, but this exact guard combination is untested.
-5. **Full per-kind matrix**: each of the 5 supported cross-slide kinds (copy and move), each unsupported-kind error (group/picture/OLE/media/unmapped-autoshape-preset/non-curated-SmartArt-layout), `targetSlideIndex` validation, and orphan-shape cleanup on an induced mid-reconstruction failure.
+## Deferred / open questions
 
-**Suggested first manual test sequence**: (a) `duplicate_element` on one shape of each kind (text box, autoshape, picture, table, chart, SmartArt, group, line) — confirms the "no restriction" property. (b) `copy_element`/`move_element` for a simple text box and autoshape across two slides — lowest-risk of the 5 reconstructable kinds. (c) `copy_element`/`move_element` for a chart — the confirmed highest-risk path. (d) `copy_element_style` from a bold/colored text box onto two other shapes.
+1. **`copy_element_style`'s hand-rolled Fill/Stroke/Rotation/Adjustments copies may now be redundant** with `CopyViaPickUpApply` (PowerPoint's native format painter, called first in the same pipeline) - flagged in PR #14's description as a possible future cleanup, not done here since it can't be verified without a live A/B test of PickUp/Apply alone vs. the current layered approach.
+2. **Clipboard save/restore in a real (non-mock-harness) PowerPoint session** — not yet manually confirmed that restoring the user's own clipboard content is visually/functionally seamless (e.g. immediately available to a manual Ctrl+V right after the tool call).
