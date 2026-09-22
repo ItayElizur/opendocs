@@ -234,7 +234,7 @@ const MUTATION_TOOLS = [
   {
     name: 'duplicate_element',
     description:
-      'Creates a copy of a shape on the SAME slide - works for every shape kind, including groups/pictures/tables/charts/SmartArt (unlike copy_element/move_element, which only reconstruct specific kinds). ' +
+      'Creates a copy of a shape on the SAME slide - works for every shape kind, including groups/pictures/tables/charts/SmartArt. For a DIFFERENT slide, use copy_element/move_element instead. ' +
       'Positions the duplicate offsetX/offsetY points from the original (default 12/12) unless left/top is given, which places it at an exact position instead. ' +
       'If you don\'t pass name, the duplicate is automatically given a unique name (e.g. "Rectangle 5" -> "Rectangle 5 2") instead of colliding with the original\'s name.',
     inputSchema: {
