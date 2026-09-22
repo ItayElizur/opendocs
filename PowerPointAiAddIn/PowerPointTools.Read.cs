@@ -109,6 +109,8 @@ namespace PowerPointAiAddIn
             int animCount = slide.TimeLine.MainSequence.Count;
             if (animCount > 0) sb.AppendLine(animCount + " animation(s) - call read_animations to see them.");
 
+            sb.AppendLine(DescribeHeadersFooters(slide));
+
             // Post-hoc addition (2026-08-24, user-requested: "see the order
             // between objects"): slide.Shapes is already ordered back-to-
             // front by z-order (confirmed via reflection: Shape.ZOrderPosition

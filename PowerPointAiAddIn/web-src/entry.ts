@@ -71,6 +71,13 @@ const READER_TOOLS = [
       required: ['slideIndex'],
     },
   },
+  {
+    name: 'read_master_elements',
+    description:
+      'Lists the shapes placed directly on the Slide Master (index, name, kind, position/size, text if any) - not the shapes on any one slide. ' +
+      'Shapes added here with add_master_element appear on every slide whose layout doesn\'t hide master shapes. Call this before remove_master_element to find the right masterShapeIndex.',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ]
 
 const MUTATION_TOOLS = [
@@ -543,6 +550,65 @@ const MUTATION_TOOLS = [
       required: ['slideIndex', 'shapeIndex', 'localPath'],
     },
   },
+  {
+    name: 'set_headers_footers',
+    description:
+      'Sets slide number, footer text, and date/time - the same 3 toggles as PowerPoint\'s native "Insert Header and Footer" dialog (there is no per-slide "header", only slide number/footer/date). ' +
+      'slideIndex:-1 applies to every slide in the deck; a specific 0-based slideIndex applies to just that one. Only the fields you provide are changed. ' +
+      'footerText implies footerVisible:true unless you also pass footerVisible explicitly; dateMode "auto" shows a self-updating today\'s-date, "fixed" shows dateText verbatim. ' +
+      'skipTitleSlide and startNumber are both ALWAYS deck-wide, regardless of slideIndex - PowerPoint has no per-slide version of either (skipTitleSlide sets the Slide/Title Master\'s "Don\'t show on title slide" flag, startNumber sets the deck\'s first slide number). ' +
+      'If nothing appears after enabling a toggle, the slide\'s layout may simply not include that placeholder - try set_slide_layout or check read_master_elements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number', description: '0-based, or -1 for the whole deck.' },
+        slideNumberVisible: { type: 'boolean' },
+        footerVisible: { type: 'boolean' },
+        footerText: { type: 'string' },
+        dateVisible: { type: 'boolean' },
+        dateMode: { type: 'string', enum: ['auto', 'fixed'] },
+        dateText: { type: 'string', description: 'Required when dateMode is "fixed".' },
+        skipTitleSlide: { type: 'boolean', description: 'Always deck-wide (see description) - not scoped by slideIndex.' },
+        startNumber: { type: 'number', description: 'Always deck-wide (see description) - not scoped by slideIndex.' },
+      },
+      required: ['slideIndex'],
+    },
+  },
+  {
+    name: 'add_master_element',
+    description:
+      'Adds a persistent icon (picture) or small text label to the Slide Master, so it shows up in the same spot on every slide (e.g. a logo/watermark/confidentiality label) - not just one slide. ' +
+      'Use corner for a quick topLeft/topRight/bottomLeft/bottomRight placement (inset by marginPt, default 12pt), or left+top for an exact position. ' +
+      'For kind:"icon", width/height are optional - omit one and it scales proportionally from the image\'s natural size; omit both to use the natural size. ' +
+      'Known limits: only this presentation\'s default (first) Slide Master is affected - a deck combining more than one theme has more than one; and a layout with "Hide Background Graphics" enabled won\'t show it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['icon', 'text'] },
+        corner: { type: 'string', enum: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'] },
+        left: { type: 'number' },
+        top: { type: 'number' },
+        width: { type: 'number' },
+        height: { type: 'number' },
+        marginPt: { type: 'number', description: 'Default 12. Inset from the slide edge, only used with corner.' },
+        localPath: { type: 'string', description: 'Required for kind:"icon" - a local image file path.' },
+        text: { type: 'string', description: 'Required for kind:"text".' },
+        fontSize: { type: 'number', description: 'kind:"text" only. Default 10.' },
+        color: { type: 'string', description: 'kind:"text" only. Hex color, e.g. "#808080" (the default).' },
+        name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_master_elements.' },
+      },
+      required: ['kind'],
+    },
+  },
+  {
+    name: 'remove_master_element',
+    description: 'Deletes one shape from the Slide Master by the 0-based masterShapeIndex read_master_elements reports. Other master shapes\' indices may shift afterward - re-read before another edit in the same run.',
+    inputSchema: {
+      type: 'object',
+      properties: { masterShapeIndex: { type: 'number' } },
+      required: ['masterShapeIndex'],
+    },
+  },
 ]
 
 const ALL_TOOLS = [...READER_TOOLS, ...MUTATION_TOOLS]
@@ -702,6 +768,22 @@ const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'Replace image', he: 'החלפת תמונה' },
     description: { en: "Swaps a picture's content for a different image file, keeping its position and size.", he: 'מחליף את תוכן התמונה בקובץ תמונה אחר, תוך שמירה על מיקום וגודל.' },
   },
+  set_headers_footers: {
+    label: { en: 'Slide numbers, footer & date', he: 'מספור שקופיות, כותרת תחתונה ותאריך' },
+    description: { en: 'Turns slide numbers, footer text, and date/time on or off, deck-wide or for one slide.', he: 'מפעיל או מכבה מספור שקופיות, טקסט כותרת תחתונה ותאריך, בכל המצגת או בשקופית אחת.' },
+  },
+  add_master_element: {
+    label: { en: 'Add logo/label to every slide', he: 'הוספת לוגו/תווית לכל השקופיות' },
+    description: { en: 'Pins an icon or small text label to a corner of the Slide Master so it appears on every slide.', he: 'מצמיד סמל או תווית טקסט קטנה לפינה של השקופית האב, כך שתופיע בכל השקופיות.' },
+  },
+  remove_master_element: {
+    label: { en: 'Remove master element', he: 'הסרת רכיב מהשקופית האב' },
+    description: { en: 'Deletes a shape that was added to the Slide Master.', he: 'מוחק אובייקט שנוסף לשקופית האב.' },
+  },
+  read_master_elements: {
+    label: { en: 'Read master elements', he: 'קריאת רכיבי השקופית האב' },
+    description: { en: 'Lists the shapes placed on the Slide Master.', he: 'מציג רשימה של האובייקטים הממוקמים על השקופית האב.' },
+  },
 }
 
 startAddIn({
@@ -725,11 +807,15 @@ startAddIn({
     'You can work with images: crop_image, set_picture_opacity, and replace_image. ' +
     'You can change a slide\'s layout (set_slide_layout), set or remove its transition (set_slide_transition), and add, read, or edit shape animations (add_animation, read_animations, edit_animation). ' +
     'edit_animation\'s delete/reorder shift later animation indices - call read_animations again before a second animation edit on the same slide in the same run. ' +
+    'You can manage Slide Master basics: set_headers_footers (slide number/footer/date, deck-wide or per slide - mirrors PowerPoint\'s native "Insert Header and Footer" dialog), ' +
+    'and add_master_element/read_master_elements/remove_master_element to pin a logo, icon, or small text label to a corner of every slide via the Slide Master rather than editing each slide individually. ' +
     'Your available tools depend on the current editing mode (Read Only, Comment Only, Track Changes, or Full Autonomy) - only call tools that are currently offered to you.',
   starters: [
     { en: "Improve this slide's title and copy", he: 'שפר את הכותרת והטקסט של השקופית' },
     { en: "Make this slide's bullets more concise", he: 'קצר את התבליטים בשקופית' },
     { en: 'Check the whole deck for typos and fix them', he: 'בדוק שגיאות כתיב בכל המצגת ותקן אותן' },
+    { en: 'Turn on slide numbers, but skip the title slide', he: 'הפעל מספור שקופיות, אך דלג על שקופית הכותרת' },
+    { en: 'Add our logo to the bottom-right corner of every slide', he: 'הוסף את הלוגו שלנו לפינה הימנית התחתונה בכל שקופית' },
   ],
   readOnlyTools: READER_TOOLS.map((t) => t.name),
   // FT-2 Task 4/5: the current slide/shape/text selection is injected into
