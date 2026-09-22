@@ -6,13 +6,13 @@ export type EditingMode = 'readOnly' | 'commentOnly' | 'trackChanges' | 'fullAut
 export type Lang = 'en' | 'he'
 
 const STRINGS: Record<string, Record<Lang, string>> = {
-  panelTitle:           { en: 'Airchat Office', he: "איירצ'אט אופיס" },
-  inputPlaceholder:     { en: 'Ask Airchat Office to edit this document...', he: 'בקש מ-Airchat Office לערוך את המסמך...' },
+  panelTitle:           { en: 'OpenDocs', he: 'אופן דוקס' },
+  inputPlaceholder:     { en: 'Ask OpenDocs to edit this document...', he: 'בקש מ-OpenDocs לערוך את המסמך...' },
   send:                 { en: 'Send', he: 'שלח' },
   stop:                 { en: 'Stop', he: 'עצור' },
   newChat:              { en: 'New chat', he: 'שיחה חדשה' },
   settings:             { en: 'Settings', he: 'הגדרות' },
-  settingsTitle:        { en: 'Airchat Office Settings', he: 'הגדרות Airchat Office' },
+  settingsTitle:        { en: 'OpenDocs Settings', he: 'הגדרות OpenDocs' },
   settingsBaseUrl:      { en: 'API Base URL', he: 'כתובת בסיס API' },
   settingsApiKey:       { en: 'API Key', he: 'מפתח API' },
   settingsModel:        { en: 'Model name', he: 'שם המודל' },
@@ -426,14 +426,14 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       <div class="ai-rail" data-t="panelTitle"></div>
       <div class="ai-panel">
       <div class="ai-panel-header">
-        <div class="ai-panel-title"><img class="ai-logo" src="logo.png" alt="" /><span data-t="panelTitle">Airchat Office</span></div>
+        <div class="ai-panel-title"><img class="ai-logo" src="logo.png" alt="" /><span data-t="panelTitle">OpenDocs</span></div>
         <div class="ai-header-actions">
           <button class="ai-header-btn" data-t-title="newChat">+</button>
           <button class="ai-header-btn" data-t-title="settings">&#9881;</button>
           <button class="ai-header-btn" data-t-title="collapse">&#x276E;</button>
         </div>
         <div class="ai-settings-panel" id="settingsPanel">
-          <h4 data-t="settingsTitle">Airchat Office Settings</h4>
+          <h4 data-t="settingsTitle">OpenDocs Settings</h4>
           <div class="ai-field"><label data-t="settingsProvider">Provider</label><select class="ai-settings-provider"></select></div>
           <div class="ai-field ai-field-baseurl"><label data-t="settingsBaseUrl">API Base URL</label><input data-field="baseUrl" type="text" /></div>
           <div class="ai-field"><label data-t="settingsApiKey">API Key</label><input data-field="apiKey" type="password" /></div>
@@ -494,7 +494,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       <div class="ai-composer">
         <div class="ai-input-box">
           <span class="ai-scope-hint"><span class="dot"></span><span class="label" id="scopeHintLabel">Whole document</span></span>
-          <textarea class="ai-textarea" rows="1" dir="auto" placeholder="Ask Airchat Office to edit this document..." data-t-placeholder="inputPlaceholder"></textarea>
+          <textarea class="ai-textarea" rows="1" dir="auto" placeholder="Ask OpenDocs to edit this document..." data-t-placeholder="inputPlaceholder"></textarea>
           <div class="ai-input-footer">
             <div style="position: relative;">
               <button class="ai-mode-btn"><span class="dot"></span><span id="modeBtnLabel">Full autonomy</span></button>

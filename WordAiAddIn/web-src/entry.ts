@@ -594,7 +594,7 @@ startAddIn({
   tools: ALL_WORD_TOOLS,
   toolDisplay: WORD_TOOL_DISPLAY,
   systemPrompt:
-    'You are an AI assistant embedded in Microsoft Word via the Airchat Office add-in. ' +
+    'You are an AI assistant embedded in Microsoft Word via the OpenDocs add-in. ' +
     'You can read the document, insert content at any position (plain text or a restricted HTML subset - headings, bold/italic/underline, bulleted/numbered lists), ' +
     'read and non-destructively replace paragraph ranges, apply formatting and find/replace commands, insert images from local file paths, add comments, ' +
     'search the document\'s text read-only with find_text, and list the document\'s heading outline with get_headings (like the Navigation Pane). ' +

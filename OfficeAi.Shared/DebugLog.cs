@@ -14,7 +14,7 @@ namespace OfficeAi.Shared
     // aid, not a permanent logging subsystem.
     public static class DebugLog
     {
-        public static readonly string LogPath = Path.Combine(Path.GetTempPath(), "AirchatOfficeDebug.log");
+        public static readonly string LogPath = Path.Combine(Path.GetTempPath(), "OpenDocsDebug.log");
         private static readonly object Lock = new object();
 
         public static void Write(string message)

@@ -115,7 +115,7 @@ namespace OutlookAiAddIn
             try
             {
                 var control = new TaskPaneHost();
-                CustomTaskPane pane = this.CustomTaskPanes.Add(control, "Airchat Office", explorer);
+                CustomTaskPane pane = this.CustomTaskPanes.Add(control, "OpenDocs", explorer);
                 pane.Width = 420;
                 pane.Visible = true;
 

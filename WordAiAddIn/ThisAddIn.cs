@@ -80,7 +80,7 @@ namespace WordAiAddIn
             try
             {
                 TaskPaneHost control = new TaskPaneHost(window.Document, hwnd);
-                CustomTaskPane pane = this.CustomTaskPanes.Add(control, "Airchat Office", window);
+                CustomTaskPane pane = this.CustomTaskPanes.Add(control, "OpenDocs", window);
                 pane.Width = 420;
                 pane.Visible = true;
 

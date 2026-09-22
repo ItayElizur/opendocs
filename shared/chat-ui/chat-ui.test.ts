@@ -31,7 +31,7 @@ function setup(extra: Partial<Parameters<typeof mountChatUI>[1]> = {}) {
 describe('mountChatUI', () => {
   it('renders the title and no attachment button', () => {
     const { root } = setup()
-    expect(root.textContent).toContain('Airchat Office')
+    expect(root.textContent).toContain('OpenDocs')
     expect(root.querySelector('.ai-attach-btn')).toBeNull()
     expect(root.querySelector('input[type="file"]')).toBeNull()
   })
@@ -203,9 +203,9 @@ describe('mountChatUI', () => {
     root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
     root.querySelector<HTMLButtonElement>('[data-lang="he"]')!.click()
     // Not yet applied - Hebrew string should not appear until Save.
-    expect(root.querySelector('[data-t="panelTitle"]')!.textContent).toBe('Airchat Office')
+    expect(root.querySelector('[data-t="panelTitle"]')!.textContent).toBe('OpenDocs')
     root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
-    expect(root.querySelector('[data-t="panelTitle"]')!.textContent).toBe("איירצ'אט אופיס")
+    expect(root.querySelector('[data-t="panelTitle"]')!.textContent).toBe('אופן דוקס')
     expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ lang: 'he' }))
   })
 
