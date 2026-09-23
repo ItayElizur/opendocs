@@ -90,10 +90,12 @@ namespace OutlookAiAddIn
 
         // Cached once per process, same lifetime/posture as OutlookEws.CachedUrl
         // - the mailbox's configured work days/hours don't change mid-session,
-        // and each lookup is a network round trip via EWS. null (not yet
-        // resolved) vs a value with Days == null (resolved, but unavailable -
-        // e.g. non-Exchange profile) are distinguished so a failed lookup
-        // isn't retried on every single find_meeting_slots call either.
+        // and each lookup is a network round trip via EWS. Mirrors CachedUrl's
+        // posture exactly: _workWeekResolved only latches true on a SUCCESSFUL
+        // lookup, never on failure - a transient EWS/network blip on the first
+        // find_meeting_slots call must not permanently disable the real
+        // work-week lookup (falling back to Sun-Thu/9-18) for the rest of the
+        // Outlook session, which can run for days.
         private static OutlookEws.WorkWeekInfo? _cachedWorkWeek;
         private static bool _workWeekResolved;
 
@@ -113,19 +115,25 @@ namespace OutlookAiAddIn
         internal static async Task<OutlookEws.WorkWeekInfo?> ResolveWorkWeekAsync()
         {
             if (_workWeekResolved) return _cachedWorkWeek;
-            _workWeekResolved = true;
             try
             {
                 Uri url = await ResolveEwsUrlAsync(); // throws on any failure - caught below, not propagated
                 string smtp = FindExchangeAccountInfo().smtp;
-                _cachedWorkWeek = await OutlookEws.GetWorkingHoursAsync(url, smtp);
+                OutlookEws.WorkWeekInfo? result = await OutlookEws.GetWorkingHoursAsync(url, smtp);
+                if (result.HasValue)
+                {
+                    // Only a successful lookup is cached/latched - see the
+                    // fields' own comment above.
+                    _cachedWorkWeek = result;
+                    _workWeekResolved = true;
+                }
+                return result;
             }
             catch (Exception ex)
             {
                 DebugLog.WriteException("ResolveWorkWeekAsync", ex);
-                _cachedWorkWeek = null;
+                return null;
             }
-            return _cachedWorkWeek;
         }
 
         // Shared by every EWS-dependent tool: resolve the endpoint once

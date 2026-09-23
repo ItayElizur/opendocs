@@ -91,8 +91,8 @@ namespace OutlookAiAddIn
         internal struct WorkWeekInfo
         {
             public HashSet<DayOfWeek> Days;
-            public int StartHour;
-            public int EndHour;
+            public double StartHour;
+            public double EndHour;
         }
 
         // GetUserAvailability's WorkingHours is EWS's documented, server-side
@@ -151,8 +151,12 @@ namespace OutlookAiAddIn
                 return new WorkWeekInfo
                 {
                     Days = days,
-                    StartHour = (int)a.WorkingHours.StartTime.TotalHours,
-                    EndHour = (int)a.WorkingHours.EndTime.TotalHours,
+                    // Kept as fractional hours, not truncated to an int: a
+                    // mailbox configured for e.g. 08:30-17:30 would otherwise
+                    // silently become 08:00-17:00 (offering a slot before the
+                    // real start, and dropping the valid 17:00-17:30 slot).
+                    StartHour = a.WorkingHours.StartTime.TotalHours,
+                    EndHour = a.WorkingHours.EndTime.TotalHours,
                 };
             }
             return null;

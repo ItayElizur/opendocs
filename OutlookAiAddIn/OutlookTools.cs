@@ -198,6 +198,22 @@ namespace OutlookAiAddIn
             return dflt;
         }
 
+        // Like Int, but the default itself can be fractional - for
+        // find_meeting_slots' start_hour/end_hour, whose default comes from a
+        // mailbox's real (possibly non-hour-aligned, e.g. 08:30) EWS working
+        // hours. The argument itself is still schema'd as a whole-hour
+        // integer, so only the default needs the fractional path.
+        internal static double Double(JsonElement o, string name, double dflt)
+        {
+            JsonElement v;
+            if (o.ValueKind == JsonValueKind.Object && o.TryGetProperty(name, out v) && v.ValueKind == JsonValueKind.Number)
+            {
+                double n;
+                if (v.TryGetDouble(out n)) return n;
+            }
+            return dflt;
+        }
+
         internal static bool Bool(JsonElement o, string name, bool dflt)
         {
             JsonElement v;

@@ -84,8 +84,8 @@ namespace OutlookAiAddIn
             HashSet<DayOfWeek> workDays = workWeek.HasValue ? workWeek.Value.Days : FallbackWorkDays;
             string workDaysLabel = workWeek.HasValue ? string.Join(",", workDays) : "Sun-Thu (default - could not read the mailbox's actual work week)";
 
-            int startHour = Int(input, "start_hour", workWeek.HasValue ? workWeek.Value.StartHour : 9);
-            int endHour = Int(input, "end_hour", workWeek.HasValue ? workWeek.Value.EndHour : 18);
+            double startHour = Double(input, "start_hour", workWeek.HasValue ? workWeek.Value.StartHour : 9);
+            double endHour = Double(input, "end_hour", workWeek.HasValue ? workWeek.Value.EndHour : 18);
             if (endHour <= startHour)
                 return new ToolResult { Output = "end_hour must be after start_hour.", IsError = true, Summary = "find_meeting_slots" };
             int limit = Math.Max(1, Int(input, "limit", 5));
@@ -158,7 +158,7 @@ namespace OutlookAiAddIn
 
             var sb = new StringBuilder();
             if (unresolved.Count > 0) sb.AppendLine("Could not resolve: " + string.Join(", ", unresolved));
-            sb.AppendLine("Checked " + freeBusy.Count + " people, " + startHour.ToString("00") + ":00-" + endHour.ToString("00") + ":00, " + duration + " min slots:");
+            sb.AppendLine("Checked " + freeBusy.Count + " people, " + FormatHour(startHour) + "-" + FormatHour(endHour) + ", " + duration + " min slots:");
             foreach (FreeSlot s in slots)
             {
                 sb.Append("- " + Iso(s.Start) + " to " + s.End.ToString("HH:mm", CultureInfo.InvariantCulture) +
@@ -202,6 +202,16 @@ namespace OutlookAiAddIn
                     days.Add(d);
             }
             return days;
+        }
+
+        // start_hour/end_hour can be fractional (a mailbox's real EWS working
+        // hours, e.g. 8.5 for 08:30) even though the tool's own arguments are
+        // whole-hour integers - "00" formatting a fractional double would
+        // silently round instead of showing the actual minutes.
+        private static string FormatHour(double hour)
+        {
+            TimeSpan t = TimeSpan.FromHours(hour);
+            return t.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
         }
 
         private static ToolResult RespondMeeting(JsonElement input, bool accept)
