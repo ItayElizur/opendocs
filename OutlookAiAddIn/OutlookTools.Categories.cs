@@ -134,7 +134,7 @@ namespace OutlookAiAddIn
         // category list - the same list Categorize/list_color_categories use.
         private static ToolResult SetCategoryColor(JsonElement input)
         {
-            string name = ReqStr(input, "name");
+            string name = ReqStr(input, "name").Trim();
             Outlook.OlCategoryColor color = ParseColor(ReqStr(input, "color"));
 
             Outlook.Categories cats = Ns.Categories;
@@ -142,7 +142,7 @@ namespace OutlookAiAddIn
             if (existing != null)
             {
                 existing.Color = color;
-                return new ToolResult { Output = "Updated \"" + name + "\" to " + ColorName(color) + ".", Mutated = true, Summary = "set_category_color" };
+                return new ToolResult { Output = "Updated \"" + existing.Name + "\" to " + ColorName(color) + ".", Mutated = true, Summary = "set_category_color" };
             }
 
             Outlook.Category created = cats.Add(name, color);

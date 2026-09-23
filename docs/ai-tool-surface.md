@@ -233,7 +233,7 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > **Update 2026-09-17 (Outlook gains color-tag/category tools):** three new
 > tools, `OutlookAiAddIn/OutlookTools.Categories.cs`. `list_color_categories`
 > (read-only) lists the profile's master `Namespace.Categories` list — name +
-> friendly color name (the 25 `OlCategoryColor` values, mapped in that file
+> friendly color name (the 26 `OlCategoryColor` values, mapped in that file
 > since `OfficeAi.Shared` has no Outlook PIA reference, same split as
 > `ColorUtil` uses for RGB). `set_event_categories` sets/clears an
 > `AppointmentItem`'s `Categories` string (the colored block shown on a
@@ -504,7 +504,7 @@ index otherwise.
 | `get_event` | `Body` (≤ 40k), `RequiredAttendees`/`OptionalAttendees`, organizer, response status, recurring flag. |
 | `find_meeting_slots` | `Recipient.FreeBusy(anchor, 30, true)` — a per-30-min status string — for `Namespace.CurrentUser` + each resolved attendee; then `OfficeAi.Shared.MeetingSlots.Rank` (pure, unit-tested) slides a `duration_minutes` window in 30-min steps across each work day's `[start_hour, end_hour)` and scores each candidate by how many people are free (so a best partial match still comes back). Work week is Sun–Thu (mirrors mcp-outlook); default range is today→Thursday (or next week if today is Fri/Sat), max 28 days. Times past the returned free/busy window are assumed free. Args: `attendees` (req), `duration_minutes` (req), `start_date`, `end_date`, `start_hour` (9), `end_hour` (18), `limit` (5). |
 | `list_tasks` | `Folder.GetTable` over the default Tasks folder; open tasks only unless `include_completed`. Columns EntryID/Subject/Due/Start/Status/PercentComplete/Complete/ReminderTime. |
-| `list_color_categories` | `Namespace.Categories` — the profile's master color-tag ("Category") list shared by mail/calendar/tasks, same list Outlook's Categorize picker shows. Each entry: `{name, color}`; color is one of the 25 `OlCategoryColor` values (None/Red/Orange/…/Dark Maroon), mapped to a friendly display name in `OutlookTools.Categories.cs` (not in `OfficeAi.Shared` — that project doesn't reference the Outlook PIA, same split as `ColorUtil`). |
+| `list_color_categories` | `Namespace.Categories` — the profile's master color-tag ("Category") list shared by mail/calendar/tasks, same list Outlook's Categorize picker shows. Each entry: `{name, color}`; color is one of the 26 `OlCategoryColor` values (None/Red/Orange/…/Dark Maroon), mapped to a friendly display name in `OutlookTools.Categories.cs` (not in `OfficeAi.Shared` — that project doesn't reference the Outlook PIA, same split as `ColorUtil`). |
 
 ### Mutating tools (13 — Full autonomy only; `Mutated = true`)
 
