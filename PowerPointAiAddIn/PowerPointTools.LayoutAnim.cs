@@ -41,18 +41,19 @@ namespace PowerPointAiAddIn
         // by case-insensitive substring match against this deck's own live
         // theme layouts, since custom layout names are not a fixed enum -
         // a miss lists the real available names so the caller can retry
-        // correctly instead of guessing blind.
+        // correctly instead of guessing blind. Shares its exact-match-
+        // preference + ambiguous-match detection with PowerPointTools.
+        // Master.cs's ResolveLayoutByName via the same ResolveLayoutByQuery
+        // core (review finding: this used to silently take the first
+        // substring match with no ambiguity check at all - unlike
+        // ResolveLayoutByName's own multi-design search, this function's
+        // scope is unchanged, always just this one slide's own Design).
         private static PowerPoint.CustomLayout ResolveCustomLayout(PowerPoint.Slide slide, string query)
         {
-            PowerPoint.CustomLayout firstMatch = null;
-            var namesSeen = new List<string>();
+            var candidates = new List<LayoutCandidate>();
             foreach (PowerPoint.CustomLayout layout in slide.Design.SlideMaster.CustomLayouts)
-            {
-                namesSeen.Add(layout.Name);
-                if (firstMatch == null && layout.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) firstMatch = layout;
-            }
-            if (firstMatch != null) return firstMatch;
-            throw new ArgumentException("set_slide_layout: no custom layout matching '" + query + "' found in this slide's theme. Available: " + string.Join(", ", namesSeen) + ".");
+                candidates.Add(new LayoutCandidate { Layout = layout, DesignLabel = null });
+            return ResolveLayoutByQuery(candidates, query, "set_slide_layout", "this slide's theme").Layout;
         }
 
         private static ToolResult SetSlideLayout(JsonElement input)
@@ -64,6 +65,15 @@ namespace PowerPointAiAddIn
             if (kind == "custom")
             {
                 string layoutName = input.GetProperty("layoutName").GetString();
+                // Review finding: unlike ResolveMasterTarget's explicit
+                // !string.IsNullOrEmpty(query) check for the identical field
+                // on add_master_element/read_master_elements/etc., this path
+                // never guarded against an empty string - IndexOf("") matches
+                // every layout, so it silently picked the first one (or threw
+                // a confusing "matches more than one" error with >1 layout)
+                // for input that named nothing.
+                if (string.IsNullOrEmpty(layoutName))
+                    throw new ArgumentException("set_slide_layout: layoutName must be a non-empty string for kind:\"custom\".");
                 slide.CustomLayout = ResolveCustomLayout(slide, layoutName);
                 return new ToolResult { Output = "Slide " + slideIndex + " layout set to custom layout '" + layoutName + "'.", Mutated = true, Summary = "set_slide_layout" };
             }

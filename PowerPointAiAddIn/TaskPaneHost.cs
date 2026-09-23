@@ -95,6 +95,13 @@ namespace PowerPointAiAddIn
             // Task 3 Step 3: Slides is 1-based in COM, ResolveShape's tools
             // are 0-based - convert once, here, and never again downstream.
             foreach (PowerPoint.Slide s in sel.SlideRange) indexes.Add(s.SlideIndex - 1);
+            // User-requested (2026-09-22): surface the layout name so the
+            // model can address it directly (e.g. via add_master_element's
+            // layoutName) without a separate read_slide call. Reflects the
+            // FIRST selected slide only - a multi-slide selection may span
+            // more than one layout, not represented here.
+            string layoutName = null;
+            try { layoutName = sel.SlideRange[1].CustomLayout.Name; } catch { }
             string signature = "ppt:slides:" + string.Join(",", indexes);
             PostSelection(new
             {
@@ -103,6 +110,7 @@ namespace PowerPointAiAddIn
                 selKind = "slides",
                 hasSelection = true,
                 slideIndexes = indexes,
+                layoutName,
             }, signature);
         }
 
@@ -110,6 +118,11 @@ namespace PowerPointAiAddIn
         {
             PowerPoint.Slide slide = sel.SlideRange[1];
             int slideIndex = slide.SlideIndex - 1;
+            // User-requested (2026-09-22): same layoutName addition as
+            // OnSlidesSelected - well-defined here since a shape selection
+            // is always within exactly one slide.
+            string layoutName = null;
+            try { layoutName = slide.CustomLayout.Name; } catch { }
             var shapeIndexes = new List<int>();
             var names = new List<string>();
             var previews = new List<string>();
@@ -151,6 +164,7 @@ namespace PowerPointAiAddIn
                 shapeIndexes,
                 names,
                 textPreview = previews,
+                layoutName,
             }, signature);
         }
 
@@ -160,6 +174,8 @@ namespace PowerPointAiAddIn
         {
             PowerPoint.Slide slide = sel.SlideRange[1];
             int slideIndex = slide.SlideIndex - 1;
+            string layoutName = null;
+            try { layoutName = slide.CustomLayout.Name; } catch { }
             PowerPoint.Shape shape = sel.ShapeRange[1];
             int shapeIndex = ShapeIndexInSlide(slide, shape);
             string text = "";
@@ -176,6 +192,7 @@ namespace PowerPointAiAddIn
                 slideIndex,
                 shapeIndex,
                 text,
+                layoutName,
             }, signature);
         }
 
