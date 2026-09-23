@@ -1,6 +1,8 @@
 # Inject Today's Date/Time Into the System Prompt — Implementation Plan
 
 > **Status (2026-09-19): Task 1 and Task 2 both implemented and verified.** Task 2's first attempt (`Application.CalendarOptions`) was correctly abandoned after verification showed the API doesn't exist — but a second, better source was found afterward: EWS's `GetUserAvailability` → `WorkingHours` (the same documented mechanism Outlook's own scheduling assistant uses), reusing the EWS plumbing `search_contacts` already built. See Task 2 below for the corrected, shipped version.
+>
+> **Status (2026-09-23): Task 1 revised again — the date line is no longer frozen per conversation.** The "accepted tradeoff" below (a conversation spanning midnight keeps yesterday's date) turned out not to need accepting: recomputing `todayContextLine()` on every turn costs nothing beyond what's already being resent (same reasoning as the "is recomputing every turn too aggressive?" answer below), so `systemSuffix` now calls it live instead of reading a value frozen by `beginConversation()`. `activeDocMessage` is unaffected — still frozen at conversation start, for the reason given where it's defined.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -18,7 +20,7 @@
 **Yes — via EWS, not COM.** The first attempt (`Application.CalendarOptions`) was wrong: that property does not exist in this repo's referenced Outlook PIA (confirmed via .NET reflection). The Windows registry does have the setting, but in an undocumented bitmask this session couldn't safely decode. The real answer: `ExchangeService.GetUserAvailability(...)`'s response includes `AttendeeAvailability.WorkingHours` (`DaysOfTheWeek`, `StartTime`, `EndTime`) — the same documented, server-side data Outlook's own scheduling assistant uses to shade "outside working hours." Confirmed via .NET reflection against the already-referenced `Microsoft.Exchange.WebServices` 2.2.0 assembly (the same one `search_contacts` uses) before writing any code. Implemented in Task 2 below, reusing `search_contacts`'s existing EWS connection/autodiscover plumbing (`OutlookEws.cs`, `FindExchangeAccountInfo`) rather than duplicating it.
 
 **Q: is recomputing this every single turn too aggressive?**
-Not in terms of cost — the entire system prompt and full conversation history is already resent on every turn regardless (the chat completion APIs this app talks to are stateless; see `stream.ts`), so one more ~20-token sentence riding along is negligible next to that. But the *design* was needlessly repetitive for no benefit: nothing in a normal chat session needs the date re-checked turn-by-turn. **Revised to compute once per conversation**, using the exact mechanism this codebase already has for exactly this shape of thing — `activeDocMessage`, frozen by `beginConversation()` at conversation-start boundaries only (`bootstrap.ts:395-406`, "initial load, New chat... never read live per-turn"). The only cost is a conversation that happens to span midnight keeps yesterday's date for its remainder — an accepted, explicit tradeoff, not an oversight.
+No — and on reflection, freezing it was the wrong call. Cost was never the concern: the entire system prompt and full conversation history is already resent on every turn regardless (the chat completion APIs this app talks to are stateless; see `stream.ts`), so one more ~20-token sentence riding along is negligible next to that. The first revision of this plan froze the line once per conversation anyway, using the same `activeDocMessage`/`beginConversation()` mechanism (`bootstrap.ts:395-406`), reasoning that nothing in a normal chat session needs the date re-checked turn-by-turn — accepting, as an explicit tradeoff, that a conversation spanning midnight would keep yesterday's date for its remainder. **Revised again (2026-09-23):** that tradeoff bought nothing, since the recompute is free, and it reintroduces a milder version of the exact bug this plan exists to fix (a stale "today" feeding relative-date resolution) for any conversation left open overnight. `systemSuffix` now calls `todayContextLine()` live on every turn instead of reading a frozen value. `activeDocMessage` keeps the frozen/once-per-conversation treatment — editing document guidelines mid-conversation genuinely should not retroactively change a run in progress, which is a different concern from a clock that just keeps ticking.
 
 ## Global Constraints
 
@@ -29,21 +31,24 @@ Not in terms of cost — the entire system prompt and full conversation history 
 
 ---
 
-### Task 1: Add the date-context line, computed once per conversation
+### Task 1: Add the date-context line, computed live on every turn
 
 **Files:**
 - Modify: `shared/web-src/app-shell/bootstrap.ts`
 
-- [ ] **Step 1: Add a small formatting helper**, near the top of `bootstrap.ts` (module scope):
+- [x] **Step 1: Add a small formatting helper**, near the top of `bootstrap.ts` (module scope):
 
 ```ts
 // Fix for: relative-date tool args (draft_event, find_meeting_slots, etc.)
 // were resolved by the model with no ground truth for "today" anywhere in
 // the system prompt - it had to guess both the date and the weekday from
 // training data, which is exactly how "next Tuesday" turned into
-// Wednesday. Computed once per conversation (see beginConversation()) -
-// not worth recomputing every turn for a value that only changes at
-// midnight; a conversation spanning midnight keeps its start-of-chat date.
+// Wednesday. Called fresh from systemSuffix() below on every turn, not
+// frozen at conversation start: the full system prompt is already resent
+// on every turn regardless (see loop.ts's startTurn()), so recomputing this
+// ~20-token line costs nothing extra, and it keeps a conversation that
+// spans midnight (or a laptop that sleeps overnight) correct instead of
+// stuck on its start-of-chat date.
 function todayContextLine(): string {
   try {
     const now = new Date()
@@ -61,22 +66,20 @@ function todayContextLine(): string {
 }
 ```
 
-- [ ] **Step 2: Freeze it alongside `activeDocMessage`**, in the exact same spot and the exact same way (`bootstrap.ts:395-406`):
+- [x] **Step 2: `activeDocMessage` keeps its existing freeze**, in the same spot as before (`bootstrap.ts:395-406`) — the date line is deliberately *not* added here, since it isn't frozen:
 
 ```ts
 let savedDocMessage = ''
 let activeDocMessage = ''
-let activeDateContext = ''
 function beginConversation(): void {
   activeDocMessage = savedDocMessage
-  activeDateContext = todayContextLine()
 }
 ```
 
-- [ ] **Step 3: Use the frozen value in `systemSuffix`** (`bootstrap.ts:662`), not a live call:
+- [x] **Step 3: Call `todayContextLine()` live from `systemSuffix`** (`bootstrap.ts:691`):
 
 ```ts
-systemSuffix: () => '\n\n' + activeDateContext + (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
+systemSuffix: () => '\n\n' + todayContextLine() + (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
 ```
 
 Update the comment above it (currently Task-8-specific) to note it now carries two independent pieces, both frozen at conversation start: the date line and the conditional document-guidelines text.

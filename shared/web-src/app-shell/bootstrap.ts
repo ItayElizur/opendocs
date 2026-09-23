@@ -339,9 +339,12 @@ export interface AddInConfig {
 // were resolved by the model with no ground truth for "today" anywhere in
 // the system prompt - it had to guess both the date and the weekday from
 // training data, which is exactly how "next Tuesday" turned into
-// Wednesday. Computed once per conversation (see beginConversation() below)
-// - not worth recomputing every turn for a value that only changes at
-// midnight; a conversation spanning midnight keeps its start-of-chat date.
+// Wednesday. Called fresh from systemSuffix() below on every turn, not
+// frozen at conversation start: the full system prompt is already resent
+// on every turn regardless (see loop.ts's startTurn()), so recomputing this
+// ~20-token line costs nothing extra, and it keeps a conversation that
+// spans midnight (or a laptop that sleeps overnight) correct instead of
+// stuck on its start-of-chat date.
 function todayContextLine(): string {
   try {
     const now = new Date()
@@ -422,14 +425,13 @@ export function startAddIn(config: AddInConfig): void {
   // frozen by beginConversation() at conversation-start boundaries only
   // (initial load, New chat), never read live per-turn, so editing the
   // guidelines mid-conversation cannot retroactively change a run in progress.
-  // `activeDateContext` (todayContextLine()) is frozen the same way and for
-  // the same reason - see its own comment above.
+  // The date context line is the opposite: recomputed live on every turn by
+  // systemSuffix() below (todayContextLine()'s own comment explains why),
+  // not frozen here.
   let savedDocMessage = ''
   let activeDocMessage = ''
-  let activeDateContext = ''
   function beginConversation(): void {
     activeDocMessage = savedDocMessage
-    activeDateContext = todayContextLine()
   }
 
   const skill: AgentSkill = {
@@ -681,12 +683,12 @@ export function startAddIn(config: AddInConfig): void {
   const loop = new AgentLoop({
     transport: makeTransport(),
     skill,
-    // Called every turn, but both pieces it reads (activeDateContext,
-    // activeDocMessage) only change at conversation-start boundaries - see
-    // beginConversation() above. The doc-guidelines half is labeled
-    // explicitly as user-supplied so the model treats it as standing
-    // instructions from the user, not as system policy.
-    systemSuffix: () => '\n\n' + activeDateContext + (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
+    // Called every turn. The date line (todayContextLine()) is computed
+    // fresh each call, on purpose - see its own comment. activeDocMessage
+    // only changes at conversation-start boundaries - see beginConversation()
+    // above - and is labeled explicitly as user-supplied so the model treats
+    // it as standing instructions from the user, not as system policy.
+    systemSuffix: () => '\n\n' + todayContextLine() + (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
     events: {
       onText: (text) => {
         textStreamedSinceGroup = true
