@@ -40,46 +40,122 @@ namespace PowerPointAiAddIn
             public string Label;
         }
 
-        private static PowerPoint.CustomLayout ResolveLayoutByName(string query, string toolName)
+        // Shared by ResolveLayoutByName (below, searches every design) and
+        // ResolveCustomLayout (PowerPointTools.LayoutAnim.cs, searches one
+        // slide's own design) - DesignLabel is only non-null when the caller
+        // is searching more than one design at once, so a single-theme deck's
+        // messages are unaffected.
+        private struct LayoutCandidate
         {
-            PowerPoint.Master master = ResolveSlideMaster();
-            PowerPoint.CustomLayout firstMatch = null;
+            public PowerPoint.CustomLayout Layout;
+            public string DesignLabel;
+        }
+
+        // Review finding: neither of this struct's two callers used to
+        // detect an ambiguous match - both took the FIRST layout whose name
+        // merely CONTAINED the query substring, in whatever order
+        // CustomLayouts happened to enumerate, with no signal to the caller
+        // that a second (or third) candidate existed at all. Two layouts can
+        // collide on name (nothing in the object model enforces uniqueness -
+        // ListLayouts's own count-by-index logic already works around this
+        // same risk) or simply both happen to contain the same substring
+        // (e.g. query "Title" against both "Title Slide" and "Title and
+        // Content"). Exact (case-insensitive) name matches are checked as
+        // their own tier, ahead of substring matches, so typing the literal
+        // full name is never "ambiguous" just because some other layout's
+        // name happens to contain it.
+        private static LayoutCandidate ResolveLayoutByQuery(List<LayoutCandidate> candidates, string query, string toolName, string scopeDescription)
+        {
+            var exactMatches = new List<LayoutCandidate>();
+            var substringMatches = new List<LayoutCandidate>();
             var namesSeen = new List<string>();
-            foreach (PowerPoint.CustomLayout layout in master.CustomLayouts)
+            foreach (var c in candidates)
             {
-                namesSeen.Add(layout.Name);
-                if (firstMatch == null && layout.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) firstMatch = layout;
+                namesSeen.Add(c.DesignLabel != null ? c.Layout.Name + " (design \"" + c.DesignLabel + "\")" : c.Layout.Name);
+                if (string.Equals(c.Layout.Name, query, StringComparison.OrdinalIgnoreCase)) exactMatches.Add(c);
+                else if (c.Layout.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) substringMatches.Add(c);
             }
-            if (firstMatch != null) return firstMatch;
-            throw new ArgumentException(toolName + ": no layout matching '" + query + "' found in this presentation's theme. Available: " + string.Join(", ", namesSeen) + ".");
+
+            List<LayoutCandidate> winners = exactMatches.Count > 0 ? exactMatches : substringMatches;
+            if (winners.Count == 1) return winners[0];
+            if (winners.Count > 1)
+            {
+                var winnerNames = new List<string>();
+                foreach (var w in winners)
+                    winnerNames.Add(w.DesignLabel != null ? "\"" + w.Layout.Name + "\" (design \"" + w.DesignLabel + "\")" : "\"" + w.Layout.Name + "\"");
+                throw new ArgumentException(toolName + ": '" + query + "' matches more than one layout in " + scopeDescription + ": " +
+                    string.Join(", ", winnerNames) + ". Use a more specific or exact name.");
+            }
+            throw new ArgumentException(toolName + ": no layout matching '" + query + "' found in " + scopeDescription + ". Available: " + string.Join(", ", namesSeen) + ".");
+        }
+
+        // Review finding: this used to only ever search
+        // ActivePresentation.SlideMaster (the presentation's default/first
+        // design), because there was no slide to derive scope from - unlike
+        // ResolveCustomLayout (PowerPointTools.LayoutAnim.cs), which is
+        // handed a specific slide and correctly searches THAT slide's own
+        // Design. A deck combining more than one theme/design (e.g. slides
+        // pasted in with "Preserve Source Formatting") could never reach a
+        // non-default design's layout by name through add_master_element/
+        // read_master_elements/remove_master_element/set_master_element_
+        // transform's layoutName. Now searches every design in the
+        // presentation (confirmed via reflection: Presentation.Designs is a
+        // real, enumerable collection, each with its own SlideMaster).
+        private static LayoutCandidate ResolveLayoutByName(string query, string toolName)
+        {
+            var candidates = new List<LayoutCandidate>();
+            bool multipleDesigns = ActivePresentation.Designs.Count > 1;
+            foreach (PowerPoint.Design design in ActivePresentation.Designs)
+                foreach (PowerPoint.CustomLayout layout in design.SlideMaster.CustomLayouts)
+                    candidates.Add(new LayoutCandidate { Layout = layout, DesignLabel = multipleDesigns ? design.Name : null });
+            return ResolveLayoutByQuery(candidates, query, toolName, "this presentation's theme(s)");
         }
 
         // User-requested (2026-09-22): before this, the only way to
         // discover a deck's real layout names was to deliberately pass a
         // bad layoutName and read the error message's "Available: ..."
-        // list. Read-only, lists every layout in this presentation's
-        // default Slide Master's theme, plus how many slides currently use
-        // each one (compared by CustomLayout.Index, not Name, in case two
-        // layouts ever share a name).
+        // list. Read-only, lists every layout in every design/theme in this
+        // presentation (not just the default one - same widening as
+        // ResolveLayoutByName above, for the same reason), plus how many
+        // slides currently use each one.
         private static ToolResult ListLayouts(JsonElement input)
         {
-            PowerPoint.Master master = ResolveSlideMaster();
-            PowerPoint.Slides slides = ActivePresentation.Slides;
+            // Review finding: CustomLayout.Index is only unique WITHIN its
+            // own design's SlideMaster - once more than one design is in
+            // play, a bare Dictionary<int,int> keyed on Index alone would
+            // silently conflate two different designs' layouts that happen
+            // to share an Index (e.g. both designs' first layout is Index 1).
+            // Key on the (design, layout) pair instead. CustomLayout.Design
+            // and Design.Index are both confirmed via reflection.
+            var usedByCountByKey = new Dictionary<string, int>();
+            foreach (PowerPoint.Slide s in ActivePresentation.Slides)
+            {
+                try
+                {
+                    PowerPoint.CustomLayout layout = s.CustomLayout;
+                    string key = layout.Design.Index + "|" + layout.Index;
+                    usedByCountByKey[key] = usedByCountByKey.TryGetValue(key, out var c) ? c + 1 : 1;
+                }
+                catch { }
+            }
+
             var sb = new StringBuilder();
             int i = 0;
-            foreach (PowerPoint.CustomLayout layout in master.CustomLayouts)
+            bool multipleDesigns = ActivePresentation.Designs.Count > 1;
+            foreach (PowerPoint.Design design in ActivePresentation.Designs)
             {
-                int usedByCount = 0;
-                foreach (PowerPoint.Slide s in slides)
+                if (multipleDesigns) sb.AppendLine("Design \"" + design.Name + "\":");
+                foreach (PowerPoint.CustomLayout layout in design.SlideMaster.CustomLayouts)
                 {
-                    try { if (s.CustomLayout.Index == layout.Index) usedByCount++; } catch { }
+                    string key = design.Index + "|" + layout.Index;
+                    int usedByCount = usedByCountByKey.TryGetValue(key, out var count) ? count : 0;
+                    sb.AppendLine("[" + i + "] \"" + layout.Name + "\"" + (usedByCount > 0 ? " - used by " + usedByCount + " slide(s)" : ""));
+                    i++;
                 }
-                sb.AppendLine("[" + i + "] \"" + layout.Name + "\"" + (usedByCount > 0 ? " - used by " + usedByCount + " slide(s)" : ""));
-                i++;
             }
             if (i == 0)
-                return new ToolResult { Output = "No layouts found on this presentation's default Slide Master.", Summary = "list_layouts" };
-            return new ToolResult { Output = "This presentation's Slide Master has " + i + " layout(s):\n" + sb.ToString().TrimEnd(), Summary = "list_layouts" };
+                return new ToolResult { Output = "No layouts found in this presentation's theme(s).", Summary = "list_layouts" };
+            return new ToolResult { Output = "This presentation has " + i + " layout(s)" + (multipleDesigns ? " across " + ActivePresentation.Designs.Count + " design(s)" : "") + ":\n" + sb.ToString().TrimEnd(), Summary = "list_layouts" };
         }
 
         private static string CapitalizeFirst(string s)
@@ -94,8 +170,9 @@ namespace PowerPointAiAddIn
                 string query = layoutEl.GetString();
                 if (!string.IsNullOrEmpty(query))
                 {
-                    PowerPoint.CustomLayout layout = ResolveLayoutByName(query, toolName);
-                    return new MasterTarget { Shapes = layout.Shapes, Label = "layout \"" + layout.Name + "\"" };
+                    LayoutCandidate match = ResolveLayoutByName(query, toolName);
+                    string label = "layout \"" + match.Layout.Name + "\"" + (match.DesignLabel != null ? " (design \"" + match.DesignLabel + "\")" : "");
+                    return new MasterTarget { Shapes = match.Layout.Shapes, Label = label };
                 }
             }
             return new MasterTarget { Shapes = ResolveSlideMaster().Shapes, Label = "the Slide Master" };
@@ -377,18 +454,39 @@ namespace PowerPointAiAddIn
             // Slide/Title Master's HeadersFooters) are simply not per-slide
             // properties in PowerPoint's object model at all. Applied even
             // when the per-slide write above failed (see singleSlideError).
+            //
+            // Review finding: these two writes used to be unguarded, unlike
+            // every other write in this function - if a deck-wide call had
+            // already mutated every slide's footer/date/number and THEN
+            // PageSetup.FirstSlideNumber or ApplySkipTitleSlide's unguarded
+            // DisplayOnTitleSlide write threw (the same class of COM
+            // restriction this file documents extensively elsewhere), the
+            // exception would escape to Execute's outer catch and report a
+            // bare error with no Mutated:true, hiding the changes that had
+            // already landed. Guard each independently so one failing
+            // doesn't mask the other succeeding or the per-slide work above.
+            bool startNumberApplied = false, skipTitleSlideApplied = false;
+            var deckWideFailures = new List<string>();
             if (startNumber.HasValue)
-                pres.PageSetup.FirstSlideNumber = startNumber.Value;
+            {
+                try { pres.PageSetup.FirstSlideNumber = startNumber.Value; startNumberApplied = true; }
+                catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters startNumber", ex); deckWideFailures.Add("startNumber (" + ex.Message + ")"); }
+            }
             if (skipTitleSlide.HasValue)
-                ApplySkipTitleSlide(skipTitleSlide.Value);
+            {
+                try { ApplySkipTitleSlide(skipTitleSlide.Value); skipTitleSlideApplied = true; }
+                catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters skipTitleSlide", ex); deckWideFailures.Add("skipTitleSlide (" + ex.Message + ")"); }
+            }
 
             if (singleSlideError != null)
             {
-                bool deckWideStillApplied = startNumber.HasValue || skipTitleSlide.HasValue;
+                bool deckWideStillApplied = startNumberApplied || skipTitleSlideApplied;
                 return new ToolResult
                 {
                     Output = "set_headers_footers: slide " + slideIndex + " rejected this combination of fields (" + singleSlideError + ")." +
-                             (deckWideStillApplied ? " skipTitleSlide/startNumber, since given, were still applied deck-wide." : ""),
+                             (deckWideStillApplied ? " skipTitleSlide/startNumber, since given, were still applied deck-wide" +
+                                                      (deckWideFailures.Count > 0 ? " except " + string.Join(", ", deckWideFailures) : "") + "."
+                                                    : deckWideFailures.Count > 0 ? " skipTitleSlide/startNumber were also rejected: " + string.Join(", ", deckWideFailures) + "." : ""),
                     IsError = true,
                     Mutated = deckWideStillApplied,
                     Summary = "set_headers_footers",
@@ -413,6 +511,7 @@ namespace PowerPointAiAddIn
             return new ToolResult
             {
                 Output = "Headers/footers updated (" + string.Join(", ", applied) + ") - " + scopeDescription + "." +
+                         (deckWideFailures.Count > 0 ? " (" + string.Join(", ", deckWideFailures) + " rejected and were skipped.)" : "") +
                          " (skipTitleSlide/startNumber, if given, always apply deck-wide regardless of slideIndex)." +
                          " If slide numbers/footer/date still don't appear, this slide's layout may not include that placeholder - " +
                          "check read_master_elements or try a different layout (set_slide_layout).",

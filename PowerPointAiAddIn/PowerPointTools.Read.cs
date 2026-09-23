@@ -109,7 +109,16 @@ namespace PowerPointAiAddIn
             int animCount = slide.TimeLine.MainSequence.Count;
             if (animCount > 0) sb.AppendLine(animCount + " animation(s) - call read_animations to see them.");
 
-            sb.AppendLine(DescribeHeadersFooters(slide));
+            // Review finding: unguarded, unlike every other HeadersFooters
+            // access PowerPointTools.Master.cs added elsewhere in this same
+            // PR - that file documents several real, previously-unknown COM
+            // states where reading/writing a slide's HeadersFooters throws
+            // "HeaderFooter (unknown member)". read_slide is a core, always-
+            // allowed read tool; if the same restriction ever hits a read
+            // (not just the write paths already fixed), don't let it discard
+            // everything already built into `sb` above.
+            try { sb.AppendLine(DescribeHeadersFooters(slide)); }
+            catch (Exception ex) { DebugLog.WriteException("ReadSlide DescribeHeadersFooters", ex); sb.AppendLine("Headers/footers: unavailable."); }
 
             // Post-hoc addition (2026-08-24, user-requested: "see the order
             // between objects"): slide.Shapes is already ordered back-to-

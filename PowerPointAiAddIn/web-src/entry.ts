@@ -74,15 +74,16 @@ const READER_TOOLS = [
   {
     name: 'list_layouts',
     description:
-      'Lists every layout name in this presentation\'s theme (e.g. "Title Slide", "Title and Content"), plus how many slides currently use each one. ' +
-      'Call this before passing layoutName to add_master_element/read_master_elements/remove_master_element/set_master_element_transform/set_slide_layout, instead of guessing a name.',
+      'Lists every layout name in this presentation (e.g. "Title Slide", "Title and Content"), plus how many slides currently use each one - across every design/theme in the deck if it has more than one, not just the default. ' +
+      'Call this before passing layoutName to add_master_element/read_master_elements/remove_master_element/set_master_element_transform/set_slide_layout, instead of guessing a name. ' +
+      'A layoutName matching more than one layout (e.g. two designs both have a layout with that name) errors instead of guessing - pass a more specific or exact name.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'read_master_elements',
     description:
       'Lists the shapes placed directly on the Slide Master (index, name, kind, position/size, text if any) - not the shapes on any one slide. ' +
-      'Pass layoutName to instead list one specific layout\'s own shapes (e.g. "Title Slide", "Title and Content") - matched by substring against this presentation\'s real layout names; omit it for the Slide Master (the default, and what every slide inherits from unless its own layout overrides a shape). ' +
+      'Pass layoutName to instead list one specific layout\'s own shapes (e.g. "Title Slide", "Title and Content") - matched against this presentation\'s real layout names (exact match preferred, else substring; matching more than one errors, e.g. two designs both having a layout with that name), across every design/theme in the deck; omit it for the Slide Master (the default, and what every slide inherits from unless its own layout overrides a shape). ' +
       'Shapes added here with add_master_element appear on every slide whose layout doesn\'t hide master shapes. Call this before remove_master_element/set_master_element_transform to find the right masterShapeIndex.',
     inputSchema: {
       type: 'object',
@@ -283,7 +284,7 @@ const MUTATION_TOOLS = [
     name: 'set_slide_layout',
     description:
       'Changes a slide\'s layout. kind:"classic" (default) uses layout, a fixed set: title, titleOnly, blank, text, twoColumnText, object, objectAndText, textAndObject, twoObjects, twoObjectsAndText, fourObjects, table, chart, sectionHeader, comparison, contentWithCaption, pictureWithCaption. ' +
-      'kind:"custom" uses layoutName instead - free text, matched by substring against this presentation\'s own theme layouts (an unmatched name errors listing the real available names).',
+      'kind:"custom" uses layoutName instead - free text, matched against this slide\'s own theme layouts (exact match preferred, else substring; an unmatched name errors listing the real available names, and a name matching more than one layout errors asking for a more specific one).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -598,15 +599,15 @@ const MUTATION_TOOLS = [
     name: 'add_master_element',
     description:
       'Adds a persistent icon (picture) or small text label to the Slide Master, so it shows up in the same spot on every slide (e.g. a logo/watermark/confidentiality label) - not just one slide. ' +
-      'Pass layoutName to add it to one specific layout instead (e.g. "Title Slide") - it then only shows on slides using that layout, not deck-wide; matched by substring against this presentation\'s real layout names. ' +
+      'Pass layoutName to add it to one specific layout instead (e.g. "Title Slide") - it then only shows on slides using that layout, not deck-wide; matched against this presentation\'s real layout names across every design/theme in the deck (exact match preferred, else substring; matching more than one, e.g. two designs both having a layout with that name, errors instead of guessing). ' +
       'Use corner for a quick topLeft/topRight/bottomLeft/bottomRight placement (inset by marginPt, default 12pt), or left+top together for an exact position (left/top must both be given, or neither). ' +
       'For kind:"icon", width/height are optional - omit one and it scales proportionally from the image\'s natural size; omit both to use the natural size. ' +
-      'Known limits: only this presentation\'s default (first) Slide Master/theme is affected - a deck combining more than one theme has more than one; and a layout with "Hide Background Graphics" enabled won\'t show a Slide-Master-level element.',
+      'Known limits: with no layoutName, only this presentation\'s default (first) Slide Master is affected - a deck combining more than one theme has more than one, and layoutName is the way to reach a non-default one\'s layout directly; and a layout with "Hide Background Graphics" enabled won\'t show a Slide-Master-level element.',
     inputSchema: {
       type: 'object',
       properties: {
         kind: { type: 'string', enum: ['icon', 'text'] },
-        layoutName: { type: 'string', description: 'Optional. Adds to one specific layout (substring match) instead of the Slide Master.' },
+        layoutName: { type: 'string', description: 'Optional. Adds to one specific layout (matched across every design/theme in the deck) instead of the Slide Master.' },
         corner: { type: 'string', enum: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'], description: 'Ignored if left+top are both given. Required if they aren\'t.' },
         left: { type: 'number', description: 'Must be given together with top (or neither) - a single coordinate alone is rejected.' },
         top: { type: 'number', description: 'Must be given together with left (or neither) - a single coordinate alone is rejected.' },
@@ -627,12 +628,12 @@ const MUTATION_TOOLS = [
     description:
       'Moves/resizes/rotates an existing Slide Master element by masterShapeIndex (from read_master_elements). Only the fields you provide are changed. ' +
       'Works on a theme placeholder too (e.g. repositioning where the footer shows) - unlike remove_master_element, this is not refused, since moving/resizing a placeholder is a normal, reversible edit. ' +
-      'Pass layoutName to target one specific layout\'s shape instead of the Slide Master\'s - must match what you used (or omitted) in read_master_elements, since masterShapeIndex is only valid within that same target.',
+      'Pass layoutName to target one specific layout\'s shape instead of the Slide Master\'s - must match what you used (or omitted) in read_master_elements, since masterShapeIndex is only valid within that same target. Matched across every design/theme in the deck (exact match preferred, else substring; matching more than one errors).',
     inputSchema: {
       type: 'object',
       properties: {
         masterShapeIndex: { type: 'number' },
-        layoutName: { type: 'string', description: 'Optional. Targets one specific layout (substring match) instead of the Slide Master.' },
+        layoutName: { type: 'string', description: 'Optional. Targets one specific layout (matched across every design/theme in the deck) instead of the Slide Master.' },
         left: { type: 'number' },
         top: { type: 'number' },
         width: { type: 'number' },
@@ -647,12 +648,12 @@ const MUTATION_TOOLS = [
     description:
       'Deletes one shape from the Slide Master by the 0-based masterShapeIndex read_master_elements reports. Refuses (with an error) to delete a theme placeholder - read_master_elements marks those "(placeholder)"; only delete a shape add_master_element actually created. ' +
       'To turn a slide number/footer/date placeholder off instead of deleting it, use set_headers_footers with the matching *Visible:false field - that\'s the correct way to "remove" one, matching PowerPoint\'s own native behavior. ' +
-      'Pass layoutName to target one specific layout instead of the Slide Master - must match what you used (or omitted) in read_master_elements. Other master shapes\' indices may shift afterward - re-read before another edit in the same run.',
+      'Pass layoutName to target one specific layout instead of the Slide Master - must match what you used (or omitted) in read_master_elements. Matched across every design/theme in the deck (exact match preferred, else substring; matching more than one errors). Other master shapes\' indices may shift afterward - re-read before another edit in the same run.',
     inputSchema: {
       type: 'object',
       properties: {
         masterShapeIndex: { type: 'number' },
-        layoutName: { type: 'string', description: 'Optional. Targets one specific layout (substring match) instead of the Slide Master.' },
+        layoutName: { type: 'string', description: 'Optional. Targets one specific layout (matched across every design/theme in the deck) instead of the Slide Master.' },
       },
       required: ['masterShapeIndex'],
     },
@@ -865,7 +866,7 @@ startAddIn({
     'edit_animation\'s delete/reorder shift later animation indices - call read_animations again before a second animation edit on the same slide in the same run. ' +
     'You can manage Slide Master basics: set_headers_footers (slide number/footer/date, deck-wide or per slide - mirrors PowerPoint\'s native "Insert Header and Footer" dialog), ' +
     'and add_master_element/read_master_elements/set_master_element_transform/remove_master_element to pin a logo, icon, or small text label to a corner of every slide via the Slide Master rather than editing each slide individually. ' +
-    'Any of those four tools can also target one specific layout instead of the whole Slide Master, via an optional layoutName (substring-matched) - call list_layouts first to see the real names, or check the selected slide\'s layoutName already given in your context. ' +
+    'Any of those four tools can also target one specific layout instead of the whole Slide Master, via an optional layoutName (matched across every design/theme in the deck) - call list_layouts first to see the real names, or check the selected slide\'s layoutName already given in your context. ' +
     'Your available tools depend on the current editing mode (Read Only, Comment Only, Track Changes, or Full Autonomy) - only call tools that are currently offered to you.',
   starters: [
     { en: "Improve this slide's title and copy", he: 'שפר את הכותרת והטקסט של השקופית' },
