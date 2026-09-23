@@ -116,12 +116,18 @@ namespace OutlookAiAddIn
         // never reachable below Full Autonomy.
         private static ToolResult SendEmail(JsonElement input)
         {
-            string to = Str(input, "to", "");
+            // to is required, unlike draft_email's - draft_email opens a
+            // compose window where a human can add a missing recipient
+            // before anything goes out; send_email has no such window, so
+            // Send()-ing with no recipient set would either throw or, worse,
+            // block on a native Outlook resolution prompt this add-in isn't
+            // expecting a response to.
+            string to = ReqStr(input, "to");
             string subject = Str(input, "subject", "");
             string body = Str(input, "body", "");
 
             Outlook.MailItem m = (Outlook.MailItem)App.CreateItem(Outlook.OlItemType.olMailItem);
-            if (!string.IsNullOrEmpty(to)) m.To = to;
+            m.To = to;
             m.Subject = subject;
             m.Body = SeedSignature(body);
             m.Send();
@@ -188,7 +194,12 @@ namespace OutlookAiAddIn
                 AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional);
                 try { a.Recipients.ResolveAll(); } catch { }
                 a.Send();
-                return new ToolResult { Output = "Created and sent invite: \"" + (a.Subject ?? "") + "\" to " + req + (string.IsNullOrEmpty(opt) ? "" : "; " + opt) + ".", Mutated = true, Summary = "create_event" };
+                // This confirmation line is the only place the user sees who
+                // an irreversible, unreviewed invite went to - do not let an
+                // empty req (optional_attendees-only) produce a malformed
+                // "to ; alice@example.com." leading separator.
+                string attendeeList = string.IsNullOrEmpty(req) ? opt : string.IsNullOrEmpty(opt) ? req : req + "; " + opt;
+                return new ToolResult { Output = "Created and sent invite: \"" + (a.Subject ?? "") + "\" to " + attendeeList + ".", Mutated = true, Summary = "create_event" };
             }
 
             a.Save();

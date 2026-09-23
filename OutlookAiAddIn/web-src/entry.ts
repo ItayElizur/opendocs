@@ -325,7 +325,7 @@ const ALL_OUTLOOK_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: { to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } },
-      required: [],
+      required: ['to'],
     },
   },
   {

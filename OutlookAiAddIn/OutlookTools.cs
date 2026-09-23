@@ -67,10 +67,20 @@ namespace OutlookAiAddIn
         };
 
         // Tier 4 (Full autonomy only): composes and sends/creates brand-new
-        // content with no review step at all.
+        // content with no review step at all. set_event_categories/
+        // set_category_color are here too - not because they send anything,
+        // but because they were Full-Autonomy-only before this four-tier
+        // redesign and the client (entry.ts's readOnlyTools/
+        // commentOnlyExtraTools/trackChangesExtraTools) never lists them
+        // below Full Autonomy either; leaving them out of every tier set
+        // here would silently drop them into the default ("anything not
+        // otherwise classified") bucket below, downgrading their required
+        // tier to Draft only and breaking server-side's status as the real
+        // enforcement (bootstrap.ts's own comment on that guarantee).
         private static readonly HashSet<string> SendTierTools = new HashSet<string>
         {
             "send_email", "send_reply", "send_reply_all", "send_forward", "create_event",
+            "set_event_categories", "set_category_color",
         };
 
         private static string TierLabel(EditingMode mode)
