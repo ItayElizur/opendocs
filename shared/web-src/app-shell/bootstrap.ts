@@ -55,9 +55,9 @@ export type SelectionContext =
       effectiveAddress: string | null
       effectiveCellCount: number
     }
-  | { kind: 'slides'; slideIndexes: number[] }
-  | { kind: 'shapes'; slideIndex: number; shapeIndexes: number[]; names: string[]; textPreview: string[] }
-  | { kind: 'shapeText'; slideIndex: number; shapeIndex: number; text: string }
+  | { kind: 'slides'; slideIndexes: number[]; layoutName: string | null }
+  | { kind: 'shapes'; slideIndex: number; shapeIndexes: number[]; names: string[]; textPreview: string[]; layoutName: string | null }
+  | { kind: 'shapeText'; slideIndex: number; shapeIndex: number; text: string; layoutName: string | null }
   | {
       kind: 'mail'
       count: number
@@ -98,7 +98,7 @@ function toSelectionContext(raw: RawSelectionPayload): SelectionContext {
     }
   }
   if (raw.app === 'powerpoint') {
-    if (raw.selKind === 'slides') return { kind: 'slides', slideIndexes: raw.slideIndexes ?? [] }
+    if (raw.selKind === 'slides') return { kind: 'slides', slideIndexes: raw.slideIndexes ?? [], layoutName: raw.layoutName ?? null }
     if (raw.selKind === 'shapes') {
       return {
         kind: 'shapes',
@@ -106,10 +106,11 @@ function toSelectionContext(raw: RawSelectionPayload): SelectionContext {
         shapeIndexes: raw.shapeIndexes ?? [],
         names: raw.names ?? [],
         textPreview: raw.textPreview ?? [],
+        layoutName: raw.layoutName ?? null,
       }
     }
     if (raw.selKind === 'shapeText') {
-      return { kind: 'shapeText', slideIndex: raw.slideIndex ?? 0, shapeIndex: raw.shapeIndex ?? 0, text: raw.text ?? '' }
+      return { kind: 'shapeText', slideIndex: raw.slideIndex ?? 0, shapeIndex: raw.shapeIndex ?? 0, text: raw.text ?? '', layoutName: raw.layoutName ?? null }
     }
     return { kind: 'none' }
   }
@@ -191,18 +192,23 @@ function defaultDescribeSelection(ctx: SelectionContext): string {
       )
     }
     case 'slides':
-      return `The user has selected slide${ctx.slideIndexes.length > 1 ? 's' : ''} ${ctx.slideIndexes.join(', ')} (0-based).`
+      return (
+        `The user has selected slide${ctx.slideIndexes.length > 1 ? 's' : ''} ${ctx.slideIndexes.join(', ')} (0-based).` +
+        (ctx.layoutName ? ` The first selected slide's layout is "${ctx.layoutName}" - pass this as layoutName to add_master_element/read_master_elements/remove_master_element/set_master_element_transform to target it specifically.` : '')
+      )
     case 'shapes': {
       const list = ctx.shapeIndexes.map((idx, i) => `${idx} ("${ctx.names[i] ?? ''}")`).join(', ')
       return (
         `The user has selected shape${ctx.shapeIndexes.length > 1 ? 's' : ''} ${list} on slide ${ctx.slideIndex}. ` +
-        `These are 0-based indices in the form the tools take (slideIndex, shapeIndex).`
+        `These are 0-based indices in the form the tools take (slideIndex, shapeIndex).` +
+        (ctx.layoutName ? ` That slide's layout is "${ctx.layoutName}".` : '')
       )
     }
     case 'shapeText':
       return (
         `The user has selected text inside shape ${ctx.shapeIndex} on slide ${ctx.slideIndex}: "${ctx.text}" - ` +
-        `the selection is a run within that shape, not the whole shape.`
+        `the selection is a run within that shape, not the whole shape.` +
+        (ctx.layoutName ? ` That slide's layout is "${ctx.layoutName}".` : '')
       )
     case 'mail': {
       if (ctx.count === 1) {

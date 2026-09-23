@@ -230,6 +230,20 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > (`ComRetry`, `SmartArtLayouts`) was already resolved into `OfficeAi.Shared`
 > the same day, before this split ran - see the Phase 2 update above.
 
+> **Update 2026-09-17 (Outlook gains color-tag/category tools):** three new
+> tools, `OutlookAiAddIn/OutlookTools.Categories.cs`. `list_color_categories`
+> (read-only) lists the profile's master `Namespace.Categories` list — name +
+> friendly color name (the 26 `OlCategoryColor` values, mapped in that file
+> since `OfficeAi.Shared` has no Outlook PIA reference, same split as
+> `ColorUtil` uses for RGB). `set_event_categories` sets/clears an
+> `AppointmentItem`'s `Categories` string (the colored block shown on a
+> calendar event) — Full autonomy only. `set_category_color` creates a new
+> tag or recolors an existing one via `Categories.Add`/`Category.Color` —
+> also Full autonomy only. Verified against a live Outlook client (category
+> enumeration, tag creation, and event `Categories` round-trip) before
+> wiring into the tool switch; `dotnet test` unaffected (no new pure logic —
+> the color-name map is a small dictionary, not extracted for unit testing).
+
 ## Architecture
 
 officeoffice drives the **real desktop Office applications** via VSTO + COM interop
@@ -487,7 +501,7 @@ index otherwise.
   EWS work-week lookup — see its row below); every other tool in all four add-ins is
   still synchronous, wrapped in `Task.FromResult`.
 
-### Read tools (10 — always allowed, never gated)
+### Read tools (11 — always allowed, never gated)
 
 | Tool | Notes |
 |---|---|
@@ -501,8 +515,9 @@ index otherwise.
 | `get_event` | `Body` (≤ 40k), `RequiredAttendees`/`OptionalAttendees`, organizer, response status, recurring flag. |
 | `find_meeting_slots` | `Recipient.FreeBusy(anchor, 30, true)` — a per-30-min status string — for `Namespace.CurrentUser` + each resolved attendee; then `OfficeAi.Shared.MeetingSlots.Rank` (pure, unit-tested) slides a `duration_minutes` window in 30-min steps across each work day's `[start_hour, end_hour)` and scores each candidate by how many people are free (so a best partial match still comes back). **Work week/hours are read from the mailbox's own EWS `GetUserAvailability` → `AttendeeAvailability.WorkingHours` (added 2026-09-19; see `OutlookEws.GetWorkingHoursAsync`), not hardcoded** — falls back to Sun–Thu 09:00–18:00 only if that call fails (non-Exchange profile, EWS unreachable, etc.), cached per process like `OutlookEws.CachedUrl`. Default range is today through the end of the current contiguous work-day run (generalizes the old "today→Thursday, or next week if Fri/Sat" to any work-days shape), max 28 days. Times past the returned free/busy window are assumed free. Async (like `search_contacts`) only because of the EWS work-week lookup; the FreeBusy/ranking work itself is still synchronous COM. Args: `attendees` (req), `duration_minutes` (req), `start_date`, `end_date`, `start_hour`, `end_hour` (both default to the resolved work hours, or 9/18 as a last resort), `limit` (5). |
 | `list_tasks` | `Folder.GetTable` over the default Tasks folder; open tasks only unless `include_completed`. Columns EntryID/Subject/Due/Start/Status/PercentComplete/Complete/ReminderTime. |
+| `list_color_categories` | `Namespace.Categories` — the profile's master color-tag ("Category") list shared by mail/calendar/tasks, same list Outlook's Categorize picker shows. Each entry: `{name, color}`; color is one of the 26 `OlCategoryColor` values (None/Red/Orange/…/Dark Maroon), mapped to a friendly display name in `OutlookTools.Categories.cs` (not in `OfficeAi.Shared` — that project doesn't reference the Outlook PIA, same split as `ColorUtil`). |
 
-### Mutating tools (11 — Full autonomy only; `Mutated = true`)
+### Mutating tools (13 — Full autonomy only; `Mutated = true`)
 
 | Tool | Notes |
 |---|---|
@@ -511,6 +526,8 @@ index otherwise.
 | `move_email` | `MailItem.Move(ResolveFolder(destination))`; returns `{message_id: <new EntryID>, old_message_id}`. |
 | `delete_email` | Non-permanent → `Move` to Deleted Items (returns new id); `permanent: true` → then `.Delete()` from there (no single-call hard delete in the OM — documented as "may still be server-recoverable"). |
 | `accept_meeting` / `decline_meeting` | Resolves to `AppointmentItem` (via `MeetingItem.GetAssociatedAppointment(false)` when the id is a meeting request), `appt.Respond(olMeetingAccepted/Declined, true, false)`, then `.Send()` on the response if non-null. |
+| `set_event_categories` | `AppointmentItem.Categories` (comma-separated tag names, the color shown on the event in the calendar grid) + `.Save()`; empty/omitted `categories` clears all tags. A name outside the master list is auto-added by Outlook on `Save` with an arbitrary color — call `set_category_color` first to control it. |
+| `set_category_color` | `Namespace.Categories[name]` — updates `.Color` if the tag exists, else `Categories.Add(name, color)` creates it. Same master list `list_color_categories` reads. |
 | `create_task` | `Application.CreateItem(olTaskItem)` + `.Save()` — no window (a task doesn't send anything, so it follows the mutate-directly pattern, not draft-and-display). Args: `subject` (req), `body`, `due_date`, `start_date`, `reminder_time`, `importance`. |
 | `update_task` | `(TaskItem)GetItemFromID`; only passed fields change; `mark_complete: true` → `Complete = true` + `PercentComplete = 100`. |
 | `set_reminder` | `ReminderSet` / `ReminderTime` on an appointment **or** task, addressed by its `item_id` (EntryID); `clear: true` turns it off. |
