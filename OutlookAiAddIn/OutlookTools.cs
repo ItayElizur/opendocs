@@ -50,12 +50,24 @@ namespace OutlookAiAddIn
         };
 
         // Tier 2 ("Draft only" / CommentOnly): mutates the mailbox or opens a
-        // draft, but never leaves it unreviewed.
+        // draft, but never leaves it unreviewed. set_event_categories/
+        // set_category_color belong here, not in SendTierTools below - both
+        // are purely local (appt.Categories/.Save(), cats.Add()/.Color),
+        // never call .Send(), and carry the same risk profile as
+        // move_email/flag_email_important right next to them. An earlier
+        // version of this fix put them in SendTierTools to match their old
+        // (pre-four-tier) Full-Autonomy-only gate, but that was restoring
+        // the OLD binary model rather than applying this PR's own tiering
+        // logic - every other local-only mutation here was deliberately
+        // downgraded from Full-Autonomy-only, and these two were simply
+        // missed, not deliberately kept stricter. Must stay in sync with
+        // entry.ts's commentOnlyExtraTools.
         private static readonly HashSet<string> DraftTierTools = new HashSet<string>
         {
             "mark_email_read", "mark_email_unread", "flag_email_important", "move_email", "delete_email",
             "create_task", "update_task", "set_reminder", "set_email_reminder",
             "draft_email", "reply_email", "reply_all_email", "forward_email", "draft_event",
+            "set_event_categories", "set_category_color",
         };
 
         // Tier 3 ("Automate approvals" / TrackChanges): already calls
@@ -67,20 +79,10 @@ namespace OutlookAiAddIn
         };
 
         // Tier 4 (Full autonomy only): composes and sends/creates brand-new
-        // content with no review step at all. set_event_categories/
-        // set_category_color are here too - not because they send anything,
-        // but because they were Full-Autonomy-only before this four-tier
-        // redesign and the client (entry.ts's readOnlyTools/
-        // commentOnlyExtraTools/trackChangesExtraTools) never lists them
-        // below Full Autonomy either; leaving them out of every tier set
-        // here would silently drop them into the default ("anything not
-        // otherwise classified") bucket below, downgrading their required
-        // tier to Draft only and breaking server-side's status as the real
-        // enforcement (bootstrap.ts's own comment on that guarantee).
+        // content with no review step at all.
         private static readonly HashSet<string> SendTierTools = new HashSet<string>
         {
             "send_email", "send_reply", "send_reply_all", "send_forward", "create_event",
-            "set_event_categories", "set_category_color",
         };
 
         private static string TierLabel(EditingMode mode)

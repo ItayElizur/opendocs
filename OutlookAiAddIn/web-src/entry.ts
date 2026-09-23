@@ -455,6 +455,8 @@ startAddIn({
     'reply_all_email',
     'forward_email',
     'draft_event',
+    'set_event_categories',
+    'set_category_color',
   ],
   // Tier 3 ("Automate approvals"), on top of tier 2 - accept/decline
   // already auto-notify the organizer via resp.Send(), so they get their
