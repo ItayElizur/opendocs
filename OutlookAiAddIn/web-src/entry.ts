@@ -106,7 +106,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'find_meeting_slots',
     description:
-      'Finds open meeting times for you plus one or more attendees, using their Outlook free/busy. Ranked by how many people are free (so a best partial match still comes back if nobody is free for the whole group). Defaults to this Sunday-Thursday work week, 09:00-18:00. Feed a returned slot to draft_event.',
+      "Finds open meeting times for you plus one or more attendees, using their Outlook free/busy. Ranked by how many people are free (so a best partial match still comes back if nobody is free for the whole group). Defaults to your mailbox's own configured work week/hours (read from Exchange; falls back to Sun-Thu 09:00-18:00 if that can't be read). Feed a returned slot to draft_event.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -114,12 +114,18 @@ const ALL_OUTLOOK_TOOLS = [
         duration_minutes: { type: 'number' },
         start_date: { type: 'string', description: 'Range start (YYYY-MM-DD). Defaults to the work-week rule above.' },
         end_date: { type: 'string', description: 'Range end (YYYY-MM-DD).' },
-        start_hour: { type: 'number', description: 'Earliest hour to consider (default 9).' },
-        end_hour: { type: 'number', description: 'Latest hour, exclusive (default 18).' },
+        start_hour: { type: 'number', description: "Earliest hour to consider. Defaults to your mailbox's configured work-day start (or 9 if that can't be read)." },
+        end_hour: { type: 'number', description: "Latest hour, exclusive. Defaults to your mailbox's configured work-day end (or 18 if that can't be read)." },
         limit: { type: 'number', description: 'Max slots to return (default 5).' },
       },
       required: ['attendees', 'duration_minutes'],
     },
+  },
+  {
+    name: 'list_color_categories',
+    description:
+      'Lists the color tags (Outlook "Categories") available to apply to events, mail, or tasks - each with its name and color. Use this to see valid names before calling set_event_categories, or valid colors before set_category_color.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'list_tasks',
@@ -176,6 +182,34 @@ const ALL_OUTLOOK_TOOLS = [
     name: 'decline_meeting',
     description: 'Declines a meeting invitation and notifies the organizer.',
     inputSchema: { type: 'object', properties: { event_id: { type: 'string' } }, required: ['event_id'] },
+  },
+  {
+    name: 'set_event_categories',
+    description:
+      'Colors a calendar event with one or more color tags (Outlook "Categories"), shown as a colored block on the event. Pass names from list_color_categories, comma-separated for more than one; an empty/omitted categories clears all tags from the event. A name not yet in the master list is auto-added with an arbitrary color - call set_category_color first to control it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        categories: { type: 'string', description: 'Comma-separated color tag name(s), e.g. "Urgent, Travel". Omit or pass "" to clear.' },
+      },
+      required: ['event_id'],
+    },
+  },
+  {
+    name: 'set_category_color',
+    description: 'Creates a new color tag, or changes an existing one\'s color, in the shared master list used by set_event_categories.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Color tag name, e.g. "Urgent".' },
+        color: {
+          type: 'string',
+          description: 'One of: None, Red, Orange, Peach, Yellow, Green, Teal, Olive, Blue, Purple, Maroon, Steel, Dark Steel, Gray, Dark Gray, Black, Dark Red, Dark Orange, Dark Peach, Dark Yellow, Dark Green, Dark Teal, Dark Olive, Dark Blue, Dark Purple, Dark Maroon.',
+        },
+      },
+      required: ['name', 'color'],
+    },
   },
   {
     name: 'create_task',
@@ -345,6 +379,7 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   list_events: d('List calendar events', 'רשימת אירועים', 'Lists calendar events in a date range.', 'מציג אירועי יומן בטווח תאריכים.'),
   get_event: d('Read event', 'קריאת אירוע', 'Reads one calendar event in full.', 'קורא אירוע יומן אחד במלואו.'),
   find_meeting_slots: d('Find meeting times', 'מציאת זמני פגישה', 'Finds open times for you and the attendees, ranked by availability.', 'מוצא זמנים פנויים עבורך והמוזמנים, מדורגים לפי זמינות.'),
+  list_color_categories: d('List color tags', 'רשימת תגיות צבע', 'Lists the available color tags and their colors.', 'מציג את תגיות הצבע הזמינות והצבעים שלהן.'),
   list_tasks: d('List tasks', 'רשימת משימות', 'Lists tasks and their due dates.', 'מציג משימות ותאריכי יעד.'),
   mark_email_read: d('Mark read', 'סימון כנקרא', 'Marks a message as read.', 'מסמן הודעה כנקראה.'),
   mark_email_unread: d('Mark unread', 'סימון כלא נקרא', 'Marks a message as unread.', 'מסמן הודעה כלא נקראה.'),
@@ -353,6 +388,8 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   delete_email: d('Delete email', 'מחיקת הודעה', 'Moves a message to Deleted Items.', 'מעביר הודעה לפריטים שנמחקו.'),
   accept_meeting: d('Accept meeting', 'אישור פגישה', 'Accepts a meeting invitation.', 'מאשר הזמנה לפגישה.'),
   decline_meeting: d('Decline meeting', 'דחיית פגישה', 'Declines a meeting invitation.', 'דוחה הזמנה לפגישה.'),
+  set_event_categories: d('Color event', 'צביעת אירוע', 'Applies or clears color tags on a calendar event.', 'מחיל או מנקה תגיות צבע על אירוע יומן.'),
+  set_category_color: d('Set tag color', 'הגדרת צבע תגית', 'Creates or recolors a color tag.', 'יוצר או משנה צבע של תגית.'),
   create_task: d('Create task', 'יצירת משימה', 'Creates a task with an optional due date and reminder.', 'יוצר משימה עם תאריך יעד ותזכורת אופציונליים.'),
   update_task: d('Update task', 'עדכון משימה', 'Updates or completes an existing task.', 'מעדכן או משלים משימה קיימת.'),
   set_reminder: d('Set reminder', 'הגדרת תזכורת', 'Sets a reminder on an appointment or task.', 'מגדיר תזכורת לפגישה או משימה.'),
@@ -375,7 +412,7 @@ startAddIn({
   toolDisplay: OUTLOOK_TOOL_DISPLAY,
   systemPrompt:
     'You are an AI assistant embedded in Microsoft Outlook via the Airchat Office add-in. You work from the main Outlook window (Explorer). ' +
-    'You can read and search mail, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations), ' +
+    'You can read and search mail, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations, color events with tags via list_color_categories/set_event_categories/set_category_color), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
     'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. ' +
     'send_email/send_reply/send_reply_all/send_forward/create_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
@@ -397,6 +434,7 @@ startAddIn({
     'list_events',
     'get_event',
     'find_meeting_slots',
+    'list_color_categories',
     'list_tasks',
   ],
   // Tier 2 ("Draft only") on top of the read-only set above - every tool
