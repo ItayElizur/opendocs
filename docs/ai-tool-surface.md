@@ -474,21 +474,32 @@ index otherwise.
   DASL builder is pure and unit-tested (`OfficeAi.Shared/OutlookDasl.cs`). `search_contacts`
   is the deliberate, documented exception: server-side EWS ANR (`ResolveName`), not a COM
   scan — see the EWS carve-out below.
-- **`search_contacts` is the one EWS call.** Every other Outlook tool is pure
-  `Microsoft.Office.Interop.Outlook` COM against the running client. Contact resolution
+- **`search_contacts` and `find_meeting_slots`' work-week default are the two things that
+  touch EWS.** Every other Outlook tool is pure `Microsoft.Office.Interop.Outlook` COM
+  against the running client. All EWS-dependent code lives apart from the pure-COM tool
+  files, in two layers: `OutlookEws.cs` (the raw EWS Managed API wire calls —
+  `ResolveNamesAsync`, `GetWorkingHoursAsync`) and `OutlookTools.Ews.cs` (2026-09-19,
+  split out of the file this section used to describe — the tool-facing orchestration on
+  top: `SearchContactsAsync`, `ResolveWorkWeekAsync`, and the shared endpoint/account
+  resolution both call, `ResolveEwsUrlAsync`/`FindExchangeAccountInfo`). Contact resolution
   calls **EWS `ResolveName(query, ContactsThenDirectory, returnContactDetails: true)`**
   (EWS Managed API 2.2, `Microsoft.Exchange.WebServices` 2.2.0) with
   `ExchangeService.UseDefaultCredentials` (Windows Integrated Auth as the signed-in user —
   the .NET equivalent of `mcp-outlook`'s `auth_type=sspi`; no stored credentials). Endpoint
   is parsed from the cached `Outlook.Account.AutoDiscoverXml` (`<EwsUrl>`/`<ASUrl>`, `EXCH`
   preferred over `EXPR`; pure parser `OfficeAi.Shared/EwsAutodiscoverXml.cs`), falling back
-  to `ExchangeService.AutodiscoverUrl`, then cached in a process-static `Uri`. The call
-  runs off the UI thread (`await Task.Run`, `svc.Timeout` 15 s) so Outlook stays
-  responsive. **On-prem Exchange only.** EWS unreachable / SSPI failure / endpoint not
-  found / timeout → a clear `IsError` result, never a silent COM fallback. This is also
+  to `ExchangeService.AutodiscoverUrl`, then cached in a process-static `Uri` shared by both
+  EWS-dependent tools. The call runs off the UI thread (`await Task.Run`, `svc.Timeout` 15 s)
+  so Outlook stays responsive. **On-prem Exchange only.** EWS unreachable / SSPI failure /
+  endpoint not found / timeout → a clear `IsError` result for `search_contacts` (EWS isn't
+  optional there); `find_meeting_slots` instead falls back to its old hardcoded Sun-Thu/9-18
+  default, since EWS is an enhancement over an already-working COM-only path there, not the
+  only way to do the job. This is also
   the pilot for async tool execution — the shared `ToolExecutor` delegate is now
-  `Task<ToolResult>`-returning (`WebViewBridgeHost.OnWebMessageReceived` is `async`); every
-  other tool in all four add-ins is still synchronous, wrapped in `Task.FromResult`.
+  `Task<ToolResult>`-returning (`WebViewBridgeHost.OnWebMessageReceived` is `async`).
+  `find_meeting_slots` is the second Outlook tool to go async (2026-09-19, for its own
+  EWS work-week lookup — see its row below); every other tool in all four add-ins is
+  still synchronous, wrapped in `Task.FromResult`.
 
 ### Read tools (11 — always allowed, never gated)
 
@@ -502,7 +513,7 @@ index otherwise.
 | `search_contacts` | **EWS `ResolveName` over Contacts then GAL** (server-side ANR), run off the UI thread via EWS Managed API 2.2 with `UseDefaultCredentials`. Endpoint discovery: `Account.AutoDiscoverXml` → `AutodiscoverUrl` → process-static `Uri` cache. Each `NameResolution` mapped to `(name, email)` — GAL X500/`EX` addresses fall back to the resolved contact's own `EmailAddress1..3`; entries with no `@` address are dropped (mirrors `mcp-outlook`). Deduped by lowercased address (name fallback), capped at `limit` (default 10). Pure helpers `EwsAutodiscoverXml.ParseEwsUrl` + `ContactSearchFormat.Format` are unit-tested. **No `folder`/scope arg.** On-prem Exchange only; unreachable / auth failure / no endpoint / 15 s timeout → a specific `IsError` message, no COM fallback. (The pre-2026-09 recursive multi-store contact-folder crawl froze then crashed Outlook — removed.) |
 | `list_events` | `Items.Sort("[Start]")` → `Items.IncludeRecurrences = true` → `Items.Restrict("[Start] <= end AND [End] >= start")` — **this order is load-bearing** and rules out `GetTable`. Recurring instances share the master `event_id`; each row carries its own `start` to disambiguate. Args: `start_date` (today), `end_date` (+7d), `limit` (50). |
 | `get_event` | `Body` (≤ 40k), `RequiredAttendees`/`OptionalAttendees`, organizer, response status, recurring flag. |
-| `find_meeting_slots` | `Recipient.FreeBusy(anchor, 30, true)` — a per-30-min status string — for `Namespace.CurrentUser` + each resolved attendee; then `OfficeAi.Shared.MeetingSlots.Rank` (pure, unit-tested) slides a `duration_minutes` window in 30-min steps across each work day's `[start_hour, end_hour)` and scores each candidate by how many people are free (so a best partial match still comes back). Work week is Sun–Thu (mirrors mcp-outlook); default range is today→Thursday (or next week if today is Fri/Sat), max 28 days. Times past the returned free/busy window are assumed free. Args: `attendees` (req), `duration_minutes` (req), `start_date`, `end_date`, `start_hour` (9), `end_hour` (18), `limit` (5). |
+| `find_meeting_slots` | `Recipient.FreeBusy(anchor, 30, true)` — a per-30-min status string — for `Namespace.CurrentUser` + each resolved attendee; then `OfficeAi.Shared.MeetingSlots.Rank` (pure, unit-tested) slides a `duration_minutes` window in 30-min steps across each work day's `[start_hour, end_hour)` and scores each candidate by how many people are free (so a best partial match still comes back). **Work week/hours are read from the mailbox's own EWS `GetUserAvailability` → `AttendeeAvailability.WorkingHours` (added 2026-09-19; see `OutlookEws.GetWorkingHoursAsync`), not hardcoded** — falls back to Sun–Thu 09:00–18:00 only if that call fails (non-Exchange profile, EWS unreachable, etc.), cached per process like `OutlookEws.CachedUrl`. Default range is today through the end of the current contiguous work-day run (generalizes the old "today→Thursday, or next week if Fri/Sat" to any work-days shape), max 28 days. Times past the returned free/busy window are assumed free. Async (like `search_contacts`) only because of the EWS work-week lookup; the FreeBusy/ranking work itself is still synchronous COM. Args: `attendees` (req), `duration_minutes` (req), `start_date`, `end_date`, `start_hour`, `end_hour` (both default to the resolved work hours, or 9/18 as a last resort), `limit` (5). |
 | `list_tasks` | `Folder.GetTable` over the default Tasks folder; open tasks only unless `include_completed`. Columns EntryID/Subject/Due/Start/Status/PercentComplete/Complete/ReminderTime. |
 | `list_color_categories` | `Namespace.Categories` — the profile's master color-tag ("Category") list shared by mail/calendar/tasks, same list Outlook's Categorize picker shows. Each entry: `{name, color}`; color is one of the 26 `OlCategoryColor` values (None/Red/Orange/…/Dark Maroon), mapped to a friendly display name in `OutlookTools.Categories.cs` (not in `OfficeAi.Shared` — that project doesn't reference the Outlook PIA, same split as `ColorUtil`). |
 

@@ -59,7 +59,7 @@ namespace OutlookAiAddIn
                     case "search_contacts": return await SearchContactsAsync(input);
                     case "list_events": return ListEvents(input);
                     case "get_event": return GetEvent(input);
-                    case "find_meeting_slots": return FindMeetingSlots(input);
+                    case "find_meeting_slots": return await FindMeetingSlotsAsync(input);
                     case "list_tasks": return ListTasks(input);
                     case "get_attachment": return GetAttachment(input);
                     case "list_color_categories": return ListColorCategories(input);
@@ -198,6 +198,22 @@ namespace OutlookAiAddIn
             {
                 int n;
                 if (v.TryGetInt32(out n)) return n;
+            }
+            return dflt;
+        }
+
+        // Like Int, but the default itself can be fractional - for
+        // find_meeting_slots' start_hour/end_hour, whose default comes from a
+        // mailbox's real (possibly non-hour-aligned, e.g. 08:30) EWS working
+        // hours. The argument itself is still schema'd as a whole-hour
+        // integer, so only the default needs the fractional path.
+        internal static double Double(JsonElement o, string name, double dflt)
+        {
+            JsonElement v;
+            if (o.ValueKind == JsonValueKind.Object && o.TryGetProperty(name, out v) && v.ValueKind == JsonValueKind.Number)
+            {
+                double n;
+                if (v.TryGetDouble(out n)) return n;
             }
             return dflt;
         }

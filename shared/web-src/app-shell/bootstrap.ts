@@ -341,6 +341,32 @@ export interface AddInConfig {
   availableModes?: EditingMode[]
 }
 
+// Fix for: relative-date tool args (draft_event, find_meeting_slots, etc.)
+// were resolved by the model with no ground truth for "today" anywhere in
+// the system prompt - it had to guess both the date and the weekday from
+// training data, which is exactly how "next Tuesday" turned into
+// Wednesday. Called fresh from systemSuffix() below on every turn, not
+// frozen at conversation start: the full system prompt is already resent
+// on every turn regardless (see loop.ts's startTurn()), so recomputing this
+// ~20-token line costs nothing extra, and it keeps a conversation that
+// spans midnight (or a laptop that sleeps overnight) correct instead of
+// stuck on its start-of-chat date.
+function todayContextLine(): string {
+  try {
+    const now = new Date()
+    const weekday = now.toLocaleDateString('en-US', { weekday: 'long' })
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, '0')
+    const d = String(now.getDate()).padStart(2, '0')
+    const hh = String(now.getHours()).padStart(2, '0')
+    const mm = String(now.getMinutes()).padStart(2, '0')
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return `Today is ${weekday}, ${y}-${m}-${d}, ${hh}:${mm} (${tz}).`
+  } catch {
+    return `Today is ${new Date().toDateString()}.`
+  }
+}
+
 /**
  * Boots one add-in's chat panel: WebView2 bridge, settings, transport,
  * chat-UI mount, and AgentLoop event plumbing. Everything here was
@@ -405,6 +431,9 @@ export function startAddIn(config: AddInConfig): void {
   // frozen by beginConversation() at conversation-start boundaries only
   // (initial load, New chat), never read live per-turn, so editing the
   // guidelines mid-conversation cannot retroactively change a run in progress.
+  // The date context line is the opposite: recomputed live on every turn by
+  // systemSuffix() below (todayContextLine()'s own comment explains why),
+  // not frozen here.
   let savedDocMessage = ''
   let activeDocMessage = ''
   function beginConversation(): void {
@@ -660,12 +689,12 @@ export function startAddIn(config: AddInConfig): void {
   const loop = new AgentLoop({
     transport: makeTransport(),
     skill,
-    // Task 8 Step 2/4: appended to the system prompt every turn, but the
-    // value it reads (activeDocMessage) only changes at conversation-start
-    // boundaries - see beginConversation() above. Labeled explicitly as
-    // user-supplied so the model treats it as standing instructions from the
-    // user, not as system policy.
-    systemSuffix: () => (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
+    // Called every turn. The date line (todayContextLine()) is computed
+    // fresh each call, on purpose - see its own comment. activeDocMessage
+    // only changes at conversation-start boundaries - see beginConversation()
+    // above - and is labeled explicitly as user-supplied so the model treats
+    // it as standing instructions from the user, not as system policy.
+    systemSuffix: () => '\n\n' + todayContextLine() + (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
     events: {
       onText: (text) => {
         textStreamedSinceGroup = true

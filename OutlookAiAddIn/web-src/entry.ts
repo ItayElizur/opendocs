@@ -106,7 +106,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'find_meeting_slots',
     description:
-      'Finds open meeting times for you plus one or more attendees, using their Outlook free/busy. Ranked by how many people are free (so a best partial match still comes back if nobody is free for the whole group). Defaults to this Sunday-Thursday work week, 09:00-18:00. Feed a returned slot to draft_event.',
+      "Finds open meeting times for you plus one or more attendees, using their Outlook free/busy. Ranked by how many people are free (so a best partial match still comes back if nobody is free for the whole group). Defaults to your mailbox's own configured work week/hours (read from Exchange; falls back to Sun-Thu 09:00-18:00 if that can't be read). Feed a returned slot to draft_event.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -114,8 +114,8 @@ const ALL_OUTLOOK_TOOLS = [
         duration_minutes: { type: 'number' },
         start_date: { type: 'string', description: 'Range start (YYYY-MM-DD). Defaults to the work-week rule above.' },
         end_date: { type: 'string', description: 'Range end (YYYY-MM-DD).' },
-        start_hour: { type: 'number', description: 'Earliest hour to consider (default 9).' },
-        end_hour: { type: 'number', description: 'Latest hour, exclusive (default 18).' },
+        start_hour: { type: 'number', description: "Earliest hour to consider. Defaults to your mailbox's configured work-day start (or 9 if that can't be read)." },
+        end_hour: { type: 'number', description: "Latest hour, exclusive. Defaults to your mailbox's configured work-day end (or 18 if that can't be read)." },
         limit: { type: 'number', description: 'Max slots to return (default 5).' },
       },
       required: ['attendees', 'duration_minutes'],
