@@ -248,16 +248,59 @@ namespace PowerPointAiAddIn
             }
         }
 
+        // Review finding: SetHeadersFooters used to hand-repeat the same
+        // try { ApplyHeadersFooters(...) } catch { DebugLog...; counter++ }
+        // block 6 times (per-slide loop, SlideMaster, per-layout loop,
+        // TitleMaster, per-title-layout loop, single-slide branch), each with
+        // its own hand-typed DebugLog label - a future 7th target or a
+        // signature change had 6 near-identical sites to update by hand.
+        // Returns null on success, or the caught exception's message on
+        // failure (never throws) - callers that only need a pass/fail signal
+        // just check for null; the single-slide branch also needs the actual
+        // message for its error response.
+        private static string TryApplyHeadersFooters(
+            PowerPoint.HeadersFooters hf, bool? slideNumberVisible,
+            bool? footerVisible, string footerText,
+            bool? dateVisible, string dateMode, string dateText, PowerPoint.PpDateTimeFormat dateFormat,
+            string debugLabel)
+        {
+            try
+            {
+                ApplyHeadersFooters(hf, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException("SetHeadersFooters " + debugLabel, ex);
+                return ex.Message;
+            }
+        }
+
         // DisplayOnTitleSlide (the "Don't show on title slide" checkbox) is
         // deck-wide by nature, same as PageSetup.FirstSlideNumber - it lives
         // on the Slide Master's (and, if the deck has one, the Title
         // Master's - a deck can carry a second, separate master used only by
         // title-layout slides) HeadersFooters, not any individual slide's.
-        private static void ApplySkipTitleSlide(bool skipTitleSlide)
+        //
+        // Review finding: the SlideMaster write below used to be unguarded,
+        // while the TitleMaster write right after it was individually
+        // wrapped - inconsistent with this file's own discipline of guarding
+        // every master-level HeadersFooters write independently. If the
+        // SlideMaster write threw (the same "Master (unknown member)" COM
+        // restriction this file documents extensively for sibling writes),
+        // the TitleMaster branch was never even attempted. Both writes are
+        // now independently guarded; the TitleMaster write's own failure
+        // stays best-effort/silent as before (unaffected by this fix), and
+        // only the primary SlideMaster write's failure is surfaced to the
+        // caller (returns its message, or null on success).
+        private static string ApplySkipTitleSlide(bool skipTitleSlide)
         {
             PowerPoint.Presentation pres = ActivePresentation;
             Microsoft.Office.Core.MsoTriState value = skipTitleSlide ? Microsoft.Office.Core.MsoTriState.msoFalse : Microsoft.Office.Core.MsoTriState.msoTrue;
-            pres.SlideMaster.HeadersFooters.DisplayOnTitleSlide = value;
+            string slideMasterError = null;
+            try { pres.SlideMaster.HeadersFooters.DisplayOnTitleSlide = value; }
+            catch (Exception ex) { DebugLog.WriteException("ApplySkipTitleSlide SlideMaster", ex); slideMasterError = ex.Message; }
+
             // Real-user-confirmed (2026-09-22): even READING pres.TitleMaster
             // (not just writing to it) can throw "Master (unknown member) :
             // Invalid request" in some deck states despite HasTitleMaster
@@ -269,6 +312,7 @@ namespace PowerPointAiAddIn
                     pres.TitleMaster.HeadersFooters.DisplayOnTitleSlide = value;
             }
             catch (Exception ex) { DebugLog.WriteException("ApplySkipTitleSlide TitleMaster", ex); }
+            return slideMasterError;
         }
 
         // Shared by ReadSlide (PowerPointTools.Read.cs) so the model can see
@@ -364,8 +408,8 @@ namespace PowerPointAiAddIn
                     int slideFailures = 0;
                     foreach (PowerPoint.Slide s in pres.Slides)
                     {
-                        try { ApplyHeadersFooters(s.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat); }
-                        catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters slide " + (s.SlideIndex - 1), ex); slideFailures++; }
+                        if (TryApplyHeadersFooters(s.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat, "slide " + (s.SlideIndex - 1)) != null)
+                            slideFailures++;
                     }
                     layoutFailures += slideFailures;
 
@@ -400,15 +444,15 @@ namespace PowerPointAiAddIn
                     // "Master (unknown member) : Invalid request" - exact
                     // trigger still unconfirmed, so nothing here is trusted
                     // to succeed unguarded any more.
-                    try { ApplyHeadersFooters(pres.SlideMaster.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat); }
-                    catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters SlideMaster", ex); layoutFailures++; }
+                    if (TryApplyHeadersFooters(pres.SlideMaster.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat, "SlideMaster") != null)
+                        layoutFailures++;
 
                     try
                     {
                         foreach (PowerPoint.CustomLayout layout in pres.SlideMaster.CustomLayouts)
                         {
-                            try { ApplyHeadersFooters(layout.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat); }
-                            catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters layout '" + layout.Name + "'", ex); layoutFailures++; }
+                            if (TryApplyHeadersFooters(layout.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat, "layout '" + layout.Name + "'") != null)
+                                layoutFailures++;
                         }
                     }
                     catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters SlideMaster.CustomLayouts enumeration", ex); layoutFailures++; }
@@ -418,12 +462,12 @@ namespace PowerPointAiAddIn
                         if (pres.HasTitleMaster == Microsoft.Office.Core.MsoTriState.msoTrue)
                         {
                             PowerPoint.Master titleMaster = pres.TitleMaster;
-                            try { ApplyHeadersFooters(titleMaster.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat); }
-                            catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters TitleMaster", ex); layoutFailures++; }
+                            if (TryApplyHeadersFooters(titleMaster.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat, "TitleMaster") != null)
+                                layoutFailures++;
                             foreach (PowerPoint.CustomLayout layout in titleMaster.CustomLayouts)
                             {
-                                try { ApplyHeadersFooters(layout.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat); }
-                                catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters title-master layout '" + layout.Name + "'", ex); layoutFailures++; }
+                                if (TryApplyHeadersFooters(layout.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat, "title-master layout '" + layout.Name + "'") != null)
+                                    layoutFailures++;
                             }
                         }
                     }
@@ -439,12 +483,7 @@ namespace PowerPointAiAddIn
                     // one slide had the side effect of silently dropping an
                     // unrelated deck-wide field given in the same call.
                     // Record the failure and keep going instead.
-                    try { ApplyHeadersFooters(pres.Slides[slideIndex + 1].HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat); }
-                    catch (Exception ex)
-                    {
-                        DebugLog.WriteException("SetHeadersFooters slide " + slideIndex, ex);
-                        singleSlideError = ex.Message;
-                    }
+                    singleSlideError = TryApplyHeadersFooters(pres.Slides[slideIndex + 1].HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat, "slide " + slideIndex);
                 }
             }
 
@@ -474,8 +513,9 @@ namespace PowerPointAiAddIn
             }
             if (skipTitleSlide.HasValue)
             {
-                try { ApplySkipTitleSlide(skipTitleSlide.Value); skipTitleSlideApplied = true; }
-                catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters skipTitleSlide", ex); deckWideFailures.Add("skipTitleSlide (" + ex.Message + ")"); }
+                string skipTitleSlideError = ApplySkipTitleSlide(skipTitleSlide.Value);
+                if (skipTitleSlideError == null) skipTitleSlideApplied = true;
+                else deckWideFailures.Add("skipTitleSlide (" + skipTitleSlideError + ")");
             }
 
             if (singleSlideError != null)

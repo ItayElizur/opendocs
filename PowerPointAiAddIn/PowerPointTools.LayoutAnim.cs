@@ -65,6 +65,15 @@ namespace PowerPointAiAddIn
             if (kind == "custom")
             {
                 string layoutName = input.GetProperty("layoutName").GetString();
+                // Review finding: unlike ResolveMasterTarget's explicit
+                // !string.IsNullOrEmpty(query) check for the identical field
+                // on add_master_element/read_master_elements/etc., this path
+                // never guarded against an empty string - IndexOf("") matches
+                // every layout, so it silently picked the first one (or threw
+                // a confusing "matches more than one" error with >1 layout)
+                // for input that named nothing.
+                if (string.IsNullOrEmpty(layoutName))
+                    throw new ArgumentException("set_slide_layout: layoutName must be a non-empty string for kind:\"custom\".");
                 slide.CustomLayout = ResolveCustomLayout(slide, layoutName);
                 return new ToolResult { Output = "Slide " + slideIndex + " layout set to custom layout '" + layoutName + "'.", Mutated = true, Summary = "set_slide_layout" };
             }
