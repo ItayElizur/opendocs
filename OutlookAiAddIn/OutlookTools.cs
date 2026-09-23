@@ -31,6 +31,7 @@ namespace OutlookAiAddIn
         {
             "list_emails", "search_emails", "get_email", "list_folders", "search_contacts",
             "list_events", "get_event", "list_tasks", "get_attachment", "find_meeting_slots",
+            "list_color_categories",
         };
 
         public static async Task<ToolResult> ExecuteAsync(string mbxKey, string name, JsonElement input)
@@ -61,6 +62,7 @@ namespace OutlookAiAddIn
                     case "find_meeting_slots": return FindMeetingSlots(input);
                     case "list_tasks": return ListTasks(input);
                     case "get_attachment": return GetAttachment(input);
+                    case "list_color_categories": return ListColorCategories(input);
 
                     case "mark_email_read": return MarkEmail(input, false);
                     case "mark_email_unread": return MarkEmail(input, true);
@@ -69,6 +71,8 @@ namespace OutlookAiAddIn
                     case "delete_email": return DeleteEmail(input);
                     case "accept_meeting": return RespondMeeting(input, true);
                     case "decline_meeting": return RespondMeeting(input, false);
+                    case "set_event_categories": return SetEventCategories(input);
+                    case "set_category_color": return SetCategoryColor(input);
                     case "create_task": return CreateTask(input);
                     case "update_task": return UpdateTask(input);
                     case "set_reminder": return SetReminder(input);
