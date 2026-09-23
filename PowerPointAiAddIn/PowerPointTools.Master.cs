@@ -101,6 +101,29 @@ namespace PowerPointAiAddIn
             return new MasterTarget { Shapes = ResolveSlideMaster().Shapes, Label = "the Slide Master" };
         }
 
+        // Curated subset of the real PpDateTimeFormat enum (confirmed via
+        // .NET reflection against the referenced PIA, Microsoft.Office.
+        // Interop.PowerPoint.dll GAC 15.0.0.0) for set_headers_footers's
+        // dateFormat. Deliberately excludes: the four time-only members
+        // (Hmm/Hmmss/hmmAMPM/hmmssAMPM - a "date format" picker showing no
+        // date at all doesn't fit this field); the two combined date+time
+        // members (out of scope here - dateMode:"fixed" + dateText already
+        // covers a time-bearing footer if ever needed); the seven locale-only
+        // UAQ1-7 members (undocumented/regional); ppDateTimeFigureOut (a
+        // sentinel PowerPoint uses internally, not a settable format); and
+        // ppDateTimeFormatMixed (what PowerPoint reports when a range's
+        // formats differ, never a value you set).
+        private static readonly Dictionary<string, PowerPoint.PpDateTimeFormat> DateAutoFormats = new Dictionary<string, PowerPoint.PpDateTimeFormat>
+        {
+            { "M/d/yy", PowerPoint.PpDateTimeFormat.ppDateTimeMdyy },
+            { "dddd, MMMM dd, yyyy", PowerPoint.PpDateTimeFormat.ppDateTimeddddMMMMddyyyy },
+            { "d MMMM, yyyy", PowerPoint.PpDateTimeFormat.ppDateTimedMMMMyyyy },
+            { "MMMM d, yyyy", PowerPoint.PpDateTimeFormat.ppDateTimeMMMMdyyyy },
+            { "d-MMM-yy", PowerPoint.PpDateTimeFormat.ppDateTimedMMMyy },
+            { "MMMM yy", PowerPoint.PpDateTimeFormat.ppDateTimeMMMMyy },
+            { "MM/yy", PowerPoint.PpDateTimeFormat.ppDateTimeMMyy },
+        };
+
         // Slide.HeadersFooters.DateAndTime/.Footer/.SlideNumber are all the
         // same HeaderFooter type. DisplayOnTitleSlide is NOT among them here -
         // real-Office-confirmed (2026-09-21, live error): setting it via a
@@ -126,7 +149,7 @@ namespace PowerPointAiAddIn
         private static void ApplyHeadersFooters(
             PowerPoint.HeadersFooters hf, bool? slideNumberVisible,
             bool? footerVisible, string footerText,
-            bool? dateVisible, string dateMode, string dateText)
+            bool? dateVisible, string dateMode, string dateText, PowerPoint.PpDateTimeFormat dateFormat)
         {
             if (slideNumberVisible.HasValue)
                 hf.SlideNumber.Visible = slideNumberVisible.Value ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
@@ -139,7 +162,7 @@ namespace PowerPointAiAddIn
             if (dateMode == "auto")
             {
                 hf.DateAndTime.UseFormat = Microsoft.Office.Core.MsoTriState.msoTrue;
-                hf.DateAndTime.Format = PowerPoint.PpDateTimeFormat.ppDateTimeMdyy;
+                hf.DateAndTime.Format = dateFormat;
             }
             else if (dateMode == "fixed")
             {
@@ -205,10 +228,27 @@ namespace PowerPointAiAddIn
                 ? (bool?)(dvEl.ValueKind == JsonValueKind.True) : null;
             string dateMode = input.TryGetProperty("dateMode", out var dmEl) && dmEl.ValueKind == JsonValueKind.String ? dmEl.GetString() : null;
             string dateText = input.TryGetProperty("dateText", out var dtEl) && dtEl.ValueKind == JsonValueKind.String ? dtEl.GetString() : null;
+            string dateFormatKey = input.TryGetProperty("dateFormat", out var dfEl) && dfEl.ValueKind == JsonValueKind.String ? dfEl.GetString() : null;
+            // Review finding: dateText alone (no dateMode) used to be
+            // silently dropped - never applied, never counted in `applied`,
+            // and the call could even return the "no recognized fields" error
+            // despite dateText being a valid, given field. Infer dateMode the
+            // same way footerText infers footerVisible:true just above.
+            // User-directed: "auto" (and therefore dateFormat, which only
+            // applies to "auto") is opt-in only and never inferred - dateMode
+            // defaults to "fixed" and stays "fixed" unless the caller states
+            // dateMode:"auto" explicitly, regardless of which dateFormat is
+            // given.
+            if (dateMode == null && dateText != null) dateMode = "fixed";
             if (dateMode != null && dateMode != "auto" && dateMode != "fixed")
                 throw new ArgumentException("set_headers_footers: unknown dateMode '" + dateMode + "'. Valid: auto, fixed.");
             if (dateMode == "fixed" && dateText == null)
                 throw new ArgumentException("set_headers_footers: dateMode 'fixed' requires dateText.");
+            if (dateFormatKey != null && dateMode != "auto")
+                throw new ArgumentException("set_headers_footers: dateFormat only applies when dateMode is 'auto' - pass dateMode:\"auto\" explicitly to use it (dateMode defaults to \"fixed\" when not given).");
+            PowerPoint.PpDateTimeFormat dateFormat = PowerPoint.PpDateTimeFormat.ppDateTimeMdyy;
+            if (dateFormatKey != null && !DateAutoFormats.TryGetValue(dateFormatKey, out dateFormat))
+                throw new ArgumentException("set_headers_footers: unknown dateFormat '" + dateFormatKey + "'. Valid: " + string.Join(", ", DateAutoFormats.Keys) + ".");
             if (dateMode != null && dateVisible == null) dateVisible = true;
 
             bool? skipTitleSlide = input.TryGetProperty("skipTitleSlide", out var stEl) && (stEl.ValueKind == JsonValueKind.True || stEl.ValueKind == JsonValueKind.False)
@@ -230,6 +270,7 @@ namespace PowerPointAiAddIn
 
             bool anyPerSlideField = slideNumberVisible.HasValue || footerVisible.HasValue || footerText != null || dateVisible.HasValue || dateMode != null;
             int layoutFailures = 0;
+            string singleSlideError = null;
             if (anyPerSlideField)
             {
                 if (slideIndex == -1)
@@ -246,7 +287,7 @@ namespace PowerPointAiAddIn
                     int slideFailures = 0;
                     foreach (PowerPoint.Slide s in pres.Slides)
                     {
-                        try { ApplyHeadersFooters(s.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText); }
+                        try { ApplyHeadersFooters(s.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat); }
                         catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters slide " + (s.SlideIndex - 1), ex); slideFailures++; }
                     }
                     layoutFailures += slideFailures;
@@ -282,14 +323,14 @@ namespace PowerPointAiAddIn
                     // "Master (unknown member) : Invalid request" - exact
                     // trigger still unconfirmed, so nothing here is trusted
                     // to succeed unguarded any more.
-                    try { ApplyHeadersFooters(pres.SlideMaster.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText); }
+                    try { ApplyHeadersFooters(pres.SlideMaster.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat); }
                     catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters SlideMaster", ex); layoutFailures++; }
 
                     try
                     {
                         foreach (PowerPoint.CustomLayout layout in pres.SlideMaster.CustomLayouts)
                         {
-                            try { ApplyHeadersFooters(layout.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText); }
+                            try { ApplyHeadersFooters(layout.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat); }
                             catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters layout '" + layout.Name + "'", ex); layoutFailures++; }
                         }
                     }
@@ -300,11 +341,11 @@ namespace PowerPointAiAddIn
                         if (pres.HasTitleMaster == Microsoft.Office.Core.MsoTriState.msoTrue)
                         {
                             PowerPoint.Master titleMaster = pres.TitleMaster;
-                            try { ApplyHeadersFooters(titleMaster.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText); }
+                            try { ApplyHeadersFooters(titleMaster.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat); }
                             catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters TitleMaster", ex); layoutFailures++; }
                             foreach (PowerPoint.CustomLayout layout in titleMaster.CustomLayouts)
                             {
-                                try { ApplyHeadersFooters(layout.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText); }
+                                try { ApplyHeadersFooters(layout.HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat); }
                                 catch (Exception ex) { DebugLog.WriteException("SetHeadersFooters title-master layout '" + layout.Name + "'", ex); layoutFailures++; }
                             }
                         }
@@ -313,11 +354,19 @@ namespace PowerPointAiAddIn
                 }
                 else
                 {
-                    try { ApplyHeadersFooters(pres.Slides[slideIndex + 1].HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText); }
+                    // Review finding: this branch used to return immediately
+                    // on failure, before ever reaching the startNumber/
+                    // skipTitleSlide handling below - since those two fields
+                    // are documented as ALWAYS deck-wide regardless of
+                    // slideIndex, a rejected per-slide field combination on
+                    // one slide had the side effect of silently dropping an
+                    // unrelated deck-wide field given in the same call.
+                    // Record the failure and keep going instead.
+                    try { ApplyHeadersFooters(pres.Slides[slideIndex + 1].HeadersFooters, slideNumberVisible, footerVisible, footerText, dateVisible, dateMode, dateText, dateFormat); }
                     catch (Exception ex)
                     {
                         DebugLog.WriteException("SetHeadersFooters slide " + slideIndex, ex);
-                        return new ToolResult { Output = "set_headers_footers: slide " + slideIndex + " rejected this combination of fields (" + ex.Message + ").", IsError = true, Summary = "set_headers_footers" };
+                        singleSlideError = ex.Message;
                     }
                 }
             }
@@ -326,16 +375,44 @@ namespace PowerPointAiAddIn
             // set_slide_background's slideIndex:-1 convention but stronger:
             // FirstSlideNumber (PageSetup) and DisplayOnTitleSlide (the
             // Slide/Title Master's HeadersFooters) are simply not per-slide
-            // properties in PowerPoint's object model at all.
+            // properties in PowerPoint's object model at all. Applied even
+            // when the per-slide write above failed (see singleSlideError).
             if (startNumber.HasValue)
                 pres.PageSetup.FirstSlideNumber = startNumber.Value;
             if (skipTitleSlide.HasValue)
                 ApplySkipTitleSlide(skipTitleSlide.Value);
 
+            if (singleSlideError != null)
+            {
+                bool deckWideStillApplied = startNumber.HasValue || skipTitleSlide.HasValue;
+                return new ToolResult
+                {
+                    Output = "set_headers_footers: slide " + slideIndex + " rejected this combination of fields (" + singleSlideError + ")." +
+                             (deckWideStillApplied ? " skipTitleSlide/startNumber, since given, were still applied deck-wide." : ""),
+                    IsError = true,
+                    Mutated = deckWideStillApplied,
+                    Summary = "set_headers_footers",
+                };
+            }
+
+            // Review finding: this message used to unconditionally describe
+            // "every slide, plus every layout and the Slide/Title Master" for
+            // a deck-wide call even when anyPerSlideField was false (e.g. only
+            // skipTitleSlide/startNumber given) - overstating what actually
+            // changed, since the per-slide/layout/master loop above never ran
+            // in that case.
+            string scopeDescription;
+            if (!anyPerSlideField)
+                scopeDescription = "no per-slide fields were given";
+            else if (slideIndex == -1)
+                scopeDescription = "every slide, plus every layout and the Slide/Title Master so new slides inherit it too" +
+                                    (layoutFailures > 0 ? " (" + layoutFailures + " slide(s)/layout(s) rejected this combination of fields and were skipped - the rest still updated)" : "");
+            else
+                scopeDescription = "slide " + slideIndex;
+
             return new ToolResult
             {
-                Output = "Headers/footers updated (" + string.Join(", ", applied) + ") on " + (slideIndex == -1 ? "every slide, plus every layout and the Slide/Title Master so new slides inherit it too" : "slide " + slideIndex) +
-                         (layoutFailures > 0 ? " (" + layoutFailures + " slide(s)/layout(s) rejected this combination of fields and were skipped - the rest still updated)." : ".") +
+                Output = "Headers/footers updated (" + string.Join(", ", applied) + ") - " + scopeDescription + "." +
                          " (skipTitleSlide/startNumber, if given, always apply deck-wide regardless of slideIndex)." +
                          " If slide numbers/footer/date still don't appear, this slide's layout may not include that placeholder - " +
                          "check read_master_elements or try a different layout (set_slide_layout).",
@@ -353,17 +430,50 @@ namespace PowerPointAiAddIn
                 throw new ArgumentException("add_master_element: unknown kind '" + kind + "'. Valid: icon, text.");
 
             string corner = input.TryGetProperty("corner", out var cEl) && cEl.ValueKind == JsonValueKind.String ? cEl.GetString() : null;
-            if (corner != null && Array.IndexOf(MasterCorners, corner) < 0)
-                throw new ArgumentException("add_master_element: unknown corner '" + corner + "'. Valid: " + string.Join(", ", MasterCorners) + ".");
             float? left = input.TryGetProperty("left", out var lEl) && lEl.ValueKind == JsonValueKind.Number ? (float?)lEl.GetDouble() : null;
             float? top = input.TryGetProperty("top", out var tEl) && tEl.ValueKind == JsonValueKind.Number ? (float?)tEl.GetDouble() : null;
+            // Review finding: left/top used to only count as an explicit
+            // position when BOTH were given; giving just one alongside/without
+            // corner silently fell through to corner-based placement (or the
+            // margin default) with no error - the supplied coordinate was
+            // dropped without a trace.
+            if (left.HasValue != top.HasValue)
+                throw new ArgumentException("add_master_element: left and top must be given together (a single coordinate alone is not supported) - provide both, or use corner instead.");
             bool hasExplicitPosition = left.HasValue && top.HasValue;
-            if (!hasExplicitPosition && corner == null)
-                throw new ArgumentException("add_master_element: provide either corner, or both left and top.");
+            // Review finding: corner's validity used to be checked before
+            // hasExplicitPosition was known, so valid left+top alongside a
+            // stray/garbage corner value threw even though corner would
+            // never actually be used once an explicit position is given.
+            // Only require/validate corner when it will actually be used.
+            if (!hasExplicitPosition)
+            {
+                if (corner == null)
+                    throw new ArgumentException("add_master_element: provide either corner, or both left and top.");
+                if (Array.IndexOf(MasterCorners, corner) < 0)
+                    throw new ArgumentException("add_master_element: unknown corner '" + corner + "'. Valid: " + string.Join(", ", MasterCorners) + ".");
+            }
 
             float? width = input.TryGetProperty("width", out var wEl) && wEl.ValueKind == JsonValueKind.Number ? (float?)wEl.GetDouble() : null;
             float? height = input.TryGetProperty("height", out var hEl) && hEl.ValueKind == JsonValueKind.Number ? (float?)hEl.GetDouble() : null;
             float marginPt = input.TryGetProperty("marginPt", out var mEl) && mEl.ValueKind == JsonValueKind.Number ? (float)mEl.GetDouble() : 12f;
+
+            // Review finding: for kind:"text", ColorUtil.HexToOle used to run
+            // AFTER the textbox was already created on the master/layout - an
+            // invalid hex string (e.g. "gray") threw with the shape already
+            // inserted but never positioned or named, orphaning it at (0,0)
+            // with no shapeIndex returned for cleanup. Resolve/validate
+            // color and font size up front, before creating anything.
+            string text = null;
+            float textFontSize = 10f;
+            int textColor = 0;
+            if (kind == "text")
+            {
+                text = input.GetProperty("text").GetString();
+                textFontSize = input.TryGetProperty("fontSize", out var fsEl) && fsEl.ValueKind == JsonValueKind.Number ? (float)fsEl.GetDouble() : 10f;
+                textColor = input.TryGetProperty("color", out var colorEl) && colorEl.ValueKind == JsonValueKind.String
+                    ? ColorUtil.HexToOle(colorEl.GetString())
+                    : ColorUtil.HexToOle("#808080");
+            }
 
             MasterTarget target = ResolveMasterTarget(input, "add_master_element");
             PowerPoint.Shape shape;
@@ -376,50 +486,76 @@ namespace PowerPointAiAddIn
                 if (!System.IO.File.Exists(localPath))
                     return new ToolResult { Output = "add_master_element: file not found: " + localPath, IsError = true, Summary = "add_master_element" };
 
-                // Same pattern as WordTools.Images.cs's floating-picture path:
-                // insert at natural size first (-1,-1), then let
-                // GeometryUtil.ResolveImageSize scale a single missing
-                // dimension proportionally instead of guessing/distorting.
                 shape = target.Shapes.AddPicture(localPath, Microsoft.Office.Core.MsoTriState.msoFalse, Microsoft.Office.Core.MsoTriState.msoTrue, 0, 0, -1, -1);
-                float naturalW = shape.Width, naturalH = shape.Height;
-                float finalW, finalH;
-                GeometryUtil.ResolveImageSize(naturalW, naturalH, width, height, out finalW, out finalH);
-                shape.Width = finalW;
-                shape.Height = finalH;
-                width = finalW;
-                height = finalH;
             }
             else
             {
-                string text = input.GetProperty("text").GetString();
                 float w = width ?? 200f;
                 float h = height ?? 24f;
                 shape = target.Shapes.AddTextbox(Microsoft.Office.Core.MsoTextOrientation.msoTextOrientationHorizontal, 0, 0, w, h);
-                PowerPoint.TextRange range = shape.TextFrame.TextRange;
-                range.Text = text;
-                range.Font.Size = input.TryGetProperty("fontSize", out var fsEl) && fsEl.ValueKind == JsonValueKind.Number ? (float)fsEl.GetDouble() : 10f;
-                range.Font.Color.RGB = input.TryGetProperty("color", out var colorEl) && colorEl.ValueKind == JsonValueKind.String
-                    ? ColorUtil.HexToOle(colorEl.GetString())
-                    : ColorUtil.HexToOle("#808080");
                 width = w;
                 height = h;
             }
 
-            float finalLeft, finalTop;
-            if (hasExplicitPosition)
+            // Point of no return: the shape now really exists on the
+            // master/layout. Everything from here on is best-effort setup -
+            // if any of it throws, clean up the orphan instead of leaving a
+            // stray, unpositioned/unnamed shape behind (same orphan-cleanup
+            // discipline as CrossSlide's CopyPasteElement/MoveElement).
+            string named = null;
+            try
             {
-                finalLeft = left.Value;
-                finalTop = top.Value;
-            }
-            else
-            {
-                PowerPoint.PageSetup pageSetup = ActivePresentation.PageSetup;
-                GeometryUtil.ResolveCornerPosition(pageSetup.SlideWidth, pageSetup.SlideHeight, width.Value, height.Value, marginPt, corner, out finalLeft, out finalTop);
-            }
-            shape.Left = finalLeft;
-            shape.Top = finalTop;
+                if (kind == "icon")
+                {
+                    // Same pattern as WordTools.Images.cs's floating-picture
+                    // path: insert at natural size first (-1,-1), then let
+                    // GeometryUtil.ResolveImageSize scale a single missing
+                    // dimension proportionally instead of guessing/distorting.
+                    float naturalW = shape.Width, naturalH = shape.Height;
+                    float finalW, finalH;
+                    GeometryUtil.ResolveImageSize(naturalW, naturalH, width, height, out finalW, out finalH);
+                    shape.Width = finalW;
+                    shape.Height = finalH;
+                    width = finalW;
+                    height = finalH;
+                }
+                else
+                {
+                    PowerPoint.TextRange range = shape.TextFrame.TextRange;
+                    range.Text = text;
+                    range.Font.Size = textFontSize;
+                    range.Font.Color.RGB = textColor;
+                }
 
-            string named = ApplyOptionalName(shape, input);
+                float finalLeft, finalTop;
+                if (hasExplicitPosition)
+                {
+                    finalLeft = left.Value;
+                    finalTop = top.Value;
+                }
+                else
+                {
+                    PowerPoint.PageSetup pageSetup = ActivePresentation.PageSetup;
+                    GeometryUtil.ResolveCornerPosition(pageSetup.SlideWidth, pageSetup.SlideHeight, width.Value, height.Value, marginPt, corner, out finalLeft, out finalTop);
+                }
+                shape.Left = finalLeft;
+                shape.Top = finalTop;
+
+                // Review finding: ApplyOptionalName's dedup-against-siblings
+                // used to resolve the shape's parent via `shape.Parent as
+                // PowerPoint.Slide`, which is always null for a master/layout
+                // shape - two add_master_element calls with the same name
+                // both got the literal name, unlike slide shapes which
+                // auto-suffix. Pass target.Shapes explicitly so dedup works
+                // here too.
+                named = ApplyOptionalName(shape, input, target.Shapes);
+            }
+            catch
+            {
+                try { shape.Delete(); } catch { }
+                throw;
+            }
+
             int newIndex = shape.ZOrderPosition - 1;
             return new ToolResult
             {

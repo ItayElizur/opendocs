@@ -83,9 +83,10 @@ namespace PowerPointAiAddIn
 
         // Optional model-chosen shape name. PowerPoint permits duplicate names,
         // but read_slide/read_group key their output on the name, so a collision
-        // on the same slide is disambiguated with a numeric suffix. Returns the
+        // among the given siblingShapes is disambiguated with a numeric suffix.
+        // siblingShapes may be null (no dedup, name applied as-is). Returns the
         // name actually applied, or null when none was requested.
-        private static string ApplyOptionalName(PowerPoint.Shape shape, JsonElement input)
+        private static string ApplyOptionalName(PowerPoint.Shape shape, JsonElement input, PowerPoint.Shapes siblingShapes)
         {
             if (!input.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String)
                 return null;
@@ -93,18 +94,30 @@ namespace PowerPointAiAddIn
             if (desired.Length == 0) return null;
             if (desired.Length > 120) desired = desired.Substring(0, 120);
 
-            PowerPoint.Slide slide = ShapeSlide(shape);
             string unique = desired;
-            if (slide != null)
+            if (siblingShapes != null)
             {
                 var taken = new HashSet<string>();
-                foreach (PowerPoint.Shape s in slide.Shapes)
+                foreach (PowerPoint.Shape s in siblingShapes)
                     if (s.Id != shape.Id) taken.Add(s.Name);
                 int suffix = 2;
                 while (taken.Contains(unique)) unique = desired + " " + suffix++;
             }
             shape.Name = unique;
             return unique;
+        }
+
+        // Slide-shape convenience overload: resolves the sibling collection
+        // from the shape's own slide. Review finding: this used to be the
+        // only overload, so a Slide Master/layout shape (whose Parent is
+        // never a PowerPoint.Slide) always got null back from ShapeSlide and
+        // silently skipped dedup - two add_master_element calls with the same
+        // name both ended up with the literal name. AddMasterElement now
+        // calls the explicit-Shapes overload above with target.Shapes instead.
+        private static string ApplyOptionalName(PowerPoint.Shape shape, JsonElement input)
+        {
+            PowerPoint.Slide slide = ShapeSlide(shape);
+            return ApplyOptionalName(shape, input, slide != null ? slide.Shapes : null);
         }
 
         private static string ShapeKindLabel(PowerPoint.Shape shape)

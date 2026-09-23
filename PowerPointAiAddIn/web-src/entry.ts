@@ -568,7 +568,9 @@ const MUTATION_TOOLS = [
     description:
       'Sets slide number, footer text, and date/time - the same 3 toggles as PowerPoint\'s native "Insert Header and Footer" dialog (there is no per-slide "header", only slide number/footer/date). ' +
       'slideIndex:-1 applies to every slide in the deck; a specific 0-based slideIndex applies to just that one. Only the fields you provide are changed. ' +
-      'footerText implies footerVisible:true unless you also pass footerVisible explicitly; dateMode "auto" shows a self-updating today\'s-date, "fixed" shows dateText verbatim. ' +
+      'footerText implies footerVisible:true unless you also pass footerVisible explicitly; dateText implies dateMode:"fixed" the same way. ' +
+      'dateMode defaults to and stays "fixed" unless you pass dateMode:"auto" explicitly - it is never inferred from dateFormat. ' +
+      'dateMode "auto" shows a self-updating today\'s-date (in dateFormat, default "M/d/yy" - requires dateMode:"auto" to have any effect), "fixed" shows dateText verbatim. ' +
       'skipTitleSlide and startNumber are both ALWAYS deck-wide, regardless of slideIndex - PowerPoint has no per-slide version of either (skipTitleSlide sets the Slide/Title Master\'s "Don\'t show on title slide" flag, startNumber sets the deck\'s first slide number). ' +
       'If nothing appears after enabling a toggle, the slide\'s layout may simply not include that placeholder - try set_slide_layout or check read_master_elements.',
     inputSchema: {
@@ -580,7 +582,12 @@ const MUTATION_TOOLS = [
         footerText: { type: 'string' },
         dateVisible: { type: 'boolean' },
         dateMode: { type: 'string', enum: ['auto', 'fixed'] },
-        dateText: { type: 'string', description: 'Required when dateMode is "fixed".' },
+        dateText: { type: 'string', description: 'Required when dateMode is "fixed". Implies dateMode:"fixed" if dateMode is omitted.' },
+        dateFormat: {
+          type: 'string',
+          enum: ['M/d/yy', 'dddd, MMMM dd, yyyy', 'd MMMM, yyyy', 'MMMM d, yyyy', 'd-MMM-yy', 'MMMM yy', 'MM/yy'],
+          description: 'Only applies when dateMode is "auto" - you must pass dateMode:"auto" explicitly, it is not inferred. Default "M/d/yy" if omitted.',
+        },
         skipTitleSlide: { type: 'boolean', description: 'Always deck-wide (see description) - not scoped by slideIndex.' },
         startNumber: { type: 'number', description: 'Always deck-wide (see description) - not scoped by slideIndex.' },
       },
@@ -592,7 +599,7 @@ const MUTATION_TOOLS = [
     description:
       'Adds a persistent icon (picture) or small text label to the Slide Master, so it shows up in the same spot on every slide (e.g. a logo/watermark/confidentiality label) - not just one slide. ' +
       'Pass layoutName to add it to one specific layout instead (e.g. "Title Slide") - it then only shows on slides using that layout, not deck-wide; matched by substring against this presentation\'s real layout names. ' +
-      'Use corner for a quick topLeft/topRight/bottomLeft/bottomRight placement (inset by marginPt, default 12pt), or left+top for an exact position. ' +
+      'Use corner for a quick topLeft/topRight/bottomLeft/bottomRight placement (inset by marginPt, default 12pt), or left+top together for an exact position (left/top must both be given, or neither). ' +
       'For kind:"icon", width/height are optional - omit one and it scales proportionally from the image\'s natural size; omit both to use the natural size. ' +
       'Known limits: only this presentation\'s default (first) Slide Master/theme is affected - a deck combining more than one theme has more than one; and a layout with "Hide Background Graphics" enabled won\'t show a Slide-Master-level element.',
     inputSchema: {
@@ -600,9 +607,9 @@ const MUTATION_TOOLS = [
       properties: {
         kind: { type: 'string', enum: ['icon', 'text'] },
         layoutName: { type: 'string', description: 'Optional. Adds to one specific layout (substring match) instead of the Slide Master.' },
-        corner: { type: 'string', enum: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'] },
-        left: { type: 'number' },
-        top: { type: 'number' },
+        corner: { type: 'string', enum: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'], description: 'Ignored if left+top are both given. Required if they aren\'t.' },
+        left: { type: 'number', description: 'Must be given together with top (or neither) - a single coordinate alone is rejected.' },
+        top: { type: 'number', description: 'Must be given together with left (or neither) - a single coordinate alone is rejected.' },
         width: { type: 'number' },
         height: { type: 'number' },
         marginPt: { type: 'number', description: 'Default 12. Inset from the slide edge, only used with corner.' },
