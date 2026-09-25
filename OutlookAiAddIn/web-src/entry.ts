@@ -445,7 +445,6 @@ startAddIn({
   readOnlyTools: [
     'list_emails',
     'search_emails',
-    'apply_search',
     'get_email',
     'get_attachment',
     'list_folders',
@@ -458,7 +457,11 @@ startAddIn({
   ],
   // Tier 2 ("Draft only") on top of the read-only set above - every tool
   // that mutates the mailbox or opens a draft but never sends/creates
-  // unreviewed. Must stay in sync with OutlookTools.cs's DraftTierTools.
+  // unreviewed. apply_search never mutates data but is here for the same
+  // reason as OutlookTools.cs's DraftTierTools comment explains: it visibly
+  // takes over the user's real Outlook window, which "Read only" is
+  // supposed to never do. Must stay in sync with OutlookTools.cs's
+  // DraftTierTools.
   commentOnlyExtraTools: [
     'mark_email_read',
     'mark_email_unread',
@@ -476,6 +479,7 @@ startAddIn({
     'draft_event',
     'set_event_categories',
     'set_category_color',
+    'apply_search',
   ],
   // Tier 3 ("Automate approvals"), on top of tier 2 - accept/decline
   // already auto-notify the organizer via resp.Send(), so they get their

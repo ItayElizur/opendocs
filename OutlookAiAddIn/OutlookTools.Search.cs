@@ -95,9 +95,11 @@ namespace OutlookAiAddIn
         // documented Outlook automation pattern for Explorer.Search's Query
         // parameter (Advanced Find generates exactly this string) - but this
         // specific call has NOT been exercised against a live Outlook session
-        // in this environment (no mailbox profile available here). First real
-        // use should confirm the DASL string is accepted as-is; if not, fall
-        // back to passing `query` alone (plain AQS free-text).
+        // in this environment (no mailbox profile available here). If the
+        // DASL string isn't accepted as-is, fall back to `query` alone (plain
+        // free-text, same as typing directly into the search box) rather than
+        // letting it throw up to ExecuteAsync's generic catch, which would
+        // surface a raw COM exception instead of a degraded-but-working search.
         private static ToolResult ApplySearch(JsonElement input)
         {
             string query = Str(input, "query", "");
@@ -117,8 +119,19 @@ namespace OutlookAiAddIn
             if (dasl.Length == 0)
                 return new ToolResult { Output = "Showed " + folder.Name + " (no filter criteria given).", Summary = "apply_search" };
 
-            explorer.Search("@SQL=" + dasl, Outlook.OlSearchScope.olSearchScopeCurrentFolder);
-            return new ToolResult { Output = "Applied the search to " + folder.Name + " in Outlook - the user can see the results now.", Summary = "apply_search" };
+            try
+            {
+                explorer.Search("@SQL=" + dasl, Outlook.OlSearchScope.olSearchScopeCurrentFolder);
+                return new ToolResult { Output = "Applied the search to " + folder.Name + " in Outlook - the user can see the results now.", Summary = "apply_search" };
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException("ApplySearch DASL", ex);
+                if (string.IsNullOrEmpty(query))
+                    return new ToolResult { Output = "Showed " + folder.Name + " (the date/sender filter could not be applied as a search - showing the folder unfiltered instead).", Summary = "apply_search" };
+                explorer.Search(query, Outlook.OlSearchScope.olSearchScopeCurrentFolder);
+                return new ToolResult { Output = "Applied a plain-text search for \"" + query + "\" to " + folder.Name + " in Outlook (the structured filter wasn't accepted, so date/sender criteria were dropped) - the user can see the results now.", Summary = "apply_search" };
+            }
         }
 
         private static bool MatchesClientSide(Outlook.MailItem m, string query, DateTime? start, DateTime? end, string sender)
