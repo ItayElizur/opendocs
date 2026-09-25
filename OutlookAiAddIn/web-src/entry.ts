@@ -122,7 +122,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'find_meeting_slots',
     description:
-      'Finds open meeting times for you plus one or more attendees, using their Outlook free/busy. Ranked by how many people are free (so a best partial match still comes back if nobody is free for the whole group). Defaults to this Sunday-Thursday work week, 09:00-18:00. Feed a returned slot to draft_event.',
+      "Finds open meeting times for you plus one or more attendees, using their Outlook free/busy. Ranked by how many people are free (so a best partial match still comes back if nobody is free for the whole group). Defaults to your mailbox's own configured work week/hours (read from Exchange; falls back to Sun-Thu 09:00-18:00 if that can't be read). Feed a returned slot to draft_event.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -130,12 +130,18 @@ const ALL_OUTLOOK_TOOLS = [
         duration_minutes: { type: 'number' },
         start_date: { type: 'string', description: 'Range start (YYYY-MM-DD). Defaults to the work-week rule above.' },
         end_date: { type: 'string', description: 'Range end (YYYY-MM-DD).' },
-        start_hour: { type: 'number', description: 'Earliest hour to consider (default 9).' },
-        end_hour: { type: 'number', description: 'Latest hour, exclusive (default 18).' },
+        start_hour: { type: 'number', description: "Earliest hour to consider. Defaults to your mailbox's configured work-day start (or 9 if that can't be read)." },
+        end_hour: { type: 'number', description: "Latest hour, exclusive. Defaults to your mailbox's configured work-day end (or 18 if that can't be read)." },
         limit: { type: 'number', description: 'Max slots to return (default 5).' },
       },
       required: ['attendees', 'duration_minutes'],
     },
+  },
+  {
+    name: 'list_color_categories',
+    description:
+      'Lists the color tags (Outlook "Categories") available to apply to events, mail, or tasks - each with its name and color. Use this to see valid names before calling set_event_categories, or valid colors before set_category_color.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'list_tasks',
@@ -192,6 +198,34 @@ const ALL_OUTLOOK_TOOLS = [
     name: 'decline_meeting',
     description: 'Declines a meeting invitation and notifies the organizer.',
     inputSchema: { type: 'object', properties: { event_id: { type: 'string' } }, required: ['event_id'] },
+  },
+  {
+    name: 'set_event_categories',
+    description:
+      'Colors a calendar event with one or more color tags (Outlook "Categories"), shown as a colored block on the event. Pass names from list_color_categories, comma-separated for more than one; an empty/omitted categories clears all tags from the event. A name not yet in the master list is auto-added with an arbitrary color - call set_category_color first to control it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        categories: { type: 'string', description: 'Comma-separated color tag name(s), e.g. "Urgent, Travel". Omit or pass "" to clear.' },
+      },
+      required: ['event_id'],
+    },
+  },
+  {
+    name: 'set_category_color',
+    description: 'Creates a new color tag, or changes an existing one\'s color, in the shared master list used by set_event_categories.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Color tag name, e.g. "Urgent".' },
+        color: {
+          type: 'string',
+          description: 'One of: None, Red, Orange, Peach, Yellow, Green, Teal, Olive, Blue, Purple, Maroon, Steel, Dark Steel, Gray, Dark Gray, Black, Dark Red, Dark Orange, Dark Peach, Dark Yellow, Dark Green, Dark Teal, Dark Olive, Dark Blue, Dark Purple, Dark Maroon.',
+        },
+      },
+      required: ['name', 'color'],
+    },
   },
   {
     name: 'create_task',
@@ -300,6 +334,53 @@ const ALL_OUTLOOK_TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'send_email',
+    description:
+      'Sends an email immediately - NO review window, no draft. Only available in Full autonomy. Prefer draft_email unless the user clearly wants this sent right now, with no chance to review it first.',
+    inputSchema: {
+      type: 'object',
+      properties: { to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } },
+      required: ['to'],
+    },
+  },
+  {
+    name: 'send_reply',
+    description: 'Sends a reply (to the sender only) immediately - NO review window. Only available in Full autonomy. Prefer reply_email unless the user clearly wants this sent right now.',
+    inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, body: { type: 'string' }, folder: FOLDER }, required: ['message_id'] },
+  },
+  {
+    name: 'send_reply_all',
+    description: 'Sends a reply-to-all immediately - NO review window. Only available in Full autonomy. Prefer reply_all_email unless the user clearly wants this sent right now.',
+    inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, body: { type: 'string' }, folder: FOLDER }, required: ['message_id'] },
+  },
+  {
+    name: 'send_forward',
+    description: 'Forwards a message immediately - NO review window. Only available in Full autonomy. Prefer forward_email unless the user clearly wants this sent right now.',
+    inputSchema: {
+      type: 'object',
+      properties: { message_id: MESSAGE_ID, to: { type: 'string' }, body: { type: 'string' }, folder: FOLDER },
+      required: ['message_id', 'to'],
+    },
+  },
+  {
+    name: 'create_event',
+    description:
+      'Creates a calendar event immediately - NO review window. With attendees, sends the meeting invite right away (notifies them). Only available in Full autonomy. Prefer draft_event unless the user clearly wants this created/sent right now.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        subject: { type: 'string' },
+        start: { type: 'string', description: 'Date-time, e.g. "2026-09-01T14:00".' },
+        end: { type: 'string', description: 'Date-time.' },
+        location: { type: 'string' },
+        body: { type: 'string' },
+        required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Presence of attendees sends the invite instead of just saving the event.' },
+        optional_attendees: { type: 'string' },
+      },
+      required: ['start', 'end'],
+    },
+  },
 ]
 
 const d = (en: string, he: string, den: string, dhe: string) => ({ label: { en, he }, description: { en: den, he: dhe } })
@@ -315,6 +396,7 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   list_events: d('List calendar events', 'רשימת אירועים', 'Lists calendar events in a date range.', 'מציג אירועי יומן בטווח תאריכים.'),
   get_event: d('Read event', 'קריאת אירוע', 'Reads one calendar event in full.', 'קורא אירוע יומן אחד במלואו.'),
   find_meeting_slots: d('Find meeting times', 'מציאת זמני פגישה', 'Finds open times for you and the attendees, ranked by availability.', 'מוצא זמנים פנויים עבורך והמוזמנים, מדורגים לפי זמינות.'),
+  list_color_categories: d('List color tags', 'רשימת תגיות צבע', 'Lists the available color tags and their colors.', 'מציג את תגיות הצבע הזמינות והצבעים שלהן.'),
   list_tasks: d('List tasks', 'רשימת משימות', 'Lists tasks and their due dates.', 'מציג משימות ותאריכי יעד.'),
   mark_email_read: d('Mark read', 'סימון כנקרא', 'Marks a message as read.', 'מסמן הודעה כנקראה.'),
   mark_email_unread: d('Mark unread', 'סימון כלא נקרא', 'Marks a message as unread.', 'מסמן הודעה כלא נקראה.'),
@@ -323,6 +405,8 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   delete_email: d('Delete email', 'מחיקת הודעה', 'Moves a message to Deleted Items.', 'מעביר הודעה לפריטים שנמחקו.'),
   accept_meeting: d('Accept meeting', 'אישור פגישה', 'Accepts a meeting invitation.', 'מאשר הזמנה לפגישה.'),
   decline_meeting: d('Decline meeting', 'דחיית פגישה', 'Declines a meeting invitation.', 'דוחה הזמנה לפגישה.'),
+  set_event_categories: d('Color event', 'צביעת אירוע', 'Applies or clears color tags on a calendar event.', 'מחיל או מנקה תגיות צבע על אירוע יומן.'),
+  set_category_color: d('Set tag color', 'הגדרת צבע תגית', 'Creates or recolors a color tag.', 'יוצר או משנה צבע של תגית.'),
   create_task: d('Create task', 'יצירת משימה', 'Creates a task with an optional due date and reminder.', 'יוצר משימה עם תאריך יעד ותזכורת אופציונליים.'),
   update_task: d('Update task', 'עדכון משימה', 'Updates or completes an existing task.', 'מעדכן או משלים משימה קיימת.'),
   set_reminder: d('Set reminder', 'הגדרת תזכורת', 'Sets a reminder on an appointment or task.', 'מגדיר תזכורת לפגישה או משימה.'),
@@ -332,6 +416,11 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   reply_all_email: d('Draft reply all', 'טיוטת תשובה לכולם', 'Opens a pre-filled reply-to-all to review and send.', 'פותח תשובה-לכולם מלאה מראש לבדיקה ושליחה.'),
   forward_email: d('Draft forward', 'טיוטת העברה', 'Opens a pre-filled forward to review and send.', 'פותח העברה מלאה מראש לבדיקה ושליחה.'),
   draft_event: d('Draft event', 'טיוטת אירוע', 'Opens a pre-filled appointment/meeting to review and send.', 'פותח פגישה/אירוע מלא מראש לבדיקה ושליחה.'),
+  send_email: d('Send email (auto-send)', 'שליחת הודעה (שליחה אוטומטית)', 'Sends an email immediately, no review window.', 'שולח הודעה מיידית, ללא חלון בדיקה.'),
+  send_reply: d('Send reply (auto-send)', 'שליחת תשובה (שליחה אוטומטית)', 'Sends a reply immediately, no review window.', 'שולח תשובה מיידית, ללא חלון בדיקה.'),
+  send_reply_all: d('Send reply all (auto-send)', 'שליחת תשובה לכולם (שליחה אוטומטית)', 'Sends a reply-to-all immediately, no review window.', 'שולח תשובה-לכולם מיידית, ללא חלון בדיקה.'),
+  send_forward: d('Send forward (auto-send)', 'שליחת העברה (שליחה אוטומטית)', 'Forwards a message immediately, no review window.', 'מעביר הודעה מיידית, ללא חלון בדיקה.'),
+  create_event: d('Create event (auto-send)', 'יצירת אירוע (שליחה אוטומטית)', 'Creates/sends a calendar event immediately, no review window.', 'יוצר/שולח אירוע יומן מיידית, ללא חלון בדיקה.'),
 }
 
 startAddIn({
@@ -340,13 +429,14 @@ startAddIn({
   toolDisplay: OUTLOOK_TOOL_DISPLAY,
   systemPrompt:
     'You are an AI assistant embedded in Microsoft Outlook via the Airchat Office add-in. You work from the main Outlook window (Explorer). ' +
-    'You can read and search mail, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations), ' +
+    'You can read and search mail, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations, color events with tags via list_color_categories/set_event_categories/set_category_color), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
-    'Drafting tools open a normal Outlook compose or appointment window pre-filled - you never send mail or create events directly; the user reviews and sends. ' +
+    'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. ' +
+    'send_email/send_reply/send_reply_all/send_forward/create_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
     'message_id / event_id / task_id values are Outlook EntryIDs. When the user has one or more messages selected, that selection (with its message_id) is in your context - prefer it over searching. ' +
     'Prefer list_emails / search_emails / list_tasks (fast, server-side) over reading items one by one. ' +
     "Once you've found the relevant messages, apply_search can show the same results in the user's own Outlook window instead of only listing them in chat. " +
-    "Your available tools depend on the user's editing mode: in Read only you can read and search but not change anything; switch to Full autonomy for triage, drafts, tasks, reminders, and invitation responses.",
+    "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events) -> Automate approvals (also auto-accept/decline meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/send_reply/send_reply_all/send_forward/create_event, which send/create immediately).",
   starters: [
     { en: 'Summarize my unread emails', he: 'סכם את ההודעות שלא קראתי' },
     { en: 'Draft a reply to the selected email', he: 'נסח תשובה להודעה שנבחרה' },
@@ -363,9 +453,55 @@ startAddIn({
     'list_events',
     'get_event',
     'find_meeting_slots',
+    'list_color_categories',
     'list_tasks',
   ],
+  // Tier 2 ("Draft only") on top of the read-only set above - every tool
+  // that mutates the mailbox or opens a draft but never sends/creates
+  // unreviewed. Must stay in sync with OutlookTools.cs's DraftTierTools.
+  commentOnlyExtraTools: [
+    'mark_email_read',
+    'mark_email_unread',
+    'flag_email_important',
+    'move_email',
+    'delete_email',
+    'create_task',
+    'update_task',
+    'set_reminder',
+    'set_email_reminder',
+    'draft_email',
+    'reply_email',
+    'reply_all_email',
+    'forward_email',
+    'draft_event',
+    'set_event_categories',
+    'set_category_color',
+  ],
+  // Tier 3 ("Automate approvals"), on top of tier 2 - accept/decline
+  // already auto-notify the organizer via resp.Send(), so they get their
+  // own tier rather than hiding in Draft only or Full autonomy. Must stay
+  // in sync with OutlookTools.cs's ApprovalTierTools.
+  trackChangesExtraTools: ['accept_meeting', 'decline_meeting'],
+  // send_email/send_reply/send_reply_all/send_forward/create_event are
+  // deliberately in neither list above - that omission alone confines them
+  // to tier 4 (Full autonomy), which shows every tool.
   useSelectionContext: true,
   scopeUnit: 'mailbox',
-  availableModes: ['readOnly', 'fullAutonomy'],
+  availableModes: ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'],
+  defaultMode: 'commentOnly',
+  modeOverrides: {
+    commentOnly: {
+      label: { en: 'Draft only', he: 'טיוטות בלבד' },
+      description: { en: 'Drafts, flags, moves, and manages mail/tasks for your review - nothing sends.', he: 'מכין טיוטות, מסמן, מעביר ומנהל דואר/משימות לבדיקתך - שום דבר לא נשלח.' },
+    },
+    trackChanges: {
+      label: { en: 'Automate approvals', he: 'אוטומציית אישורים' },
+      description: { en: 'Everything in Draft only, plus auto-accepting/declining meeting invites (notifies the organizer).', he: 'כל מה שיש בטיוטות בלבד, בתוספת אישור/דחייה אוטומטיים של הזמנות לפגישה (מודיע למארגן).' },
+    },
+    fullAutonomy: {
+      label: { en: 'Full autonomy', he: 'אוטונומיה מלאה' },
+      description: { en: 'Everything above, plus sending emails and creating/sending calendar invites in your name.', he: 'כל מה שלמעלה, בתוספת שליחת הודעות ויצירה/שליחה של הזמנות יומן בשמך.' },
+    },
+  },
+  autoSendTools: ['send_email', 'send_reply', 'send_reply_all', 'send_forward', 'create_event'],
 })

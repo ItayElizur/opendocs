@@ -15,6 +15,8 @@
     --docs-ai-error: #c62828;
     --docs-ok-ink: #2e7d32;
     --docs-ok-bg: #e6f2e6;
+    --docs-warn-ink: #8a4b00;
+    --docs-warn-bg: #fdf0dc;
     --docs-brand-ghost: rgb(15 127 255 / 8%);
     --docs-brand-ghost-weak: rgb(15 127 255 / 6%);
     --docs-brand-ring: rgb(15 127 255 / 40%);
@@ -39,6 +41,8 @@
     --docs-ai-error: #f28b82;
     --docs-ok-ink: #7bd88a;
     --docs-ok-bg: #16351c;
+    --docs-warn-ink: #f0b25e;
+    --docs-warn-bg: #3a2c10;
     --docs-brand-ghost: rgb(74 158 255 / 14%);
     --docs-brand-ghost-weak: rgb(74 158 255 / 10%);
     --docs-brand-ring: rgb(74 158 255 / 45%);
@@ -357,6 +361,15 @@
     display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 2px 9px; font-size: 11px;
     background: var(--docs-ok-bg); color: var(--docs-ok-ink); margin-inline-start: 32px;
   }
+  /* Distinct from .ai-applied-tag: marks a tool that sent/created something
+     externally with no review step (Outlook's Full-autonomy-only send
+     tools) - the model's own confirmation is the only place the user sees
+     this happened, so it must not read as just another routine edit. */
+  .ai-autosend-tag {
+    display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 2px 9px; font-size: 11px;
+    background: var(--docs-warn-bg); color: var(--docs-warn-ink); margin-inline-start: 32px; font-weight: 600;
+  }
+  .ai-step-icon.autosend { color: var(--docs-warn-ink); }
 
   .ai-typing-label {
     background: linear-gradient(90deg, var(--docs-shimmer-base) 0%, var(--docs-shimmer-hi) 50%, var(--docs-shimmer-base) 100%);
