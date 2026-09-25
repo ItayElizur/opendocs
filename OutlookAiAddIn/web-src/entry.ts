@@ -362,7 +362,7 @@ const ALL_OUTLOOK_TOOLS = [
         required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Presence of attendees sends the invite instead of just saving the event.' },
         optional_attendees: { type: 'string' },
       },
-      required: [],
+      required: ['start', 'end'],
     },
   },
 ]

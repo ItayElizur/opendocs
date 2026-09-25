@@ -174,15 +174,24 @@ namespace OutlookAiAddIn
         // exposes both Send() and Save()) before writing this branch.
         private static ToolResult CreateEvent(JsonElement input)
         {
+            // Unlike draft_event (where an omitted start/end just leaves
+            // Outlook's own new-appointment default - "now", 30 min - sitting
+            // in a review window the user sees before sending/saving),
+            // create_event has no review step at all: a caller that forgets
+            // either would otherwise create a real, immediately-live calendar
+            // entry at an unintended time with nothing surfacing that it was
+            // defaulted. Required here specifically.
+            DateTime? start = DateArg(input, "start");
+            DateTime? end = DateArg(input, "end");
+            if (!start.HasValue) return new ToolResult { Output = "start is required.", IsError = true, Summary = "create_event" };
+            if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = "create_event" };
+
             Outlook.AppointmentItem a = (Outlook.AppointmentItem)App.CreateItem(Outlook.OlItemType.olAppointmentItem);
             a.Subject = Str(input, "subject", "");
             a.Location = Str(input, "location", "");
             a.Body = SeedSignature(Str(input, "body", ""));
-
-            DateTime? start = DateArg(input, "start");
-            DateTime? end = DateArg(input, "end");
-            if (start.HasValue) a.Start = start.Value;
-            if (end.HasValue) a.End = end.Value;
+            a.Start = start.Value;
+            a.End = end.Value;
 
             string req = Str(input, "required_attendees", "");
             string opt = Str(input, "optional_attendees", "");
