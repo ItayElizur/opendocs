@@ -46,6 +46,28 @@ const ALL_OUTLOOK_TOOLS = [
     },
   },
   {
+    name: 'apply_search',
+    description:
+      "Applies a search to the user's actual Outlook window - navigates to the folder and runs the search there, so the user sees the same results you found. Use after search_emails/list_emails once you know what's relevant; reuses the same query/date/sender filters.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Text matched against subject and body (contains).' },
+        folder: FOLDER,
+        start_date: { type: 'string', description: 'Only messages on/after this date (YYYY-MM-DD).' },
+        end_date: { type: 'string', description: 'Only messages on/before this date (YYYY-MM-DD).' },
+        sender: { type: 'string', description: 'Sender email or display-name fragment.' },
+        scope: {
+          type: 'string',
+          enum: ['current_folder', 'subfolders', 'mailbox', 'all_mailboxes'],
+          description:
+            'How far to search beyond the given folder. "current_folder" (default) - just that folder. "subfolders" - that folder and its subfolders. "mailbox" - every folder in the current mailbox. "all_mailboxes" - every account configured in Outlook.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
     name: 'get_email',
     description:
       'Full message: body (capped), To/CC recipients, conversation id/topic, importance, and an attachments list with each attachment\'s 1-based index, name, type, and size (feed the index to get_attachment).',
@@ -372,6 +394,7 @@ const d = (en: string, he: string, den: string, dhe: string) => ({ label: { en, 
 const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   list_emails: d('List emails', 'רשימת הודעות', 'Lists recent messages from a folder.', 'מציג הודעות אחרונות מתיקייה.'),
   search_emails: d('Search emails', 'חיפוש הודעות', 'Searches a folder by text, date, or sender.', 'מחפש בתיקייה לפי טקסט, תאריך או שולח.'),
+  apply_search: d('Show search in Outlook', 'הצגת חיפוש ב-Outlook', 'Applies the search to the Outlook window itself.', 'מיישם את החיפוש בחלון Outlook עצמו.'),
   get_email: d('Read email', 'קריאת הודעה', 'Reads one message in full, including its attachment list.', 'קורא הודעה אחת במלואה, כולל רשימת הקבצים המצורפים.'),
   get_attachment: d('Get attachment', 'קבלת קובץ מצורף', 'Saves an attachment and extracts text from documents.', 'שומר קובץ מצורף ומחלץ טקסט ממסמכים.'),
   list_folders: d('List folders', 'רשימת תיקיות', 'Lists the available mail folders.', 'מציג את תיקיות הדואר הזמינות.'),
@@ -418,6 +441,7 @@ startAddIn({
     'send_email/send_reply/send_reply_all/send_forward/create_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
     'message_id / event_id / task_id values are Outlook EntryIDs. When the user has one or more messages selected, that selection (with its message_id) is in your context - prefer it over searching. ' +
     'Prefer list_emails / search_emails / list_tasks (fast, server-side) over reading items one by one. ' +
+    "Once you've found the relevant messages, apply_search can show the same results in the user's own Outlook window instead of only listing them in chat. " +
     "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events) -> Automate approvals (also auto-accept/decline meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/send_reply/send_reply_all/send_forward/create_event, which send/create immediately).",
   starters: [
     { en: 'Summarize my unread emails', he: 'סכם את ההודעות שלא קראתי' },
@@ -439,7 +463,11 @@ startAddIn({
   ],
   // Tier 2 ("Draft only") on top of the read-only set above - every tool
   // that mutates the mailbox or opens a draft but never sends/creates
-  // unreviewed. Must stay in sync with OutlookTools.cs's DraftTierTools.
+  // unreviewed. apply_search never mutates data but is here for the same
+  // reason as OutlookTools.cs's DraftTierTools comment explains: it visibly
+  // takes over the user's real Outlook window, which "Read only" is
+  // supposed to never do. Must stay in sync with OutlookTools.cs's
+  // DraftTierTools.
   commentOnlyExtraTools: [
     'mark_email_read',
     'mark_email_unread',
@@ -457,6 +485,7 @@ startAddIn({
     'draft_event',
     'set_event_categories',
     'set_category_color',
+    'apply_search',
   ],
   // Tier 3 ("Automate approvals"), on top of tier 2 - accept/decline
   // already auto-notify the organizer via resp.Send(), so they get their

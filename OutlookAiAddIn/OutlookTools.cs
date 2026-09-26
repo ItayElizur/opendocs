@@ -60,14 +60,20 @@ namespace OutlookAiAddIn
         // the OLD binary model rather than applying this PR's own tiering
         // logic - every other local-only mutation here was deliberately
         // downgraded from Full-Autonomy-only, and these two were simply
-        // missed, not deliberately kept stricter. Must stay in sync with
-        // entry.ts's commentOnlyExtraTools.
+        // missed, not deliberately kept stricter. apply_search is here for
+        // a different reason: it never mutates data, but unlike every other
+        // AlwaysAllowedTools entry it has a real, visible side effect - it
+        // hijacks the user's actual Outlook Explorer window (folder jump +
+        // search overlay) with no consent step. "Read only" is supposed to
+        // guarantee the assistant never touches the user's screen; leaving
+        // it always-allowed broke that. Must stay in sync with entry.ts's
+        // commentOnlyExtraTools.
         private static readonly HashSet<string> DraftTierTools = new HashSet<string>
         {
             "mark_email_read", "mark_email_unread", "flag_email_important", "move_email", "delete_email",
             "create_task", "update_task", "set_reminder", "set_email_reminder",
             "draft_email", "reply_email", "reply_all_email", "forward_email", "draft_event",
-            "set_event_categories", "set_category_color",
+            "set_event_categories", "set_category_color", "apply_search",
         };
 
         // Tier 3 ("Automate approvals" / TrackChanges): already calls
@@ -123,6 +129,7 @@ namespace OutlookAiAddIn
                 {
                     case "list_emails": return ListEmails(input);
                     case "search_emails": return SearchEmails(input);
+                    case "apply_search": return ApplySearch(input);
                     case "get_email": return GetEmail(input);
                     case "list_folders": return ListFolders(input);
                     case "search_contacts": return await SearchContactsAsync(input);
