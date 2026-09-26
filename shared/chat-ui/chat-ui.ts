@@ -9,12 +9,12 @@ export type Lang = 'en' | 'he'
 
 const STRINGS: Record<string, Record<Lang, string>> = {
   panelTitle:           { en: 'OpenDocs', he: 'אופן דוקס' },
-  inputPlaceholder:     { en: 'Ask OpenDocs to edit this document...', he: 'בקש מ-OpenDocs לערוך את המסמך...' },
+  inputPlaceholder:     { en: 'Ask OpenDocs to edit this document...', he: 'בקש מ-אופן דוקס לערוך את המסמך...' },
   send:                 { en: 'Send', he: 'שלח' },
   stop:                 { en: 'Stop', he: 'עצור' },
   newChat:              { en: 'New chat', he: 'שיחה חדשה' },
   settings:             { en: 'Settings', he: 'הגדרות' },
-  settingsTitle:        { en: 'OpenDocs Settings', he: 'הגדרות OpenDocs' },
+  settingsTitle:        { en: 'OpenDocs Settings', he: 'הגדרות אופן דוקס' },
   settingsBaseUrl:      { en: 'API Base URL', he: 'כתובת בסיס API' },
   settingsApiKey:       { en: 'API Key', he: 'מפתח API' },
   settingsModel:        { en: 'Model name', he: 'שם המודל' },
