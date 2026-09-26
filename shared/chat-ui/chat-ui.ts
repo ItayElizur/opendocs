@@ -3,6 +3,8 @@ import { AI_PROVIDERS, type AiProviderId } from '@genoffice/ai-provider'
 
 export type EditingMode = 'readOnly' | 'commentOnly' | 'trackChanges' | 'fullAutonomy'
 
+export type ModeOverrides = Partial<Record<EditingMode, { label: { en: string; he: string }; description: { en: string; he: string } }>>
+
 export type Lang = 'en' | 'he'
 
 const STRINGS: Record<string, Record<Lang, string>> = {
@@ -170,8 +172,23 @@ export interface ChatUIOptions {
   initialSettings?: InitialSettings
   /** FT-2 Task 5: which "no selection" wording the scope-hint pill shows - defaults to 'doc' (Word). Excel passes 'sheet', PowerPoint 'deck', Outlook 'mailbox'. */
   scopeUnit?: 'doc' | 'sheet' | 'deck' | 'mailbox'
-  /** Restricts the editing-mode menu to this subset, in this order. Defaults to all four modes. Outlook passes ['readOnly', 'fullAutonomy']. */
+  /** Restricts the editing-mode menu to this subset, in this order. Defaults to all four modes. Outlook passes ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'] with its own meaning per mode (see modeOverrides). */
   modes?: EditingMode[]
+  /**
+   * Per-app override of a mode's label/description shown in the mode menu
+   * and settings scope control - falls back to the shared STRINGS entry
+   * (modeReadOnly/modeCommentOnly/modeTrackChanges/modeFullAutonomy and
+   * their *Desc counterparts) when a mode has no override. Outlook uses
+   * this to relabel commentOnly/trackChanges as "Draft only"/"Automate
+   * approvals" (mail has no real "comment" or "track changes" concept) and
+   * to note that Full autonomy sends mail/invites - Word/Excel/PowerPoint
+   * leave this unset and keep the shared generic copy.
+   */
+  modeOverrides?: ModeOverrides
+  /** The mode a fresh session starts in, when it's in `modes` - see defaultModeFor(). Defaults to 'trackChanges'. */
+  defaultMode?: EditingMode
+  /** Tool names that send/create something externally with no review step (e.g. Outlook's send_email) - their completed step renders with a distinct marker instead of the routine .ai-applied-tag. */
+  autoSendTools?: string[]
 }
 
 export interface ToolStepHandle {
@@ -236,9 +253,19 @@ const MODES: EditingMode[] = ['readOnly', 'commentOnly', 'trackChanges', 'fullAu
 // The mode menu (composer) and the scope control (settings) both render from
 // this list. `options.modes` narrows it per app - Outlook drops Comment only /
 // Track changes, which have no meaning for mail. Order follows the passed list.
-function resolveModes(requested?: EditingMode[]): EditingMode[] {
+export function resolveModes(requested?: EditingMode[]): EditingMode[] {
   if (!requested || requested.length === 0) return MODES
   return requested.filter((m) => MODES.indexOf(m) !== -1)
+}
+
+// The safe, useful starting mode for a fresh session - not Full Autonomy,
+// which every app previously defaulted straight into with no explicit user
+// choice. `preferred` lets an app pick which of its own modes is "the least
+// permissive one still worth defaulting to" (Word/Excel/PowerPoint: their
+// real trackChanges tier; Outlook: its own commentOnly-as-"Draft only"
+// tier) without hardcoding one mode name for every app.
+export function defaultModeFor(modes: EditingMode[], preferred: EditingMode = 'trackChanges'): EditingMode {
+  return modes.includes(preferred) ? preferred : modes[0]
 }
 
 function modeStringKey(mode: EditingMode): string {
@@ -420,7 +447,7 @@ function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
 
 export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHandle {
   const menuModes = resolveModes(options.modes)
-  const defaultMode: EditingMode = menuModes.indexOf('fullAutonomy') !== -1 ? 'fullAutonomy' : menuModes[menuModes.length - 1]
+  const defaultMode: EditingMode = defaultModeFor(menuModes, options.defaultMode ?? 'trackChanges')
   root.innerHTML = `
     <div class="ai-dock">
       <div class="ai-rail" data-t="panelTitle"></div>
@@ -615,8 +642,23 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
 
   chatEl.innerHTML = emptyStateHtml(options, currentLang)
 
+  // Built once at mount from options.modeOverrides (modeCommentOnly/
+  // modeCommentOnlyDesc/etc. keys, same shape as STRINGS) - t() checks this
+  // before the shared STRINGS table, so an app's per-mode relabeling (e.g.
+  // Outlook's commentOnly -> "Draft only") applies without touching the
+  // strings every other app reads.
+  const modeOverrideStrings: Partial<Record<string, Record<Lang, string>>> = {}
+  if (options.modeOverrides) {
+    for (const mode of Object.keys(options.modeOverrides) as EditingMode[]) {
+      const ov = options.modeOverrides[mode]
+      if (!ov) continue
+      modeOverrideStrings[modeStringKey(mode)] = ov.label
+      modeOverrideStrings[modeStringKey(mode) + 'Desc'] = ov.description
+    }
+  }
+
   function t(key: string): string {
-    return STRINGS[key]?.[currentLang] ?? key
+    return modeOverrideStrings[key]?.[currentLang] ?? STRINGS[key]?.[currentLang] ?? key
   }
 
   function applyStrings(): void {
@@ -1260,6 +1302,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         addStep(toolName, input) {
           count++
           summaryEl.textContent = `Running ${count} tool${count > 1 ? 's' : ''}...`
+          const isAutoSend = !!options.autoSendTools?.includes(toolName)
           const rowEl = document.createElement('div')
           rowEl.className = 'ai-step-row'
           // .pending pulses the hourglass while the C# COM call runs (a
@@ -1295,10 +1338,16 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
               iconEl.classList.remove('pending')
               iconEl.textContent = result.isError ? '✗' : '✓'
               iconEl.classList.toggle('error', !!result.isError)
+              iconEl.classList.toggle('autosend', isAutoSend && !result.isError)
               if (result.mutated) {
                 const tag = document.createElement('div')
-                tag.className = 'ai-applied-tag'
-                tag.textContent = '✓ Applied'
+                if (isAutoSend) {
+                  tag.className = 'ai-autosend-tag'
+                  tag.textContent = '⚡ Sent automatically'
+                } else {
+                  tag.className = 'ai-applied-tag'
+                  tag.textContent = '✓ Applied'
+                }
                 stepsEl.appendChild(tag)
               }
 

@@ -30,8 +30,8 @@ namespace OfficeAi.Shared
             Dictionary<string, string> freeBusyByAttendee,
             DateTime rangeStartMidnight,
             IEnumerable<DateTime> businessDays,
-            int startHour,
-            int endHour,
+            double startHour,
+            double endHour,
             int durationMinutes,
             int stepMinutes,
             int limit)

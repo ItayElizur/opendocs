@@ -1,4 +1,5 @@
 import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
+import { randomId } from '@genoffice/agent-core'
 import { aiFetch } from './fetch'
 import { httpBodyDetail } from './http-error'
 import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
@@ -230,7 +231,7 @@ function emitAnthropicJsonMessage(bodyText: string, cb: StreamCallbacks): void {
     } else if (block.type === 'tool_use' && block.name) {
       emitted = true
       toolCalls.push({
-        id: block.id ?? crypto.randomUUID(),
+        id: block.id ?? randomId(),
         name: block.name,
         input: block.input ?? {},
       })
@@ -341,7 +342,7 @@ async function anthropicTurn(
     }
     if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
       pendingTools.set(event.index ?? 0, {
-        id: event.content_block.id ?? crypto.randomUUID(),
+        id: event.content_block.id ?? randomId(),
         name: event.content_block.name ?? '',
         json: '',
       })
@@ -462,7 +463,7 @@ function emitGeminiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
       if (part.functionCall?.name) {
         emitted = true
         cb.onToolCall({
-          id: crypto.randomUUID(),
+          id: randomId(),
           name: part.functionCall.name,
           input: part.functionCall.args ?? {},
         })
@@ -582,7 +583,7 @@ async function geminiTurn(
       if (part.functionCall?.name) {
         emitted = true
         cb.onToolCall({
-          id: crypto.randomUUID(),
+          id: randomId(),
           name: part.functionCall.name,
           input: part.functionCall.args ?? {},
         })
@@ -677,7 +678,7 @@ function emitOpenAiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
     emitted = true
     const { input, error } = parseToolInput(tc.function.arguments ?? '')
     toolCalls.push({
-      id: tc.id ?? crypto.randomUUID(),
+      id: tc.id ?? randomId(),
       name: tc.function.name,
       input,
       inputError: error,
@@ -807,7 +808,7 @@ async function openAiCompatibleTurn(
     }
     for (const tc of choice.delta?.tool_calls ?? []) {
       const pending = pendingTools.get(tc.index) ?? {
-        id: tc.id ?? crypto.randomUUID(),
+        id: tc.id ?? randomId(),
         name: '',
         json: '',
       }
