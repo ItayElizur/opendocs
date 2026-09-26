@@ -10,18 +10,45 @@ namespace OutlookAiAddIn
 {
     public static partial class OutlookTools
     {
+        // query/folder/start_date/end_date/sender are the common arg shape
+        // shared by search_emails and apply_search (the same filter criteria,
+        // applied via two different Outlook query engines - see
+        // BuildSearchAqs's comment). Factored out so a future change to how
+        // these are read/defaulted can't drift out of sync between the two.
+        private struct SearchArgs
+        {
+            public string Query;
+            public string FolderName;
+            public DateTime? Start;
+            public DateTime? End;
+            public string Sender;
+        }
+
+        private static SearchArgs ReadSearchArgs(JsonElement input)
+        {
+            return new SearchArgs
+            {
+                Query = Str(input, "query", ""),
+                FolderName = Str(input, "folder", "inbox"),
+                Start = DateArg(input, "start_date"),
+                End = DateArg(input, "end_date"),
+                Sender = Str(input, "sender", null),
+            };
+        }
+
         // Native query first: Items.Sort then Items.Restrict("@SQL=" + DASL).
         // A capped linear scan is the fallback only when Restrict throws on a
         // filter it cannot parse - never the default path.
         private static ToolResult SearchEmails(JsonElement input)
         {
-            string query = Str(input, "query", "");
-            string folderName = Str(input, "folder", "inbox");
+            SearchArgs a = ReadSearchArgs(input);
+            string query = a.Query;
+            string folderName = a.FolderName;
+            DateTime? start = a.Start;
+            DateTime? end = a.End;
+            string sender = a.Sender;
             int limit = Math.Max(1, Int(input, "limit", 20));
             bool unreadOnly = Bool(input, "unread_only", false);
-            DateTime? start = DateArg(input, "start_date");
-            DateTime? end = DateArg(input, "end_date");
-            string sender = Str(input, "sender", null);
             string recipient = Str(input, "recipient", null);
 
             Outlook.Folder folder = ResolveFolder(folderName);
@@ -85,28 +112,92 @@ namespace OutlookAiAddIn
         // Pushes an already-computed search filter into Outlook's own Explorer
         // window (the native Instant Search UI) instead of only returning
         // results to the model - the "show, don't just tell" counterpart to
-        // SearchEmails. Reuses BuildSearchDasl verbatim; no new filter logic.
+        // SearchEmails.
         //
         // _Explorer.Search(string Query, OlSearchScope SearchScope) signature
         // confirmed via .NET reflection against the actually-referenced
-        // Microsoft.Office.Interop.Outlook 15.0.0.0 PIA in this repo (not
-        // assumed). The "@SQL=" DASL prefix used here is the same one
-        // SearchEmails already proves works with Items.Restrict, and is a
-        // documented Outlook automation pattern for Explorer.Search's Query
-        // parameter (Advanced Find generates exactly this string) - but this
-        // specific call has NOT been exercised against a live Outlook session
-        // in this environment (no mailbox profile available here). If the
-        // DASL string isn't accepted as-is, fall back to `query` alone (plain
-        // free-text, same as typing directly into the search box) rather than
-        // letting it throw up to ExecuteAsync's generic catch, which would
-        // surface a raw COM exception instead of a degraded-but-working search.
+        // Microsoft.Office.Interop.Outlook 15.0.0.0 PIA in this repo. Does NOT
+        // take a DASL/SQL filter, despite the "@SQL=" prefix this file
+        // originally tried here (copied from SearchEmails' Items.Restrict
+        // usage): live testing (2026-09-26) proved that string doesn't throw,
+        // it just silently matches nothing, because Explorer.Search goes
+        // through Windows Instant Search - a different query engine from
+        // Items.Restrict's direct MAPI table access - and doesn't honor
+        // urn:schemas:httpmail:* property URNs. It DOES take the same
+        // Advanced Query Syntax (AQS) the Outlook search box itself accepts -
+        // confirmed via https://support.microsoft.com/en-us/outlook/search-mail-and-people-in-outlook-com
+        // and the user's own live "Advanced Search Options" list, which is
+        // what BuildSearchAqs below builds: `From:value` for sender,
+        // `Received:MM/DD/YYYY..MM/DD/YYYY` for a date range (the documented
+        // two-dot syntax - deliberately NOT `>=`/`<=`, which that same page
+        // does not confirm exists for this property). Plain free text with
+        // no prefix (already live-tested and confirmed working) covers the
+        // subject/body query term.
+        private static string BuildSearchAqs(string query, DateTime? start, DateTime? end, string sender)
+        {
+            var terms = new List<string>();
+            if (!string.IsNullOrEmpty(query)) terms.Add(query);
+            if (!string.IsNullOrEmpty(sender))
+                terms.Add("From:" + (sender.Contains(" ") ? "\"" + sender + "\"" : sender));
+            if (start.HasValue || end.HasValue)
+            {
+                // Live testing (2026-09-26) proved hardcoding MM/dd/yyyy (US
+                // order) was wrong: classic Outlook's search box parses typed
+                // dates using the DEVICE's Windows regional format, not a
+                // fixed order - on a day-first locale, "09/26/2036" reads as
+                // day=09/month=26, an invalid month, so the whole Received:
+                // clause silently failed to parse and the search returned 0
+                // results (no error - same silent-failure shape as the
+                // original "@SQL=" DASL bug this method replaced). Formatting
+                // with CurrentCulture instead of InvariantCulture matches
+                // whatever order this machine's own regional settings use,
+                // which is exactly what Outlook's own parser reads back.
+                string lo = (start ?? new DateTime(1900, 1, 1)).ToString("d", CultureInfo.CurrentCulture);
+                string hi = (end ?? DateTime.Today.AddYears(10)).ToString("d", CultureInfo.CurrentCulture);
+                terms.Add("Received:" + lo + ".." + hi);
+            }
+            return string.Join(" ", terms);
+        }
+
+        // OlSearchScope (confirmed via reflection): CurrentFolder=0,
+        // AllFolders=1, AllOutlookItems=2, Subfolders=3, CurrentStore=4.
+        // Default stays CurrentFolder - the one value actually exercised in
+        // the live test that validated this AQS approach in the first place;
+        // the wider scopes are unverified beyond being documented, valid
+        // enum members. Unrecognized non-empty input (e.g. a folder name
+        // passed here by mistake instead of in `folder`) throws rather than
+        // silently falling back to CurrentFolder - a live test hit exactly
+        // that mix-up and got a confusingly quiet "searched the wrong scope"
+        // instead of a clear error.
+        private static readonly string[] ValidScopes = { "current_folder", "subfolders", "mailbox", "current_mailbox", "all_mailboxes", "all_folders" };
+
+        private static Outlook.OlSearchScope ParseScope(string s)
+        {
+            string v = (s ?? "").Trim().ToLowerInvariant();
+            switch (v)
+            {
+                case "": return Outlook.OlSearchScope.olSearchScopeCurrentFolder;
+                case "current_folder": return Outlook.OlSearchScope.olSearchScopeCurrentFolder;
+                case "subfolders": return Outlook.OlSearchScope.olSearchScopeSubfolders;
+                case "mailbox":
+                case "current_mailbox": return Outlook.OlSearchScope.olSearchScopeCurrentStore;
+                case "all_mailboxes": return Outlook.OlSearchScope.olSearchScopeAllOutlookItems;
+                case "all_folders": return Outlook.OlSearchScope.olSearchScopeAllFolders;
+                default:
+                    throw new ArgumentException("Unknown scope \"" + s + "\". Valid values: " + string.Join(", ", ValidScopes) +
+                                                 ". To search a specific folder, use the \"folder\" argument instead.");
+            }
+        }
+
         private static ToolResult ApplySearch(JsonElement input)
         {
-            string query = Str(input, "query", "");
-            string folderName = Str(input, "folder", "inbox");
-            DateTime? start = DateArg(input, "start_date");
-            DateTime? end = DateArg(input, "end_date");
-            string sender = Str(input, "sender", null);
+            SearchArgs a = ReadSearchArgs(input);
+            string query = a.Query;
+            string folderName = a.FolderName;
+            DateTime? start = a.Start;
+            DateTime? end = a.End;
+            string sender = a.Sender;
+            Outlook.OlSearchScope scope = ParseScope(Str(input, "scope", "current_folder"));
 
             Outlook.Folder folder = ResolveFolder(folderName);
             Outlook.Explorer explorer = App.ActiveExplorer();
@@ -115,23 +206,12 @@ namespace OutlookAiAddIn
 
             explorer.CurrentFolder = folder;
 
-            string dasl = BuildSearchDasl(query, start, end, sender);
-            if (dasl.Length == 0)
+            string aqs = BuildSearchAqs(query, start, end, sender);
+            if (aqs.Length == 0)
                 return new ToolResult { Output = "Showed " + folder.Name + " (no filter criteria given).", Summary = "apply_search" };
 
-            try
-            {
-                explorer.Search("@SQL=" + dasl, Outlook.OlSearchScope.olSearchScopeCurrentFolder);
-                return new ToolResult { Output = "Applied the search to " + folder.Name + " in Outlook - the user can see the results now.", Summary = "apply_search" };
-            }
-            catch (Exception ex)
-            {
-                DebugLog.WriteException("ApplySearch DASL", ex);
-                if (string.IsNullOrEmpty(query))
-                    return new ToolResult { Output = "Showed " + folder.Name + " (the date/sender filter could not be applied as a search - showing the folder unfiltered instead).", Summary = "apply_search" };
-                explorer.Search(query, Outlook.OlSearchScope.olSearchScopeCurrentFolder);
-                return new ToolResult { Output = "Applied a plain-text search for \"" + query + "\" to " + folder.Name + " in Outlook (the structured filter wasn't accepted, so date/sender criteria were dropped) - the user can see the results now.", Summary = "apply_search" };
-            }
+            explorer.Search(aqs, scope);
+            return new ToolResult { Output = "Applied the search to " + folder.Name + " in Outlook (scope: " + scope + ") - the user can see the results now.", Summary = "apply_search" };
         }
 
         private static bool MatchesClientSide(Outlook.MailItem m, string query, DateTime? start, DateTime? end, string sender)

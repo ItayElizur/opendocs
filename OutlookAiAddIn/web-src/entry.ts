@@ -57,6 +57,12 @@ const ALL_OUTLOOK_TOOLS = [
         start_date: { type: 'string', description: 'Only messages on/after this date (YYYY-MM-DD).' },
         end_date: { type: 'string', description: 'Only messages on/before this date (YYYY-MM-DD).' },
         sender: { type: 'string', description: 'Sender email or display-name fragment.' },
+        scope: {
+          type: 'string',
+          enum: ['current_folder', 'subfolders', 'mailbox', 'all_mailboxes'],
+          description:
+            'How far to search beyond the given folder. "current_folder" (default) - just that folder. "subfolders" - that folder and its subfolders. "mailbox" - every folder in the current mailbox. "all_mailboxes" - every account configured in Outlook.',
+        },
       },
       required: [],
     },
