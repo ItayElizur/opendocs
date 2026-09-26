@@ -74,6 +74,11 @@ const ALL_OUTLOOK_TOOLS = [
     inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, folder: FOLDER }, required: ['message_id'] },
   },
   {
+    name: 'open_email',
+    description: 'Opens a message in its own Outlook reading window (like double-clicking it) so the user can see it directly. Read-only.',
+    inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, folder: FOLDER }, required: ['message_id'] },
+  },
+  {
     name: 'get_attachment',
     description:
       'Saves one attachment to a local file and returns its path. For text files and Office documents (.docx/.xlsx/.pptx) it also returns extracted_text. PDFs and images return the path only. OLE and linked attachments cannot be fetched.',
@@ -396,6 +401,7 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   search_emails: d('Search emails', 'חיפוש הודעות', 'Searches a folder by text, date, or sender.', 'מחפש בתיקייה לפי טקסט, תאריך או שולח.'),
   apply_search: d('Show search in Outlook', 'הצגת חיפוש ב-Outlook', 'Applies the search to the Outlook window itself.', 'מיישם את החיפוש בחלון Outlook עצמו.'),
   get_email: d('Read email', 'קריאת הודעה', 'Reads one message in full, including its attachment list.', 'קורא הודעה אחת במלואה, כולל רשימת הקבצים המצורפים.'),
+  open_email: d('Open email', 'פתיחת הודעה', 'Opens a message in Outlook.', 'פותח הודעה ב-Outlook.'),
   get_attachment: d('Get attachment', 'קבלת קובץ מצורף', 'Saves an attachment and extracts text from documents.', 'שומר קובץ מצורף ומחלץ טקסט ממסמכים.'),
   list_folders: d('List folders', 'רשימת תיקיות', 'Lists the available mail folders.', 'מציג את תיקיות הדואר הזמינות.'),
   search_contacts: d('Search contacts', 'חיפוש אנשי קשר', 'Finds people by name or email.', 'מוצא אנשים לפי שם או דוא"ל.'),
@@ -435,7 +441,7 @@ startAddIn({
   toolDisplay: OUTLOOK_TOOL_DISPLAY,
   systemPrompt:
     'You are an AI assistant embedded in Microsoft Outlook via the Airchat Office add-in. You work from the main Outlook window (Explorer). ' +
-    'You can read and search mail, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations, color events with tags via list_color_categories/set_event_categories/set_category_color), ' +
+    'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations, color events with tags via list_color_categories/set_event_categories/set_category_color), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
     'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. ' +
     'send_email/send_reply/send_reply_all/send_forward/create_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
@@ -452,6 +458,7 @@ startAddIn({
     'list_emails',
     'search_emails',
     'get_email',
+    'open_email',
     'get_attachment',
     'list_folders',
     'search_contacts',
