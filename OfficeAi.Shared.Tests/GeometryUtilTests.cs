@@ -35,4 +35,44 @@ public class GeometryUtilTests
         Assert.Equal(400, w);
         Assert.Equal(300, h);
     }
+
+    [Fact]
+    public void ResolveCornerPosition_TopLeft_InsetsFromOrigin()
+    {
+        GeometryUtil.ResolveCornerPosition(720, 540, 50, 20, 12, "topLeft", out float left, out float top);
+        Assert.Equal(12, left);
+        Assert.Equal(12, top);
+    }
+
+    [Fact]
+    public void ResolveCornerPosition_TopRight_InsetsFromRightEdge()
+    {
+        GeometryUtil.ResolveCornerPosition(720, 540, 50, 20, 12, "topRight", out float left, out float top);
+        Assert.Equal(720 - 50 - 12, left);
+        Assert.Equal(12, top);
+    }
+
+    [Fact]
+    public void ResolveCornerPosition_BottomLeft_InsetsFromBottomEdge()
+    {
+        GeometryUtil.ResolveCornerPosition(720, 540, 50, 20, 12, "bottomLeft", out float left, out float top);
+        Assert.Equal(12, left);
+        Assert.Equal(540 - 20 - 12, top);
+    }
+
+    [Fact]
+    public void ResolveCornerPosition_BottomRight_InsetsFromBothFarEdges()
+    {
+        GeometryUtil.ResolveCornerPosition(720, 540, 50, 20, 12, "bottomRight", out float left, out float top);
+        Assert.Equal(720 - 50 - 12, left);
+        Assert.Equal(540 - 20 - 12, top);
+    }
+
+    [Fact]
+    public void ResolveCornerPosition_UnknownCorner_ThrowsWithValidList()
+    {
+        var ex = Assert.Throws<System.ArgumentException>(() =>
+            GeometryUtil.ResolveCornerPosition(720, 540, 50, 20, 12, "middle", out _, out _));
+        Assert.Contains("topLeft", ex.Message);
+    }
 }

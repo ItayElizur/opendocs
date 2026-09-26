@@ -1,4 +1,5 @@
 import type { ToolExecution } from '@genoffice/agent-core'
+import { randomId } from '@genoffice/agent-core'
 
 // WebView2 <-> .NET WebMessage bridge (chrome.webview.postMessage <->
 // CoreWebView2.PostWebMessageAsJson). This is the ONLY file in the app-shell
@@ -89,6 +90,13 @@ export interface RawSelectionPayload {
   textPreview?: string[]
   shapeIndex?: number
   text?: string
+  // PowerPoint (user-requested, 2026-09-22): the selected slide's current
+  // layout name (custom-theme layouts, e.g. "Title Slide") - lets the model
+  // address add_master_element/read_master_elements/etc.'s layoutName
+  // directly from context instead of a separate read_slide call. Sent for
+  // all three selKind variants (a shapes/shapeText selection is always
+  // within exactly one slide, so this is unambiguous there too).
+  layoutName?: string | null
   // Outlook ('app: "outlook"') - the Explorer's currently-selected mail
   // item(s) / conversation. subject is the first item's subject.
   count?: number
@@ -179,7 +187,7 @@ export function persistMessage(role: 'user' | 'assistant', text: string): void {
 }
 
 export function callDotNetTool(toolName: string, input: Record<string, unknown>): Promise<ToolExecution> {
-  const requestId = crypto.randomUUID()
+  const requestId = randomId()
   return new Promise((resolve) => {
     pendingToolCalls.set(requestId, resolve)
     const msg: ToolCallMessage = { kind: 'tool-call', requestId, toolName, input }

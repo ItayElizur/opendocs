@@ -19,19 +19,88 @@ namespace OutlookAiAddIn
             ModeByMailbox[mbxKey] = mode;
         }
 
+        // Falls back to CommentOnly (Outlook's "Draft only" tier - see
+        // AlwaysAllowedTools' comment below), matching the client's own new
+        // default (chat-ui.ts's defaultModeFor()), for the brief window
+        // before the client's first explicit "set-mode" bridge message
+        // arrives (only sent on a user-initiated mode change, never on
+        // mount). Previously fell back to FullAutonomy, which was safe only
+        // because FullAutonomy was also the client's own default at the
+        // time - no longer true.
         private static EditingMode ModeFor(string mbxKey)
         {
             EditingMode m;
-            return ModeByMailbox.TryGetValue(mbxKey, out m) ? m : EditingMode.FullAutonomy;
+            return ModeByMailbox.TryGetValue(mbxKey, out m) ? m : EditingMode.CommentOnly;
         }
 
-        // Comment only / Track changes have no meaning for mail - the mode gate
-        // treats them as read-only. Only Full autonomy permits mutation.
+        // Outlook repurposes two EditingMode slots Word/Excel/PowerPoint use
+        // for real editing concepts that have no meaning for mail:
+        // CommentOnly -> "Draft only" (draft/mutate freely, nothing sends),
+        // TrackChanges -> "Automate approvals" (adds accept/decline, which
+        // already auto-notify the organizer via resp.Send()). FullAutonomy
+        // adds the tools that compose and send/create new content with no
+        // review step. Ordinal check below relies on the enum's declared
+        // order (ReadOnly < CommentOnly < TrackChanges < FullAutonomy)
+        // matching this escalation exactly - see OfficeAi.Shared.EditingMode.
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
             "list_emails", "search_emails", "get_email", "list_folders", "search_contacts",
             "list_events", "get_event", "list_tasks", "get_attachment", "find_meeting_slots", "open_email",
+            "list_color_categories",
         };
+
+        // Tier 2 ("Draft only" / CommentOnly): mutates the mailbox or opens a
+        // draft, but never leaves it unreviewed. set_event_categories/
+        // set_category_color belong here, not in SendTierTools below - both
+        // are purely local (appt.Categories/.Save(), cats.Add()/.Color),
+        // never call .Send(), and carry the same risk profile as
+        // move_email/flag_email_important right next to them. An earlier
+        // version of this fix put them in SendTierTools to match their old
+        // (pre-four-tier) Full-Autonomy-only gate, but that was restoring
+        // the OLD binary model rather than applying this PR's own tiering
+        // logic - every other local-only mutation here was deliberately
+        // downgraded from Full-Autonomy-only, and these two were simply
+        // missed, not deliberately kept stricter. apply_search is here for
+        // a different reason: it never mutates data, but unlike every other
+        // AlwaysAllowedTools entry it has a real, visible side effect - it
+        // hijacks the user's actual Outlook Explorer window (folder jump +
+        // search overlay) with no consent step. "Read only" is supposed to
+        // guarantee the assistant never touches the user's screen; leaving
+        // it always-allowed broke that. Must stay in sync with entry.ts's
+        // commentOnlyExtraTools.
+        private static readonly HashSet<string> DraftTierTools = new HashSet<string>
+        {
+            "mark_email_read", "mark_email_unread", "flag_email_important", "move_email", "delete_email",
+            "create_task", "update_task", "set_reminder", "set_email_reminder",
+            "draft_email", "reply_email", "reply_all_email", "forward_email", "draft_event",
+            "set_event_categories", "set_category_color", "apply_search",
+        };
+
+        // Tier 3 ("Automate approvals" / TrackChanges): already calls
+        // resp.Send() to notify the organizer (RespondMeeting) - kept out of
+        // the draft tier so "Draft only" honestly means nothing sends.
+        private static readonly HashSet<string> ApprovalTierTools = new HashSet<string>
+        {
+            "accept_meeting", "decline_meeting",
+        };
+
+        // Tier 4 (Full autonomy only): composes and sends/creates brand-new
+        // content with no review step at all.
+        private static readonly HashSet<string> SendTierTools = new HashSet<string>
+        {
+            "send_email", "send_reply", "send_reply_all", "send_forward", "create_event",
+        };
+
+        private static string TierLabel(EditingMode mode)
+        {
+            switch (mode)
+            {
+                case EditingMode.FullAutonomy: return "Full autonomy";
+                case EditingMode.TrackChanges: return "Automate approvals";
+                case EditingMode.CommentOnly: return "Draft only";
+                default: return "Read only";
+            }
+        }
 
         public static async Task<ToolResult> ExecuteAsync(string mbxKey, string name, JsonElement input)
         {
@@ -39,29 +108,38 @@ namespace OutlookAiAddIn
             {
                 DebugLog.Write("OutlookTools.Execute " + name);
                 EditingMode mode = ModeFor(mbxKey);
-                if (!AlwaysAllowedTools.Contains(name) && mode != EditingMode.FullAutonomy)
+                if (!AlwaysAllowedTools.Contains(name))
                 {
-                    return new ToolResult
+                    EditingMode required =
+                        SendTierTools.Contains(name) ? EditingMode.FullAutonomy :
+                        ApprovalTierTools.Contains(name) ? EditingMode.TrackChanges :
+                        EditingMode.CommentOnly; // DraftTierTools, and anything else not otherwise classified
+                    if ((int)mode < (int)required)
                     {
-                        Output = "Blocked: the assistant is in a read-only mode. Switch to Full autonomy to send drafts, move, delete, flag, create tasks/reminders, or respond to invites.",
-                        IsError = true,
-                        Summary = name,
-                    };
+                        return new ToolResult
+                        {
+                            Output = "Blocked: this action requires " + TierLabel(required) + " mode or higher (currently " + TierLabel(mode) + ").",
+                            IsError = true,
+                            Summary = name,
+                        };
+                    }
                 }
 
                 switch (name)
                 {
                     case "list_emails": return ListEmails(input);
                     case "search_emails": return SearchEmails(input);
+                    case "apply_search": return ApplySearch(input);
                     case "get_email": return GetEmail(input);
                     case "open_email": return OpenEmail(input);
                     case "list_folders": return ListFolders(input);
                     case "search_contacts": return await SearchContactsAsync(input);
                     case "list_events": return ListEvents(input);
                     case "get_event": return GetEvent(input);
-                    case "find_meeting_slots": return FindMeetingSlots(input);
+                    case "find_meeting_slots": return await FindMeetingSlotsAsync(input);
                     case "list_tasks": return ListTasks(input);
                     case "get_attachment": return GetAttachment(input);
+                    case "list_color_categories": return ListColorCategories(input);
 
                     case "mark_email_read": return MarkEmail(input, false);
                     case "mark_email_unread": return MarkEmail(input, true);
@@ -70,6 +148,8 @@ namespace OutlookAiAddIn
                     case "delete_email": return DeleteEmail(input);
                     case "accept_meeting": return RespondMeeting(input, true);
                     case "decline_meeting": return RespondMeeting(input, false);
+                    case "set_event_categories": return SetEventCategories(input);
+                    case "set_category_color": return SetCategoryColor(input);
                     case "create_task": return CreateTask(input);
                     case "update_task": return UpdateTask(input);
                     case "set_reminder": return SetReminder(input);
@@ -80,6 +160,12 @@ namespace OutlookAiAddIn
                     case "reply_all_email": return ReplyEmail(input, true);
                     case "forward_email": return ForwardEmail(input);
                     case "draft_event": return DraftEvent(input);
+
+                    case "send_email": return SendEmail(input);
+                    case "send_reply": return SendReply(input, false);
+                    case "send_reply_all": return SendReply(input, true);
+                    case "send_forward": return SendForward(input);
+                    case "create_event": return CreateEvent(input);
 
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
@@ -195,6 +281,22 @@ namespace OutlookAiAddIn
             {
                 int n;
                 if (v.TryGetInt32(out n)) return n;
+            }
+            return dflt;
+        }
+
+        // Like Int, but the default itself can be fractional - for
+        // find_meeting_slots' start_hour/end_hour, whose default comes from a
+        // mailbox's real (possibly non-hour-aligned, e.g. 08:30) EWS working
+        // hours. The argument itself is still schema'd as a whole-hour
+        // integer, so only the default needs the fractional path.
+        internal static double Double(JsonElement o, string name, double dflt)
+        {
+            JsonElement v;
+            if (o.ValueKind == JsonValueKind.Object && o.TryGetProperty(name, out v) && v.ValueKind == JsonValueKind.Number)
+            {
+                double n;
+                if (v.TryGetDouble(out n)) return n;
             }
             return dflt;
         }

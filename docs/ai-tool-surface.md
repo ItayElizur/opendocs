@@ -230,6 +230,20 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > (`ComRetry`, `SmartArtLayouts`) was already resolved into `OfficeAi.Shared`
 > the same day, before this split ran - see the Phase 2 update above.
 
+> **Update 2026-09-17 (Outlook gains color-tag/category tools):** three new
+> tools, `OutlookAiAddIn/OutlookTools.Categories.cs`. `list_color_categories`
+> (read-only) lists the profile's master `Namespace.Categories` list — name +
+> friendly color name (the 26 `OlCategoryColor` values, mapped in that file
+> since `OfficeAi.Shared` has no Outlook PIA reference, same split as
+> `ColorUtil` uses for RGB). `set_event_categories` sets/clears an
+> `AppointmentItem`'s `Categories` string (the colored block shown on a
+> calendar event) — Full autonomy only. `set_category_color` creates a new
+> tag or recolors an existing one via `Categories.Add`/`Category.Color` —
+> also Full autonomy only. Verified against a live Outlook client (category
+> enumeration, tag creation, and event `Categories` round-trip) before
+> wiring into the tool switch; `dotnet test` unaffected (no new pure logic —
+> the color-name map is a small dictionary, not extracted for unit testing).
+
 ## Architecture
 
 officeoffice drives the **real desktop Office applications** via VSTO + COM interop
@@ -439,11 +453,28 @@ index otherwise.
   explorer's first `Activate` or the ribbon button, never in `ThisAddIn_Startup` —
   because Outlook auto-disables add-ins whose median startup exceeds ~1 s, and
   `install.ps1` also writes `Resiliency\DoNotDisableAddinList`.
-- **Editing modes.** Only `ReadOnly` and `FullAutonomy` are meaningful; `CommentOnly`
-  and `TrackChanges` have no mail analogue and the mode gate treats them as
-  `ReadOnly`. `entry.ts` passes `availableModes: ['readOnly','fullAutonomy']` so the
-  chat-UI mode menu (now `.map`-generated over `options.modes ?? MODES`) hides the
-  other two.
+- **Editing modes — four tiers, added 2026-09-19.** Outlook repurposes all four
+  `EditingMode` slots with its own meaning, rather than dropping two (previously only
+  `ReadOnly`/`FullAutonomy` were used): `ReadOnly` → **Read only** (unchanged);
+  `CommentOnly` → **Draft only** (every mutating/drafting tool that never leaves the
+  mailbox unreviewed — `mark_email_read`/`unread`, `flag_email_important`,
+  `move_email`, `delete_email`, `create_task`, `update_task`, `set_reminder`,
+  `set_email_reminder`, `draft_email`, `reply_email`, `reply_all_email`,
+  `forward_email`, `draft_event`); `TrackChanges` → **Automate approvals** (adds
+  `accept_meeting`/`decline_meeting` — these already call `resp.Send()` to notify the
+  organizer, so they get their own explicit tier rather than hiding in Draft only or
+  Full autonomy); `FullAutonomy` → unchanged name, adds the five auto-send tools (see
+  below). Each tier is a strict superset of the one before it. `entry.ts` passes
+  `availableModes: ['readOnly','commentOnly','trackChanges','fullAutonomy']` and a
+  `modeOverrides` map so the mode menu shows Outlook's own labels/descriptions instead
+  of Word/Excel/PowerPoint's generic "Comment only"/"Track changes" text — those two
+  apps' own use of `CommentOnly`/`TrackChanges` for real editing is untouched (Outlook's
+  relabeling is purely its own `entry.ts` config, not a shared-string change). Gate
+  logic (`OutlookTools.cs`'s `ExecuteAsync`) is an ordinal check on the enum's own
+  declared order (`ReadOnly < CommentOnly < TrackChanges < FullAutonomy`). A fresh
+  session now defaults to **Draft only**, not Full autonomy (`defaultMode: 'commentOnly'`,
+  resolved via `chat-ui.ts`'s `defaultModeFor()` — the same helper Word/Excel/PowerPoint
+  use to default to their own `trackChanges`).
 - **Selection context.** The Explorer's `SelectionChange` pushes the selected mail
   item(s) / conversation into per-turn context as a `mail` `SelectionContext` variant
   (`shared/web-src/app-shell/bootstrap.ts`) carrying each item's `EntryID`, so the
@@ -460,21 +491,32 @@ index otherwise.
   DASL builder is pure and unit-tested (`OfficeAi.Shared/OutlookDasl.cs`). `search_contacts`
   is the deliberate, documented exception: server-side EWS ANR (`ResolveName`), not a COM
   scan — see the EWS carve-out below.
-- **`search_contacts` is the one EWS call.** Every other Outlook tool is pure
-  `Microsoft.Office.Interop.Outlook` COM against the running client. Contact resolution
+- **`search_contacts` and `find_meeting_slots`' work-week default are the two things that
+  touch EWS.** Every other Outlook tool is pure `Microsoft.Office.Interop.Outlook` COM
+  against the running client. All EWS-dependent code lives apart from the pure-COM tool
+  files, in two layers: `OutlookEws.cs` (the raw EWS Managed API wire calls —
+  `ResolveNamesAsync`, `GetWorkingHoursAsync`) and `OutlookTools.Ews.cs` (2026-09-19,
+  split out of the file this section used to describe — the tool-facing orchestration on
+  top: `SearchContactsAsync`, `ResolveWorkWeekAsync`, and the shared endpoint/account
+  resolution both call, `ResolveEwsUrlAsync`/`FindExchangeAccountInfo`). Contact resolution
   calls **EWS `ResolveName(query, ContactsThenDirectory, returnContactDetails: true)`**
   (EWS Managed API 2.2, `Microsoft.Exchange.WebServices` 2.2.0) with
   `ExchangeService.UseDefaultCredentials` (Windows Integrated Auth as the signed-in user —
   the .NET equivalent of `mcp-outlook`'s `auth_type=sspi`; no stored credentials). Endpoint
   is parsed from the cached `Outlook.Account.AutoDiscoverXml` (`<EwsUrl>`/`<ASUrl>`, `EXCH`
   preferred over `EXPR`; pure parser `OfficeAi.Shared/EwsAutodiscoverXml.cs`), falling back
-  to `ExchangeService.AutodiscoverUrl`, then cached in a process-static `Uri`. The call
-  runs off the UI thread (`await Task.Run`, `svc.Timeout` 15 s) so Outlook stays
-  responsive. **On-prem Exchange only.** EWS unreachable / SSPI failure / endpoint not
-  found / timeout → a clear `IsError` result, never a silent COM fallback. This is also
+  to `ExchangeService.AutodiscoverUrl`, then cached in a process-static `Uri` shared by both
+  EWS-dependent tools. The call runs off the UI thread (`await Task.Run`, `svc.Timeout` 15 s)
+  so Outlook stays responsive. **On-prem Exchange only.** EWS unreachable / SSPI failure /
+  endpoint not found / timeout → a clear `IsError` result for `search_contacts` (EWS isn't
+  optional there); `find_meeting_slots` instead falls back to its old hardcoded Sun-Thu/9-18
+  default, since EWS is an enhancement over an already-working COM-only path there, not the
+  only way to do the job. This is also
   the pilot for async tool execution — the shared `ToolExecutor` delegate is now
-  `Task<ToolResult>`-returning (`WebViewBridgeHost.OnWebMessageReceived` is `async`); every
-  other tool in all four add-ins is still synchronous, wrapped in `Task.FromResult`.
+  `Task<ToolResult>`-returning (`WebViewBridgeHost.OnWebMessageReceived` is `async`).
+  `find_meeting_slots` is the second Outlook tool to go async (2026-09-19, for its own
+  EWS work-week lookup — see its row below); every other tool in all four add-ins is
+  still synchronous, wrapped in `Task.FromResult`.
 
 ### Read tools (11 — always allowed, never gated)
 
@@ -482,6 +524,7 @@ index otherwise.
 |---|---|
 | `list_emails` | `Folder.GetTable`; columns EntryID/Subject/ReceivedTime/SenderName/UnRead + `PR_HASATTACH` proptag; `[UnRead] = true` restriction when `unread_only`; sorted newest-first; non-mail rows filtered by `MessageClass` not starting `IPM.Note`. Args: `folder`, `limit` (20), `unread_only`. |
 | `search_emails` | `Items.Sort("[ReceivedTime]")` then `Restrict("@SQL=" + BuildSearchFilter(...))`. `LIKE '%q%'` on subject + body; UTC-ISO date range; sender by `fromemail =` OR `fromname LIKE` (Exchange senders carry `legacyExchangeDN`, not SMTP — display-name fuzzy match). `ci_phrasematch`/`ci_startswith` are **not** usable via `Restrict` (they throw). `recipient` is a client-side filter, capped 500. Fallback: capped linear scan on a malformed filter. |
+| `apply_search` | View-only (`Mutated: false`) — pushes the same `BuildSearchDasl` filter `search_emails` computes into `Explorer.CurrentFolder` + `Explorer.Search("@SQL=" + dasl, olSearchScopeCurrentFolder)`, so the user's own Outlook window shows the results. `_Explorer.Search(string Query, OlSearchScope SearchScope)`'s signature was confirmed via .NET reflection against the referenced `Microsoft.Office.Interop.Outlook` 15.0.0.0 PIA; the `@SQL=` DASL string itself (same one `Items.Restrict` already proves works) has **not yet been exercised against a live Outlook session** — first real use should confirm it's accepted as-is by `Explorer.Search`, or fall back to plain-text `query` only. |
 | `get_email` | Full `Body` (≤ 40k), To/CC via `Recipient.Type`, `ConversationID`/`ConversationTopic`, importance, unread, and an `attachments` array — `{index (1-based), name, type (byValue/embeddedItem/ole/reference), size}` — feed the index to `get_attachment`. |
 | `open_email` | `MailItem.Display(false)` on an existing item resolved via `ItemById` — opens the message in its own Outlook reading window, unmodified. `Mutated: false`. |
 | `get_attachment` | `Attachment.SaveAsFile` into `%LOCALAPPDATA%\OutlookAiAddIn\Attachments\`; returns the path. `extracted_text` (≤ 40k) is populated **only** for text-family extensions (`.txt .csv .tsv .md .json .xml .log`, `.html` tag-stripped) and OpenXML (`.docx .xlsx .pptx`), via the swappable `OfficeAi.Shared/AttachmentText/` module (`DocumentFormat.OpenXml` 2.20.0). **No PDF, no images, no vision** — those return the path + type only. `olOLE` throws (rejected); `olByReference` has no data (rejected); `olEmbeddedItem` saves as `.msg`. |
@@ -489,10 +532,11 @@ index otherwise.
 | `search_contacts` | **EWS `ResolveName` over Contacts then GAL** (server-side ANR), run off the UI thread via EWS Managed API 2.2 with `UseDefaultCredentials`. Endpoint discovery: `Account.AutoDiscoverXml` → `AutodiscoverUrl` → process-static `Uri` cache. Each `NameResolution` mapped to `(name, email)` — GAL X500/`EX` addresses fall back to the resolved contact's own `EmailAddress1..3`; entries with no `@` address are dropped (mirrors `mcp-outlook`). Deduped by lowercased address (name fallback), capped at `limit` (default 10). Pure helpers `EwsAutodiscoverXml.ParseEwsUrl` + `ContactSearchFormat.Format` are unit-tested. **No `folder`/scope arg.** On-prem Exchange only; unreachable / auth failure / no endpoint / 15 s timeout → a specific `IsError` message, no COM fallback. (The pre-2026-09 recursive multi-store contact-folder crawl froze then crashed Outlook — removed.) |
 | `list_events` | `Items.Sort("[Start]")` → `Items.IncludeRecurrences = true` → `Items.Restrict("[Start] <= end AND [End] >= start")` — **this order is load-bearing** and rules out `GetTable`. Recurring instances share the master `event_id`; each row carries its own `start` to disambiguate. Args: `start_date` (today), `end_date` (+7d), `limit` (50). |
 | `get_event` | `Body` (≤ 40k), `RequiredAttendees`/`OptionalAttendees`, organizer, response status, recurring flag. |
-| `find_meeting_slots` | `Recipient.FreeBusy(anchor, 30, true)` — a per-30-min status string — for `Namespace.CurrentUser` + each resolved attendee; then `OfficeAi.Shared.MeetingSlots.Rank` (pure, unit-tested) slides a `duration_minutes` window in 30-min steps across each work day's `[start_hour, end_hour)` and scores each candidate by how many people are free (so a best partial match still comes back). Work week is Sun–Thu (mirrors mcp-outlook); default range is today→Thursday (or next week if today is Fri/Sat), max 28 days. Times past the returned free/busy window are assumed free. Args: `attendees` (req), `duration_minutes` (req), `start_date`, `end_date`, `start_hour` (9), `end_hour` (18), `limit` (5). |
+| `find_meeting_slots` | `Recipient.FreeBusy(anchor, 30, true)` — a per-30-min status string — for `Namespace.CurrentUser` + each resolved attendee; then `OfficeAi.Shared.MeetingSlots.Rank` (pure, unit-tested) slides a `duration_minutes` window in 30-min steps across each work day's `[start_hour, end_hour)` and scores each candidate by how many people are free (so a best partial match still comes back). **Work week/hours are read from the mailbox's own EWS `GetUserAvailability` → `AttendeeAvailability.WorkingHours` (added 2026-09-19; see `OutlookEws.GetWorkingHoursAsync`), not hardcoded** — falls back to Sun–Thu 09:00–18:00 only if that call fails (non-Exchange profile, EWS unreachable, etc.), cached per process like `OutlookEws.CachedUrl`. Default range is today through the end of the current contiguous work-day run (generalizes the old "today→Thursday, or next week if Fri/Sat" to any work-days shape), max 28 days. Times past the returned free/busy window are assumed free. Async (like `search_contacts`) only because of the EWS work-week lookup; the FreeBusy/ranking work itself is still synchronous COM. Args: `attendees` (req), `duration_minutes` (req), `start_date`, `end_date`, `start_hour`, `end_hour` (both default to the resolved work hours, or 9/18 as a last resort), `limit` (5). |
 | `list_tasks` | `Folder.GetTable` over the default Tasks folder; open tasks only unless `include_completed`. Columns EntryID/Subject/Due/Start/Status/PercentComplete/Complete/ReminderTime. |
+| `list_color_categories` | `Namespace.Categories` — the profile's master color-tag ("Category") list shared by mail/calendar/tasks, same list Outlook's Categorize picker shows. Each entry: `{name, color}`; color is one of the 26 `OlCategoryColor` values (None/Red/Orange/…/Dark Maroon), mapped to a friendly display name in `OutlookTools.Categories.cs` (not in `OfficeAi.Shared` — that project doesn't reference the Outlook PIA, same split as `ColorUtil`). |
 
-### Mutating tools (11 — Full autonomy only; `Mutated = true`)
+### Mutating tools (13 — Full autonomy only; `Mutated = true`)
 
 | Tool | Notes |
 |---|---|
@@ -501,12 +545,14 @@ index otherwise.
 | `move_email` | `MailItem.Move(ResolveFolder(destination))`; returns `{message_id: <new EntryID>, old_message_id}`. |
 | `delete_email` | Non-permanent → `Move` to Deleted Items (returns new id); `permanent: true` → then `.Delete()` from there (no single-call hard delete in the OM — documented as "may still be server-recoverable"). |
 | `accept_meeting` / `decline_meeting` | Resolves to `AppointmentItem` (via `MeetingItem.GetAssociatedAppointment(false)` when the id is a meeting request), `appt.Respond(olMeetingAccepted/Declined, true, false)`, then `.Send()` on the response if non-null. |
+| `set_event_categories` | `AppointmentItem.Categories` (comma-separated tag names, the color shown on the event in the calendar grid) + `.Save()`; empty/omitted `categories` clears all tags. A name outside the master list is auto-added by Outlook on `Save` with an arbitrary color — call `set_category_color` first to control it. |
+| `set_category_color` | `Namespace.Categories[name]` — updates `.Color` if the tag exists, else `Categories.Add(name, color)` creates it. Same master list `list_color_categories` reads. |
 | `create_task` | `Application.CreateItem(olTaskItem)` + `.Save()` — no window (a task doesn't send anything, so it follows the mutate-directly pattern, not draft-and-display). Args: `subject` (req), `body`, `due_date`, `start_date`, `reminder_time`, `importance`. |
 | `update_task` | `(TaskItem)GetItemFromID`; only passed fields change; `mark_complete: true` → `Complete = true` + `PercentComplete = 100`. |
 | `set_reminder` | `ReminderSet` / `ReminderTime` on an appointment **or** task, addressed by its `item_id` (EntryID); `clear: true` turns it off. |
 | `set_email_reminder` | `MailItem.MarkAsTask(mapped interval)` + `TaskStartDate`/`TaskDueDate` + `ReminderSet`/`ReminderTime` + `.Save()` — the confirmed COM path for "flag an email for follow-up with a reminder". `MailItem` does expose `ReminderSet`/`ReminderTime`. |
 
-### Draft-and-display tools (5 — Full autonomy; open a native Outlook window for the user to review and send; `Mutated = false`)
+### Draft-and-display tools (5 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
 
 | Tool | Notes |
 |---|---|
@@ -517,13 +563,31 @@ index otherwise.
 | `draft_event` | `CreateItem(olAppointmentItem)`; with `required_attendees`/`optional_attendees` → `MeetingStatus = olMeeting`, `Recipients.Add(...).Type`, `Recipients.ResolveAll()`; `Display(false)`. |
 
 **These never call `.Send()` (mail) or save a calendar event.** The user sends from the
-opened Outlook window.
+opened Outlook window. Available from Draft only mode upward (tier 2 — see "Editing
+modes" above), not gated behind Full autonomy.
+
+### Auto-send tools (5 — Full autonomy only; send/create immediately, no review window; `Mutated = true`)
+
+> **Added 2026-09-19**, reversing part of the "no auto-send tool" decision below —
+> narrowed to Full autonomy specifically, not removed generally. Every draft/compose
+> tool above is unaffected and stays draft-and-display-only in every mode.
+
+| Tool | Notes |
+|---|---|
+| `send_email` | Same construction as `draft_email`, but `m.Send()` instead of `m.Display(false)`. |
+| `send_reply` | Same as `reply_email`, but `.Send()`. |
+| `send_reply_all` | Same as `reply_all_email`, but `.Send()`. |
+| `send_forward` | Same as `forward_email`, but `.Send()`; `to` is required (unlike `forward_email`, where it's optional). |
+| `create_event` | Same construction as `draft_event`. No attendees → `a.Save()` (a plain calendar entry, nobody to notify). Attendees present → `MeetingStatus = olMeeting` then `a.Send()`, dispatching the invite. Both `AppointmentItem.Send()`/`.Save()` confirmed present via .NET reflection against the referenced PIA before writing this — not assumed from `draft_event`'s non-sending shape. |
+
+Gated by `OutlookTools.cs`'s `SendTierTools` set, requiring `EditingMode.FullAutonomy`
+exactly (the ordinal check's top tier) — not reachable from Draft only or Automate
+approvals. `accept_meeting`/`decline_meeting` are **not** in this table; they live one
+tier down, in Automate approvals (see "Editing modes" above), since they already
+existed before this addition and already call `resp.Send()`.
 
 ### Excluded / deferred
 
-- **`send_email`, `create_event`** — mcp-outlook marks these widget/app-only (the
-  model has no way to trigger a send). The equivalent here is draft-and-display +
-  the user pressing Send; there is deliberately no auto-send tool.
 - **`update_event` / `delete_event`** — present in mcp-outlook's `server.py` but not
   its README; not ported. Trivial parity adds if wanted.
 
