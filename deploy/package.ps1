@@ -29,7 +29,7 @@ if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 # Export the public certificate only - the private key stays on this machine.
-$certPath = Join-Path $OutDir 'AirchatOfficeDevCert.cer'
+$certPath = Join-Path $OutDir 'OpenDocsDevCert.cer'
 $cert = Get-ChildItem "Cert:\CurrentUser\My\$Thumbprint" -ErrorAction SilentlyContinue
 if (-not $cert) { $cert = Get-ChildItem "Cert:\LocalMachine\My\$Thumbprint" -ErrorAction SilentlyContinue }
 if (-not $cert) {
