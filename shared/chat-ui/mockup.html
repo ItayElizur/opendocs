@@ -2,7 +2,7 @@
 <html lang="en" dir="ltr" data-theme="light">
 <head>
 <meta charset="utf-8" />
-<title>Airchat Office - chat UI mockup</title>
+<title>OpenDocs - chat UI mockup</title>
 <style>
   /* ---- tokens, mirroring packages/ui/src/tokens.css + apps/docs/src/renderer/styles.css ---- */
   :root {
@@ -379,8 +379,8 @@
 
         <div class="ai-panel-header">
           <div class="ai-panel-title">
-            <span class="ai-logo">A</span>
-            <span data-t="panelTitle">Airchat Office</span>
+            <span class="ai-logo">O</span>
+            <span data-t="panelTitle">OpenDocs</span>
           </div>
           <div class="ai-header-actions">
             <button class="ai-header-btn" data-t-title="newChat" onclick="newChat()">+</button>
@@ -389,7 +389,7 @@
           </div>
 
           <div class="ai-settings-panel" id="settingsPanel">
-            <h4 data-t="settingsTitle">Airchat Office Settings</h4>
+            <h4 data-t="settingsTitle">OpenDocs Settings</h4>
             <div class="ai-field">
               <label data-t="settingsBaseUrl">API Base URL</label>
               <input type="text" placeholder="http://localhost:9000/v1" value="http://localhost:9000/v1" />
@@ -422,7 +422,7 @@
             <span class="ai-scope-hint" id="scopeHint" title="Shows what context THIS message will use once sent - the whole document, or (if you have text selected in Word) the selection, starting from where it begins. Mirrors genoffice's real per-turn context injection (protocol.ts buildDocContext), just made visible.">
               <span class="dot"></span> <span class="label" id="scopeHintLabel" data-t="scopeWholeDoc">Whole document</span>
             </span>
-            <textarea class="ai-textarea" id="textarea" data-t-placeholder="inputPlaceholder" placeholder="Ask Airchat Office to edit this document..." rows="1"></textarea>
+            <textarea class="ai-textarea" id="textarea" data-t-placeholder="inputPlaceholder" placeholder="Ask OpenDocs to edit this document..." rows="1"></textarea>
             <div class="ai-input-footer">
               <div style="position: relative;">
                 <button class="ai-mode-btn" id="modeBtn" onclick="toggleModeMenu()">
@@ -454,14 +454,14 @@
 
 <script>
   const STRINGS = {
-    panelTitle:        { en: 'Airchat Office', he: "איירצ'אט אופיס" },
-    inputPlaceholder:  { en: 'Ask Airchat Office to edit this document...', he: "בקש מ-Airchat Office לערוך את המסמך..." },
+    panelTitle:        { en: 'OpenDocs', he: 'אופן דוקס' },
+    inputPlaceholder:  { en: 'Ask OpenDocs to edit this document...', he: 'בקש מ-OpenDocs לערוך את המסמך...' },
     send:              { en: 'Send', he: 'שלח' },
     newChat:           { en: 'New chat', he: 'שיחה חדשה' },
     history:           { en: 'History', he: 'היסטוריה' },
     historyPanelTitle: { en: 'Conversations in this document', he: 'שיחות במסמך זה' },
     settings:          { en: 'Settings', he: 'הגדרות' },
-    settingsTitle:     { en: 'Airchat Office Settings', he: 'הגדרות Airchat Office' },
+    settingsTitle:     { en: 'OpenDocs Settings', he: 'הגדרות OpenDocs' },
     settingsBaseUrl:   { en: 'API Base URL', he: 'כתובת בסיס API' },
     settingsApiKey:    { en: 'API Key', he: 'מפתח API' },
     settingsModel:     { en: 'Model name', he: 'שם המודל' },
