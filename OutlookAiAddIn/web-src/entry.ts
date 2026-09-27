@@ -157,7 +157,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'list_tasks',
     description:
-      'Lists tasks (open only by default) via Outlook\'s table API: real Tasks-folder tasks, plus emails flagged for follow-up ("mark as task") by default. Returns task_id, kind (task or flagged_email), subject, due/start dates, and completion state.',
+      'Lists tasks (open only by default) via Outlook\'s table API: real Tasks-folder tasks, plus emails flagged for follow-up ("mark as task") by default. Returns task_id, kind (task or flagged_email), subject, due/start dates, and completion state. flagged_email rows also include a folder name - pass it as update_task\'s folder param if the email isn\'t in your default mailbox.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -267,6 +267,7 @@ const ALL_OUTLOOK_TOOLS = [
       type: 'object',
       properties: {
         task_id: { type: 'string' },
+        folder: { type: 'string', description: 'Only needed for a flagged email outside your default mailbox - use the folder name from its list_tasks row.' },
         subject: { type: 'string' },
         due_date: { type: 'string' },
         start_date: { type: 'string' },

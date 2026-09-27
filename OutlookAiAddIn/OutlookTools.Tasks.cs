@@ -24,6 +24,17 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "list_tasks" };
         }
 
+        // Shared by AppendTasks/AppendFlaggedEmails - the task_id/kind/subject/
+        // due/start block is identical for both, they just come from different
+        // date columns and get different kind-specific lines appended after.
+        private static void AppendTaskHeader(StringBuilder sb, string kind, Outlook.Row row, string dueCol, string startCol)
+        {
+            sb.AppendLine("- task_id: " + Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture));
+            sb.AppendLine("  kind: " + kind);
+            sb.AppendLine("  subject: " + (Convert.ToString(row["Subject"], CultureInfo.InvariantCulture) ?? ""));
+            sb.AppendLine("  due: " + DateCell(row[dueCol]) + "  start: " + DateCell(row[startCol]));
+        }
+
         private static int AppendTasks(StringBuilder sb, int limit, bool includeCompleted)
         {
             Outlook.Folder tasksFolder = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderTasks);
@@ -46,10 +57,7 @@ namespace OutlookAiAddIn
                 try { complete = Convert.ToBoolean(row["Complete"]); } catch { }
                 if (complete && !includeCompleted) continue;
                 n++;
-                sb.AppendLine("- task_id: " + Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture));
-                sb.AppendLine("  kind: task");
-                sb.AppendLine("  subject: " + (Convert.ToString(row["Subject"], CultureInfo.InvariantCulture) ?? ""));
-                sb.AppendLine("  due: " + DateCell(row["DueDate"]) + "  start: " + DateCell(row["StartDate"]));
+                AppendTaskHeader(sb, "task", row, "DueDate", "StartDate");
                 sb.AppendLine("  status: " + Convert.ToString(row["Status"], CultureInfo.InvariantCulture) +
                               "  percent: " + Convert.ToString(row["PercentComplete"], CultureInfo.InvariantCulture) +
                               "  complete: " + complete);
@@ -88,11 +96,23 @@ namespace OutlookAiAddIn
                 bool complete = flagStatus == (int)Outlook.OlFlagStatus.olFlagComplete;
                 if (complete && !includeCompleted) continue;
 
+                string entryId = Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture);
+                // update_task needs this to resolve the item outside the
+                // default store (see ItemById) - the To-Do List can surface
+                // items from anywhere in the profile, GetItemFromID by EntryID
+                // alone can't.
+                string folderName = "(unknown)";
+                try
+                {
+                    Outlook.MailItem mail = ItemById(entryId, null) as Outlook.MailItem;
+                    Outlook.Folder parent = mail != null ? mail.Parent as Outlook.Folder : null;
+                    if (parent != null) folderName = parent.Name;
+                }
+                catch { }
+
                 n++;
-                sb.AppendLine("- task_id: " + Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture));
-                sb.AppendLine("  kind: flagged_email");
-                sb.AppendLine("  subject: " + (Convert.ToString(row["Subject"], CultureInfo.InvariantCulture) ?? ""));
-                sb.AppendLine("  due: " + DateCell(row["TaskDueDate"]) + "  start: " + DateCell(row["TaskStartDate"]));
+                AppendTaskHeader(sb, "flagged_email", row, "TaskDueDate", "TaskStartDate");
+                sb.AppendLine("  folder: " + folderName);
                 sb.AppendLine("  complete: " + complete);
             }
             return n;
@@ -133,7 +153,12 @@ namespace OutlookAiAddIn
         private static ToolResult UpdateTask(JsonElement input)
         {
             string id = ReqStr(input, "task_id");
-            object item = ItemById(id, null);
+            // folder is only needed when task_id is a flagged email from a
+            // non-default store (see AppendFlaggedEmails' "folder" field) -
+            // real tasks are always in the default store's Tasks folder, so
+            // StoreOf(input) returning null here (no folder passed) still
+            // resolves them exactly as before.
+            object item = ItemById(id, StoreOf(input));
 
             Outlook.TaskItem t = item as Outlook.TaskItem;
             if (t != null)
