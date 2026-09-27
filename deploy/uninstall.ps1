@@ -9,7 +9,7 @@
 param(
     [ValidateSet('Word', 'Excel', 'PowerPoint', 'Outlook', 'All')]
     [string]$App = 'All',
-    [string]$InstallRoot = "$env:LOCALAPPDATA\AirchatOffice",
+    [string]$InstallRoot = "$env:LOCALAPPDATA\OpenDocs",
     [switch]$RemoveTrustedCert
 )
 

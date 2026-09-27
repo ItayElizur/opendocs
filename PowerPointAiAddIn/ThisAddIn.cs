@@ -81,7 +81,7 @@ namespace PowerPointAiAddIn
             try
             {
                 TaskPaneHost control = new TaskPaneHost(window.Presentation, hwnd);
-                CustomTaskPane pane = this.CustomTaskPanes.Add(control, "Airchat Office", window);
+                CustomTaskPane pane = this.CustomTaskPanes.Add(control, "OpenDocs", window);
                 pane.Width = 420;
                 pane.Visible = true;
 

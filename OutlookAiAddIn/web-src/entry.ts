@@ -440,7 +440,7 @@ startAddIn({
   tools: ALL_OUTLOOK_TOOLS,
   toolDisplay: OUTLOOK_TOOL_DISPLAY,
   systemPrompt:
-    'You are an AI assistant embedded in Microsoft Outlook via the Airchat Office add-in. You work from the main Outlook window (Explorer). ' +
+    'You are an AI assistant embedded in Microsoft Outlook via the OpenDocs add-in. You work from the main Outlook window (Explorer). ' +
     'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations, color events with tags via list_color_categories/set_event_categories/set_category_color), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
     'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. ' +

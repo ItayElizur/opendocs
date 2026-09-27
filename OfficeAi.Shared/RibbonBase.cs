@@ -32,8 +32,8 @@ namespace OfficeAi.Shared
   <ribbon>
     <tabs>
       <tab idMso=""" + HomeTabIdMso + @""">
-        <group id=""AirchatGroup"" label=""Airchat Office"">
-          <button id=""AirchatToggleButton"" label=""Airchat Office"" size=""large""
+        <group id=""OpenDocsGroup"" label=""OpenDocs"">
+          <button id=""OpenDocsToggleButton"" label=""OpenDocs"" size=""large""
                   getImage=""GetLogoImage"" onAction=""OnToggleTaskPane"" />
         </group>
       </tab>

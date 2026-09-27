@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("OutlookAiAddIn")]
-[assembly: AssemblyDescription("WebView2-hosted Airchat chat panel inside a VSTO Outlook Explorer CustomTaskPane")]
+[assembly: AssemblyDescription("WebView2-hosted OpenDocs chat panel inside a VSTO Outlook Explorer CustomTaskPane")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("OutlookAiAddIn")]
