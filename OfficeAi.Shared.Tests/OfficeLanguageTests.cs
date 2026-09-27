@@ -30,4 +30,25 @@ public class OfficeLanguageTests
         Assert.Equal("en", OfficeLanguage.ResolveUiLanguage(0));
         Assert.Equal("en", OfficeLanguage.ResolveUiLanguage(-1));
     }
+
+    [Fact]
+    public void ResolveBrandName_HebrewLcid_ReturnsTransliteration()
+    {
+        Assert.Equal("אופן דוקס", OfficeLanguage.ResolveBrandName(1037));
+    }
+
+    [Fact]
+    public void ResolveBrandName_NonHebrewLcid_ReturnsLatinName()
+    {
+        Assert.Equal("OpenDocs", OfficeLanguage.ResolveBrandName(1033));
+    }
+
+    [Fact]
+    public void ResolveBrandName_FailureSentinel_ReturnsLatinName()
+    {
+        // 0 is what the guarded caller (ThisAddIn.GetOfficeUiLanguageId) is
+        // expected to return when the LanguageSettings COM call throws -
+        // must degrade to the safe default, not an unrenderable value.
+        Assert.Equal("OpenDocs", OfficeLanguage.ResolveBrandName(0));
+    }
 }

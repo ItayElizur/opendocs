@@ -26,7 +26,7 @@ namespace OutlookAiAddIn
 
         protected override int GetOfficeUiLanguageId()
         {
-            return Globals.ThisAddIn.Application.LanguageSettings.LanguageID[Microsoft.Office.Core.MsoAppLanguageID.msoLanguageIDUI];
+            return Globals.ThisAddIn.GetOfficeUiLanguageId();
         }
     }
 }

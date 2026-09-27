@@ -617,7 +617,12 @@ export function startAddIn(config: AddInConfig): void {
       currentThemePref = settings.theme
       ui.setTheme(effectiveTheme(settings.theme))
       currentLangPref = settings.lang
-      ui.setLang(effectiveLang(settings.lang))
+      // Unlike theme (never self-applied by chat-ui.ts), an explicit en/he
+      // choice is already applied by chat-ui.ts's own Save handler directly
+      // (it can resolve that case itself) - only 'default' needs resolving
+      // here, since that's the one value chat-ui.ts can't answer on its own.
+      // Calling setLang unconditionally would just redo identical DOM work.
+      if (settings.lang === 'default') ui.setLang(effectiveLang(settings.lang))
       // Task 9: registration itself already took effect live via
       // onToolRegistrationChange above - settings.registeredTools is an echo,
       // not applied here again. The doc message, however, is Save-gated (Task

@@ -64,15 +64,39 @@ namespace WordAiAddIn
             this.Application.WindowSelectionChange -= Application_WindowSelectionChange;
         }
 
-        // Read once per pane creation, same LCID check as the ribbon's own
-        // getLabel callbacks (RibbonBase.cs) and the WebView2 content's
-        // default-language resolution (TaskPaneHost.GetOfficeUiLanguageId) -
-        // the CustomTaskPane's native title bar is a third, separate UI
-        // surface neither of those touches, so it needs its own call site.
+        // The one real COM call for Office's UI display language in this
+        // app - Ribbon.cs and TaskPaneHost.cs each need their own copy of
+        // this (their base classes' GetOfficeUiLanguageId hooks are
+        // abstract, since neither shared assembly can see this app's own
+        // Globals class), but delegate here rather than re-issuing the COM
+        // call themselves, so there is exactly one place per app that can
+        // fail and exactly one place that guards against it. A theme-
+        // detection bug must never break pane creation (OfficeTheme.cs's own
+        // stated posture) - same reasoning applies here: if
+        // LanguageSettings throws (an unusual COM/host state), degrade to
+        // the code that already means "not Hebrew" rather than letting the
+        // ribbon render a blank label or the "load-language" bridge message
+        // die silently with no reply ever sent (that one-shot message has no
+        // retry - see PaneHostBase's "load-language" case).
+        public int GetOfficeUiLanguageId()
+        {
+            try
+            {
+                return this.Application.LanguageSettings.LanguageID[Microsoft.Office.Core.MsoAppLanguageID.msoLanguageIDUI];
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        // Read once per pane creation - the CustomTaskPane's native title bar
+        // is a third UI surface, separate from the ribbon and the WebView2
+        // content, so it needs its own call site even though all three now
+        // share GetOfficeUiLanguageId().
         private string PaneTitle()
         {
-            int lcid = this.Application.LanguageSettings.LanguageID[Microsoft.Office.Core.MsoAppLanguageID.msoLanguageIDUI];
-            return OfficeLanguage.ResolveUiLanguage(lcid) == "he" ? "אופן דוקס" : "OpenDocs";
+            return OfficeLanguage.ResolveBrandName(GetOfficeUiLanguageId());
         }
 
         // Lazy: only reachable from WindowActivate, TogglePane, and the single
