@@ -74,11 +74,11 @@ namespace OutlookAiAddIn
             "create_task", "update_task", "set_reminder", "set_email_reminder",
             "draft_email", "reply_email", "reply_all_email", "forward_email", "draft_event",
             "set_event_categories", "set_category_color", "apply_search",
-            // undo_last_action only ever reverses a Draft-tier action (move/
-            // mark/flag - see OutlookTools.Undo.cs), so it is gated at the
-            // same tier as those actions themselves, not higher - undoing a
-            // Draft-tier mutation shouldn't require more permission than
-            // making it did.
+            // undo_last_action dispatches through Outlook's own ribbon Undo
+            // command (see OutlookTools.Undo.cs) - gated at the same tier as
+            // the Draft-tier mutations it's meant to reverse (move/mark/
+            // flag), not higher, matching Excel's/PowerPoint's identical
+            // tier placement for the same tool.
             "undo_last_action",
         };
 
@@ -147,12 +147,12 @@ namespace OutlookAiAddIn
                     case "get_attachment": return GetAttachment(input);
                     case "list_color_categories": return ListColorCategories(input);
 
-                    case "mark_email_read": return MarkEmail(mbxKey, input, false);
-                    case "mark_email_unread": return MarkEmail(mbxKey, input, true);
-                    case "flag_email_important": return FlagEmailImportant(mbxKey, input);
-                    case "move_email": return MoveEmail(mbxKey, input);
+                    case "mark_email_read": return MarkEmail(input, false);
+                    case "mark_email_unread": return MarkEmail(input, true);
+                    case "flag_email_important": return FlagEmailImportant(input);
+                    case "move_email": return MoveEmail(input);
                     case "delete_email": return DeleteEmail(input);
-                    case "undo_last_action": return UndoLastAction(mbxKey, input);
+                    case "undo_last_action": return UndoLastAction();
                     case "accept_meeting": return RespondMeeting(input, true);
                     case "decline_meeting": return RespondMeeting(input, false);
                     case "set_event_categories": return SetEventCategories(input);
