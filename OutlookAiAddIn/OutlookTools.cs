@@ -123,6 +123,26 @@ namespace OutlookAiAddIn
                             Summary = name,
                         };
                     }
+
+                    // delete_email is a single tool spanning two risk classes:
+                    // permanent:false (default) just moves to Deleted Items -
+                    // fully reversible, same Draft-tier gate as move_email
+                    // above. permanent:true additionally calls .Delete() from
+                    // there, which is irreversible from within Outlook (see
+                    // DeleteEmail's own result text) - the same risk class as
+                    // SendTierTools, so it needs that gate too even though the
+                    // tool NAME sits in DraftTierTools. This is name-based
+                    // gating's one input-aware exception; keep it that way
+                    // rather than generalizing to a per-argument system.
+                    if (name == "delete_email" && Bool(input, "permanent", false) && (int)mode < (int)EditingMode.FullAutonomy)
+                    {
+                        return new ToolResult
+                        {
+                            Output = "Blocked: permanent delete requires " + TierLabel(EditingMode.FullAutonomy) + " mode or higher (currently " + TierLabel(mode) + "). Omit permanent, or set it to false, to move the message to Deleted Items instead.",
+                            IsError = true,
+                            Summary = name,
+                        };
+                    }
                 }
 
                 switch (name)
