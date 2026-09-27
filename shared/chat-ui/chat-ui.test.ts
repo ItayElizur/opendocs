@@ -209,6 +209,47 @@ describe('mountChatUI', () => {
     expect(root.querySelector('.ai-history-faded')).toBeNull()
   })
 
+  // ---- reopened-conversation chip dock (replaces the crushable trailing
+  // emptyStateHtml() that used to be appended after the history divider) ----
+
+  it('a fresh, never-reopened chat shows no chip dock', () => {
+    const { root } = setup()
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
+  })
+
+  it('showHistoric shows the chip dock and does not append a trailing .ai-chat-empty inside .ai-chat', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(false)
+    expect(root.querySelector('.ai-chat .ai-chat-empty')).toBeNull()
+  })
+
+  it('clicking a starter chip in the dock fills the composer, same as an inline starter click', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chip = root.querySelector<HTMLElement>('#chipDock .ai-chip:not(.chip-newconvo)')!
+    expect(chip.textContent).toBe('Summarize this document')
+    chip.click()
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    expect(textarea.value).toBe('Summarize this document')
+    expect(document.activeElement).toBe(textarea)
+  })
+
+  it('clicking the "New conversation" chip fires the same callback as the header\'s newChat button', () => {
+    const { root, handle, onNewChat } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    root.querySelector<HTMLElement>('#chipDock .chip-newconvo')!.click()
+    expect(onNewChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('resetToEmpty hides the chip dock again', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(false)
+    handle.resetToEmpty()
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
+  })
+
   it('setSelectionScope updates the hint label text for a live selection, and reverts to Whole document', () => {
     const { root, handle } = setup()
     handle.setSelectionScope({ hasSelection: true, preview: 'Q3 revenue grew' })

@@ -31,6 +31,10 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   save:                 { en: 'Save', he: 'שמור' },
   collapse:             { en: 'Collapse panel', he: 'כווץ חלונית' },
   historySep:           { en: 'Earlier conversation', he: 'שיחה קודמת' },
+  // Chip-dock's own "start over" chip (distinct from the composer's `newChat`
+  // header button, which this chip calls into via the same onNewChat) - see
+  // showHistoric()/resetToEmpty() for when the dock itself is shown/hidden.
+  newConversationChip:  { en: 'New conversation', he: 'שיחה חדשה' },
   scopeWholeDoc:        { en: 'Whole document', he: 'כל המסמך' },
   emptyTitle:           { en: 'What can I help with?', he: 'איך אפשר לעזור?' },
   modeReadOnly:         { en: 'Read only', he: 'קריאה בלבד' },
@@ -464,6 +468,23 @@ function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
   return `<div class="ai-chat-empty"><img class="ai-chat-empty-bg" src="chat-empty-bg.svg" alt="" /><div class="ai-chat-empty-title" data-t="emptyTitle">${title}</div><div class="ai-starters">${pills}</div></div>`
 }
 
+// The reopened-conversation chip dock (see showHistoric()) - lives OUTSIDE
+// the scrolling .ai-chat flex column entirely (a sibling in the panel
+// skeleton), so it can never be crushed toward zero height the way
+// .ai-chat-empty was when appended inside .ai-chat after a divider (that
+// element's `flex: 1` + `overflow: hidden` gives it a zero automatic
+// minimum size once the transcript above it already fills the pane - see
+// the fix's PR description for the full flexbox explanation). Reuses the
+// same options.starters data as emptyStateHtml, not a second copy of it,
+// plus one extra "New conversation" chip.
+function chipDockHtml(options: ChatUIOptions, currentLang: Lang): string {
+  const chips = options.starters
+    .map((s) => `<div class="ai-chip">${escapeHtml(s[currentLang])}</div>`)
+    .join('')
+  const newConvoLabel = escapeHtml(STRINGS.newConversationChip[currentLang])
+  return `${chips}<div class="ai-chip chip-newconvo">${newConvoLabel}</div>`
+}
+
 export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHandle {
   const menuModes = resolveModes(options.modes)
   const defaultMode: EditingMode = defaultModeFor(menuModes, options.defaultMode ?? 'trackChanges')
@@ -509,6 +530,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         </div>
       </div>
       <div class="ai-chat"></div>
+      <div class="ai-chip-dock" id="chipDock" hidden></div>
       <div class="ai-settings-view" id="settingsView">
         <div class="ai-settings-section">
           <h4 data-t="sectionTheme">Theme</h4>
@@ -560,6 +582,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   `
 
   const chatEl = root.querySelector<HTMLDivElement>('.ai-chat')!
+  const chipDockEl = root.querySelector<HTMLDivElement>('#chipDock')!
   const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
   const sendBtn = root.querySelector<HTMLButtonElement>('.ai-send-btn')!
   const stopBtn = root.querySelector<HTMLButtonElement>('.ai-stop-btn')!
@@ -662,6 +685,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const wholeScopeKey = WHOLE_SCOPE_KEYS[options.scopeUnit ?? 'doc']!
 
   chatEl.innerHTML = emptyStateHtml(options, currentLang)
+  chipDockEl.innerHTML = chipDockHtml(options, currentLang)
 
   // Built once at mount from options.modeOverrides (modeCommentOnly/
   // modeCommentOnlyDesc/etc. keys, same shape as STRINGS) - t() checks this
@@ -781,6 +805,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       existingEmpty.remove()
       chatEl.insertAdjacentHTML('beforeend', emptyStateHtml(options, currentLang))
     }
+    // Relocalize the chip dock's chips too - it's not removed/rebuilt by
+    // anything else across a language switch (unlike .ai-chat-empty above,
+    // it persists for the rest of a reopened conversation's session), so it
+    // must be refreshed here even while hidden (a fresh, never-reopened chat).
+    chipDockEl.innerHTML = chipDockHtml(options, currentLang)
   }
 
   // Scoped to .ai-dock, never document.documentElement - same rule as
@@ -918,14 +947,33 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
 
   textarea.addEventListener('input', updateTextareaDir)
 
+  // Shared by both the inline empty-state starters (.ai-starter, inside
+  // .ai-chat) and the chip dock's starter chips (.ai-chip, a sibling outside
+  // .ai-chat) below - one fill behavior, not two parallel implementations.
+  function fillFromStarterText(text: string): void {
+    textarea.value = text
+    updateTextareaDir()
+    textarea.focus()
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+  }
+
   chatEl.addEventListener('click', (e) => {
     const target = (e.target as HTMLElement).closest('.ai-starter')
-    if (target) {
-      textarea.value = target.textContent || ''
-      updateTextareaDir()
-      textarea.focus()
-      textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    if (target) fillFromStarterText(target.textContent || '')
+  })
+
+  // The chip dock lives outside .ai-chat (see showHistoric()), so it needs
+  // its own delegated listener - the "New conversation" chip calls the exact
+  // same options.onNewChat() as newChatBtn below, and a starter chip reuses
+  // fillFromStarterText, same as an inline .ai-starter click.
+  chipDockEl.addEventListener('click', (e) => {
+    const newConvo = (e.target as HTMLElement).closest('.chip-newconvo')
+    if (newConvo) {
+      options.onNewChat()
+      return
     }
+    const chip = (e.target as HTMLElement).closest('.ai-chip')
+    if (chip) fillFromStarterText(chip.textContent || '')
   })
 
   // Post-hoc addition (2026-08-24, user-requested): a separate stop button
@@ -1471,6 +1519,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     },
     resetToEmpty() {
       chatEl.innerHTML = emptyStateHtml(options, currentLang)
+      // A genuine New Chat reset returns to the plain fresh-empty-chat state
+      // (emptyStateHtml's own inline starters are showing again), so the
+      // chip dock - the reopened-conversation's way back to those actions -
+      // has no reason to stay up.
+      chipDockEl.hidden = true
       // chatEl.innerHTML wiped the node; drop the stale ref and busy flag so a
       // New chat during a run doesn't leave a detached indicator behind.
       thinkingEl = null
@@ -1488,7 +1541,16 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       sep.className = 'ai-history-sep'
       sep.textContent = t('historySep')
       chatEl.appendChild(sep)
-      chatEl.insertAdjacentHTML('beforeend', emptyStateHtml(options, currentLang))
+      // No trailing emptyStateHtml() append here (that used to be the bug):
+      // .ai-chat-empty sets `flex: 1` + `overflow: hidden`, which per the
+      // flexbox spec gives it a zero automatic minimum size - once the
+      // replayed transcript above already fills the pane, the shrink
+      // algorithm crushes this element toward zero height instead of the
+      // message bubbles around it, hiding the welcome icon/title/starters.
+      // The chip dock (a sibling outside .ai-chat entirely) replaces it as
+      // this reopened conversation's way back to both actions, and stays
+      // visible for the rest of the session (only resetToEmpty hides it).
+      chipDockEl.hidden = false
       scrollToBottom()
     },
     setSelectionScope(selection) {
