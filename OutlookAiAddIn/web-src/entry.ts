@@ -95,7 +95,7 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'list_folders',
-    description: 'Lists mail folders (with item and unread counts) across all stores, for use as folder / destination arguments.',
+    description: 'Lists mail folders (with item and unread counts) in your own mailbox - not shared mailboxes, Public Folders, or SharePoint lists - for use as folder / destination arguments.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -156,10 +156,15 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'list_tasks',
-    description: 'Lists tasks (open only by default) via Outlook\'s table API. Returns task_id, subject, due/start dates, status, percent complete.',
+    description:
+      'Lists tasks (open only by default) via Outlook\'s table API: real Tasks-folder tasks, plus emails flagged for follow-up ("mark as task") by default. Returns task_id, kind (task or flagged_email), subject, due/start dates, and completion state. flagged_email rows also include a folder name - pass it as update_task\'s folder param if the email isn\'t in your default mailbox.',
     inputSchema: {
       type: 'object',
-      properties: { limit: { type: 'number', description: 'Default 50.' }, include_completed: { type: 'boolean' } },
+      properties: {
+        limit: { type: 'number', description: 'Default 50.' },
+        include_completed: { type: 'boolean' },
+        include_flagged_emails: { type: 'boolean', description: 'Include emails flagged for follow-up alongside real tasks. Default true.' },
+      },
       required: [],
     },
   },
@@ -265,11 +270,13 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'update_task',
-    description: 'Updates an existing task. Only the fields you pass change. mark_complete:true completes it.',
+    description:
+      'Updates an existing task, or a flagged-for-follow-up email (task_id from list_tasks\' "flagged_email" rows) - subject/status/percent_complete only apply to real tasks. Only the fields you pass change. mark_complete:true completes it.',
     inputSchema: {
       type: 'object',
       properties: {
         task_id: { type: 'string' },
+        folder: { type: 'string', description: 'Only needed for a flagged email outside your default mailbox - use the folder name from its list_tasks row.' },
         subject: { type: 'string' },
         due_date: { type: 'string' },
         start_date: { type: 'string' },

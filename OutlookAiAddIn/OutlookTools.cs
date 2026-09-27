@@ -221,8 +221,13 @@ namespace OutlookAiAddIn
             if (WellKnown.TryGetValue(name.Trim(), out def))
                 return (Outlook.Folder)Ns.GetDefaultFolder(def);
 
-            Outlook.Folder found = FindFolderByName(Ns.Folders, name.Trim(), 0);
-            if (found == null) throw new ArgumentException("Folder not found: " + name + ". Call list_folders to see available names.");
+            // Default store only, same reasoning as list_folders: Ns.Folders
+            // spans every store in the profile (shared mailboxes, Public
+            // Folders, SharePoint lists), none of which is what a caller means
+            // by a plain folder name.
+            Outlook.Folder root = (Outlook.Folder)Ns.DefaultStore.GetRootFolder();
+            Outlook.Folder found = FindFolderByName(root.Folders, name.Trim(), 0);
+            if (found == null) throw new ArgumentException("Folder not found in your mailbox: " + name + ". Call list_folders to see available names.");
             return found;
         }
 
