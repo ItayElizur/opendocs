@@ -405,8 +405,9 @@
             <div class="ai-field">
               <label data-t="settingsLanguage">Language</label>
               <div class="ai-lang-toggle">
-                <button id="settings-lang-en" class="active" onclick="selectPendingLang('en')">English</button>
+                <button id="settings-lang-en" onclick="selectPendingLang('en')">English</button>
                 <button id="settings-lang-he" onclick="selectPendingLang('he')">עברית</button>
+                <button id="settings-lang-default" class="active" onclick="selectPendingLang('default')" data-t="langDefault">Default</button>
               </div>
             </div>
             <div class="ai-settings-actions">
@@ -466,6 +467,7 @@
     settingsApiKey:    { en: 'API Key', he: 'מפתח API' },
     settingsModel:     { en: 'Model name', he: 'שם המודל' },
     settingsLanguage:  { en: 'Language', he: 'שפה' },
+    langDefault:       { en: 'Default', he: 'ברירת מחדל' },
     save:              { en: 'Save', he: 'שמור' },
     cancel:            { en: 'Cancel', he: 'ביטול' },
     collapse:          { en: 'Collapse panel', he: 'כווץ חלונית' },
@@ -567,10 +569,14 @@
     pendingLang = l
     document.getElementById('settings-lang-en').classList.toggle('active', l === 'en')
     document.getElementById('settings-lang-he').classList.toggle('active', l === 'he')
+    document.getElementById('settings-lang-default').classList.toggle('active', l === 'default')
   }
 
   function saveSettings() {
-    setLang(pendingLang)
+    // This static mockup has no real Office to query, so 'default' just
+    // demos as English - the real component (chat-ui.ts) resolves it via
+    // the host's own Office UI language detection instead.
+    setLang(pendingLang === 'default' ? 'en' : pendingLang)
     toggleSettings()
   }
 

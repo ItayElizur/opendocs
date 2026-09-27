@@ -32,8 +32,8 @@ namespace OfficeAi.Shared
   <ribbon>
     <tabs>
       <tab idMso=""" + HomeTabIdMso + @""">
-        <group id=""OpenDocsGroup"" label=""OpenDocs"">
-          <button id=""OpenDocsToggleButton"" label=""OpenDocs"" size=""large""
+        <group id=""OpenDocsGroup"" getLabel=""GetGroupLabel"">
+          <button id=""OpenDocsToggleButton"" getLabel=""GetButtonLabel"" size=""large""
                   getImage=""GetLogoImage"" onAction=""OnToggleTaskPane"" />
         </group>
       </tab>
@@ -46,6 +46,30 @@ namespace OfficeAi.Shared
         {
             _ribbon = ribbonUI;
         }
+
+        // Office's UI display language decides whether the group/button show
+        // the transliterated Hebrew brand name or the Latin one - same LCID
+        // check as the task pane's own language default (GetOfficeUiLanguageId
+        // is abstract for the same reason PaneHostBase's copy is: this shared
+        // assembly has no access to any app's own VSTO-generated Globals
+        // class). getLabel callbacks (rather than a static label attribute)
+        // are a standard, documented Ribbon XML mechanism for exactly this.
+        private string BrandLabel()
+        {
+            return OfficeLanguage.ResolveUiLanguage(GetOfficeUiLanguageId()) == "he" ? "אופן דוקס" : "OpenDocs";
+        }
+
+        public string GetGroupLabel(IRibbonControl control)
+        {
+            return BrandLabel();
+        }
+
+        public string GetButtonLabel(IRibbonControl control)
+        {
+            return BrandLabel();
+        }
+
+        protected abstract int GetOfficeUiLanguageId();
 
         // Reads the same web/logo.png the WebView2-hosted header uses (copied
         // there at build time from shared/chat-ui/logo.png) - one physical

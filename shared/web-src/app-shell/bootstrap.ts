@@ -11,6 +11,7 @@ import {
   postTlsBypass,
   requestDocSettings,
   requestHistory,
+  requestOfficeLanguage,
   requestOfficeTheme,
   saveDocSettings,
   type RawSelectionPayload,
@@ -503,6 +504,20 @@ export function startAddIn(config: AddInConfig): void {
     return pref === 'default' ? lastKnownOfficeTheme : pref
   }
 
+  // Language reconciliation - exact same shape as theme above.
+  // `currentLangPref` is the persisted 3-way choice; `lastKnownOfficeLanguage`
+  // is Office's real UI display language, read exactly once (via
+  // requestOfficeLanguage() below, see OfficeAi.Shared/OfficeLanguage.cs) and
+  // cached for this pane's whole lifetime. C# never sees `currentLangPref`;
+  // it only ever reports "what language is Office's own UI in right now",
+  // and this file alone decides whether that answer gets applied (only when
+  // the preference is 'default').
+  let currentLangPref: 'en' | 'he' | 'default' = getSettings().lang
+  let lastKnownOfficeLanguage: 'en' | 'he' = 'en'
+  function effectiveLang(pref: 'en' | 'he' | 'default'): 'en' | 'he' {
+    return pref === 'default' ? lastKnownOfficeLanguage : pref
+  }
+
   const root = document.getElementById('root')!
   const ui = mountChatUI(root, {
     starters: config.starters,
@@ -527,6 +542,7 @@ export function startAddIn(config: AddInConfig): void {
         skipTlsVerify: s.skipTlsVerify,
         providers: s.ai.providers,
         theme: s.theme,
+        lang: s.lang,
       }
     })(),
     // Post-hoc addition (2026-08-24, user-requested): AgentLoop.cancel()
@@ -587,14 +603,21 @@ export function startAddIn(config: AddInConfig): void {
           baseUrl: settings.baseUrl || current.ai.providers[settings.provider]?.baseUrl,
         },
       }
-      setSettings({ ai: { provider: settings.provider, providers }, skipTlsVerify: settings.skipTlsVerify, theme: settings.theme })
+      setSettings({
+        ai: { provider: settings.provider, providers },
+        skipTlsVerify: settings.skipTlsVerify,
+        theme: settings.theme,
+        lang: settings.lang,
+      })
       postTlsBypass(settings.skipTlsVerify)
-      // Unlike `lang` (a pre-existing gap - threaded into the payload but
-      // never persisted here), theme must actually be folded into
-      // setSettings() above, and applied immediately so Save's effect is
-      // visible without waiting for anything async.
+      // lang used to be a pre-existing gap here - threaded into the payload
+      // but never persisted or applied. Now folded into setSettings() above
+      // and applied immediately, same as theme, so Save's effect (including
+      // picking 'default') is visible without waiting for anything async.
       currentThemePref = settings.theme
       ui.setTheme(effectiveTheme(settings.theme))
+      currentLangPref = settings.lang
+      ui.setLang(effectiveLang(settings.lang))
       // Task 9: registration itself already took effect live via
       // onToolRegistrationChange above - settings.registeredTools is an echo,
       // not applied here again. The doc message, however, is Save-gated (Task
@@ -658,6 +681,11 @@ export function startAddIn(config: AddInConfig): void {
   // resolves it; a one-frame flash there is accepted, not fixable without
   // delaying first paint.
   if (currentThemePref !== 'default') ui.setTheme(currentThemePref)
+
+  // Same idea for language - an explicit English/Hebrew preference is known
+  // synchronously, so apply it immediately; 'default' waits for the async
+  // reply below, same one-frame-flash tradeoff as theme.
+  if (currentLangPref !== 'default') ui.setLang(currentLangPref)
 
   // Post-hoc addition (2026-08-24, user-requested): a message sent while a
   // run is already busy is queued here rather than dropped, and dispatched
@@ -815,6 +843,13 @@ export function startAddIn(config: AddInConfig): void {
       lastKnownOfficeTheme = officeTheme
       if (currentThemePref === 'default') ui.setTheme(officeTheme)
     },
+    // Fires exactly once per pane lifetime - the one-shot reply to
+    // requestOfficeLanguage() below (see OfficeAi.Shared/OfficeLanguage.cs;
+    // there is no later push to handle, by design).
+    onOfficeLanguageLoaded: (officeLanguage) => {
+      lastKnownOfficeLanguage = officeLanguage
+      if (currentLangPref === 'default') ui.setLang(officeLanguage)
+    },
   })
 
   // Task 4: push the initial (scope-default, no override) tool registration
@@ -824,4 +859,5 @@ export function startAddIn(config: AddInConfig): void {
   requestHistory()
   requestDocSettings()
   requestOfficeTheme()
+  requestOfficeLanguage()
 }

@@ -75,6 +75,11 @@ namespace WordAiAddIn
             WordTools.SetMode(GetChatId(), mode);
         }
 
+        protected override int GetOfficeUiLanguageId()
+        {
+            return Globals.ThisAddIn.Application.LanguageSettings.LanguageID[Microsoft.Office.Core.MsoAppLanguageID.msoLanguageIDUI];
+        }
+
         public void OnSelectionChanged(Word.Selection selection)
         {
             // ROOT CAUSE FOUND (2026-08-24, via DebugLog from a real repro):
