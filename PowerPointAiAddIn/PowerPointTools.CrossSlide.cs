@@ -108,7 +108,15 @@ namespace PowerPointAiAddIn
                     "the clipboard for. PowerPoint's own error: " + ex.Message, ex);
             }
             if (pasted.Count != 1)
+            {
+                // Whatever Paste() actually put on the destination slide is a
+                // real orphan at this point - the caller's own dest-cleanup
+                // try/catch never runs, since dest is never assigned when this
+                // throws. Clean it up here instead of leaving it behind while
+                // reporting a failure.
+                try { pasted.Delete(); } catch { }
                 throw new InvalidOperationException("Paste produced " + pasted.Count + " shape(s) instead of exactly 1.");
+            }
             return pasted[1];
         }
 
@@ -170,7 +178,21 @@ namespace PowerPointAiAddIn
                 }
 
                 int newShapeIndex = dest.ZOrderPosition - 1;
-                if (cut) source.Delete();
+                if (cut)
+                {
+                    // Same "on any error nothing is changed" guarantee as the
+                    // positioning/naming try/catch above: if the delete itself
+                    // fails (stale COM reference, a locked/linked source, a
+                    // transient PowerPoint refusal), the paste already
+                    // succeeded - undo it too, rather than leaving two copies
+                    // of the shape behind while move_element reports failure.
+                    try { source.Delete(); }
+                    catch
+                    {
+                        try { dest.Delete(); } catch { }
+                        throw;
+                    }
+                }
 
                 string action = cut ? "moved" : "copied";
                 string extra = cut ? " The shape has been removed from its original slide - other shapes' indices there may have shifted too." : "";

@@ -443,18 +443,17 @@ namespace PowerPointAiAddIn
             PowerPoint.ShapeRange range = shape.Duplicate();
             PowerPoint.Shape dup = range[1];
 
-            if (input.TryGetProperty("left", out var leftEl) || input.TryGetProperty("top", out var topEl))
-            {
-                dup.Left = input.TryGetProperty("left", out var l) ? (float)l.GetDouble() : shape.Left;
-                dup.Top = input.TryGetProperty("top", out var t) ? (float)t.GetDouble() : shape.Top;
-            }
-            else
-            {
-                float offsetX = input.TryGetProperty("offsetX", out var ox) ? (float)ox.GetDouble() : 12f;
-                float offsetY = input.TryGetProperty("offsetY", out var oy) ? (float)oy.GetDouble() : 12f;
-                dup.Left = shape.Left + offsetX;
-                dup.Top = shape.Top + offsetY;
-            }
+            // Each axis is independent: an explicit left/top is an exact
+            // coordinate; an omitted one falls back to the DEFAULT OFFSET on
+            // that axis, not to the original's exact coordinate. Review
+            // finding: the previous either/or branching treated "left given,
+            // top omitted" as "use exact left, but exact (unoffset) top too" -
+            // a duplicate with only left set landed fully overlapping the
+            // original vertically instead of keeping the normal offsetY gap.
+            float offsetX = input.TryGetProperty("offsetX", out var ox) ? (float)ox.GetDouble() : 12f;
+            float offsetY = input.TryGetProperty("offsetY", out var oy) ? (float)oy.GetDouble() : 12f;
+            dup.Left = input.TryGetProperty("left", out var l) ? (float)l.GetDouble() : shape.Left + offsetX;
+            dup.Top = input.TryGetProperty("top", out var t) ? (float)t.GetDouble() : shape.Top + offsetY;
 
             string named = ApplyOptionalName(dup, input);
             if (named == null)
