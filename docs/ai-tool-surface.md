@@ -244,6 +244,34 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > wiring into the tool switch; `dotnet test` unaffected (no new pure logic —
 > the color-name map is a small dictionary, not extracted for unit testing).
 
+> **Update 2026-09-27 (Outlook gains `set_event_availability`):** one new
+> tool, added to `OutlookAiAddIn/OutlookTools.Categories.cs` right beside
+> `set_event_categories`/`set_category_color` since it's the same shape (a
+> single-property `AppointmentItem` mutation with a friendly-name map for an
+> Outlook-PIA-only enum). Sets `AppointmentItem.BusyStatus` — the calendar's
+> "Show As" dropdown — to one of the 5 `OlBusyStatus` values (`olFree`,
+> `olTentative`, `olBusy`, `olOutOfOffice`, `olWorkingElsewhere`; names
+> confirmed via .NET reflection against the referenced
+> `Microsoft.Office.Interop.Outlook` 15.0.0.0 PIA, not assumed) via a
+> case-insensitive friendly-name lookup (`free`/`tentative`/`busy`/`out of
+> office`/`working elsewhere`); an unrecognized string returns a clean
+> `IsError` result listing the valid names rather than throwing, unlike
+> `set_category_color`'s `ParseColor` (which throws and relies on the outer
+> `ExecuteAsync` catch). Unrelated to `Categories`/color tags — a distinct
+> `AppointmentItem` property entirely. Placed in **Draft tier**
+> (`DraftTierTools` + `entry.ts`'s `commentOnlyExtraTools`), not Full
+> autonomy: it's purely local (`.BusyStatus` + `.Save()`, no `.Send()`),
+> the same risk profile that put `set_event_categories`/`set_category_color`
+> in Draft tier despite the "Mutating tools" table heading below still
+> reading "Full autonomy only" (that heading predates the 2026-09-19
+> four-tier gate for those two tools and was already stale before this
+> change — not fixed here to keep this update focused). **Unverified against
+> a live Outlook client** — compiled clean against the referenced PIA
+> (including the reflection check above confirming the enum member names),
+> but the `.BusyStatus` write and `.Save()` round-trip have not been
+> exercised against a real mailbox, matching this section's existing
+> "Unproven at runtime" caveat for most COM paths here.
+
 ## Architecture
 
 officeoffice drives the **real desktop Office applications** via VSTO + COM interop
@@ -547,6 +575,7 @@ index otherwise.
 | `accept_meeting` / `decline_meeting` | Resolves to `AppointmentItem` (via `MeetingItem.GetAssociatedAppointment(false)` when the id is a meeting request), `appt.Respond(olMeetingAccepted/Declined, true, false)`, then `.Send()` on the response if non-null. |
 | `set_event_categories` | `AppointmentItem.Categories` (comma-separated tag names, the color shown on the event in the calendar grid) + `.Save()`; empty/omitted `categories` clears all tags. A name outside the master list is auto-added by Outlook on `Save` with an arbitrary color — call `set_category_color` first to control it. |
 | `set_category_color` | `Namespace.Categories[name]` — updates `.Color` if the tag exists, else `Categories.Add(name, color)` creates it. Same master list `list_color_categories` reads. |
+| `set_event_availability` | `AppointmentItem.BusyStatus` (the calendar's "Show As" dropdown — Free/Tentative/Busy/Out of Office/Working Elsewhere) + `.Save()`. Case-insensitive friendly-name lookup; an unrecognized value returns `IsError` listing the valid names instead of throwing. Draft tier, not Full autonomy — same rationale as `set_event_categories`/`set_category_color` above (purely local, never `.Send()`); the "Full autonomy only" in this table's own heading predates that tiering and is already stale for those two rows. Added 2026-09-27, **unverified against a live Outlook client**. |
 | `create_task` | `Application.CreateItem(olTaskItem)` + `.Save()` — no window (a task doesn't send anything, so it follows the mutate-directly pattern, not draft-and-display). Args: `subject` (req), `body`, `due_date`, `start_date`, `reminder_time`, `importance`. |
 | `update_task` | `(TaskItem)GetItemFromID`; only passed fields change; `mark_complete: true` → `Complete = true` + `PercentComplete = 100`. |
 | `set_reminder` | `ReminderSet` / `ReminderTime` on an appointment **or** task, addressed by its `item_id` (EntryID); `clear: true` turns it off. |

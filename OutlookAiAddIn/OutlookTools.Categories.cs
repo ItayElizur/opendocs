@@ -148,5 +148,83 @@ namespace OutlookAiAddIn
             Outlook.Category created = cats.Add(name, color);
             return new ToolResult { Output = "Created color tag \"" + created.Name + "\" (" + ColorName(created.Color) + ").", Mutated = true, Summary = "set_category_color" };
         }
+
+        // Friendly names <-> OlBusyStatus - exactly what the calendar's "Show
+        // As" dropdown controls (Free/Tentative/Busy/Out of Office/Working
+        // Elsewhere). Nothing to do with Categories/color tags above; kept
+        // here for the same reason ColorByName is - a small friendly-name
+        // map for an Outlook-PIA-only enum that OfficeAi.Shared can't see.
+        // Member names confirmed via .NET reflection against the referenced
+        // Microsoft.Office.Interop.Outlook 15.0.0.0 PIA.
+        private static readonly Dictionary<string, Outlook.OlBusyStatus> BusyStatusByName =
+            new Dictionary<string, Outlook.OlBusyStatus>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "free", Outlook.OlBusyStatus.olFree },
+                { "tentative", Outlook.OlBusyStatus.olTentative },
+                { "busy", Outlook.OlBusyStatus.olBusy },
+                { "outofoffice", Outlook.OlBusyStatus.olOutOfOffice },
+                { "workingelsewhere", Outlook.OlBusyStatus.olWorkingElsewhere },
+            };
+
+        private static readonly Dictionary<Outlook.OlBusyStatus, string> BusyStatusDisplayName =
+            new Dictionary<Outlook.OlBusyStatus, string>
+            {
+                { Outlook.OlBusyStatus.olFree, "Free" },
+                { Outlook.OlBusyStatus.olTentative, "Tentative" },
+                { Outlook.OlBusyStatus.olBusy, "Busy" },
+                { Outlook.OlBusyStatus.olOutOfOffice, "Out of Office" },
+                { Outlook.OlBusyStatus.olWorkingElsewhere, "Working Elsewhere" },
+            };
+
+        private static string BusyStatusName(Outlook.OlBusyStatus s)
+        {
+            string name;
+            return BusyStatusDisplayName.TryGetValue(s, out name) ? name : s.ToString();
+        }
+
+        // Unlike ParseColor, returns bool rather than throwing - an
+        // unrecognized availability string should come back as a clean
+        // IsError result (with the valid list), not a raw cast/parse
+        // exception surfaced through the outer ExecuteAsync catch.
+        private static bool TryParseBusyStatus(string s, out Outlook.OlBusyStatus status)
+        {
+            string key = (s ?? "").Trim().Replace(" ", "").Replace("_", "").Replace("-", "");
+            return BusyStatusByName.TryGetValue(key, out status);
+        }
+
+        // Sets an event's "Show As" availability - purely local
+        // (AppointmentItem.BusyStatus + .Save()), never .Send(), same risk
+        // profile as set_event_categories/set_category_color above.
+        private static ToolResult SetEventAvailability(JsonElement input)
+        {
+            string id = ReqStr(input, "event_id");
+            string raw = ReqStr(input, "availability");
+
+            Outlook.AppointmentItem appt = ItemById(id, null) as Outlook.AppointmentItem;
+            if (appt == null)
+                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "set_event_availability" };
+
+            Outlook.OlBusyStatus status;
+            if (!TryParseBusyStatus(raw, out status))
+            {
+                return new ToolResult
+                {
+                    Output = "Unknown availability \"" + raw + "\". Valid values: " + string.Join(", ", BusyStatusDisplayName.Values) + ".",
+                    IsError = true,
+                    Summary = "set_event_availability",
+                };
+            }
+
+            string oldName = BusyStatusName(appt.BusyStatus);
+            appt.BusyStatus = status;
+            appt.Save();
+
+            return new ToolResult
+            {
+                Output = "Set \"" + (appt.Subject ?? "") + "\" to " + BusyStatusName(status) + " (was " + oldName + ").",
+                Mutated = true,
+                Summary = "set_event_availability",
+            };
+        }
     }
 }

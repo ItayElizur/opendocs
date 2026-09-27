@@ -51,9 +51,10 @@ namespace OutlookAiAddIn
 
         // Tier 2 ("Draft only" / CommentOnly): mutates the mailbox or opens a
         // draft, but never leaves it unreviewed. set_event_categories/
-        // set_category_color belong here, not in SendTierTools below - both
-        // are purely local (appt.Categories/.Save(), cats.Add()/.Color),
-        // never call .Send(), and carry the same risk profile as
+        // set_category_color/set_event_availability belong here, not in
+        // SendTierTools below - all three are purely local
+        // (appt.Categories/.BusyStatus/.Save(), cats.Add()/.Color), never
+        // call .Send(), and carry the same risk profile as
         // move_email/flag_email_important right next to them. An earlier
         // version of this fix put them in SendTierTools to match their old
         // (pre-four-tier) Full-Autonomy-only gate, but that was restoring
@@ -73,7 +74,7 @@ namespace OutlookAiAddIn
             "mark_email_read", "mark_email_unread", "flag_email_important", "move_email", "delete_email",
             "create_task", "update_task", "set_reminder", "set_email_reminder",
             "draft_email", "reply_email", "reply_all_email", "forward_email", "draft_event",
-            "set_event_categories", "set_category_color", "apply_search",
+            "set_event_categories", "set_category_color", "set_event_availability", "apply_search",
         };
 
         // Tier 3 ("Automate approvals" / TrackChanges): already calls
@@ -150,6 +151,7 @@ namespace OutlookAiAddIn
                     case "decline_meeting": return RespondMeeting(input, false);
                     case "set_event_categories": return SetEventCategories(input);
                     case "set_category_color": return SetCategoryColor(input);
+                    case "set_event_availability": return SetEventAvailability(input);
                     case "create_task": return CreateTask(input);
                     case "update_task": return UpdateTask(input);
                     case "set_reminder": return SetReminder(input);
