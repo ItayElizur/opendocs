@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -13,7 +14,31 @@ namespace OutlookAiAddIn
         {
             int limit = Math.Max(1, Int(input, "limit", 50));
             bool includeCompleted = Bool(input, "include_completed", false);
+            bool includeFlaggedEmails = Bool(input, "include_flagged_emails", true);
 
+            var sb = new StringBuilder();
+            int n = AppendTasks(sb, limit, includeCompleted);
+            if (includeFlaggedEmails && n < limit) n += AppendFlaggedEmails(sb, limit - n, includeCompleted);
+
+            if (n == 0) return new ToolResult { Output = includeCompleted ? "No tasks." : "No open tasks.", Summary = "list_tasks" };
+            return new ToolResult { Output = sb.ToString(), Summary = "list_tasks" };
+        }
+
+        // Shared by AppendTasks/AppendFlaggedEmails - the task_id/kind/subject/
+        // due/start block is identical for both. Takes plain values rather
+        // than an Outlook.Row: AppendTasks' values come straight off the
+        // table row, AppendFlaggedEmails' come off a resolved MailItem
+        // instead (see the comment in AppendFlaggedEmails for why).
+        private static void AppendTaskHeader(StringBuilder sb, string kind, string entryId, string subject, object due, object start)
+        {
+            sb.AppendLine("- task_id: " + entryId);
+            sb.AppendLine("  kind: " + kind);
+            sb.AppendLine("  subject: " + (subject ?? ""));
+            sb.AppendLine("  due: " + DateCell(due) + "  start: " + DateCell(start));
+        }
+
+        private static int AppendTasks(StringBuilder sb, int limit, bool includeCompleted)
+        {
             Outlook.Folder tasksFolder = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderTasks);
             Outlook.Table table = tasksFolder.GetTable(Type.Missing, Outlook.OlTableContents.olUserItems);
             table.Columns.RemoveAll();
@@ -26,7 +51,6 @@ namespace OutlookAiAddIn
             table.Columns.Add("Complete");
             table.Columns.Add("ReminderTime");
 
-            var sb = new StringBuilder();
             int n = 0;
             while (!table.EndOfTable && n < limit)
             {
@@ -35,15 +59,77 @@ namespace OutlookAiAddIn
                 try { complete = Convert.ToBoolean(row["Complete"]); } catch { }
                 if (complete && !includeCompleted) continue;
                 n++;
-                sb.AppendLine("- task_id: " + Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture));
-                sb.AppendLine("  subject: " + (Convert.ToString(row["Subject"], CultureInfo.InvariantCulture) ?? ""));
-                sb.AppendLine("  due: " + DateCell(row["DueDate"]) + "  start: " + DateCell(row["StartDate"]));
+                AppendTaskHeader(sb, "task",
+                    Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture),
+                    Convert.ToString(row["Subject"], CultureInfo.InvariantCulture),
+                    row["DueDate"], row["StartDate"]);
                 sb.AppendLine("  status: " + Convert.ToString(row["Status"], CultureInfo.InvariantCulture) +
                               "  percent: " + Convert.ToString(row["PercentComplete"], CultureInfo.InvariantCulture) +
                               "  complete: " + complete);
             }
-            if (n == 0) return new ToolResult { Output = includeCompleted ? "No tasks." : "No open tasks.", Summary = "list_tasks" };
-            return new ToolResult { Output = sb.ToString(), Summary = "list_tasks" };
+            return n;
+        }
+
+        // Outlook's "Flag for follow up" on a mail item never creates a
+        // TaskItem in the Tasks folder - it just sets flag/date properties on
+        // the mail in place, wherever it lives. The To-Do List is Outlook's
+        // own aggregation of every flagged item across the mailbox, so it's
+        // the one place that surfaces those without walking every folder.
+        // Real tasks show up in there too; skip them since AppendTasks
+        // already listed those from the Tasks folder directly.
+        //
+        // Only EntryID/Subject/MessageClass are pulled via the Table - those
+        // are confirmed-valid Table column names (used elsewhere already).
+        // FlagStatus is NOT (Table.Columns.Add("FlagStatus") throws "the
+        // property is unknown" at runtime, despite FlagStatus being a real
+        // MailItem property) - Table's recognized column-name set and the
+        // object model's property names are two separate, only partially
+        // overlapping things, and there's no guarantee TaskDueDate/
+        // TaskStartDate would have fared any better. Resolving the actual
+        // item and reading its properties directly sidesteps that guessing
+        // game entirely, at the cost of one COM call per flagged row (this
+        // list is small, unlike bulk mail listing).
+        private static int AppendFlaggedEmails(StringBuilder sb, int limit, bool includeCompleted)
+        {
+            Outlook.Folder toDo = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderToDo);
+            Outlook.Table table = toDo.GetTable(Type.Missing, Outlook.OlTableContents.olUserItems);
+            table.Columns.RemoveAll();
+            table.Columns.Add("EntryID");
+            table.Columns.Add("MessageClass");
+
+            int n = 0;
+            while (!table.EndOfTable && n < limit)
+            {
+                Outlook.Row row = table.GetNextRow();
+                string cls = Convert.ToString(row["MessageClass"], CultureInfo.InvariantCulture) ?? "";
+                if (!cls.StartsWith("IPM.Note", StringComparison.OrdinalIgnoreCase)) continue;
+
+                string entryId = Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture);
+                // Also needed for update_task to resolve the item outside the
+                // default store (see ItemById) - the To-Do List can surface
+                // items from anywhere in the profile, GetItemFromID by EntryID
+                // alone can't.
+                Outlook.MailItem mail = null;
+                try { mail = ItemById(entryId, null) as Outlook.MailItem; } catch { }
+                if (mail == null) continue;
+
+                bool complete = mail.FlagStatus == Outlook.OlFlagStatus.olFlagComplete;
+                if (complete && !includeCompleted) continue;
+
+                string folderName = "(unknown)";
+                try
+                {
+                    Outlook.Folder parent = mail.Parent as Outlook.Folder;
+                    if (parent != null) folderName = parent.Name;
+                }
+                catch { }
+
+                n++;
+                AppendTaskHeader(sb, "flagged_email", entryId, mail.Subject, mail.TaskDueDate, mail.TaskStartDate);
+                sb.AppendLine("  folder: " + folderName);
+                sb.AppendLine("  complete: " + complete);
+            }
+            return n;
         }
 
         private static string DateCell(object v)
@@ -81,23 +167,59 @@ namespace OutlookAiAddIn
         private static ToolResult UpdateTask(JsonElement input)
         {
             string id = ReqStr(input, "task_id");
-            Outlook.TaskItem t = ItemById(id, null) as Outlook.TaskItem;
-            if (t == null) return new ToolResult { Output = "task_id does not resolve to a task.", IsError = true, Summary = "update_task" };
+            // folder is only needed when task_id is a flagged email from a
+            // non-default store (see AppendFlaggedEmails' "folder" field) -
+            // real tasks are always in the default store's Tasks folder, so
+            // StoreOf(input) returning null here (no folder passed) still
+            // resolves them exactly as before.
+            object item = ItemById(id, StoreOf(input));
 
-            string subject = Str(input, "subject", null);
-            if (subject != null) t.Subject = subject;
-            DateTime? due = DateArg(input, "due_date");
-            if (due.HasValue) t.DueDate = due.Value;
-            DateTime? sd = DateArg(input, "start_date");
-            if (sd.HasValue) t.StartDate = sd.Value;
-            int pct = Int(input, "percent_complete", -1);
-            if (pct >= 0 && pct <= 100) t.PercentComplete = pct;
-            string status = Str(input, "status", null);
-            if (status != null) t.Status = ParseTaskStatus(status);
-            if (Bool(input, "mark_complete", false)) { t.Complete = true; t.PercentComplete = 100; }
+            Outlook.TaskItem t = item as Outlook.TaskItem;
+            if (t != null)
+            {
+                string subject = Str(input, "subject", null);
+                if (subject != null) t.Subject = subject;
+                DateTime? due = DateArg(input, "due_date");
+                if (due.HasValue) t.DueDate = due.Value;
+                DateTime? sd = DateArg(input, "start_date");
+                if (sd.HasValue) t.StartDate = sd.Value;
+                int pct = Int(input, "percent_complete", -1);
+                if (pct >= 0 && pct <= 100) t.PercentComplete = pct;
+                string status = Str(input, "status", null);
+                if (status != null) t.Status = ParseTaskStatus(status);
+                if (Bool(input, "mark_complete", false)) { t.Complete = true; t.PercentComplete = 100; }
 
-            t.Save();
-            return new ToolResult { Output = "Task updated: " + (t.Subject ?? ""), Mutated = true, Summary = "update_task" };
+                t.Save();
+                return new ToolResult { Output = "Task updated: " + (t.Subject ?? ""), Mutated = true, Summary = "update_task" };
+            }
+
+            // task_id from list_tasks' "kind: flagged_email" rows is the
+            // mail's own EntryID - there's no TaskItem to cast to, just flag
+            // properties on the mail itself.
+            Outlook.MailItem mail = item as Outlook.MailItem;
+            if (mail != null)
+            {
+                DateTime? due = DateArg(input, "due_date");
+                if (due.HasValue) mail.TaskDueDate = due.Value;
+                DateTime? sd = DateArg(input, "start_date");
+                if (sd.HasValue) mail.TaskStartDate = sd.Value;
+                if (Bool(input, "mark_complete", false)) mail.FlagStatus = Outlook.OlFlagStatus.olFlagComplete;
+
+                // subject/status/percent_complete don't map to a flag on a
+                // mail item - say so explicitly rather than silently no-op'ing
+                // fields the caller asked to change.
+                var ignored = new List<string>();
+                if (Str(input, "subject", null) != null) ignored.Add("subject");
+                if (Str(input, "status", null) != null) ignored.Add("status");
+                if (Int(input, "percent_complete", -1) >= 0) ignored.Add("percent_complete");
+
+                mail.Save();
+                string output = "Flagged email updated: " + (mail.Subject ?? "");
+                if (ignored.Count > 0) output += "\n(ignored - only apply to real tasks: " + string.Join(", ", ignored) + ")";
+                return new ToolResult { Output = output, Mutated = true, Summary = "update_task" };
+            }
+
+            return new ToolResult { Output = "task_id does not resolve to a task or a flagged email.", IsError = true, Summary = "update_task" };
         }
 
         private static ToolResult SetReminder(JsonElement input)
