@@ -25,14 +25,16 @@ namespace OutlookAiAddIn
         }
 
         // Shared by AppendTasks/AppendFlaggedEmails - the task_id/kind/subject/
-        // due/start block is identical for both, they just come from different
-        // date columns and get different kind-specific lines appended after.
-        private static void AppendTaskHeader(StringBuilder sb, string kind, Outlook.Row row, string dueCol, string startCol)
+        // due/start block is identical for both. Takes plain values rather
+        // than an Outlook.Row: AppendTasks' values come straight off the
+        // table row, AppendFlaggedEmails' come off a resolved MailItem
+        // instead (see the comment in AppendFlaggedEmails for why).
+        private static void AppendTaskHeader(StringBuilder sb, string kind, string entryId, string subject, object due, object start)
         {
-            sb.AppendLine("- task_id: " + Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture));
+            sb.AppendLine("- task_id: " + entryId);
             sb.AppendLine("  kind: " + kind);
-            sb.AppendLine("  subject: " + (Convert.ToString(row["Subject"], CultureInfo.InvariantCulture) ?? ""));
-            sb.AppendLine("  due: " + DateCell(row[dueCol]) + "  start: " + DateCell(row[startCol]));
+            sb.AppendLine("  subject: " + (subject ?? ""));
+            sb.AppendLine("  due: " + DateCell(due) + "  start: " + DateCell(start));
         }
 
         private static int AppendTasks(StringBuilder sb, int limit, bool includeCompleted)
@@ -57,7 +59,10 @@ namespace OutlookAiAddIn
                 try { complete = Convert.ToBoolean(row["Complete"]); } catch { }
                 if (complete && !includeCompleted) continue;
                 n++;
-                AppendTaskHeader(sb, "task", row, "DueDate", "StartDate");
+                AppendTaskHeader(sb, "task",
+                    Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture),
+                    Convert.ToString(row["Subject"], CultureInfo.InvariantCulture),
+                    row["DueDate"], row["StartDate"]);
                 sb.AppendLine("  status: " + Convert.ToString(row["Status"], CultureInfo.InvariantCulture) +
                               "  percent: " + Convert.ToString(row["PercentComplete"], CultureInfo.InvariantCulture) +
                               "  complete: " + complete);
@@ -72,17 +77,25 @@ namespace OutlookAiAddIn
         // the one place that surfaces those without walking every folder.
         // Real tasks show up in there too; skip them since AppendTasks
         // already listed those from the Tasks folder directly.
+        //
+        // Only EntryID/Subject/MessageClass are pulled via the Table - those
+        // are confirmed-valid Table column names (used elsewhere already).
+        // FlagStatus is NOT (Table.Columns.Add("FlagStatus") throws "the
+        // property is unknown" at runtime, despite FlagStatus being a real
+        // MailItem property) - Table's recognized column-name set and the
+        // object model's property names are two separate, only partially
+        // overlapping things, and there's no guarantee TaskDueDate/
+        // TaskStartDate would have fared any better. Resolving the actual
+        // item and reading its properties directly sidesteps that guessing
+        // game entirely, at the cost of one COM call per flagged row (this
+        // list is small, unlike bulk mail listing).
         private static int AppendFlaggedEmails(StringBuilder sb, int limit, bool includeCompleted)
         {
             Outlook.Folder toDo = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderToDo);
             Outlook.Table table = toDo.GetTable(Type.Missing, Outlook.OlTableContents.olUserItems);
             table.Columns.RemoveAll();
             table.Columns.Add("EntryID");
-            table.Columns.Add("Subject");
             table.Columns.Add("MessageClass");
-            table.Columns.Add("FlagStatus");
-            table.Columns.Add("TaskDueDate");
-            table.Columns.Add("TaskStartDate");
 
             int n = 0;
             while (!table.EndOfTable && n < limit)
@@ -91,27 +104,28 @@ namespace OutlookAiAddIn
                 string cls = Convert.ToString(row["MessageClass"], CultureInfo.InvariantCulture) ?? "";
                 if (!cls.StartsWith("IPM.Note", StringComparison.OrdinalIgnoreCase)) continue;
 
-                int flagStatus = 0;
-                try { flagStatus = Convert.ToInt32(row["FlagStatus"]); } catch { }
-                bool complete = flagStatus == (int)Outlook.OlFlagStatus.olFlagComplete;
-                if (complete && !includeCompleted) continue;
-
                 string entryId = Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture);
-                // update_task needs this to resolve the item outside the
+                // Also needed for update_task to resolve the item outside the
                 // default store (see ItemById) - the To-Do List can surface
                 // items from anywhere in the profile, GetItemFromID by EntryID
                 // alone can't.
+                Outlook.MailItem mail = null;
+                try { mail = ItemById(entryId, null) as Outlook.MailItem; } catch { }
+                if (mail == null) continue;
+
+                bool complete = mail.FlagStatus == Outlook.OlFlagStatus.olFlagComplete;
+                if (complete && !includeCompleted) continue;
+
                 string folderName = "(unknown)";
                 try
                 {
-                    Outlook.MailItem mail = ItemById(entryId, null) as Outlook.MailItem;
-                    Outlook.Folder parent = mail != null ? mail.Parent as Outlook.Folder : null;
+                    Outlook.Folder parent = mail.Parent as Outlook.Folder;
                     if (parent != null) folderName = parent.Name;
                 }
                 catch { }
 
                 n++;
-                AppendTaskHeader(sb, "flagged_email", row, "TaskDueDate", "TaskStartDate");
+                AppendTaskHeader(sb, "flagged_email", entryId, mail.Subject, mail.TaskDueDate, mail.TaskStartDate);
                 sb.AppendLine("  folder: " + folderName);
                 sb.AppendLine("  complete: " + complete);
             }
