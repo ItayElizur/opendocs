@@ -592,6 +592,20 @@ const ALL_TOOLS = [
       required: ['operations'],
     },
   },
+  {
+    name: 'undo_last_action',
+    description:
+      "Reverses the workbook's last action, like Ctrl+Z. Best-effort on Excel: Excel often clears its undo history the moment automation " +
+      'touches the workbook, so this can genuinely have nothing to undo even right after an edit - reports honestly when that happens rather than claiming success.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'redo_last_action',
+    description:
+      "Re-applies the workbook's last undone action, like Ctrl+Y. Same best-effort caveat as undo_last_action - " +
+      'reports honestly when there is nothing to redo.',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ]
 
 const READ_ONLY_TOOL_NAMES = [
@@ -642,6 +656,14 @@ const EXCEL_TOOL_DISPLAY = {
     label: { en: 'Edit spreadsheet', he: 'עריכת גיליון אלקטרוני' },
     description: { en: 'Applies changes to the spreadsheet, such as cell edits, formatting, sorting, charts, and tables.', he: 'מבצע שינויים בגיליון, כגון עריכת תאים, עיצוב, מיון, תרשימים וטבלאות.' },
   },
+  undo_last_action: {
+    label: { en: 'Undo', he: 'ביטול' },
+    description: { en: 'Reverses the last action, like Ctrl+Z. Best-effort - Excel may have already cleared its undo history.', he: 'מבטל את הפעולה האחרונה, כמו Ctrl+Z. פעולה במאמץ מיטבי בלבד - ייתכן שהיסטוריית הביטול כבר נמחקה על ידי Excel.' },
+  },
+  redo_last_action: {
+    label: { en: 'Redo', he: 'ביצוע חוזר' },
+    description: { en: 'Re-applies the last undone action, like Ctrl+Y. Same best-effort caveat as Undo.', he: 'מבצע מחדש את הפעולה האחרונה שבוטלה, כמו Ctrl+Y. אותה הסתייגות כמו בביטול.' },
+  },
 }
 
 startAddIn({
@@ -667,7 +689,8 @@ startAddIn({
     "computing the number yourself and only stating it in chat - that way the result stays live in the sheet and " +
     "recalculates if the data changes. Confirm a cell is actually empty first (get_workbook_context's used range, " +
     'or read_sheet_features\' data-block addresses) before writing into it - e.g. an empty column right after the ' +
-    'data, or empty rows right below it - so you never overwrite existing content.',
+    'data, or empty rows right below it - so you never overwrite existing content. ' +
+    'undo_last_action/redo_last_action mirror Ctrl+Z/Ctrl+Y - use them if asked to undo/redo, but note Excel can genuinely have nothing left to undo even right after an edit (it clears its own undo history when automation touches the workbook), so a "Nothing to undo" reply can be correct, not a bug.',
   starters: [
     { en: 'Summarize this sheet', he: 'סכם את הגיליון הזה' },
     { en: 'Add a totals row', he: 'הוסף שורת סיכום' },

@@ -165,6 +165,10 @@
       <SubType>Code</SubType>
       <DependentUpon>ExcelTools.cs</DependentUpon>
     </Compile>
+    <Compile Include="ExcelTools.History.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>ExcelTools.cs</DependentUpon>
+    </Compile>
     <Compile Include="Ribbon.cs">
       <SubType>Code</SubType>
     </Compile>
