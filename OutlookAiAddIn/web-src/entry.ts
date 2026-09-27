@@ -95,7 +95,7 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'list_folders',
-    description: 'Lists mail folders (with item and unread counts) across all stores, for use as folder / destination arguments.',
+    description: 'Lists mail folders (with item and unread counts) in your own mailbox - not shared mailboxes, Public Folders, or SharePoint lists - for use as folder / destination arguments.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
