@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
-import { defaultModeFor, mountChatUI, type ToolDisplayEntry } from './chat-ui'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { caretLineMeasurement, defaultModeFor, mountChatUI, type ToolDisplayEntry } from './chat-ui'
 
 const TEST_TOOLS: ToolDisplayEntry[] = [
   { name: 'get_document_context', label: { en: 'Read document', he: 'קרא מסמך' }, description: { en: 'Reads a summary of the document.', he: 'קורא תקציר של המסמך.' } },
@@ -828,6 +828,36 @@ describe('mountChatUI', () => {
   })
 
   // ---- Up/Down-arrow recall of previously sent messages ----
+  //
+  // caretCollapsedAtFirstLine/caretCollapsedAtLastLine (chat-ui.ts) decide
+  // whether an arrow press should recall history or just move the caret,
+  // by comparing caretLineMeasurement.measure(pos) - the pixel offsetTop of
+  // the visual line `pos` renders on, via a hidden mirror div - against the
+  // measurement at position 0 (top) / value.length (bottom). jsdom (used
+  // here) performs no real text layout, so a *real* mirror-div measurement
+  // always reports offsetTop 0 for every position in this environment -
+  // there is no way to assert a genuine pixel-line answer from jsdom alone.
+  // So every test in this section stubs caretLineMeasurement.measure with a
+  // small fake that reproduces a specific, known line layout, and asserts
+  // only the surrounding gating/recall logic against it. The default stub
+  // below (hard '\n' counting) reproduces exactly the *old* behavior, which
+  // is still supposed to work today - i.e. it's what real browsers do for
+  // text with no soft-wrapping - so the pre-existing hard-newline tests
+  // keep meaning what they say. The dedicated soft-wrap test further down
+  // installs its own stub simulating word-wrap, to exercise the actual bug
+  // fix (a long, single-line, no-'\n' draft that wraps across several
+  // visual lines).
+  function hardNewlineLineIndex(textarea: HTMLTextAreaElement, pos: number): number {
+    return (textarea.value.slice(0, pos).match(/\n/g) || []).length
+  }
+  let originalMeasure: typeof caretLineMeasurement.measure
+  beforeEach(() => {
+    originalMeasure = caretLineMeasurement.measure
+    caretLineMeasurement.measure = hardNewlineLineIndex
+  })
+  afterEach(() => {
+    caretLineMeasurement.measure = originalMeasure
+  })
 
   function arrow(textarea: HTMLTextAreaElement, key: 'ArrowUp' | 'ArrowDown'): void {
     textarea.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
@@ -862,7 +892,7 @@ describe('mountChatUI', () => {
     expect(textarea.value).toBe('half-typed')
   })
 
-  it('ArrowUp only recalls when the caret is collapsed on the first line', () => {
+  it('ArrowUp only recalls when the caret is collapsed on the first line (hard \\n break)', () => {
     const { root } = setup()
     const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
     sendText(root, 'prior')
@@ -877,6 +907,107 @@ describe('mountChatUI', () => {
     textarea.setSelectionRange(0, 0)
     arrow(textarea, 'ArrowUp')
     expect(textarea.value).toBe('prior')
+  })
+
+  it('ArrowDown only recalls when the caret is collapsed on the last line (hard \\n break)', () => {
+    const { root } = setup()
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    sendText(root, 'prior')
+    // Enter recall mode first (ArrowUp from an empty draft), then type a
+    // multi-line draft "on top of" the recalled state, same shape as the
+    // ArrowUp test above but exercising caretCollapsedAtLastLine instead.
+    arrow(textarea, 'ArrowUp')
+    expect(textarea.value).toBe('prior')
+
+    textarea.value = 'line one\nline two'
+    // Caret on the first line - ArrowDown should move within the textarea, not recall.
+    textarea.setSelectionRange(0, 0)
+    arrow(textarea, 'ArrowDown')
+    expect(textarea.value).toBe('line one\nline two')
+
+    // Caret at the very end (last line) - now it recalls (nothing newer than
+    // 'prior', so recall lands back on the live draft that was stashed on
+    // the very first ArrowUp above - the empty string).
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    arrow(textarea, 'ArrowDown')
+    expect(textarea.value).toBe('')
+  })
+
+  it('a long single-line (soft-wrapped) draft does not recall on the first ArrowUp - only once the caret reaches the topmost visual line', () => {
+    const { root } = setup()
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    sendText(root, 'prior message')
+
+    // No '\n' anywhere - under the old lastIndexOf('\n', ...)-only check this
+    // was indistinguishable from a single-line draft, so caretCollapsedAtFirstLine()
+    // was always true here and the very first ArrowUp always recalled
+    // history. Simulate a real browser word-wrapping this into 4 visual
+    // lines of 20 characters each (line index = floor(pos / 20)) - the exact
+    // shape the mirror-div technique measures in production, stubbed here
+    // because jsdom can't lay text out for real (see the section comment above).
+    const longDraft = 'x'.repeat(80)
+    const WRAP_WIDTH = 20
+    caretLineMeasurement.measure = (ta, pos) => Math.floor(pos / WRAP_WIDTH)
+
+    textarea.value = longDraft
+    textarea.setSelectionRange(longDraft.length, longDraft.length) // end of text -> visual line 3 (bottom), not line 0 (top)
+
+    arrow(textarea, 'ArrowUp')
+    expect(textarea.value).toBe(longDraft) // not recalled - the fix lets a real browser move the caret up a visual line instead
+
+    // Move the caret to the topmost visual line and try again - now it does recall.
+    textarea.setSelectionRange(5, 5) // line index 0
+    arrow(textarea, 'ArrowUp')
+    expect(textarea.value).toBe('prior message')
+  })
+
+  it('a long single-line (soft-wrapped) draft does not recall on ArrowDown until the caret reaches the bottommost visual line', () => {
+    const { root } = setup()
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    sendText(root, 'prior message')
+    arrow(textarea, 'ArrowUp') // enter recall mode, stashing the (empty) live draft
+    expect(textarea.value).toBe('prior message')
+
+    const longDraft = 'y'.repeat(80)
+    const WRAP_WIDTH = 20
+    caretLineMeasurement.measure = (ta, pos) => Math.floor(pos / WRAP_WIDTH)
+
+    textarea.value = longDraft
+    textarea.setSelectionRange(0, 0) // top -> visual line 0, not the bottommost line
+
+    arrow(textarea, 'ArrowDown')
+    expect(textarea.value).toBe(longDraft) // not recalled
+
+    textarea.setSelectionRange(longDraft.length, longDraft.length) // bottommost visual line
+    arrow(textarea, 'ArrowDown')
+    expect(textarea.value).toBe('') // recalls past the newest entry, back to the stashed empty draft
+  })
+
+  it('a mix of hard \\n breaks and soft wrapping only recalls once the caret is truly on the first/last rendered line', () => {
+    const { root } = setup()
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    sendText(root, 'prior message')
+
+    // 'AAAA\n' + 40 x's: line 0 is the short hard-broken first line; the
+    // second '\n'-delimited chunk itself soft-wraps into further visual
+    // lines. Simulate: position <= 4 -> visual line 0; beyond the newline,
+    // wrap every 10 chars of the remainder into its own subsequent line.
+    const draft = 'AAAA\n' + 'x'.repeat(40)
+    caretLineMeasurement.measure = (ta, pos) => {
+      const head = ta.value.slice(0, pos)
+      const nl = head.indexOf('\n')
+      if (nl === -1 || pos <= nl) return 0
+      return 1 + Math.floor((pos - nl - 1) / 10)
+    }
+    textarea.value = draft
+    textarea.setSelectionRange(draft.length, draft.length) // deep in the wrapped tail, not line 0
+
+    arrow(textarea, 'ArrowUp')
+    expect(textarea.value).toBe(draft) // still not line 0 - no recall
+
+    textarea.setSelectionRange(2, 2) // within the literal first line
+    arrow(textarea, 'ArrowUp')
+    expect(textarea.value).toBe('prior message')
   })
 
   it('New chat clears the recall history', () => {
