@@ -137,6 +137,15 @@ namespace OfficeAi.Shared
         // so the mode is per-document rather than shared across every window.
         protected abstract void SetEditingMode(EditingMode mode);
 
+        // Office's UI display language (Application.LanguageSettings.
+        // LanguageID[MsoAppLanguageID.msoLanguageIDUI]) - needs each
+        // subclass's own Globals.ThisAddIn.Application, same reason
+        // GetChatId()/SetEditingMode are abstract here rather than
+        // implemented once (this shared assembly has no access to any
+        // app's own VSTO-generated Globals class). See OfficeLanguage.cs
+        // for how the returned LCID maps to a supported UI language.
+        protected abstract int GetOfficeUiLanguageId();
+
         private void OnOtherMessage(string kind, JsonElement root)
         {
             switch (kind)
@@ -190,6 +199,11 @@ namespace OfficeAi.Shared
                 // never re-checked afterward (by design - see OfficeTheme.cs).
                 case "load-theme":
                     PostMessage(new { kind = "office-theme", theme = OfficeTheme.ReadEffectiveTheme() });
+                    break;
+                // Same one-shot posture as load-theme above, for Office's UI
+                // display language instead of its theme.
+                case "load-language":
+                    PostMessage(new { kind = "office-language", language = OfficeLanguage.ResolveUiLanguage(GetOfficeUiLanguageId()) });
                     break;
             }
         }

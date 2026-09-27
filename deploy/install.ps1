@@ -1,5 +1,5 @@
 # Run this ON THE TARGET MACHINE, from inside the package folder produced
-# by package.ps1 (it must sit alongside AirchatOfficeDevCert.cer and the
+# by package.ps1 (it must sit alongside OpenDocsDevCert.cer and the
 # per-app WordAiAddIn/ExcelAiAddIn/PowerPointAiAddIn build-output folders).
 #
 # Usage:
@@ -11,7 +11,7 @@
 param(
     [ValidateSet('Word', 'Excel', 'PowerPoint', 'Outlook', 'All')]
     [string]$App = 'All',
-    [string]$InstallRoot = "$env:LOCALAPPDATA\AirchatOffice"
+    [string]$InstallRoot = "$env:LOCALAPPDATA\OpenDocs"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,7 +74,7 @@ if ($problems.Count -gt 0) {
 Write-Host "Unblocking package files (clears any Mark-of-the-Web from a zip transfer)..."
 Get-ChildItem -Path $PackageDir -Recurse | Unblock-File -ErrorAction SilentlyContinue
 
-$certPath = Join-Path $PackageDir 'AirchatOfficeDevCert.cer'
+$certPath = Join-Path $PackageDir 'OpenDocsDevCert.cer'
 if (-not (Test-Path $certPath)) { throw "Certificate file not found next to install.ps1: $certPath" }
 
 Write-Host "Trusting the add-in's signing certificate (current user only, no admin needed)..."

@@ -3,21 +3,31 @@ import { AI_PROVIDERS, type AiProviderId } from '@genoffice/ai-provider'
 
 export type EditingMode = 'readOnly' | 'commentOnly' | 'trackChanges' | 'fullAutonomy'
 
+export type ModeOverrides = Partial<Record<EditingMode, { label: { en: string; he: string }; description: { en: string; he: string } }>>
+
 export type Lang = 'en' | 'he'
 
+/** 'en'/'he' are explicit overrides; 'default' follows Office's own UI
+ * display language, read once at pane startup (see
+ * OfficeAi.Shared/OfficeLanguage.cs) - not re-checked while the pane stays
+ * open. Mirrors the theme preference's exact shape/resolution philosophy. */
+export type LangPref = Lang | 'default'
+
 const STRINGS: Record<string, Record<Lang, string>> = {
-  panelTitle:           { en: 'Airchat Office', he: "איירצ'אט אופיס" },
-  inputPlaceholder:     { en: 'Ask Airchat Office to edit this document...', he: 'בקש מ-Airchat Office לערוך את המסמך...' },
+  panelTitle:           { en: 'OpenDocs', he: 'אופן דוקס' },
+  inputPlaceholder:     { en: 'Ask OpenDocs to edit this document...', he: 'בקש מ-אופן דוקס לערוך את המסמך...' },
   send:                 { en: 'Send', he: 'שלח' },
   stop:                 { en: 'Stop', he: 'עצור' },
   newChat:              { en: 'New chat', he: 'שיחה חדשה' },
   settings:             { en: 'Settings', he: 'הגדרות' },
-  settingsTitle:        { en: 'Airchat Office Settings', he: 'הגדרות Airchat Office' },
+  settingsTitle:        { en: 'OpenDocs Settings', he: 'הגדרות אופן דוקס' },
   settingsBaseUrl:      { en: 'API Base URL', he: 'כתובת בסיס API' },
   settingsApiKey:       { en: 'API Key', he: 'מפתח API' },
   settingsModel:        { en: 'Model name', he: 'שם המודל' },
   settingsSkipTls:      { en: 'Skip TLS certificate verification (insecure - testing only)', he: 'דלג על אימות אישור TLS (לא מאובטח - לבדיקות בלבד)' },
   settingsLanguage:     { en: 'Language', he: 'שפה' },
+  langDefault:          { en: 'Default', he: 'ברירת מחדל' },
+  langDefaultNote:      { en: "Default follows Office's own display language, checked once when the panel opens.", he: 'ברירת המחדל עוקבת אחר שפת התצוגה של Office, נבדקת פעם אחת עם פתיחת החלונית.' },
   save:                 { en: 'Save', he: 'שמור' },
   collapse:             { en: 'Collapse panel', he: 'כווץ חלונית' },
   historySep:           { en: 'Earlier conversation', he: 'שיחה קודמת' },
@@ -119,7 +129,8 @@ export interface SettingsSavePayload {
   model: string
   baseUrl: string
   skipTlsVerify: boolean
-  lang: Lang
+  /** 'en'/'he'/'default', Save-gated like every other field here - see chat-ui.ts's Language section. */
+  lang: LangPref
   /** 'light'/'dark'/'default', Save-gated like every other field here - see chat-ui.ts's Theme section. */
   theme: 'light' | 'dark' | 'default'
   /** only present when saved from the full settings view (FT-1), not the quick dropdown */
@@ -147,6 +158,8 @@ export interface InitialSettings {
   providers?: Record<string, { apiKey: string; model: string; baseUrl?: string }>
   /** Seeds the Theme section's selected button. Defaults to 'default' if omitted. */
   theme?: 'light' | 'dark' | 'default'
+  /** Seeds the Language toggle's selected button. Defaults to 'default' if omitted. */
+  lang?: LangPref
 }
 
 export interface ChatUIOptions {
@@ -170,8 +183,23 @@ export interface ChatUIOptions {
   initialSettings?: InitialSettings
   /** FT-2 Task 5: which "no selection" wording the scope-hint pill shows - defaults to 'doc' (Word). Excel passes 'sheet', PowerPoint 'deck', Outlook 'mailbox'. */
   scopeUnit?: 'doc' | 'sheet' | 'deck' | 'mailbox'
-  /** Restricts the editing-mode menu to this subset, in this order. Defaults to all four modes. Outlook passes ['readOnly', 'fullAutonomy']. */
+  /** Restricts the editing-mode menu to this subset, in this order. Defaults to all four modes. Outlook passes ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'] with its own meaning per mode (see modeOverrides). */
   modes?: EditingMode[]
+  /**
+   * Per-app override of a mode's label/description shown in the mode menu
+   * and settings scope control - falls back to the shared STRINGS entry
+   * (modeReadOnly/modeCommentOnly/modeTrackChanges/modeFullAutonomy and
+   * their *Desc counterparts) when a mode has no override. Outlook uses
+   * this to relabel commentOnly/trackChanges as "Draft only"/"Automate
+   * approvals" (mail has no real "comment" or "track changes" concept) and
+   * to note that Full autonomy sends mail/invites - Word/Excel/PowerPoint
+   * leave this unset and keep the shared generic copy.
+   */
+  modeOverrides?: ModeOverrides
+  /** The mode a fresh session starts in, when it's in `modes` - see defaultModeFor(). Defaults to 'trackChanges'. */
+  defaultMode?: EditingMode
+  /** Tool names that send/create something externally with no review step (e.g. Outlook's send_email) - their completed step renders with a distinct marker instead of the routine .ai-applied-tag. */
+  autoSendTools?: string[]
 }
 
 export interface ToolStepHandle {
@@ -229,6 +257,14 @@ export interface ChatUIHandle {
    * 'default' itself, since it has no access to Office's registry state.
    */
   setTheme(theme: 'light' | 'dark'): void
+  /**
+   * Paints the already-resolved binary language - the host (bootstrap.ts)
+   * has already turned a 'default' preference into a real en/he answer
+   * using Office's own UI display language before calling this; chat-ui.ts
+   * never resolves 'default' itself, since it has no access to Office's
+   * object model.
+   */
+  setLang(lang: Lang): void
 }
 
 const MODES: EditingMode[] = ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy']
@@ -236,9 +272,19 @@ const MODES: EditingMode[] = ['readOnly', 'commentOnly', 'trackChanges', 'fullAu
 // The mode menu (composer) and the scope control (settings) both render from
 // this list. `options.modes` narrows it per app - Outlook drops Comment only /
 // Track changes, which have no meaning for mail. Order follows the passed list.
-function resolveModes(requested?: EditingMode[]): EditingMode[] {
+export function resolveModes(requested?: EditingMode[]): EditingMode[] {
   if (!requested || requested.length === 0) return MODES
   return requested.filter((m) => MODES.indexOf(m) !== -1)
+}
+
+// The safe, useful starting mode for a fresh session - not Full Autonomy,
+// which every app previously defaulted straight into with no explicit user
+// choice. `preferred` lets an app pick which of its own modes is "the least
+// permissive one still worth defaulting to" (Word/Excel/PowerPoint: their
+// real trackChanges tier; Outlook: its own commentOnly-as-"Draft only"
+// tier) without hardcoding one mode name for every app.
+export function defaultModeFor(modes: EditingMode[], preferred: EditingMode = 'trackChanges'): EditingMode {
+  return modes.includes(preferred) ? preferred : modes[0]
 }
 
 function modeStringKey(mode: EditingMode): string {
@@ -420,20 +466,20 @@ function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
 
 export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHandle {
   const menuModes = resolveModes(options.modes)
-  const defaultMode: EditingMode = menuModes.indexOf('fullAutonomy') !== -1 ? 'fullAutonomy' : menuModes[menuModes.length - 1]
+  const defaultMode: EditingMode = defaultModeFor(menuModes, options.defaultMode ?? 'trackChanges')
   root.innerHTML = `
     <div class="ai-dock">
       <div class="ai-rail" data-t="panelTitle"></div>
       <div class="ai-panel">
       <div class="ai-panel-header">
-        <div class="ai-panel-title"><img class="ai-logo" src="logo.png" alt="" /><span data-t="panelTitle">Airchat Office</span></div>
+        <div class="ai-panel-title"><img class="ai-logo" src="logo.png" alt="" /><span data-t="panelTitle">OpenDocs</span></div>
         <div class="ai-header-actions">
           <button class="ai-header-btn" data-t-title="newChat">+</button>
           <button class="ai-header-btn" data-t-title="settings">&#9881;</button>
           <button class="ai-header-btn" data-t-title="collapse">&#x276E;</button>
         </div>
         <div class="ai-settings-panel" id="settingsPanel">
-          <h4 data-t="settingsTitle">Airchat Office Settings</h4>
+          <h4 data-t="settingsTitle">OpenDocs Settings</h4>
           <div class="ai-field"><label data-t="settingsProvider">Provider</label><select class="ai-settings-provider"></select></div>
           <div class="ai-field ai-field-baseurl"><label data-t="settingsBaseUrl">API Base URL</label><input data-field="baseUrl" type="text" /></div>
           <div class="ai-field"><label data-t="settingsApiKey">API Key</label><input data-field="apiKey" type="password" /></div>
@@ -448,9 +494,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <div class="ai-field">
             <label data-t="settingsLanguage">Language</label>
             <div class="ai-lang-toggle" id="langToggle">
-              <button data-lang="en" class="active">English</button>
+              <button data-lang="en">English</button>
               <button data-lang="he">עברית</button>
+              <button class="active" data-lang="default" data-t="langDefault">Default</button>
             </div>
+            <p class="ai-settings-section-note" data-t="langDefaultNote">Default follows Office's own display language, checked once when the panel opens.</p>
           </div>
           <div class="ai-settings-test-result" id="settingsTestResult"></div>
           <div class="ai-settings-actions">
@@ -494,7 +542,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       <div class="ai-composer">
         <div class="ai-input-box">
           <span class="ai-scope-hint"><span class="dot"></span><span class="label" id="scopeHintLabel">Whole document</span></span>
-          <textarea class="ai-textarea" rows="1" dir="auto" placeholder="Ask Airchat Office to edit this document..." data-t-placeholder="inputPlaceholder"></textarea>
+          <textarea class="ai-textarea" rows="1" dir="auto" placeholder="Ask OpenDocs to edit this document..." data-t-placeholder="inputPlaceholder"></textarea>
           <div class="ai-input-footer">
             <div style="position: relative;">
               <button class="ai-mode-btn"><span class="dot"></span><span id="modeBtnLabel">Full autonomy</span></button>
@@ -615,8 +663,23 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
 
   chatEl.innerHTML = emptyStateHtml(options, currentLang)
 
+  // Built once at mount from options.modeOverrides (modeCommentOnly/
+  // modeCommentOnlyDesc/etc. keys, same shape as STRINGS) - t() checks this
+  // before the shared STRINGS table, so an app's per-mode relabeling (e.g.
+  // Outlook's commentOnly -> "Draft only") applies without touching the
+  // strings every other app reads.
+  const modeOverrideStrings: Partial<Record<string, Record<Lang, string>>> = {}
+  if (options.modeOverrides) {
+    for (const mode of Object.keys(options.modeOverrides) as EditingMode[]) {
+      const ov = options.modeOverrides[mode]
+      if (!ov) continue
+      modeOverrideStrings[modeStringKey(mode)] = ov.label
+      modeOverrideStrings[modeStringKey(mode) + 'Desc'] = ov.description
+    }
+  }
+
   function t(key: string): string {
-    return STRINGS[key]?.[currentLang] ?? key
+    return modeOverrideStrings[key]?.[currentLang] ?? STRINGS[key]?.[currentLang] ?? key
   }
 
   function applyStrings(): void {
@@ -697,13 +760,16 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     if (selected) modeBtnLabel.textContent = selected.querySelector('span')!.textContent
   }
 
+  // Takes the already-resolved binary value only, exactly like applyTheme -
+  // resolving a 'default' preference against Office's real UI language is
+  // the host's (bootstrap.ts's) job, not this component's. Does NOT touch
+  // #langToggle's active state (that reflects the 3-way pendingLang
+  // preference, set independently below/on click - same split as theme's
+  // applyTheme/#themeToggle).
   function setLang(l: Lang): void {
     dockEl.setAttribute('lang', l)
     dockEl.setAttribute('dir', l === 'he' ? 'rtl' : 'ltr')
     currentLang = l
-    root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((b) => {
-      b.classList.toggle('active', b.dataset.lang === l)
-    })
     applyStrings()
     refreshScopeHint()
     refreshModeLabel()
@@ -732,7 +798,13 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   applyStrings()
 
   let assistantBubble: HTMLDivElement | null = null
-  let pendingLang: Lang = 'en'
+  let pendingLang: LangPref = 'default'
+  if (options.initialSettings?.lang) {
+    pendingLang = options.initialSettings.lang
+    root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.lang === pendingLang)
+    })
+  }
   let pendingTheme: 'light' | 'dark' | 'default' = 'default'
   if (options.initialSettings?.theme) {
     pendingTheme = options.initialSettings.theme
@@ -895,12 +967,17 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // click (confirmed repro: the button appeared completely unresponsive).
   root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((btn) => {
     btn.addEventListener('click', () => {
-      pendingLang = btn.dataset.lang as 'en' | 'he'
+      pendingLang = btn.dataset.lang as LangPref
       root.querySelectorAll('#langToggle button').forEach((b) => b.classList.toggle('active', b === btn))
     })
   })
   root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.addEventListener('click', () => {
-    setLang(pendingLang)
+    // An explicit en/he choice is applied immediately, same as before -
+    // this component can resolve that on its own. 'default' is the one
+    // value it can't self-apply (no access to Office's UI language), so
+    // that case is left to the host (bootstrap.ts), which resolves it and
+    // calls the public setLang() right back, same as theme's existing flow.
+    if (pendingLang !== 'default') setLang(pendingLang)
     options.onSettingsSave({
       provider: providerSelect.value as AiProviderId,
       baseUrl: root.querySelector<HTMLInputElement>('[data-field="baseUrl"]')!.value,
@@ -1138,7 +1215,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   })
 
   settingsViewSaveBtn.addEventListener('click', () => {
-    setLang(pendingLang)
+    // See the quick-dropdown Save handler's comment above - same reasoning.
+    if (pendingLang !== 'default') setLang(pendingLang)
     options.onSettingsSave({
       provider: providerSelect.value as AiProviderId,
       baseUrl: root.querySelector<HTMLInputElement>('[data-field="baseUrl"]')!.value,
@@ -1260,6 +1338,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         addStep(toolName, input) {
           count++
           summaryEl.textContent = `Running ${count} tool${count > 1 ? 's' : ''}...`
+          const isAutoSend = !!options.autoSendTools?.includes(toolName)
           const rowEl = document.createElement('div')
           rowEl.className = 'ai-step-row'
           // .pending pulses the hourglass while the C# COM call runs (a
@@ -1295,10 +1374,16 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
               iconEl.classList.remove('pending')
               iconEl.textContent = result.isError ? '✗' : '✓'
               iconEl.classList.toggle('error', !!result.isError)
+              iconEl.classList.toggle('autosend', isAutoSend && !result.isError)
               if (result.mutated) {
                 const tag = document.createElement('div')
-                tag.className = 'ai-applied-tag'
-                tag.textContent = '✓ Applied'
+                if (isAutoSend) {
+                  tag.className = 'ai-autosend-tag'
+                  tag.textContent = '⚡ Sent automatically'
+                } else {
+                  tag.className = 'ai-applied-tag'
+                  tag.textContent = '✓ Applied'
+                }
                 stepsEl.appendChild(tag)
               }
 
@@ -1423,6 +1508,9 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     },
     setTheme(theme) {
       applyTheme(theme)
+    },
+    setLang(lang) {
+      setLang(lang)
     },
   }
 }

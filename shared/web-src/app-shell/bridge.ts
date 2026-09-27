@@ -90,6 +90,13 @@ export interface RawSelectionPayload {
   textPreview?: string[]
   shapeIndex?: number
   text?: string
+  // PowerPoint (user-requested, 2026-09-22): the selected slide's current
+  // layout name (custom-theme layouts, e.g. "Title Slide") - lets the model
+  // address add_master_element/read_master_elements/etc.'s layoutName
+  // directly from context instead of a separate read_slide call. Sent for
+  // all three selKind variants (a shapes/shapeText selection is always
+  // within exactly one slide, so this is unambiguous there too).
+  layoutName?: string | null
   // Outlook ('app: "outlook"') - the Explorer's currently-selected mail
   // item(s) / conversation. subject is the first item's subject.
   count?: number
@@ -119,6 +126,15 @@ export interface BridgeHandlers {
    * per pane lifetime.
    */
   onOfficeThemeLoaded(theme: 'light' | 'dark'): void
+  /**
+   * Office's own UI display language, read once via Application.
+   * LanguageSettings.LanguageID(msoLanguageIDUI) when the pane boots and
+   * sent once in response to requestOfficeLanguage() - never re-sent later
+   * (by design, see OfficeAi.Shared/OfficeLanguage.cs), so this fires
+   * exactly once per pane lifetime. Only "he"/"en" are supported UI
+   * languages; any other Office UI language resolves to "en" server-side.
+   */
+  onOfficeLanguageLoaded(language: 'en' | 'he'): void
 }
 
 const pendingToolCalls = new Map<string, (result: ToolExecution) => void>()
@@ -156,6 +172,10 @@ export function initBridge(handlers: BridgeHandlers): void {
       const theme = (data as unknown as { theme: string }).theme
       handlers.onOfficeThemeLoaded(theme === 'dark' ? 'dark' : 'light')
     }
+    if (data.kind === 'office-language') {
+      const language = (data as unknown as { language: string }).language
+      handlers.onOfficeLanguageLoaded(language === 'he' ? 'he' : 'en')
+    }
   })
 }
 
@@ -169,6 +189,10 @@ export function requestDocSettings(): void {
 
 export function requestOfficeTheme(): void {
   chrome.webview.postMessage({ kind: 'load-theme' })
+}
+
+export function requestOfficeLanguage(): void {
+  chrome.webview.postMessage({ kind: 'load-language' })
 }
 
 export function saveDocSettings(systemMessage: string): void {

@@ -1,6 +1,6 @@
 import { AgentLoop, type AgentSkill } from '@genoffice/agent-core'
 import { streamForProvider, type AiProviderConfig } from '@genoffice/ai-provider'
-import { mountChatUI, type EditingMode, type SelectionExtent, type ToolDisplayEntry } from '@officeai/chat-ui'
+import { defaultModeFor, mountChatUI, resolveModes, type EditingMode, type ModeOverrides, type SelectionExtent, type ToolDisplayEntry } from '@officeai/chat-ui'
 import {
   callDotNetTool,
   initBridge,
@@ -11,6 +11,7 @@ import {
   postTlsBypass,
   requestDocSettings,
   requestHistory,
+  requestOfficeLanguage,
   requestOfficeTheme,
   saveDocSettings,
   type RawSelectionPayload,
@@ -55,9 +56,9 @@ export type SelectionContext =
       effectiveAddress: string | null
       effectiveCellCount: number
     }
-  | { kind: 'slides'; slideIndexes: number[] }
-  | { kind: 'shapes'; slideIndex: number; shapeIndexes: number[]; names: string[]; textPreview: string[] }
-  | { kind: 'shapeText'; slideIndex: number; shapeIndex: number; text: string }
+  | { kind: 'slides'; slideIndexes: number[]; layoutName: string | null }
+  | { kind: 'shapes'; slideIndex: number; shapeIndexes: number[]; names: string[]; textPreview: string[]; layoutName: string | null }
+  | { kind: 'shapeText'; slideIndex: number; shapeIndex: number; text: string; layoutName: string | null }
   | {
       kind: 'mail'
       count: number
@@ -98,7 +99,7 @@ function toSelectionContext(raw: RawSelectionPayload): SelectionContext {
     }
   }
   if (raw.app === 'powerpoint') {
-    if (raw.selKind === 'slides') return { kind: 'slides', slideIndexes: raw.slideIndexes ?? [] }
+    if (raw.selKind === 'slides') return { kind: 'slides', slideIndexes: raw.slideIndexes ?? [], layoutName: raw.layoutName ?? null }
     if (raw.selKind === 'shapes') {
       return {
         kind: 'shapes',
@@ -106,10 +107,11 @@ function toSelectionContext(raw: RawSelectionPayload): SelectionContext {
         shapeIndexes: raw.shapeIndexes ?? [],
         names: raw.names ?? [],
         textPreview: raw.textPreview ?? [],
+        layoutName: raw.layoutName ?? null,
       }
     }
     if (raw.selKind === 'shapeText') {
-      return { kind: 'shapeText', slideIndex: raw.slideIndex ?? 0, shapeIndex: raw.shapeIndex ?? 0, text: raw.text ?? '' }
+      return { kind: 'shapeText', slideIndex: raw.slideIndex ?? 0, shapeIndex: raw.shapeIndex ?? 0, text: raw.text ?? '', layoutName: raw.layoutName ?? null }
     }
     return { kind: 'none' }
   }
@@ -191,18 +193,23 @@ function defaultDescribeSelection(ctx: SelectionContext): string {
       )
     }
     case 'slides':
-      return `The user has selected slide${ctx.slideIndexes.length > 1 ? 's' : ''} ${ctx.slideIndexes.join(', ')} (0-based).`
+      return (
+        `The user has selected slide${ctx.slideIndexes.length > 1 ? 's' : ''} ${ctx.slideIndexes.join(', ')} (0-based).` +
+        (ctx.layoutName ? ` The first selected slide's layout is "${ctx.layoutName}" - pass this as layoutName to add_master_element/read_master_elements/remove_master_element/set_master_element_transform to target it specifically.` : '')
+      )
     case 'shapes': {
       const list = ctx.shapeIndexes.map((idx, i) => `${idx} ("${ctx.names[i] ?? ''}")`).join(', ')
       return (
         `The user has selected shape${ctx.shapeIndexes.length > 1 ? 's' : ''} ${list} on slide ${ctx.slideIndex}. ` +
-        `These are 0-based indices in the form the tools take (slideIndex, shapeIndex).`
+        `These are 0-based indices in the form the tools take (slideIndex, shapeIndex).` +
+        (ctx.layoutName ? ` That slide's layout is "${ctx.layoutName}".` : '')
       )
     }
     case 'shapeText':
       return (
         `The user has selected text inside shape ${ctx.shapeIndex} on slide ${ctx.slideIndex}: "${ctx.text}" - ` +
-        `the selection is a run within that shape, not the whole shape.`
+        `the selection is a run within that shape, not the whole shape.` +
+        (ctx.layoutName ? ` That slide's layout is "${ctx.layoutName}".` : '')
       )
     case 'mail': {
       if (ctx.count === 1) {
@@ -320,6 +327,16 @@ export interface AddInConfig {
   readOnlyTools: string[]
   /** additionally available in Comment only mode (Word's add_comment; empty/absent elsewhere) */
   commentOnlyExtraTools?: string[]
+  /**
+   * Additionally available in Track changes mode, ON TOP OF Comment only's
+   * set (not a replacement) - `null`/absent (every app but Outlook) keeps
+   * Track changes' original meaning: every tool, since Word/Excel/
+   * PowerPoint's real edit tools are legitimately usable under native
+   * track-changes recording. Outlook sets this to unlock
+   * accept_meeting/decline_meeting on top of its own "Draft only"
+   * (commentOnly) tier - see availableForMode() below.
+   */
+  trackChangesExtraTools?: string[]
   /** inject the user's current selection into per-turn context (Word, Excel, PowerPoint - FT-2) */
   useSelectionContext?: boolean
   /** FT-2 Task 4 Step 2: overrides the default per-kind context sentence, if an app ever needs different wording. */
@@ -328,11 +345,43 @@ export interface AddInConfig {
   scopeUnit?: 'doc' | 'sheet' | 'deck' | 'mailbox'
   /**
    * Restricts the editing-mode menu to this subset, in this order. Defaults to
-   * all four modes (Word/Excel/PowerPoint). Outlook passes
-   * ['readOnly', 'fullAutonomy'] - Comment only / Track changes have no meaning
-   * for mail.
+   * all four modes (Word/Excel/PowerPoint). Outlook passes all four too, with
+   * commentOnly/trackChanges repurposed as "Draft only"/"Automate approvals"
+   * (see modeOverrides) rather than their Word-ish original meaning.
    */
   availableModes?: EditingMode[]
+  /** Per-app relabeling of a mode's menu text - see ChatUIOptions.modeOverrides. */
+  modeOverrides?: ModeOverrides
+  /** The mode a fresh session starts in - see defaultModeFor() in chat-ui.ts. Defaults to 'trackChanges'. */
+  defaultMode?: EditingMode
+  /** Tool names that send/create something externally with no review step - see ChatUIOptions.autoSendTools. */
+  autoSendTools?: string[]
+}
+
+// Fix for: relative-date tool args (draft_event, find_meeting_slots, etc.)
+// were resolved by the model with no ground truth for "today" anywhere in
+// the system prompt - it had to guess both the date and the weekday from
+// training data, which is exactly how "next Tuesday" turned into
+// Wednesday. Called fresh from systemSuffix() below on every turn, not
+// frozen at conversation start: the full system prompt is already resent
+// on every turn regardless (see loop.ts's startTurn()), so recomputing this
+// ~20-token line costs nothing extra, and it keeps a conversation that
+// spans midnight (or a laptop that sleeps overnight) correct instead of
+// stuck on its start-of-chat date.
+function todayContextLine(): string {
+  try {
+    const now = new Date()
+    const weekday = now.toLocaleDateString('en-US', { weekday: 'long' })
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, '0')
+    const d = String(now.getDate()).padStart(2, '0')
+    const hh = String(now.getHours()).padStart(2, '0')
+    const mm = String(now.getMinutes()).padStart(2, '0')
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return `Today is ${weekday}, ${y}-${m}-${d}, ${hh}:${mm} (${tz}).`
+  } catch {
+    return `Today is ${new Date().toDateString()}.`
+  }
 }
 
 /**
@@ -348,14 +397,24 @@ export function startAddIn(config: AddInConfig): void {
   // enforcement is server-side in each app's *Tools.Execute, which gates
   // mutating tool calls even if the model somehow requests one that wasn't
   // offered here.
-  let editingMode: EditingMode = 'fullAutonomy'
+  // A fresh session no longer starts in Full Autonomy by default - see
+  // defaultModeFor() in chat-ui.ts. This must resolve identically to
+  // mountChatUI's own `defaultMode` computation below (same helper, same
+  // inputs) or the UI's initial selection and this filtering state disagree
+  // about what's actually available before the user ever touches the mode
+  // menu.
+  let editingMode: EditingMode = defaultModeFor(resolveModes(config.availableModes), config.defaultMode ?? 'trackChanges')
 
   const readOnlySet = new Set(config.readOnlyTools)
   const commentOnlySet = new Set([...config.readOnlyTools, ...(config.commentOnlyExtraTools ?? [])])
+  // null (every app but Outlook) = "no opinion" - trackChanges falls through
+  // to "everything", unchanged from before this field existed.
+  const trackChangesSet = config.trackChangesExtraTools ? new Set([...commentOnlySet, ...config.trackChangesExtraTools]) : null
 
   function availableForMode(): string[] {
     if (editingMode === 'readOnly') return config.tools.filter((t) => readOnlySet.has(t.name)).map((t) => t.name)
     if (editingMode === 'commentOnly') return config.tools.filter((t) => commentOnlySet.has(t.name)).map((t) => t.name)
+    if (editingMode === 'trackChanges' && trackChangesSet) return config.tools.filter((t) => trackChangesSet.has(t.name)).map((t) => t.name)
     return config.tools.map((t) => t.name)
   }
 
@@ -399,6 +458,9 @@ export function startAddIn(config: AddInConfig): void {
   // frozen by beginConversation() at conversation-start boundaries only
   // (initial load, New chat), never read live per-turn, so editing the
   // guidelines mid-conversation cannot retroactively change a run in progress.
+  // The date context line is the opposite: recomputed live on every turn by
+  // systemSuffix() below (todayContextLine()'s own comment explains why),
+  // not frozen here.
   let savedDocMessage = ''
   let activeDocMessage = ''
   function beginConversation(): void {
@@ -442,12 +504,29 @@ export function startAddIn(config: AddInConfig): void {
     return pref === 'default' ? lastKnownOfficeTheme : pref
   }
 
+  // Language reconciliation - exact same shape as theme above.
+  // `currentLangPref` is the persisted 3-way choice; `lastKnownOfficeLanguage`
+  // is Office's real UI display language, read exactly once (via
+  // requestOfficeLanguage() below, see OfficeAi.Shared/OfficeLanguage.cs) and
+  // cached for this pane's whole lifetime. C# never sees `currentLangPref`;
+  // it only ever reports "what language is Office's own UI in right now",
+  // and this file alone decides whether that answer gets applied (only when
+  // the preference is 'default').
+  let currentLangPref: 'en' | 'he' | 'default' = getSettings().lang
+  let lastKnownOfficeLanguage: 'en' | 'he' = 'en'
+  function effectiveLang(pref: 'en' | 'he' | 'default'): 'en' | 'he' {
+    return pref === 'default' ? lastKnownOfficeLanguage : pref
+  }
+
   const root = document.getElementById('root')!
   const ui = mountChatUI(root, {
     starters: config.starters,
     tools: toolDisplayList,
     scopeUnit: config.scopeUnit,
     modes: config.availableModes,
+    modeOverrides: config.modeOverrides,
+    defaultMode: config.defaultMode,
+    autoSendTools: config.autoSendTools,
     onToolRegistrationChange: (registered) => {
       registeredTools = new Set(registered)
     },
@@ -463,6 +542,7 @@ export function startAddIn(config: AddInConfig): void {
         skipTlsVerify: s.skipTlsVerify,
         providers: s.ai.providers,
         theme: s.theme,
+        lang: s.lang,
       }
     })(),
     // Post-hoc addition (2026-08-24, user-requested): AgentLoop.cancel()
@@ -523,14 +603,26 @@ export function startAddIn(config: AddInConfig): void {
           baseUrl: settings.baseUrl || current.ai.providers[settings.provider]?.baseUrl,
         },
       }
-      setSettings({ ai: { provider: settings.provider, providers }, skipTlsVerify: settings.skipTlsVerify, theme: settings.theme })
+      setSettings({
+        ai: { provider: settings.provider, providers },
+        skipTlsVerify: settings.skipTlsVerify,
+        theme: settings.theme,
+        lang: settings.lang,
+      })
       postTlsBypass(settings.skipTlsVerify)
-      // Unlike `lang` (a pre-existing gap - threaded into the payload but
-      // never persisted here), theme must actually be folded into
-      // setSettings() above, and applied immediately so Save's effect is
-      // visible without waiting for anything async.
+      // lang used to be a pre-existing gap here - threaded into the payload
+      // but never persisted or applied. Now folded into setSettings() above
+      // and applied immediately, same as theme, so Save's effect (including
+      // picking 'default') is visible without waiting for anything async.
       currentThemePref = settings.theme
       ui.setTheme(effectiveTheme(settings.theme))
+      currentLangPref = settings.lang
+      // Unlike theme (never self-applied by chat-ui.ts), an explicit en/he
+      // choice is already applied by chat-ui.ts's own Save handler directly
+      // (it can resolve that case itself) - only 'default' needs resolving
+      // here, since that's the one value chat-ui.ts can't answer on its own.
+      // Calling setLang unconditionally would just redo identical DOM work.
+      if (settings.lang === 'default') ui.setLang(effectiveLang(settings.lang))
       // Task 9: registration itself already took effect live via
       // onToolRegistrationChange above - settings.registeredTools is an echo,
       // not applied here again. The doc message, however, is Save-gated (Task
@@ -595,6 +687,11 @@ export function startAddIn(config: AddInConfig): void {
   // delaying first paint.
   if (currentThemePref !== 'default') ui.setTheme(currentThemePref)
 
+  // Same idea for language - an explicit English/Hebrew preference is known
+  // synchronously, so apply it immediately; 'default' waits for the async
+  // reply below, same one-frame-flash tradeoff as theme.
+  if (currentLangPref !== 'default') ui.setLang(currentLangPref)
+
   // Post-hoc addition (2026-08-24, user-requested): a message sent while a
   // run is already busy is queued here rather than dropped, and dispatched
   // in onDone below once the current run finishes (normally or via stop).
@@ -654,12 +751,12 @@ export function startAddIn(config: AddInConfig): void {
   const loop = new AgentLoop({
     transport: makeTransport(),
     skill,
-    // Task 8 Step 2/4: appended to the system prompt every turn, but the
-    // value it reads (activeDocMessage) only changes at conversation-start
-    // boundaries - see beginConversation() above. Labeled explicitly as
-    // user-supplied so the model treats it as standing instructions from the
-    // user, not as system policy.
-    systemSuffix: () => (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
+    // Called every turn. The date line (todayContextLine()) is computed
+    // fresh each call, on purpose - see its own comment. activeDocMessage
+    // only changes at conversation-start boundaries - see beginConversation()
+    // above - and is labeled explicitly as user-supplied so the model treats
+    // it as standing instructions from the user, not as system policy.
+    systemSuffix: () => '\n\n' + todayContextLine() + (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
     events: {
       onText: (text) => {
         textStreamedSinceGroup = true
@@ -751,6 +848,13 @@ export function startAddIn(config: AddInConfig): void {
       lastKnownOfficeTheme = officeTheme
       if (currentThemePref === 'default') ui.setTheme(officeTheme)
     },
+    // Fires exactly once per pane lifetime - the one-shot reply to
+    // requestOfficeLanguage() below (see OfficeAi.Shared/OfficeLanguage.cs;
+    // there is no later push to handle, by design).
+    onOfficeLanguageLoaded: (officeLanguage) => {
+      lastKnownOfficeLanguage = officeLanguage
+      if (currentLangPref === 'default') ui.setLang(officeLanguage)
+    },
   })
 
   // Task 4: push the initial (scope-default, no override) tool registration
@@ -760,4 +864,5 @@ export function startAddIn(config: AddInConfig): void {
   requestHistory()
   requestDocSettings()
   requestOfficeTheme()
+  requestOfficeLanguage()
 }

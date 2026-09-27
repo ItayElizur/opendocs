@@ -3,7 +3,7 @@ using OfficeAi.Shared;
 
 namespace OutlookAiAddIn
 {
-    // Explorer-only: the Airchat button goes on the Explorer's Mail tab
+    // Explorer-only: the OpenDocs button goes on the Explorer's Mail tab
     // (idMso "TabMail", not Word/Excel/PowerPoint's "TabHome") and is
     // suppressed on every Inspector (pop-out read/compose) ribbon surface.
     [ComVisible(true)]
@@ -22,6 +22,11 @@ namespace OutlookAiAddIn
         protected override void TogglePane()
         {
             Globals.ThisAddIn.TogglePane();
+        }
+
+        protected override int GetOfficeUiLanguageId()
+        {
+            return Globals.ThisAddIn.GetOfficeUiLanguageId();
         }
     }
 }

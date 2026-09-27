@@ -83,19 +83,36 @@ namespace PowerPointAiAddIn
 
         // Shared by ApplyOptionalName below and DuplicateElement/CopyOrMoveElement
         // (PowerPointTools.CrossSlide.cs) - disambiguates `desired` against every
-        // OTHER shape's current Name on `shape`'s own slide with a numeric suffix
-        // ("Rectangle 5" -> "Rectangle 5 2"), the same convention read_slide/
-        // read_group key their output on. No-ops (returns desired unchanged) for a
-        // shape whose parent isn't a Slide (e.g. a Slide Master shape) - same
-        // documented limitation ApplyOptionalName already had.
-        private static string MakeUniqueNameOnSlide(PowerPoint.Shape shape, string desired)
+        // OTHER shape's current Name with a numeric suffix ("Rectangle 5" ->
+        // "Rectangle 5 2"), the same convention read_slide/read_group key their
+        // output on.
+        //
+        // siblingShapes defaults to null, meaning "resolve it from the shape's
+        // own slide" (the common case for an ordinary slide shape, and the only
+        // case CrossSlide.cs/DuplicateElement ever need). Pass it explicitly
+        // (e.g. AddMasterElement passes target.Shapes) for a shape whose parent
+        // is never a PowerPoint.Slide - a Slide Master/layout shape - where
+        // ShapeSlide can never resolve one automatically; without this, dedup
+        // silently no-ops for those shapes. Review finding: this used to be two
+        // separate overloads and a caller could pick the wrong one (the 2-arg
+        // overload silently skipped dedup for a master/layout shape for a full
+        // round of development before being caught) - one method with a
+        // defaultable parameter makes the common case's default safe
+        // automatically instead of relying on the caller remembering which
+        // overload fits.
+        private static string MakeUniqueNameOnSlide(PowerPoint.Shape shape, string desired, PowerPoint.Shapes siblingShapes = null)
         {
-            PowerPoint.Slide slide = ShapeSlide(shape);
+            if (siblingShapes == null)
+            {
+                PowerPoint.Slide slide = ShapeSlide(shape);
+                siblingShapes = slide != null ? slide.Shapes : null;
+            }
+
             string unique = desired;
-            if (slide != null)
+            if (siblingShapes != null)
             {
                 var taken = new HashSet<string>();
-                foreach (PowerPoint.Shape s in slide.Shapes)
+                foreach (PowerPoint.Shape s in siblingShapes)
                     if (s.Id != shape.Id) taken.Add(s.Name);
                 int suffix = 2;
                 while (taken.Contains(unique)) unique = desired + " " + suffix++;
@@ -105,9 +122,9 @@ namespace PowerPointAiAddIn
 
         // Optional model-chosen shape name. PowerPoint permits duplicate names,
         // but read_slide/read_group key their output on the name, so a collision
-        // on the same slide is disambiguated with a numeric suffix. Returns the
-        // name actually applied, or null when none was requested.
-        private static string ApplyOptionalName(PowerPoint.Shape shape, JsonElement input)
+        // among the sibling shapes is disambiguated with a numeric suffix.
+        // Returns the name actually applied, or null when none was requested.
+        private static string ApplyOptionalName(PowerPoint.Shape shape, JsonElement input, PowerPoint.Shapes siblingShapes = null)
         {
             if (!input.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String)
                 return null;
@@ -115,7 +132,7 @@ namespace PowerPointAiAddIn
             if (desired.Length == 0) return null;
             if (desired.Length > 120) desired = desired.Substring(0, 120);
 
-            string unique = MakeUniqueNameOnSlide(shape, desired);
+            string unique = MakeUniqueNameOnSlide(shape, desired, siblingShapes);
             shape.Name = unique;
             return unique;
         }

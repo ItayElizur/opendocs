@@ -64,6 +64,11 @@ namespace ExcelAiAddIn
             ExcelTools.SetMode(GetChatId(), mode);
         }
 
+        protected override int GetOfficeUiLanguageId()
+        {
+            return Globals.ThisAddIn.GetOfficeUiLanguageId();
+        }
+
         private static string ColumnLetter(int col)
         {
             string result = "";

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Office.Tools;
+using OfficeAi.Shared;
 using Excel = Microsoft.Office.Interop.Excel;
 
 namespace ExcelAiAddIn
@@ -62,6 +63,41 @@ namespace ExcelAiAddIn
             this.Application.SheetSelectionChange -= Application_SheetSelectionChange;
         }
 
+        // The one real COM call for Office's UI display language in this
+        // app - Ribbon.cs and TaskPaneHost.cs each need their own copy of
+        // this (their base classes' GetOfficeUiLanguageId hooks are
+        // abstract, since neither shared assembly can see this app's own
+        // Globals class), but delegate here rather than re-issuing the COM
+        // call themselves, so there is exactly one place per app that can
+        // fail and exactly one place that guards against it. A theme-
+        // detection bug must never break pane creation (OfficeTheme.cs's own
+        // stated posture) - same reasoning applies here: if
+        // LanguageSettings throws (an unusual COM/host state), degrade to
+        // the code that already means "not Hebrew" rather than letting the
+        // ribbon render a blank label or the "load-language" bridge message
+        // die silently with no reply ever sent (that one-shot message has no
+        // retry - see PaneHostBase's "load-language" case).
+        public int GetOfficeUiLanguageId()
+        {
+            try
+            {
+                return this.Application.LanguageSettings.LanguageID[Microsoft.Office.Core.MsoAppLanguageID.msoLanguageIDUI];
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        // Read once per pane creation - the CustomTaskPane's native title bar
+        // is a third UI surface, separate from the ribbon and the WebView2
+        // content, so it needs its own call site even though all three now
+        // share GetOfficeUiLanguageId().
+        private string PaneTitle()
+        {
+            return OfficeLanguage.ResolveBrandName(GetOfficeUiLanguageId());
+        }
+
         // Lazy: only reachable from WindowActivate, TogglePane, and the single
         // startup call above - a workbook that is open but whose window has
         // never been activated pays no WebView2 cost.
@@ -79,7 +115,7 @@ namespace ExcelAiAddIn
             try
             {
                 TaskPaneHost control = new TaskPaneHost((Excel.Workbook)window.Parent, hwnd);
-                CustomTaskPane pane = this.CustomTaskPanes.Add(control, "Airchat Office", window);
+                CustomTaskPane pane = this.CustomTaskPanes.Add(control, PaneTitle(), window);
                 pane.Width = 420;
                 pane.Visible = true;
 

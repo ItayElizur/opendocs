@@ -6,14 +6,20 @@ using Ews = Microsoft.Exchange.WebServices.Data;
 
 namespace OutlookAiAddIn
 {
-    // The one non-COM call in the Outlook add-in. search_contacts resolves a
-    // name/email fragment through EWS ResolveName - a server-side Ambiguous Name
-    // Resolution over the mailbox's Contacts folder then the GAL, exactly what
-    // the native Address Book dialog does and what the mcp-outlook reference
-    // (account.protocol.resolve_names) does. It is deliberately NOT
-    // Microsoft.Office.Interop.Outlook: the COM object model cannot do a
-    // multi-result directory search, and EWS is plain HTTP with no STA affinity
-    // so the call runs off the UI thread (Task.Run) and never freezes Outlook.
+    // The non-COM calls in the Outlook add-in - the raw EWS wire layer.
+    // Tool-facing orchestration built on top of this (which account/endpoint
+    // to use, turning a result into a ToolResult) lives in
+    // OutlookTools.Ews.cs, not here; this file only wraps the EWS Managed API
+    // itself. Two operations: ResolveNamesAsync (search_contacts - a
+    // server-side Ambiguous Name Resolution over Contacts then the GAL,
+    // exactly what the native Address Book dialog does and what the
+    // mcp-outlook reference's account.protocol.resolve_names does) and
+    // GetWorkingHoursAsync (find_meeting_slots' work-week default - see its
+    // own comment). Both are deliberately NOT Microsoft.Office.Interop.Outlook:
+    // the COM object model can do neither a multi-result directory search nor
+    // expose a mailbox's configured work week, and EWS is plain HTTP with no
+    // STA affinity so both run off the UI thread (Task.Run) and never freeze
+    // Outlook.
     //
     // Auth is ExchangeService.UseDefaultCredentials (Windows Integrated Auth as
     // the signed-in user) - the .NET equivalent of mcp-outlook's auth_type=sspi.
@@ -80,6 +86,80 @@ namespace OutlookAiAddIn
         public static Task<IReadOnlyList<KeyValuePair<string, string>>> ResolveNamesAsync(Uri url, string query)
         {
             return Task.Run(() => ResolveNames(url, query));
+        }
+
+        internal struct WorkWeekInfo
+        {
+            public HashSet<DayOfWeek> Days;
+            public double StartHour;
+            public double EndHour;
+        }
+
+        // GetUserAvailability's WorkingHours is EWS's documented, server-side
+        // source for a mailbox's configured work days/hours - the same data
+        // Outlook itself uses to shade "outside working hours" in the
+        // scheduling assistant. Unlike Outlook's local Calendar Options
+        // dialog, this has no COM equivalent at all: confirmed via .NET
+        // reflection against the referenced Microsoft.Office.Interop.Outlook
+        // PIA that no Application.CalendarOptions property (or any
+        // WorkDay*/FirstDayOfWeek member) exists anywhere in that assembly,
+        // so this EWS call is the only real, non-hardcoded source for it.
+        public static Task<WorkWeekInfo?> GetWorkingHoursAsync(Uri url, string smtp)
+        {
+            return Task.Run(() => GetWorkingHours(url, smtp));
+        }
+
+        private static WorkWeekInfo? GetWorkingHours(Uri url, string smtp)
+        {
+            Ews.ExchangeService svc = NewService(url);
+            var window = new Ews.TimeWindow(DateTime.Today, DateTime.Today.AddDays(7));
+            Ews.GetUserAvailabilityResults results;
+            try
+            {
+                results = svc.GetUserAvailability(
+                    new[] { new Ews.AttendeeInfo(smtp) },
+                    window,
+                    Ews.AvailabilityData.FreeBusy);
+            }
+            catch (Ews.ServiceResponseException)
+            {
+                return null;
+            }
+
+            foreach (Ews.AttendeeAvailability a in results.AttendeesAvailability)
+            {
+                if (a.WorkingHours == null) continue;
+                var days = new HashSet<DayOfWeek>();
+                foreach (Ews.DayOfTheWeek d in a.WorkingHours.DaysOfTheWeek)
+                {
+                    switch (d)
+                    {
+                        case Ews.DayOfTheWeek.Sunday: days.Add(DayOfWeek.Sunday); break;
+                        case Ews.DayOfTheWeek.Monday: days.Add(DayOfWeek.Monday); break;
+                        case Ews.DayOfTheWeek.Tuesday: days.Add(DayOfWeek.Tuesday); break;
+                        case Ews.DayOfTheWeek.Wednesday: days.Add(DayOfWeek.Wednesday); break;
+                        case Ews.DayOfTheWeek.Thursday: days.Add(DayOfWeek.Thursday); break;
+                        case Ews.DayOfTheWeek.Friday: days.Add(DayOfWeek.Friday); break;
+                        case Ews.DayOfTheWeek.Saturday: days.Add(DayOfWeek.Saturday); break;
+                        // Day/Weekday/WeekendDay are input-only aggregate
+                        // values per the enum's own shape (confirmed via
+                        // reflection) - never expected back from the server,
+                        // so deliberately not expanded here.
+                    }
+                }
+                if (days.Count == 0) continue;
+                return new WorkWeekInfo
+                {
+                    Days = days,
+                    // Kept as fractional hours, not truncated to an int: a
+                    // mailbox configured for e.g. 08:30-17:30 would otherwise
+                    // silently become 08:00-17:00 (offering a slot before the
+                    // real start, and dropping the valid 17:00-17:30 slot).
+                    StartHour = a.WorkingHours.StartTime.TotalHours,
+                    EndHour = a.WorkingHours.EndTime.TotalHours,
+                };
+            }
+            return null;
         }
 
         private static IReadOnlyList<KeyValuePair<string, string>> ResolveNames(Uri url, string query)
