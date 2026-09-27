@@ -244,6 +244,43 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > wiring into the tool switch; `dotnet test` unaffected (no new pure logic —
 > the color-name map is a small dictionary, not extracted for unit testing).
 
+> **Update 2026-09-27 (Outlook gains reschedule tools):** two new tools in
+> `OutlookAiAddIn/OutlookTools.Calendar.cs`, filling the "no way to move an
+> existing event" gap (previously only `draft_event`/`create_event` could
+> place a *new* event at a time). `draft_reschedule_event` (Draft tier) sets
+> `Start`/`End` on the resolved `AppointmentItem` and `Display(false)`s it
+> unsaved, same shape as `draft_event` — the user reviews the moved time and
+> decides whether to save/send. `reschedule_event` (Full autonomy only,
+> `SendTierTools`) sets `Start`/`End` then `.Save()` (no attendees) or
+> `.Send()` (attendees present) to dispatch the reschedule notice, mirroring
+> `create_event`'s attendee-present branch. Both require `event_id`, `start`,
+> and `end`, with a clean `IsError` naming whichever of `start`/`end` is
+> missing rather than defaulting or throwing a raw COM exception.
+>
+> **Organizer-only, by design.** Both tools first check
+> `AppointmentItem.MeetingStatus`. On `olMeetingReceived` (the user is only an
+> *attendee* on someone else's meeting, not the organizer) they refuse up
+> front with an `IsError` explaining the user has no authority to move it and
+> pointing at Outlook's own "Propose New Time" UI — see "Excluded / deferred"
+> below for why no tool attempts that path itself. `olNonMeeting`/`olMeeting`
+> (the user's own appointment or meeting) go through unchanged.
+>
+> **Verification status: unproven at runtime**, same caveat as the rest of
+> this section (see "Unproven at runtime" below) — no live Outlook was
+> available to exercise either tool's COM calls. One piece *was* checked
+> concretely rather than assumed: whether the interop PIA exposes a "Propose
+> New Time" member at all. .NET reflection against the actually-referenced
+> `Microsoft.Office.Interop.Outlook` 15.0.0.0 PIA (same verification
+> discipline `CreateEvent`'s comments use) confirmed neither
+> `AppointmentItem`/`_AppointmentItem` nor `MeetingItem`/`_MeetingItem` expose
+> anything with "Propose" (or "Counter"/"NewTime") in its name —
+> `_AppointmentItem.Respond` only takes an `OlMeetingResponse`
+> (Accept/Decline/Tentative), no counter-proposal overload. "Propose New
+> Time" is real Outlook-client functionality, but it isn't reachable through
+> the classic COM object model this add-in automates, which is why the
+> `olMeetingReceived` case is a hard refusal rather than a half-working
+> attempt.
+
 ## Architecture
 
 officeoffice drives the **real desktop Office applications** via VSTO + COM interop
@@ -460,10 +497,10 @@ index otherwise.
   mailbox unreviewed — `mark_email_read`/`unread`, `flag_email_important`,
   `move_email`, `delete_email`, `create_task`, `update_task`, `set_reminder`,
   `set_email_reminder`, `draft_email`, `reply_email`, `reply_all_email`,
-  `forward_email`, `draft_event`); `TrackChanges` → **Automate approvals** (adds
+  `forward_email`, `draft_event`, `draft_reschedule_event`); `TrackChanges` → **Automate approvals** (adds
   `accept_meeting`/`decline_meeting` — these already call `resp.Send()` to notify the
   organizer, so they get their own explicit tier rather than hiding in Draft only or
-  Full autonomy); `FullAutonomy` → unchanged name, adds the five auto-send tools (see
+  Full autonomy); `FullAutonomy` → unchanged name, adds the six auto-send tools (see
   below). Each tier is a strict superset of the one before it. `entry.ts` passes
   `availableModes: ['readOnly','commentOnly','trackChanges','fullAutonomy']` and a
   `modeOverrides` map so the mode menu shows Outlook's own labels/descriptions instead
@@ -552,7 +589,7 @@ index otherwise.
 | `set_reminder` | `ReminderSet` / `ReminderTime` on an appointment **or** task, addressed by its `item_id` (EntryID); `clear: true` turns it off. |
 | `set_email_reminder` | `MailItem.MarkAsTask(mapped interval)` + `TaskStartDate`/`TaskDueDate` + `ReminderSet`/`ReminderTime` + `.Save()` — the confirmed COM path for "flag an email for follow-up with a reminder". `MailItem` does expose `ReminderSet`/`ReminderTime`. |
 
-### Draft-and-display tools (5 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
+### Draft-and-display tools (6 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
 
 | Tool | Notes |
 |---|---|
@@ -561,12 +598,13 @@ index otherwise.
 | `reply_all_email` | `orig.ReplyAll()`. A **distinct tool**, not a `reply_all` boolean on `reply_email` — clearer for the model, and the user sees the full recipient list before sending. |
 | `forward_email` | `orig.Forward()`, optional `To`, `body` prepended; `Display(false)`. |
 | `draft_event` | `CreateItem(olAppointmentItem)`; with `required_attendees`/`optional_attendees` → `MeetingStatus = olMeeting`, `Recipients.Add(...).Type`, `Recipients.ResolveAll()`; `Display(false)`. Same `"— Created with OpenDocs"` signature appended to a non-empty body. |
+| `draft_reschedule_event` (added 2026-09-27) | Resolves `event_id` via `ItemById`, sets `Start`/`End` from required `start`/`end`, `Display(false)`s unsaved — never touches attendees. Refuses (`IsError`) up front on `MeetingStatus == olMeetingReceived` (the user is only an attendee, not the organizer) — see the "Update 2026-09-27" note above and "Excluded / deferred" below. |
 
 **These never call `.Send()` (mail) or save a calendar event.** The user sends from the
 opened Outlook window. Available from Draft only mode upward (tier 2 — see "Editing
 modes" above), not gated behind Full autonomy.
 
-### Auto-send tools (5 — Full autonomy only; send/create immediately, no review window; `Mutated = true`)
+### Auto-send tools (6 — Full autonomy only; send/create immediately, no review window; `Mutated = true`)
 
 > **Added 2026-09-19**, reversing part of the "no auto-send tool" decision below —
 > narrowed to Full autonomy specifically, not removed generally. Every draft/compose
@@ -579,6 +617,7 @@ modes" above), not gated behind Full autonomy.
 | `send_reply_all` | Same as `reply_all_email`, but `.Send()`. |
 | `send_forward` | Same as `forward_email`, but `.Send()`; `to` is required (unlike `forward_email`, where it's optional). |
 | `create_event` | Same construction as `draft_event`. No attendees → `a.Save()` (a plain calendar entry, nobody to notify). Attendees present → `MeetingStatus = olMeeting` then `a.Send()`, dispatching the invite. Both `AppointmentItem.Send()`/`.Save()` confirmed present via .NET reflection against the referenced PIA before writing this — not assumed from `draft_event`'s non-sending shape. |
+| `reschedule_event` (added 2026-09-27) | Resolves `event_id`, sets `Start`/`End` from required `start`/`end`, then `.Save()` (`olNonMeeting`) or `.Send()` (`olMeeting` — dispatches the reschedule notice to attendees) — mirrors `create_event`'s attendee-present branch. Refuses (`IsError`) on `olMeetingReceived`, same as `draft_reschedule_event` — the user isn't the organizer, and reflection against the referenced PIA found no "Propose New Time" member to fall back to (see "Excluded / deferred"). Returns old and new start/end (via `Iso(...)`) and says explicitly when a reschedule notice was sent. |
 
 Gated by `OutlookTools.cs`'s `SendTierTools` set, requiring `EditingMode.FullAutonomy`
 exactly (the ordinal check's top tier) — not reachable from Draft only or Automate
@@ -590,6 +629,22 @@ existed before this addition and already call `resp.Send()`.
 
 - **`update_event` / `delete_event`** — present in mcp-outlook's `server.py` but not
   its README; not ported. Trivial parity adds if wanted.
+- **Proposing a new time on a meeting the user only attends** (`MeetingStatus ==
+  olMeetingReceived`) — real Outlook's "Propose New Time" feature, deliberately
+  *not* implemented (added 2026-09-27, alongside `reschedule_event`/
+  `draft_reschedule_event`). Those two tools refuse outright on a received meeting
+  rather than attempt anything, because there's no clean way to honor the request:
+  a plain `.Send()` here wouldn't be an authoritative reschedule Outlook actually
+  honors (the user isn't the organizer), and .NET reflection against the
+  actually-referenced `Microsoft.Office.Interop.Outlook` 15.0.0.0 PIA found no
+  "Propose"/"Counter"/"NewTime"-named member on `AppointmentItem`/
+  `_AppointmentItem` or `MeetingItem`/`_MeetingItem` to call instead —
+  `_AppointmentItem.Respond` only accepts `OlMeetingResponse`
+  (Accept/Decline/Tentative). "Propose New Time" appears to be a ribbon/UI-level
+  feature (MAPI counter-proposal properties) not cleanly exposed through classic
+  COM automation. A future implementation would likely need raw `PropertyAccessor`
+  MAPI-property manipulation rather than a typed object-model call — untried here,
+  and risky without a live mailbox to validate against.
 
 (`find_meeting_slots`, deferred in the first cut, is now implemented — see the Read
 tools table. `Recipient.FreeBusy` is all local-time, so no cross-timezone math was
@@ -611,8 +666,9 @@ Everything is addressed by `EntryID`. It is stable while an item stays put but c
 on `Move` and is store-specific; the mutating tools that move items return the new id,
 and every other tool re-resolves via `GetItemFromID` each call. All recurring
 occurrences of a calendar series **share one `EntryID`**, so `get_event` /
-`accept_meeting` / `decline_meeting` cannot target a single occurrence unambiguously —
-`list_events` carries each occurrence's `start` as the disambiguator.
+`accept_meeting` / `decline_meeting` / `reschedule_event` / `draft_reschedule_event`
+cannot target a single occurrence unambiguously — they necessarily act on the master
+series. `list_events` carries each occurrence's `start` as the disambiguator.
 
 ### Unproven at runtime (as of 2026-08-28)
 
@@ -637,6 +693,21 @@ responsive during the call. The async delegate refactor (`ToolExecutor` →
 `Task<ToolResult>`, `async void OnWebMessageReceived`) builds clean for all four
 add-ins; a runtime smoke of one tool per app confirms nothing regressed is still
 pending.
+
+`reschedule_event`/`draft_reschedule_event` (added 2026-09-27) are likewise
+**compiled but not exercised against a live Outlook**: no environment with a real
+mailbox was available while writing them. The `MeetingStatus` branching
+(`olNonMeeting`/`olMeeting`/`olMeetingReceived`) and the `AppointmentItem.Send()`/
+`.Save()` calls reuse `CreateEvent`'s already-referenced members, so the risk is
+concentrated in the `Start`/`End` assignment on an item resolved via
+`GetItemFromID` (not freshly created, unlike `draft_event`/`create_event`) and in
+whether Outlook accepts a plain `.Send()` on a modified organizer-owned meeting as
+a real reschedule notice (vs., say, needing `ClearRecipients`/re-resolution first
+for edge cases like an all-day flag or a recurrence-pattern change — neither of
+which these tools touch, by design, since they only move a single Start/End pair).
+The one thing that *was* checked concretely, not assumed: the "no Propose New Time
+member" claim behind the `olMeetingReceived` refusal, confirmed via .NET reflection
+against the referenced PIA (see the "Update 2026-09-27" note above).
 
 ---
 

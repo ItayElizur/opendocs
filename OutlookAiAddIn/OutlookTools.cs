@@ -73,7 +73,7 @@ namespace OutlookAiAddIn
             "mark_email_read", "mark_email_unread", "flag_email_important", "move_email", "delete_email",
             "create_task", "update_task", "set_reminder", "set_email_reminder",
             "draft_email", "reply_email", "reply_all_email", "forward_email", "draft_event",
-            "set_event_categories", "set_category_color", "apply_search",
+            "set_event_categories", "set_category_color", "apply_search", "draft_reschedule_event",
         };
 
         // Tier 3 ("Automate approvals" / TrackChanges): already calls
@@ -88,7 +88,7 @@ namespace OutlookAiAddIn
         // content with no review step at all.
         private static readonly HashSet<string> SendTierTools = new HashSet<string>
         {
-            "send_email", "send_reply", "send_reply_all", "send_forward", "create_event",
+            "send_email", "send_reply", "send_reply_all", "send_forward", "create_event", "reschedule_event",
         };
 
         private static string TierLabel(EditingMode mode)
@@ -160,12 +160,14 @@ namespace OutlookAiAddIn
                     case "reply_all_email": return ReplyEmail(input, true);
                     case "forward_email": return ForwardEmail(input);
                     case "draft_event": return DraftEvent(input);
+                    case "draft_reschedule_event": return DraftRescheduleEvent(input);
 
                     case "send_email": return SendEmail(input);
                     case "send_reply": return SendReply(input, false);
                     case "send_reply_all": return SendReply(input, true);
                     case "send_forward": return SendForward(input);
                     case "create_event": return CreateEvent(input);
+                    case "reschedule_event": return RescheduleEvent(input);
 
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
