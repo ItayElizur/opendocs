@@ -13,7 +13,18 @@ namespace OutlookAiAddIn
         {
             int limit = Math.Max(1, Int(input, "limit", 50));
             bool includeCompleted = Bool(input, "include_completed", false);
+            bool includeFlaggedEmails = Bool(input, "include_flagged_emails", true);
 
+            var sb = new StringBuilder();
+            int n = AppendTasks(sb, limit, includeCompleted);
+            if (includeFlaggedEmails && n < limit) n += AppendFlaggedEmails(sb, limit - n, includeCompleted);
+
+            if (n == 0) return new ToolResult { Output = includeCompleted ? "No tasks." : "No open tasks.", Summary = "list_tasks" };
+            return new ToolResult { Output = sb.ToString(), Summary = "list_tasks" };
+        }
+
+        private static int AppendTasks(StringBuilder sb, int limit, bool includeCompleted)
+        {
             Outlook.Folder tasksFolder = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderTasks);
             Outlook.Table table = tasksFolder.GetTable(Type.Missing, Outlook.OlTableContents.olUserItems);
             table.Columns.RemoveAll();
@@ -26,7 +37,6 @@ namespace OutlookAiAddIn
             table.Columns.Add("Complete");
             table.Columns.Add("ReminderTime");
 
-            var sb = new StringBuilder();
             int n = 0;
             while (!table.EndOfTable && n < limit)
             {
@@ -36,14 +46,55 @@ namespace OutlookAiAddIn
                 if (complete && !includeCompleted) continue;
                 n++;
                 sb.AppendLine("- task_id: " + Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture));
+                sb.AppendLine("  kind: task");
                 sb.AppendLine("  subject: " + (Convert.ToString(row["Subject"], CultureInfo.InvariantCulture) ?? ""));
                 sb.AppendLine("  due: " + DateCell(row["DueDate"]) + "  start: " + DateCell(row["StartDate"]));
                 sb.AppendLine("  status: " + Convert.ToString(row["Status"], CultureInfo.InvariantCulture) +
                               "  percent: " + Convert.ToString(row["PercentComplete"], CultureInfo.InvariantCulture) +
                               "  complete: " + complete);
             }
-            if (n == 0) return new ToolResult { Output = includeCompleted ? "No tasks." : "No open tasks.", Summary = "list_tasks" };
-            return new ToolResult { Output = sb.ToString(), Summary = "list_tasks" };
+            return n;
+        }
+
+        // Outlook's "Flag for follow up" on a mail item never creates a
+        // TaskItem in the Tasks folder - it just sets flag/date properties on
+        // the mail in place, wherever it lives. The To-Do List is Outlook's
+        // own aggregation of every flagged item across the mailbox, so it's
+        // the one place that surfaces those without walking every folder.
+        // Real tasks show up in there too; skip them since AppendTasks
+        // already listed those from the Tasks folder directly.
+        private static int AppendFlaggedEmails(StringBuilder sb, int limit, bool includeCompleted)
+        {
+            Outlook.Folder toDo = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderToDo);
+            Outlook.Table table = toDo.GetTable(Type.Missing, Outlook.OlTableContents.olUserItems);
+            table.Columns.RemoveAll();
+            table.Columns.Add("EntryID");
+            table.Columns.Add("Subject");
+            table.Columns.Add("MessageClass");
+            table.Columns.Add("FlagStatus");
+            table.Columns.Add("TaskDueDate");
+            table.Columns.Add("TaskStartDate");
+
+            int n = 0;
+            while (!table.EndOfTable && n < limit)
+            {
+                Outlook.Row row = table.GetNextRow();
+                string cls = Convert.ToString(row["MessageClass"], CultureInfo.InvariantCulture) ?? "";
+                if (!cls.StartsWith("IPM.Note", StringComparison.OrdinalIgnoreCase)) continue;
+
+                int flagStatus = 0;
+                try { flagStatus = Convert.ToInt32(row["FlagStatus"]); } catch { }
+                bool complete = flagStatus == (int)Outlook.OlFlagStatus.olFlagComplete;
+                if (complete && !includeCompleted) continue;
+
+                n++;
+                sb.AppendLine("- task_id: " + Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture));
+                sb.AppendLine("  kind: flagged_email");
+                sb.AppendLine("  subject: " + (Convert.ToString(row["Subject"], CultureInfo.InvariantCulture) ?? ""));
+                sb.AppendLine("  due: " + DateCell(row["TaskDueDate"]) + "  start: " + DateCell(row["TaskStartDate"]));
+                sb.AppendLine("  complete: " + complete);
+            }
+            return n;
         }
 
         private static string DateCell(object v)
@@ -81,23 +132,44 @@ namespace OutlookAiAddIn
         private static ToolResult UpdateTask(JsonElement input)
         {
             string id = ReqStr(input, "task_id");
-            Outlook.TaskItem t = ItemById(id, null) as Outlook.TaskItem;
-            if (t == null) return new ToolResult { Output = "task_id does not resolve to a task.", IsError = true, Summary = "update_task" };
+            object item = ItemById(id, null);
 
-            string subject = Str(input, "subject", null);
-            if (subject != null) t.Subject = subject;
-            DateTime? due = DateArg(input, "due_date");
-            if (due.HasValue) t.DueDate = due.Value;
-            DateTime? sd = DateArg(input, "start_date");
-            if (sd.HasValue) t.StartDate = sd.Value;
-            int pct = Int(input, "percent_complete", -1);
-            if (pct >= 0 && pct <= 100) t.PercentComplete = pct;
-            string status = Str(input, "status", null);
-            if (status != null) t.Status = ParseTaskStatus(status);
-            if (Bool(input, "mark_complete", false)) { t.Complete = true; t.PercentComplete = 100; }
+            Outlook.TaskItem t = item as Outlook.TaskItem;
+            if (t != null)
+            {
+                string subject = Str(input, "subject", null);
+                if (subject != null) t.Subject = subject;
+                DateTime? due = DateArg(input, "due_date");
+                if (due.HasValue) t.DueDate = due.Value;
+                DateTime? sd = DateArg(input, "start_date");
+                if (sd.HasValue) t.StartDate = sd.Value;
+                int pct = Int(input, "percent_complete", -1);
+                if (pct >= 0 && pct <= 100) t.PercentComplete = pct;
+                string status = Str(input, "status", null);
+                if (status != null) t.Status = ParseTaskStatus(status);
+                if (Bool(input, "mark_complete", false)) { t.Complete = true; t.PercentComplete = 100; }
 
-            t.Save();
-            return new ToolResult { Output = "Task updated: " + (t.Subject ?? ""), Mutated = true, Summary = "update_task" };
+                t.Save();
+                return new ToolResult { Output = "Task updated: " + (t.Subject ?? ""), Mutated = true, Summary = "update_task" };
+            }
+
+            // task_id from list_tasks' "kind: flagged_email" rows is the
+            // mail's own EntryID - there's no TaskItem to cast to, just flag
+            // properties on the mail itself.
+            Outlook.MailItem mail = item as Outlook.MailItem;
+            if (mail != null)
+            {
+                DateTime? due = DateArg(input, "due_date");
+                if (due.HasValue) mail.TaskDueDate = due.Value;
+                DateTime? sd = DateArg(input, "start_date");
+                if (sd.HasValue) mail.TaskStartDate = sd.Value;
+                if (Bool(input, "mark_complete", false)) mail.FlagStatus = Outlook.OlFlagStatus.olFlagComplete;
+
+                mail.Save();
+                return new ToolResult { Output = "Flagged email updated: " + (mail.Subject ?? ""), Mutated = true, Summary = "update_task" };
+            }
+
+            return new ToolResult { Output = "task_id does not resolve to a task or a flagged email.", IsError = true, Summary = "update_task" };
         }
 
         private static ToolResult SetReminder(JsonElement input)

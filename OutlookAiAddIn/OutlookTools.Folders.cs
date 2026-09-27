@@ -12,7 +12,19 @@ namespace OutlookAiAddIn
         {
             var sb = new StringBuilder();
             int total = 0;
-            WalkFolders(Ns.Folders, "", ref total, 800, 0, sb);
+            try
+            {
+                WalkFolders(Ns.Folders, "", ref total, 800, 0, sb);
+            }
+            catch (Exception ex)
+            {
+                // A store/folder that's momentarily unreachable (shared mailbox,
+                // archive, public folder) throws here and would otherwise wipe
+                // out everything already collected from folders that were fine.
+                DebugLog.WriteException("ListFolders", ex);
+                if (total == 0) return new ToolResult { Output = "Could not list folders: " + ex.Message, IsError = true, Summary = "list_folders" };
+                sb.AppendLine("! folder listing stopped early: " + ex.Message);
+            }
             if (total == 0) return new ToolResult { Output = "No mail folders found.", Summary = "list_folders" };
             return new ToolResult { Output = sb.ToString(), Summary = "list_folders" };
         }
@@ -34,7 +46,18 @@ namespace OutlookAiAddIn
                     try { unread = f.UnReadItemCount; } catch { }
                     sb.AppendLine("- " + here + "  (items: " + count + ", unread: " + unread + ")");
                 }
-                WalkFolders(f.Folders, here, ref total, cap, depth + 1, sb);
+                try
+                {
+                    WalkFolders(f.Folders, here, ref total, cap, depth + 1, sb);
+                }
+                catch (Exception ex)
+                {
+                    // Same reasoning as ListFolders' outer catch, one level down:
+                    // a transient failure expanding this one subfolder shouldn't
+                    // abort siblings that are perfectly reachable.
+                    DebugLog.WriteException("WalkFolders " + here, ex);
+                    sb.AppendLine("  ! could not list subfolders of " + here + ": " + ex.Message);
+                }
             }
         }
     }

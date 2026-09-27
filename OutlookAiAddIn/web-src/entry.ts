@@ -156,10 +156,15 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'list_tasks',
-    description: 'Lists tasks (open only by default) via Outlook\'s table API. Returns task_id, subject, due/start dates, status, percent complete.',
+    description:
+      'Lists tasks (open only by default) via Outlook\'s table API: real Tasks-folder tasks, plus emails flagged for follow-up ("mark as task") by default. Returns task_id, kind (task or flagged_email), subject, due/start dates, and completion state.',
     inputSchema: {
       type: 'object',
-      properties: { limit: { type: 'number', description: 'Default 50.' }, include_completed: { type: 'boolean' } },
+      properties: {
+        limit: { type: 'number', description: 'Default 50.' },
+        include_completed: { type: 'boolean' },
+        include_flagged_emails: { type: 'boolean', description: 'Include emails flagged for follow-up alongside real tasks. Default true.' },
+      },
       required: [],
     },
   },
@@ -256,7 +261,8 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'update_task',
-    description: 'Updates an existing task. Only the fields you pass change. mark_complete:true completes it.',
+    description:
+      'Updates an existing task, or a flagged-for-follow-up email (task_id from list_tasks\' "flagged_email" rows) - subject/status/percent_complete only apply to real tasks. Only the fields you pass change. mark_complete:true completes it.',
     inputSchema: {
       type: 'object',
       properties: {
