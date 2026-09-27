@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Office.Tools;
+using OfficeAi.Shared;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 
 namespace PowerPointAiAddIn
@@ -64,6 +65,17 @@ namespace PowerPointAiAddIn
             this.Application.WindowSelectionChange -= Application_WindowSelectionChange;
         }
 
+        // Read once per pane creation, same LCID check as the ribbon's own
+        // getLabel callbacks (RibbonBase.cs) and the WebView2 content's
+        // default-language resolution (TaskPaneHost.GetOfficeUiLanguageId) -
+        // the CustomTaskPane's native title bar is a third, separate UI
+        // surface neither of those touches, so it needs its own call site.
+        private string PaneTitle()
+        {
+            int lcid = this.Application.LanguageSettings.LanguageID[Microsoft.Office.Core.MsoAppLanguageID.msoLanguageIDUI];
+            return OfficeLanguage.ResolveUiLanguage(lcid) == "he" ? "אופן דוקס" : "OpenDocs";
+        }
+
         // Lazy: only reachable from WindowActivate, TogglePane, and the single
         // startup call above - a presentation that is open but whose window
         // has never been activated pays no WebView2 cost.
@@ -81,7 +93,7 @@ namespace PowerPointAiAddIn
             try
             {
                 TaskPaneHost control = new TaskPaneHost(window.Presentation, hwnd);
-                CustomTaskPane pane = this.CustomTaskPanes.Add(control, "OpenDocs", window);
+                CustomTaskPane pane = this.CustomTaskPanes.Add(control, PaneTitle(), window);
                 pane.Width = 420;
                 pane.Visible = true;
 

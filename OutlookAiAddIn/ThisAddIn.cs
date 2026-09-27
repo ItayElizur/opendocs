@@ -104,6 +104,17 @@ namespace OutlookAiAddIn
             catch { }
         }
 
+        // Read once per pane creation, same LCID check as the ribbon's own
+        // getLabel callbacks (RibbonBase.cs) and the WebView2 content's
+        // default-language resolution (TaskPaneHost.GetOfficeUiLanguageId) -
+        // the CustomTaskPane's native title bar is a third, separate UI
+        // surface neither of those touches, so it needs its own call site.
+        private string PaneTitle()
+        {
+            int lcid = this.Application.LanguageSettings.LanguageID[Microsoft.Office.Core.MsoAppLanguageID.msoLanguageIDUI];
+            return OfficeLanguage.ResolveUiLanguage(lcid) == "he" ? "אופן דוקס" : "OpenDocs";
+        }
+
         private PaneEntry EnsurePaneFor(Outlook.Explorer explorer)
         {
             IntPtr key = IdOf(explorer);
@@ -115,7 +126,7 @@ namespace OutlookAiAddIn
             try
             {
                 var control = new TaskPaneHost();
-                CustomTaskPane pane = this.CustomTaskPanes.Add(control, "OpenDocs", explorer);
+                CustomTaskPane pane = this.CustomTaskPanes.Add(control, PaneTitle(), explorer);
                 pane.Width = 420;
                 pane.Visible = true;
 
