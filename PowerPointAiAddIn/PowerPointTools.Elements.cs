@@ -81,30 +81,27 @@ namespace PowerPointAiAddIn
             try { return shape.Parent as PowerPoint.Slide; } catch { return null; }
         }
 
-        // Optional model-chosen shape name. PowerPoint permits duplicate names,
-        // but read_slide/read_group key their output on the name, so a collision
-        // among the sibling shapes is disambiguated with a numeric suffix.
-        // Returns the name actually applied, or null when none was requested.
+        // Shared by ApplyOptionalName below and DuplicateElement/CopyOrMoveElement
+        // (PowerPointTools.CrossSlide.cs) - disambiguates `desired` against every
+        // OTHER shape's current Name with a numeric suffix ("Rectangle 5" ->
+        // "Rectangle 5 2"), the same convention read_slide/read_group key their
+        // output on.
         //
         // siblingShapes defaults to null, meaning "resolve it from the shape's
-        // own slide" (the common case for an ordinary slide shape). Pass it
-        // explicitly (e.g. AddMasterElement passes target.Shapes) for a shape
-        // whose parent is never a PowerPoint.Slide - a Slide Master/layout
-        // shape - where ShapeSlide can never resolve one automatically.
-        // Review finding: this used to be two separate overloads, and a
-        // caller could pick the wrong one (the 2-arg overload silently
-        // skipped dedup for a master/layout shape for a full round of
-        // development before being caught) - one method with a defaultable
-        // parameter makes the common case's default safe automatically
-        // instead of relying on the caller remembering which overload fits.
-        private static string ApplyOptionalName(PowerPoint.Shape shape, JsonElement input, PowerPoint.Shapes siblingShapes = null)
+        // own slide" (the common case for an ordinary slide shape, and the only
+        // case CrossSlide.cs/DuplicateElement ever need). Pass it explicitly
+        // (e.g. AddMasterElement passes target.Shapes) for a shape whose parent
+        // is never a PowerPoint.Slide - a Slide Master/layout shape - where
+        // ShapeSlide can never resolve one automatically; without this, dedup
+        // silently no-ops for those shapes. Review finding: this used to be two
+        // separate overloads and a caller could pick the wrong one (the 2-arg
+        // overload silently skipped dedup for a master/layout shape for a full
+        // round of development before being caught) - one method with a
+        // defaultable parameter makes the common case's default safe
+        // automatically instead of relying on the caller remembering which
+        // overload fits.
+        private static string MakeUniqueNameOnSlide(PowerPoint.Shape shape, string desired, PowerPoint.Shapes siblingShapes = null)
         {
-            if (!input.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String)
-                return null;
-            string desired = (nameEl.GetString() ?? "").Trim();
-            if (desired.Length == 0) return null;
-            if (desired.Length > 120) desired = desired.Substring(0, 120);
-
             if (siblingShapes == null)
             {
                 PowerPoint.Slide slide = ShapeSlide(shape);
@@ -120,6 +117,22 @@ namespace PowerPointAiAddIn
                 int suffix = 2;
                 while (taken.Contains(unique)) unique = desired + " " + suffix++;
             }
+            return unique;
+        }
+
+        // Optional model-chosen shape name. PowerPoint permits duplicate names,
+        // but read_slide/read_group key their output on the name, so a collision
+        // among the sibling shapes is disambiguated with a numeric suffix.
+        // Returns the name actually applied, or null when none was requested.
+        private static string ApplyOptionalName(PowerPoint.Shape shape, JsonElement input, PowerPoint.Shapes siblingShapes = null)
+        {
+            if (!input.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String)
+                return null;
+            string desired = (nameEl.GetString() ?? "").Trim();
+            if (desired.Length == 0) return null;
+            if (desired.Length > 120) desired = desired.Substring(0, 120);
+
+            string unique = MakeUniqueNameOnSlide(shape, desired, siblingShapes);
             shape.Name = unique;
             return unique;
         }
@@ -416,6 +429,61 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = "Shape deleted.", Mutated = true, Summary = "delete_element" };
         }
 
+        // Shape.Duplicate() is a native in-place COM clone independent of
+        // Shape.Type - unlike copy_element/move_element (PowerPointTools.
+        // CrossSlide.cs), it needs no shape-kind dispatch at all and works
+        // uniformly for every kind, including groups/pictures/tables/charts/
+        // SmartArt. Positioning of the duplicate by Duplicate() itself is
+        // unverified, so this always computes the new position from the
+        // ORIGINAL shape's Left/Top, never from the duplicate's own
+        // post-Duplicate() position.
+        private static ToolResult DuplicateElement(JsonElement input)
+        {
+            PowerPoint.Shape shape = ResolveTopLevelShape(input, "duplicate_element");
+            PowerPoint.ShapeRange range = shape.Duplicate();
+            PowerPoint.Shape dup = range[1];
+
+            // Each axis is independent: an explicit left/top is an exact
+            // coordinate; an omitted one falls back to the DEFAULT OFFSET on
+            // that axis, not to the original's exact coordinate. Review
+            // finding: the previous either/or branching treated "left given,
+            // top omitted" as "use exact left, but exact (unoffset) top too" -
+            // a duplicate with only left set landed fully overlapping the
+            // original vertically instead of keeping the normal offsetY gap.
+            float offsetX = input.TryGetProperty("offsetX", out var ox) ? (float)ox.GetDouble() : 12f;
+            float offsetY = input.TryGetProperty("offsetY", out var oy) ? (float)oy.GetDouble() : 12f;
+            dup.Left = input.TryGetProperty("left", out var l) ? (float)l.GetDouble() : shape.Left + offsetX;
+            dup.Top = input.TryGetProperty("top", out var t) ? (float)t.GetDouble() : shape.Top + offsetY;
+
+            string named = ApplyOptionalName(dup, input);
+            if (named == null)
+            {
+                // Real-user-confirmed (2026-09-22, live testing): Shape.Duplicate()
+                // keeps the EXACT source Name (unlike a UI Ctrl+D/paste, which
+                // auto-renames) - two shapes end up identically named, confusing
+                // read_slide/read_group output. Dedupe it the same way an explicit
+                // name would be, using the duplicate's own (source-inherited) name
+                // as the "desired" one.
+                string unique = MakeUniqueNameOnSlide(dup, dup.Name);
+                if (unique != dup.Name)
+                {
+                    dup.Name = unique;
+                    named = unique;
+                }
+            }
+            // ZOrderPosition, not slide.Shapes.Count - Duplicate()'s exact
+            // insertion point (end of collection vs. adjacent to the source)
+            // is unverified; ZOrderPosition is correct either way, same
+            // reasoning SetElementOrder/GroupElement already rely on.
+            int newShapeIndex = dup.ZOrderPosition - 1;
+            return new ToolResult
+            {
+                Output = "Shape duplicated" + (named != null ? " (\"" + named + "\")" : "") + " - new shape at shapeIndex " + newShapeIndex +
+                         ". Other shapes' indices on this slide may have shifted - re-read the slide (read_slide) before addressing another shape by index in the same run.",
+                Mutated = true,
+                Summary = "duplicate_element",
+            };
+        }
     }
 }
 

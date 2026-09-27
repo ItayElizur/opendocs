@@ -90,6 +90,10 @@ namespace PowerPointAiAddIn
                     case "add_animation": return AddAnimation(input);
                     case "read_animations": return ReadAnimations(input);
                     case "edit_animation": return EditAnimation(input);
+                    case "duplicate_element": return DuplicateElement(input);
+                    case "copy_element": return CopyElement(input);
+                    case "move_element": return MoveElement(input);
+                    case "copy_element_style": return CopyElementStyle(input);
                     case "set_headers_footers": return SetHeadersFooters(input);
                     case "add_master_element": return AddMasterElement(input);
                     case "set_master_element_transform": return SetMasterElementTransform(input);
