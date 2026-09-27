@@ -14,13 +14,19 @@ namespace OutlookAiAddIn
             int total = 0;
             try
             {
-                WalkFolders(Ns.Folders, "", ref total, 800, 0, sb);
+                // Ns.Folders is every top-level store in the whole profile -
+                // every shared/secondary mailbox, PST, Public Folders, and any
+                // SharePoint list someone "Connected to Outlook", none of
+                // which are "folders I use to organize my mail". Scope to the
+                // user's own mailbox only.
+                Outlook.Folder root = (Outlook.Folder)Ns.DefaultStore.GetRootFolder();
+                WalkFolders(root.Folders, "", ref total, 800, 0, sb);
             }
             catch (Exception ex)
             {
-                // A store/folder that's momentarily unreachable (shared mailbox,
-                // archive, public folder) throws here and would otherwise wipe
-                // out everything already collected from folders that were fine.
+                // A folder that's momentarily unreachable (transient Exchange
+                // RPC failure) throws here and would otherwise wipe out
+                // everything already collected from folders that were fine.
                 DebugLog.WriteException("ListFolders", ex);
                 if (total == 0) return new ToolResult { Output = "Could not list folders: " + ex.Message, IsError = true, Summary = "list_folders" };
                 sb.AppendLine("! folder listing stopped early: " + ex.Message);
