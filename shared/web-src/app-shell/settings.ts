@@ -24,6 +24,15 @@ export interface PanelSettings {
    * by bootstrap.ts's onSettingsSave handler, never live on click.
    */
   theme: 'light' | 'dark' | 'default'
+  /**
+   * 'en'/'he' are explicit overrides; 'default' follows Office's own UI
+   * display language, read once at pane startup (see
+   * OfficeAi.Shared/OfficeLanguage.cs) - not re-checked while the pane stays
+   * open. Same save-gating as theme. Previously this preference was threaded
+   * through chat-ui.ts's Save payload but never actually persisted here - a
+   * pre-existing gap now closed alongside adding the 'default' option.
+   */
+  lang: 'en' | 'he' | 'default'
 }
 
 // PP-0's flat { baseUrl, apiKey, model, skipTlsVerify } shape, kept only as
@@ -49,16 +58,21 @@ function defaultsForThisRepo(): AiSettings {
 }
 
 const VALID_THEMES = ['light', 'dark', 'default'] as const
+const VALID_LANGS = ['en', 'he', 'default'] as const
 
 function normalizeTheme(value: unknown): PanelSettings['theme'] {
   return (VALID_THEMES as readonly unknown[]).includes(value) ? (value as PanelSettings['theme']) : 'default'
+}
+
+function normalizeLang(value: unknown): PanelSettings['lang'] {
+  return (VALID_LANGS as readonly unknown[]).includes(value) ? (value as PanelSettings['lang']) : 'default'
 }
 
 function loadSettings(): PanelSettings {
   const defaults = defaultsForThisRepo()
   try {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY)
-    if (!raw) return { ai: defaults, skipTlsVerify: false, theme: 'default' }
+    if (!raw) return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default' }
     const parsed = JSON.parse(raw) as Partial<PanelSettings> & LegacyStoredSettings
     return {
       // resolveAiSettings migrates the legacy flat {baseUrl, apiKey, model}
@@ -67,9 +81,10 @@ function loadSettings(): PanelSettings {
       ai: resolveAiSettings(parsed.ai ?? parsed, defaults),
       skipTlsVerify: !!parsed.skipTlsVerify,
       theme: normalizeTheme(parsed.theme),
+      lang: normalizeLang(parsed.lang),
     }
   } catch {
-    return { ai: defaults, skipTlsVerify: false, theme: 'default' }
+    return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default' }
   }
 }
 

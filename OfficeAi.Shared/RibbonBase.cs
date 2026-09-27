@@ -32,8 +32,8 @@ namespace OfficeAi.Shared
   <ribbon>
     <tabs>
       <tab idMso=""" + HomeTabIdMso + @""">
-        <group id=""OpenDocsGroup"" label=""OpenDocs"">
-          <button id=""OpenDocsToggleButton"" label=""OpenDocs"" size=""large""
+        <group id=""OpenDocsGroup"" getLabel=""GetGroupLabel"">
+          <button id=""OpenDocsToggleButton"" getLabel=""GetButtonLabel"" size=""large""
                   getImage=""GetLogoImage"" onAction=""OnToggleTaskPane"" />
         </group>
       </tab>
@@ -46,6 +46,32 @@ namespace OfficeAi.Shared
         {
             _ribbon = ribbonUI;
         }
+
+        // Office's UI display language decides whether the group/button show
+        // the transliterated Hebrew brand name or the Latin one. getLabel
+        // callbacks (rather than a static label attribute) are a standard,
+        // documented Ribbon XML mechanism for exactly this.
+        //
+        // GetOfficeUiLanguageId() is abstract - and expected to delegate to
+        // Globals.ThisAddIn's own guarded copy, not re-issue the COM call
+        // here - for the same reason PaneHostBase's identically-named/
+        // -shaped hook is: this shared assembly has no access to any app's
+        // own VSTO-generated Globals class. Consolidated onto ThisAddIn
+        // (2026-09-27) after this LCID lookup turned out to be duplicated
+        // 12 times across Ribbon.cs/TaskPaneHost.cs/ThisAddIn.cs (3 per app x
+        // 4 apps) with no shared exception guard - see ThisAddIn.
+        // GetOfficeUiLanguageId's own comment for the failure mode that fixed.
+        public string GetGroupLabel(IRibbonControl control)
+        {
+            return OfficeLanguage.ResolveBrandName(GetOfficeUiLanguageId());
+        }
+
+        public string GetButtonLabel(IRibbonControl control)
+        {
+            return OfficeLanguage.ResolveBrandName(GetOfficeUiLanguageId());
+        }
+
+        protected abstract int GetOfficeUiLanguageId();
 
         // Reads the same web/logo.png the WebView2-hosted header uses (copied
         // there at build time from shared/chat-ui/logo.png) - one physical

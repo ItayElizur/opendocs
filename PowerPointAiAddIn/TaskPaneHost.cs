@@ -65,6 +65,11 @@ namespace PowerPointAiAddIn
             PowerPointTools.SetMode(GetChatId(), mode);
         }
 
+        protected override int GetOfficeUiLanguageId()
+        {
+            return Globals.ThisAddIn.GetOfficeUiLanguageId();
+        }
+
         // FT-2 Task 3: called from ThisAddIn's WindowSelectionChange handler.
         // Debounced through PaneHostBase.PostSelection (Task 1) -
         // WindowSelectionChange fires on every shape click during ordinary

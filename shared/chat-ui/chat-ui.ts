@@ -7,6 +7,12 @@ export type ModeOverrides = Partial<Record<EditingMode, { label: { en: string; h
 
 export type Lang = 'en' | 'he'
 
+/** 'en'/'he' are explicit overrides; 'default' follows Office's own UI
+ * display language, read once at pane startup (see
+ * OfficeAi.Shared/OfficeLanguage.cs) - not re-checked while the pane stays
+ * open. Mirrors the theme preference's exact shape/resolution philosophy. */
+export type LangPref = Lang | 'default'
+
 const STRINGS: Record<string, Record<Lang, string>> = {
   panelTitle:           { en: 'OpenDocs', he: 'אופן דוקס' },
   inputPlaceholder:     { en: 'Ask OpenDocs to edit this document...', he: 'בקש מ-אופן דוקס לערוך את המסמך...' },
@@ -20,6 +26,8 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   settingsModel:        { en: 'Model name', he: 'שם המודל' },
   settingsSkipTls:      { en: 'Skip TLS certificate verification (insecure - testing only)', he: 'דלג על אימות אישור TLS (לא מאובטח - לבדיקות בלבד)' },
   settingsLanguage:     { en: 'Language', he: 'שפה' },
+  langDefault:          { en: 'Default', he: 'ברירת מחדל' },
+  langDefaultNote:      { en: "Default follows Office's own display language, checked once when the panel opens.", he: 'ברירת המחדל עוקבת אחר שפת התצוגה של Office, נבדקת פעם אחת עם פתיחת החלונית.' },
   save:                 { en: 'Save', he: 'שמור' },
   collapse:             { en: 'Collapse panel', he: 'כווץ חלונית' },
   historySep:           { en: 'Earlier conversation', he: 'שיחה קודמת' },
@@ -121,7 +129,8 @@ export interface SettingsSavePayload {
   model: string
   baseUrl: string
   skipTlsVerify: boolean
-  lang: Lang
+  /** 'en'/'he'/'default', Save-gated like every other field here - see chat-ui.ts's Language section. */
+  lang: LangPref
   /** 'light'/'dark'/'default', Save-gated like every other field here - see chat-ui.ts's Theme section. */
   theme: 'light' | 'dark' | 'default'
   /** only present when saved from the full settings view (FT-1), not the quick dropdown */
@@ -149,6 +158,8 @@ export interface InitialSettings {
   providers?: Record<string, { apiKey: string; model: string; baseUrl?: string }>
   /** Seeds the Theme section's selected button. Defaults to 'default' if omitted. */
   theme?: 'light' | 'dark' | 'default'
+  /** Seeds the Language toggle's selected button. Defaults to 'default' if omitted. */
+  lang?: LangPref
 }
 
 export interface ChatUIOptions {
@@ -246,6 +257,14 @@ export interface ChatUIHandle {
    * 'default' itself, since it has no access to Office's registry state.
    */
   setTheme(theme: 'light' | 'dark'): void
+  /**
+   * Paints the already-resolved binary language - the host (bootstrap.ts)
+   * has already turned a 'default' preference into a real en/he answer
+   * using Office's own UI display language before calling this; chat-ui.ts
+   * never resolves 'default' itself, since it has no access to Office's
+   * object model.
+   */
+  setLang(lang: Lang): void
 }
 
 const MODES: EditingMode[] = ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy']
@@ -475,9 +494,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <div class="ai-field">
             <label data-t="settingsLanguage">Language</label>
             <div class="ai-lang-toggle" id="langToggle">
-              <button data-lang="en" class="active">English</button>
+              <button data-lang="en">English</button>
               <button data-lang="he">עברית</button>
+              <button class="active" data-lang="default" data-t="langDefault">Default</button>
             </div>
+            <p class="ai-settings-section-note" data-t="langDefaultNote">Default follows Office's own display language, checked once when the panel opens.</p>
           </div>
           <div class="ai-settings-test-result" id="settingsTestResult"></div>
           <div class="ai-settings-actions">
@@ -739,13 +760,16 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     if (selected) modeBtnLabel.textContent = selected.querySelector('span')!.textContent
   }
 
+  // Takes the already-resolved binary value only, exactly like applyTheme -
+  // resolving a 'default' preference against Office's real UI language is
+  // the host's (bootstrap.ts's) job, not this component's. Does NOT touch
+  // #langToggle's active state (that reflects the 3-way pendingLang
+  // preference, set independently below/on click - same split as theme's
+  // applyTheme/#themeToggle).
   function setLang(l: Lang): void {
     dockEl.setAttribute('lang', l)
     dockEl.setAttribute('dir', l === 'he' ? 'rtl' : 'ltr')
     currentLang = l
-    root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((b) => {
-      b.classList.toggle('active', b.dataset.lang === l)
-    })
     applyStrings()
     refreshScopeHint()
     refreshModeLabel()
@@ -774,7 +798,13 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   applyStrings()
 
   let assistantBubble: HTMLDivElement | null = null
-  let pendingLang: Lang = 'en'
+  let pendingLang: LangPref = 'default'
+  if (options.initialSettings?.lang) {
+    pendingLang = options.initialSettings.lang
+    root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.lang === pendingLang)
+    })
+  }
   let pendingTheme: 'light' | 'dark' | 'default' = 'default'
   if (options.initialSettings?.theme) {
     pendingTheme = options.initialSettings.theme
@@ -937,12 +967,17 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // click (confirmed repro: the button appeared completely unresponsive).
   root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((btn) => {
     btn.addEventListener('click', () => {
-      pendingLang = btn.dataset.lang as 'en' | 'he'
+      pendingLang = btn.dataset.lang as LangPref
       root.querySelectorAll('#langToggle button').forEach((b) => b.classList.toggle('active', b === btn))
     })
   })
   root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.addEventListener('click', () => {
-    setLang(pendingLang)
+    // An explicit en/he choice is applied immediately, same as before -
+    // this component can resolve that on its own. 'default' is the one
+    // value it can't self-apply (no access to Office's UI language), so
+    // that case is left to the host (bootstrap.ts), which resolves it and
+    // calls the public setLang() right back, same as theme's existing flow.
+    if (pendingLang !== 'default') setLang(pendingLang)
     options.onSettingsSave({
       provider: providerSelect.value as AiProviderId,
       baseUrl: root.querySelector<HTMLInputElement>('[data-field="baseUrl"]')!.value,
@@ -1180,7 +1215,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   })
 
   settingsViewSaveBtn.addEventListener('click', () => {
-    setLang(pendingLang)
+    // See the quick-dropdown Save handler's comment above - same reasoning.
+    if (pendingLang !== 'default') setLang(pendingLang)
     options.onSettingsSave({
       provider: providerSelect.value as AiProviderId,
       baseUrl: root.querySelector<HTMLInputElement>('[data-field="baseUrl"]')!.value,
@@ -1472,6 +1508,9 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     },
     setTheme(theme) {
       applyTheme(theme)
+    },
+    setLang(lang) {
+      setLang(lang)
     },
   }
 }

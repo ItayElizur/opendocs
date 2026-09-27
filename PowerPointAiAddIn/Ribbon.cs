@@ -10,5 +10,10 @@ namespace PowerPointAiAddIn
         {
             Globals.ThisAddIn.TogglePane();
         }
+
+        protected override int GetOfficeUiLanguageId()
+        {
+            return Globals.ThisAddIn.GetOfficeUiLanguageId();
+        }
     }
 }
