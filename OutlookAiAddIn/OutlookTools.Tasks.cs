@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -165,8 +166,18 @@ namespace OutlookAiAddIn
                 if (sd.HasValue) mail.TaskStartDate = sd.Value;
                 if (Bool(input, "mark_complete", false)) mail.FlagStatus = Outlook.OlFlagStatus.olFlagComplete;
 
+                // subject/status/percent_complete don't map to a flag on a
+                // mail item - say so explicitly rather than silently no-op'ing
+                // fields the caller asked to change.
+                var ignored = new List<string>();
+                if (Str(input, "subject", null) != null) ignored.Add("subject");
+                if (Str(input, "status", null) != null) ignored.Add("status");
+                if (Int(input, "percent_complete", -1) >= 0) ignored.Add("percent_complete");
+
                 mail.Save();
-                return new ToolResult { Output = "Flagged email updated: " + (mail.Subject ?? ""), Mutated = true, Summary = "update_task" };
+                string output = "Flagged email updated: " + (mail.Subject ?? "");
+                if (ignored.Count > 0) output += "\n(ignored - only apply to real tasks: " + string.Join(", ", ignored) + ")";
+                return new ToolResult { Output = output, Mutated = true, Summary = "update_task" };
             }
 
             return new ToolResult { Output = "task_id does not resolve to a task or a flagged email.", IsError = true, Summary = "update_task" };

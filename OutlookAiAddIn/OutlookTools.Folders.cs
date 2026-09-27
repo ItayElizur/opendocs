@@ -35,7 +35,9 @@ namespace OutlookAiAddIn
             foreach (Outlook.Folder f in folders)
             {
                 if (total >= cap) return;
-                string here = path.Length == 0 ? f.Name : path + "\\" + f.Name;
+                string name = "(unnamed folder)";
+                try { name = f.Name; } catch { }
+                string here = path.Length == 0 ? name : path + "\\" + name;
                 bool isMail = false;
                 try { isMail = f.DefaultItemType == Outlook.OlItemType.olMailItem; } catch { }
                 if (isMail)
@@ -48,13 +50,20 @@ namespace OutlookAiAddIn
                 }
                 try
                 {
-                    WalkFolders(f.Folders, here, ref total, cap, depth + 1, sb);
+                    // ComRetry first: the exact RPC hiccups it retries for
+                    // (RPC_S_CALL_FAILED etc.) are the "network problems
+                    // connecting to Microsoft Exchange" class this whole fix
+                    // is for, so most subfolder opens should just succeed on
+                    // attempt 2/3 instead of being given up on immediately.
+                    Outlook.Folders sub = null;
+                    ComRetry.Run(() => { sub = f.Folders; }, "WalkFolders " + here);
+                    WalkFolders(sub, here, ref total, cap, depth + 1, sb);
                 }
                 catch (Exception ex)
                 {
-                    // Same reasoning as ListFolders' outer catch, one level down:
-                    // a transient failure expanding this one subfolder shouldn't
-                    // abort siblings that are perfectly reachable.
+                    // Whatever ComRetry couldn't resolve (exhausted retries,
+                    // or a non-transient HResult it rethrows immediately)
+                    // shouldn't abort siblings that are perfectly reachable.
                     DebugLog.WriteException("WalkFolders " + here, ex);
                     sb.AppendLine("  ! could not list subfolders of " + here + ": " + ex.Message);
                 }
