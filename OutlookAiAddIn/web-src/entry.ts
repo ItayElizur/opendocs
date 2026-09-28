@@ -114,13 +114,14 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'list_events',
     description:
-      'Lists calendar events in a date range (expands recurring meetings). Returns event_id, subject, start/end, location, organizer, and your response status. Recurring instances share the master event_id.',
+      'Lists calendar events in a date range (expands recurring meetings). Returns event_id, subject, start/end, location, organizer, and your response status. Recurring instances share the master event_id. Pass mailbox to view someone else\'s calendar instead of your own, if they\'ve granted you access to it in Exchange - visibility depends on what sharing level they set (full details, free/busy only, or none), and Outlook enforces that automatically.',
     inputSchema: {
       type: 'object',
       properties: {
         start_date: { type: 'string', description: 'Range start, inclusive (YYYY-MM-DD). Default today.' },
         end_date: { type: 'string', description: 'Range end, inclusive (YYYY-MM-DD). Default +7 days.' },
         limit: { type: 'number', description: 'Default 50.' },
+        mailbox: { type: 'string', description: 'Email address of the calendar owner to view. Omit to view your own calendar.' },
       },
       required: [],
     },

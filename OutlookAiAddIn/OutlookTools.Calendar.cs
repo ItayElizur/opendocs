@@ -19,8 +19,31 @@ namespace OutlookAiAddIn
             DateTime start = (DateArg(input, "start_date") ?? DateTime.Today).Date;
             DateTime end = (DateArg(input, "end_date") ?? DateTime.Today.AddDays(7)).Date.AddDays(1);
             int limit = Math.Max(1, Int(input, "limit", 50));
+            string mailbox = Str(input, "mailbox", null);
 
-            Outlook.Folder cal = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderCalendar);
+            Outlook.Folder cal;
+            if (mailbox != null)
+            {
+                Outlook.Recipient recipient = Ns.CreateRecipient(mailbox);
+                bool resolved;
+                try { resolved = recipient.Resolve(); } catch { resolved = false; }
+                if (!resolved)
+                    return new ToolResult { Output = "Could not resolve \"" + mailbox + "\" - check the email address.", IsError = true, Summary = "list_events" };
+                try
+                {
+                    cal = (Outlook.Folder)Ns.GetSharedDefaultFolder(recipient, Outlook.OlDefaultFolders.olFolderCalendar);
+                }
+                catch (Exception ex)
+                {
+                    DebugLog.WriteException("ListEvents GetSharedDefaultFolder", ex);
+                    return new ToolResult { Output = "Could not open " + mailbox + "'s calendar - you may not have been granted access to view it, or need to add it via Outlook's own \"Open Calendar\" first. (" + ex.Message + ")", IsError = true, Summary = "list_events" };
+                }
+            }
+            else
+            {
+                cal = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderCalendar);
+            }
+
             Outlook.Items items = cal.Items;
             items.Sort("[Start]");
             items.IncludeRecurrences = true;
@@ -42,10 +65,12 @@ namespace OutlookAiAddIn
                 sb.AppendLine("  location: " + (appt.Location ?? ""));
                 sb.AppendLine("  organizer: " + (appt.Organizer ?? "") + "  all_day: " + appt.AllDayEvent + "  recurring: " + appt.IsRecurring);
                 sb.AppendLine("  response: " + appt.ResponseStatus + "  meeting_status: " + appt.MeetingStatus);
+                if (mailbox != null) sb.AppendLine("  calendar_owner: " + mailbox);
             }
 
+            string whoseCalendar = mailbox != null ? mailbox + "'s calendar " : "";
             if (n == 0)
-                return new ToolResult { Output = "No events between " + start.ToShortDateString() + " and " + end.AddDays(-1).ToShortDateString() + ".", Summary = "list_events" };
+                return new ToolResult { Output = "No events on " + whoseCalendar + "between " + start.ToShortDateString() + " and " + end.AddDays(-1).ToShortDateString() + ".", Summary = "list_events" };
             return new ToolResult { Output = sb + "\n(Recurring instances share the master event_id.)", Summary = "list_events" };
         }
 
