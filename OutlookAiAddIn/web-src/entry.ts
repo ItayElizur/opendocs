@@ -210,7 +210,7 @@ const ALL_OUTLOOK_TOOLS = [
     description:
       "Reverses YOUR most recent action in this chat (call repeatedly to step further back). Covers mark_email_read/unread, flag_email_important, move_email, " +
       'delete_email (non-permanent - moves it back out of Deleted Items), create_task, update_task, set_reminder, set_email_reminder, set_event_categories, ' +
-      'set_category_color, set_event_availability, reschedule_event without attendees, cancel_event on a plain appointment (moved back out of Deleted Items), and create_event without attendees (moved to Deleted Items). Sends, meeting invites, accept/decline_meeting, cancel_event on an organized meeting, and permanent deletes ' +
+      'set_category_color, set_event_availability, reschedule_event without attendees, cancel_event on a plain or already-canceled appointment (moved back out of Deleted Items), and create_event without attendees (moved to Deleted Items). Sends, meeting invites, accept/decline_meeting, cancel_event on a still-active organized meeting, and permanent deletes ' +
       "can't be reversed and block undo past them. Never touches changes the user made directly in Outlook, and refuses if the item was changed since. " +
       'A move changes message_id - use the one in the result.',
     inputSchema: { type: 'object', properties: {} },
@@ -398,7 +398,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'draft_cancel_event',
     description:
-      'Opens an existing calendar event for the user to review before canceling it. For a meeting the user organizes, marks it canceled (unsaved) so Outlook shows the "Send Cancellation" option; for a plain appointment, just opens it for the user to delete. Never sends or deletes anything itself. Only works on events the user organizes or a plain appointment - on a meeting the user only attends, use decline_meeting instead. Recurring events only have one EntryID for the whole series (like get_event/reschedule_event), so this targets the master series, not a single occurrence.',
+      "Opens an existing calendar event unchanged for the user to review before canceling it themselves - for a meeting the user organizes, via Outlook's own Cancel Meeting/Send Cancellation buttons; for a plain appointment, via Delete. Never sends, deletes, or changes anything itself. Only works on events the user organizes or a plain appointment - on a meeting the user only attends, use decline_meeting instead. Recurring events only have one EntryID for the whole series (like get_event/reschedule_event), so this targets the master series, not a single occurrence.",
     inputSchema: {
       type: 'object',
       properties: { event_id: { type: 'string' } },
@@ -469,7 +469,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'cancel_event',
     description:
-      'Cancels an existing calendar event immediately - NO review window. If the user organizes it (has attendees), sends the cancellation notice to them right away, then removes it from the calendar; a plain appointment is just removed. Only available in Full autonomy. Prefer draft_cancel_event unless the user clearly wants this canceled right now, with no chance to review it first. Only works on events the user organizes or a plain appointment - if it\'s a meeting the user only attends (not the organizer), this returns an error; use decline_meeting for those. Already-canceled events return an error too. Recurring events only have one EntryID for the whole series, so this cancels the master series, not a single occurrence.',
+      'Cancels an existing calendar event immediately - NO review window. If the user organizes it (has attendees), sends the cancellation notice to them right away, then removes it from the calendar; a plain appointment is just removed. An event that\'s already canceled (e.g. one you received that the organizer canceled, or your own that\'s stuck in a canceled state) is also just removed - nothing new to notify, this is the only way to dismiss one. Only available in Full autonomy. Prefer draft_cancel_event unless the user clearly wants this canceled right now, with no chance to review it first. Only refuses on a meeting the user only attends and isn\'t canceled yet (not the organizer) - use decline_meeting for those. Recurring events only have one EntryID for the whole series, so this cancels the master series, not a single occurrence.',
     inputSchema: {
       type: 'object',
       properties: { event_id: { type: 'string' } },
@@ -537,7 +537,7 @@ startAddIn({
     'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event, draft_reschedule_event, draft_cancel_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. ' +
     'send_email/send_reply/send_reply_all/send_forward/create_event/reschedule_event/cancel_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
     'reschedule_event/draft_reschedule_event only work on events the user organizes (or a plain appointment with no attendees) - on a meeting the user only attends, they return an error instead of an unauthoritative change; point the user at Outlook\'s own "Propose New Time" for those. Recurring events share one event_id for the whole series, so rescheduling or canceling acts on the master series, not a single occurrence. ' +
-    'cancel_event/draft_cancel_event have the same organizer-only restriction - on a meeting the user only attends, use decline_meeting instead. Canceling a meeting the user organizes sends a cancellation notice to attendees (Full autonomy for cancel_event, or reviewed first via draft_cancel_event); canceling a plain appointment just removes it from the calendar (moved to Deleted Items, recoverable), nobody to notify. Already-canceled events return an error. ' +
+    'cancel_event/draft_cancel_event have the same organizer-only restriction on a still-active meeting the user only attends - use decline_meeting instead. Canceling a meeting the user organizes sends a cancellation notice to attendees (Full autonomy for cancel_event, or reviewed first via draft_cancel_event); canceling a plain appointment, or any already-canceled event, just removes it from the calendar (moved to Deleted Items, recoverable), nobody to notify - cancel_event is the only way to dismiss an already-canceled event. ' +
     'message_id / event_id / task_id values are Outlook EntryIDs. When the user has one or more messages selected, that selection (with its message_id) is in your context - prefer it over searching. ' +
     'Prefer list_emails / search_emails / list_tasks (fast, server-side) over reading items one by one. ' +
     "Once you've found the relevant messages, apply_search can show the same results in the user's own Outlook window instead of only listing them in chat. " +
