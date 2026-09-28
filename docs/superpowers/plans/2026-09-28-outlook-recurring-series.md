@@ -937,11 +937,17 @@ Find `cancel_event`'s tool definition and update:
   },
 ```
 
-Find `undo_last_action`'s tool description (the one listing covered tools) and add a clause noting occurrence cancellation is excluded:
+Find `undo_last_action`'s tool description (the one listing covered tools). It currently has a line reading (approximately):
+
+```typescript
+      'set_category_color, set_event_availability, reschedule_event without attendees, cancel_event on a plain appointment (moved back out of Deleted Items), and create_event without attendees (moved to Deleted Items). Sends, meeting invites, accept/decline_meeting, cancel_event on an organized meeting, and permanent deletes ' +
+```
+
+Replace that entire line (this is the whole-line replacement, not an insertion) with:
 
 ```typescript
       'set_category_color, set_event_availability, reschedule_event without attendees, cancel_event on a plain or already-canceled whole event (moved back out of Deleted Items), and create_event without attendees (moved to Deleted Items). Sends, meeting invites, accept/decline_meeting, cancel_event on a still-active organized meeting, cancel_event on any single occurrence (always, whether plain or meeting - Outlook has no API to restore a deleted occurrence), and permanent deletes ' +
-```//this replaces the equivalent existing line in the description string
+```
 
 - [ ] **Step 4: Build to confirm it compiles**
 
