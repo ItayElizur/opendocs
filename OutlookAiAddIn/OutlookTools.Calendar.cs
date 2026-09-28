@@ -214,7 +214,13 @@ namespace OutlookAiAddIn
             return t.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
         }
 
-        private static ToolResult RespondMeeting(string mbxKey, JsonElement input, bool accept)
+        // response is the actual OlMeetingResponse to send (not just a bool)
+        // so this one helper covers all three: accept_meeting, decline_meeting,
+        // tentative_meeting. message is an optional comment attached to the
+        // response before it's sent - UNVERIFIED live whether the organizer
+        // actually sees this text on the delivered response (needs a real
+        // received invite to test, not a self-organized item).
+        private static ToolResult RespondMeeting(string mbxKey, JsonElement input, Outlook.OlMeetingResponse response, string toolName)
         {
             string id = ReqStr(input, "event_id");
             object item = ItemById(id, null);
@@ -226,23 +232,26 @@ namespace OutlookAiAddIn
                 if (mi != null) appt = mi.GetAssociatedAppointment(false);
             }
             if (appt == null)
-                return new ToolResult { Output = "event_id does not resolve to a meeting.", IsError = true, Summary = accept ? "accept_meeting" : "decline_meeting" };
+                return new ToolResult { Output = "event_id does not resolve to a meeting.", IsError = true, Summary = toolName };
 
-            Outlook.OlMeetingResponse response = accept
-                ? Outlook.OlMeetingResponse.olMeetingAccepted
-                : Outlook.OlMeetingResponse.olMeetingDeclined;
+            string message = Str(input, "message", null);
+
             object respObj = appt.Respond(response, true, false);
             Outlook.MeetingItem resp = respObj as Outlook.MeetingItem;
             if (resp != null)
             {
-                try { resp.Send(); } catch (Exception ex) { DebugLog.WriteException("RespondMeeting Send", ex); }
+                if (message != null) resp.Body = message;
+                try { resp.Send(); } catch (Exception ex) { DebugLog.WriteException(toolName + " Send", ex); }
             }
-            RecordIrreversible(mbxKey, (accept ? "accept_meeting" : "decline_meeting") + " for \"" + (appt.Subject ?? "") + "\"");
+            RecordIrreversible(mbxKey, toolName + " for \"" + (appt.Subject ?? "") + "\"" + (message != null ? " with a comment" : ""));
+            string verb = response == Outlook.OlMeetingResponse.olMeetingAccepted ? "Accepted"
+                        : response == Outlook.OlMeetingResponse.olMeetingTentative ? "Responded tentatively to"
+                        : "Declined";
             return new ToolResult
             {
-                Output = (accept ? "Accepted: " : "Declined: ") + (appt.Subject ?? ""),
+                Output = verb + ": " + (appt.Subject ?? "") + (message != null ? " (comment sent)" : ""),
                 Mutated = true,
-                Summary = accept ? "accept_meeting" : "decline_meeting",
+                Summary = toolName,
             };
         }
 

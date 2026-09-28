@@ -87,7 +87,7 @@ namespace OutlookAiAddIn
         // the draft tier so "Draft only" honestly means nothing sends.
         private static readonly HashSet<string> ApprovalTierTools = new HashSet<string>
         {
-            "accept_meeting", "decline_meeting",
+            "accept_meeting", "decline_meeting", "tentative_meeting",
         };
 
         // Tier 4 (Full autonomy only): composes and sends/creates brand-new
@@ -174,8 +174,9 @@ namespace OutlookAiAddIn
                     case "delete_email": return DeleteEmail(mbxKey, input);
                     case "undo_last_action": return UndoLastAction(mbxKey);
                     case "redo_last_action": return RedoLastAction(mbxKey);
-                    case "accept_meeting": return RespondMeeting(mbxKey, input, true);
-                    case "decline_meeting": return RespondMeeting(mbxKey, input, false);
+                    case "accept_meeting": return RespondMeeting(mbxKey, input, Outlook.OlMeetingResponse.olMeetingAccepted, "accept_meeting");
+                    case "decline_meeting": return RespondMeeting(mbxKey, input, Outlook.OlMeetingResponse.olMeetingDeclined, "decline_meeting");
+                    case "tentative_meeting": return RespondMeeting(mbxKey, input, Outlook.OlMeetingResponse.olMeetingTentative, "tentative_meeting");
                     case "set_event_categories": return SetEventCategories(mbxKey, input);
                     case "set_category_color": return SetCategoryColor(mbxKey, input);
                     case "set_event_availability": return SetEventAvailability(mbxKey, input);

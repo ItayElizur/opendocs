@@ -223,13 +223,30 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'accept_meeting',
-    description: 'Accepts a meeting invitation and notifies the organizer.',
-    inputSchema: { type: 'object', properties: { event_id: { type: 'string' } }, required: ['event_id'] },
+    description: 'Accepts a meeting invitation and notifies the organizer. Pass message to add a comment to the response.',
+    inputSchema: {
+      type: 'object',
+      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' } },
+      required: ['event_id'],
+    },
   },
   {
     name: 'decline_meeting',
-    description: 'Declines a meeting invitation and notifies the organizer.',
-    inputSchema: { type: 'object', properties: { event_id: { type: 'string' } }, required: ['event_id'] },
+    description: 'Declines a meeting invitation and notifies the organizer. Pass message to add a comment to the response.',
+    inputSchema: {
+      type: 'object',
+      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' } },
+      required: ['event_id'],
+    },
+  },
+  {
+    name: 'tentative_meeting',
+    description: 'Responds tentatively to a meeting invitation and notifies the organizer. Pass message to add a comment to the response.',
+    inputSchema: {
+      type: 'object',
+      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' } },
+      required: ['event_id'],
+    },
   },
   {
     name: 'set_event_categories',
@@ -553,6 +570,7 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   redo_last_action: d('Redo', 'ביצוע חוזר', 'Re-applies the action the assistant last undid.', 'מבצע מחדש את הפעולה שהעוזר ביטל לאחרונה.'),
   accept_meeting: d('Accept meeting', 'אישור פגישה', 'Accepts a meeting invitation.', 'מאשר הזמנה לפגישה.'),
   decline_meeting: d('Decline meeting', 'דחיית פגישה', 'Declines a meeting invitation.', 'דוחה הזמנה לפגישה.'),
+  tentative_meeting: d('Tentative response', 'תגובה זמנית', 'Responds tentatively to a meeting invitation.', 'משיב תשובה זמנית להזמנה לפגישה.'),
   set_event_categories: d('Color event', 'צביעת אירוע', 'Applies or clears color tags on a calendar event.', 'מחיל או מנקה תגיות צבע על אירוע יומן.'),
   set_category_color: d('Set tag color', 'הגדרת צבע תגית', 'Creates or recolors a color tag.', 'יוצר או משנה צבע של תגית.'),
   set_event_availability: d('Set availability', 'הגדרת זמינות', 'Sets an event\'s Free/Busy/Tentative/Out of Office status.', 'מגדיר את סטטוס הזמינות של אירוע (פנוי / עסוק / בעבודה במקום אחר / מחוץ למשרד).'),
@@ -647,7 +665,7 @@ startAddIn({
   // already auto-notify the organizer via resp.Send(), so they get their
   // own tier rather than hiding in Draft only or Full autonomy. Must stay
   // in sync with OutlookTools.cs's ApprovalTierTools.
-  trackChangesExtraTools: ['accept_meeting', 'decline_meeting'],
+  trackChangesExtraTools: ['accept_meeting', 'decline_meeting', 'tentative_meeting'],
   // send_email/send_reply/send_reply_all/send_forward/create_event/
   // edit_event/cancel_event are deliberately in neither list above -
   // that omission alone confines them to tier 4 (Full autonomy), which shows
