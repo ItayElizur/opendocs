@@ -585,22 +585,30 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > `OriginalDate`, `ItemProperties`) and no `Delete`/`Remove`/`Add` method
 > anywhere, so there is no API to reverse a deleted occurrence once it's gone.
 >
-> **4 — A real bug found and fixed during live testing (organizer-authority
-> checks against the wrong item).** The four occurrence-aware methods
-> originally checked `appt.MeetingStatus`/`IsCanceledMeeting(appt)`/
-> `IsReceivedMeeting(appt)`, where `appt` is the resolved occurrence or
-> master. Live testing found `GetOccurrence()`'s returned occurrence item does
-> **not** reliably report `MeetingStatus == olMeeting` even when it genuinely
-> belongs to a recurring meeting with attendees. This caused
-> `reschedule_event` on a meeting occurrence to wrongly take the `.Save()`
-> branch — crashing with `COMException "Cannot save this item."` — instead of
-> `.Send()`, and caused `cancel_event` on a meeting occurrence to silently
-> delete it without ever notifying attendees. Fixed by checking
+> **4 — A suspected bug fixed by reasoning, not by a live-confirmed observation
+> (organizer-authority checks against the wrong item).** The four
+> occurrence-aware methods originally checked `appt.MeetingStatus`/
+> `IsCanceledMeeting(appt)`/`IsReceivedMeeting(appt)`, where `appt` is the
+> resolved occurrence or master. A live reschedule attempt against what was
+> believed at the time to be a recurring meeting occurrence failed with
+> `COMException "Cannot save this item."` Reasoning about `GetOccurrence()`'s
+> known-unreliable behavior for this property — rather than a live-confirmed
+> observation on a verified meeting occurrence — identified a likely bug:
+> `GetOccurrence()`'s returned occurrence item does **not** reliably report
+> `MeetingStatus == olMeeting` even when it genuinely belongs to a recurring
+> meeting with attendees. If so, this would cause `reschedule_event` on a
+> meeting occurrence to wrongly take the `.Save()` branch — crashing with
+> that same `COMException` — instead of `.Send()`, and would cause
+> `cancel_event` on a meeting occurrence to silently delete it without ever
+> notifying attendees. Fixed by checking
 > `master.MeetingStatus`/`IsCanceledMeeting(master)`/`IsReceivedMeeting(master)`
 > instead (the master is always reliable) — the actual mutation still targets
 > `appt` (the occurrence or master, whichever `ResolveOccurrenceTarget`
-> resolved). **Caveat: this fix has never actually been exercised against a
-> genuine meeting occurrence with attendees** — every live test run against
+> resolved). After applying this fix and testing again, the user confirmed
+> the test event had actually been a plain (non-meeting) appointment all
+> along — so the original failure had a different, unrelated cause (see
+> point 5 below). **Caveat: this fix has never actually been exercised against
+> a genuine meeting occurrence with attendees** — every live test run against
 > this feature used a plain (non-meeting) recurring series. The code and its
 > review are sound, but the specific scenario it was written to fix is
 > unverified.
@@ -1196,8 +1204,17 @@ own UI). What remains unconfirmed:
   never been exercised against a genuine recurring *meeting* occurrence with
   attendees** — every live test run used a plain, non-meeting series. Checking
   `master.MeetingStatus`/`IsCanceledMeeting(master)`/`IsReceivedMeeting(master)` instead
-  of the occurrence's own value is a reasoned fix for the bug that live testing did
-  surface, but the fix itself is unverified against the scenario it targets.
+  of the occurrence's own value is a reasoned fix based on `GetOccurrence()`'s
+  known-unreliable behavior for this property — prompted by a live failure whose
+  actual cause later turned out to be unrelated (see point 5 in the dated update) —
+  not a fix confirmed by live-observing the bug on a genuine meeting occurrence, so
+  the fix itself remains unverified against the scenario it targets.
+- **Whether the whole-series `Start`/`End` reassignment on a recurring master
+  `AppointmentItem` behaves as assumed remains unverified**: whether directly
+  setting `Start`/`End` on the master shifts the whole recurring pattern correctly
+  vs. corrupting it is unconfirmed against live Outlook (PR #21's still-open
+  Finding #2 — a pre-existing gap from the `reschedule_event` PR, not newly
+  introduced or closed by this feature).
 - **`CheckOccurrenceReorderCollision` may not cover every reason Outlook can reject an
   occurrence reorder.** It's confirmed live for the two specific rejection reasons
   reproduced by hand in Outlook's own UI (see above), but every such rejection surfaces
