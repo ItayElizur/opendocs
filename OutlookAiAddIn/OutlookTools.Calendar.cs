@@ -383,26 +383,29 @@ namespace OutlookAiAddIn
             };
         }
 
-        // Shared by edit_event/draft_edit_event: replaces the attendee list
-        // wholesale (not a diff/merge - the caller supplies the full new
-        // list each time, reading the current one first via get_event if
-        // they need to preserve someone). Removes every recipient except
-        // the organizer, then re-adds via the same AddAttendees helper
-        // create_event/draft_event already use. Recipients indices are
-        // 1-based (confirmed via .NET reflection against the referenced
-        // PIA, matching every other Outlook collection in this codebase);
-        // iterating downward from Count avoids skipping an element after
-        // Remove shifts the rest down. OlMeetingRecipientType.olOrganizer
-        // == 0 (confirmed via reflection) is the only type excluded.
+        // Shared by edit_event/draft_edit_event: replaces the required and/or
+        // optional attendee list wholesale (not a diff/merge - the caller
+        // supplies the full new list each time, reading the current one
+        // first via get_event if they need to preserve someone). The two
+        // categories are independently optional: a null argument leaves that
+        // attendee category completely untouched; a non-null argument
+        // (including "") fully replaces it - clearing the existing entries
+        // in that category and re-adding via the same AddAttendees helper
+        // create_event/draft_event already use. The organizer recipient is
+        // never touched. Recipients indices are 1-based (confirmed via .NET
+        // reflection against the referenced PIA, matching every other
+        // Outlook collection in this codebase); iterating downward from
+        // Count avoids skipping an element after Remove shifts the rest down.
         private static void ReplaceAttendees(Outlook.AppointmentItem appt, string requiredCsv, string optionalCsv)
         {
             for (int i = appt.Recipients.Count; i >= 1; i--)
             {
-                if (appt.Recipients[i].Type != (int)Outlook.OlMeetingRecipientType.olOrganizer)
-                    appt.Recipients.Remove(i);
+                int type = appt.Recipients[i].Type;
+                if (requiredCsv != null && type == (int)Outlook.OlMeetingRecipientType.olRequired) { appt.Recipients.Remove(i); continue; }
+                if (optionalCsv != null && type == (int)Outlook.OlMeetingRecipientType.olOptional) { appt.Recipients.Remove(i); continue; }
             }
-            AddAttendees(appt, requiredCsv, Outlook.OlMeetingRecipientType.olRequired);
-            AddAttendees(appt, optionalCsv, Outlook.OlMeetingRecipientType.olOptional);
+            if (requiredCsv != null) AddAttendees(appt, requiredCsv, Outlook.OlMeetingRecipientType.olRequired);
+            if (optionalCsv != null) AddAttendees(appt, optionalCsv, Outlook.OlMeetingRecipientType.olOptional);
             try { appt.Recipients.ResolveAll(); } catch { }
         }
 
@@ -491,13 +494,6 @@ namespace OutlookAiAddIn
             };
         }
 
-        // Full-autonomy-only counterpart to draft_reschedule_event above: sets the
-        // new Start/End directly, then - like create_event's attendee-present
-        // branch - .Send() if this is a meeting the user organizes (dispatching
-        // the reschedule notice to attendees with no review step) or .Save() for
-        // a plain appointment nobody needs to notify. Both members confirmed
-        // present via reflection against the referenced PIA in CreateEvent above;
-        // reused here rather than re-verified.
         // Full-autonomy-only, general edit: unlike reschedule_event (Start/End
         // only), this can touch start/end, subject, body, location, and
         // attendees in one call. One unified mutation flow decides .Send() vs
@@ -583,7 +579,7 @@ namespace OutlookAiAddIn
             bool attendeesChanged = false;
             if (requiredAttendees != null || optionalAttendees != null)
             {
-                ReplaceAttendees(appt, requiredAttendees ?? "", optionalAttendees ?? "");
+                ReplaceAttendees(appt, requiredAttendees, optionalAttendees);
                 if (appt.MeetingStatus != Outlook.OlMeetingStatus.olMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
                 // Confirmed default is already false; set explicitly so intent
                 // doesn't depend on that default never changing. Outlook's own
@@ -679,6 +675,13 @@ namespace OutlookAiAddIn
             };
         }
 
+        // Full-autonomy-only counterpart to draft_reschedule_event above: sets the
+        // new Start/End directly, then - like create_event's attendee-present
+        // branch - .Send() if this is a meeting the user organizes (dispatching
+        // the reschedule notice to attendees with no review step) or .Save() for
+        // a plain appointment nobody needs to notify. Both members confirmed
+        // present via reflection against the referenced PIA in CreateEvent above;
+        // reused here rather than re-verified.
         private static readonly string[] RescheduleProps = { "Start", "End" };
 
         private static ToolResult RescheduleEvent(string mbxKey, JsonElement input)
