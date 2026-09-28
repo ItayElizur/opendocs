@@ -504,6 +504,26 @@ const ALL_OUTLOOK_TOOLS = [
     },
   },
   {
+    name: 'edit_event',
+    description:
+      'Edits an existing calendar event immediately - NO review window. Any combination of start+end (together), subject, body, location, required_attendees, optional_attendees - at least one must be given. If the result is (or becomes) a meeting, sends the update notice right away. Only available in Full autonomy. Prefer draft_edit_event unless the user clearly wants this applied right now, with no chance to review it first. Only works on events the user organizes or a plain appointment - if it\'s a meeting the user only attends (not the organizer), this returns an error instead of attempting an unauthoritative change; use Outlook\'s own "Propose New Time" for those. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to target one occurrence instead - occurrence-level edits can only change start/end/subject/body/location, not attendees (attendee changes only apply to the whole series). To add/remove specific attendees while keeping others, read the current list with get_event first and pass the full new list here.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to edit (from list_events\' start value). Omit to act on the whole series. Cannot be combined with required_attendees/optional_attendees.' },
+        start: { type: 'string', description: 'New start date-time, e.g. "2026-09-01T14:00". Must be given together with end.' },
+        end: { type: 'string', description: 'New end date-time. Must be given together with start.' },
+        subject: { type: 'string' },
+        body: { type: 'string' },
+        location: { type: 'string' },
+        required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole required-attendee list. Whole-series/non-recurring only.' },
+        optional_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole optional-attendee list. Whole-series/non-recurring only.' },
+      },
+      required: ['event_id'],
+    },
+  },
+  {
     name: 'cancel_event',
     description:
       'Cancels an existing calendar event immediately - NO review window. If the user organizes it (has attendees), sends the cancellation notice to them right away, then removes it from the calendar; a plain appointment is just removed. An event that\'s already canceled is also just removed - nothing new to notify, this is the only way to dismiss one. Only available in Full autonomy. Prefer draft_cancel_event unless the user clearly wants this canceled right now, with no chance to review it first. Only refuses on a still-active meeting the user only attends (not the organizer) - use decline_meeting for those. Omit occurrence_date to cancel the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to cancel just that one occurrence instead - occurrence cancellation can NEVER be undone (unlike whole-series cancellation of a plain appointment), since Outlook has no API to restore a deleted occurrence.',

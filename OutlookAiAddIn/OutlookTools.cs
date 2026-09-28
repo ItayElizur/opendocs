@@ -94,7 +94,7 @@ namespace OutlookAiAddIn
         // content with no review step at all.
         private static readonly HashSet<string> SendTierTools = new HashSet<string>
         {
-            "send_email", "send_reply", "send_reply_all", "send_forward", "create_event", "reschedule_event", "cancel_event",
+            "send_email", "send_reply", "send_reply_all", "send_forward", "create_event", "reschedule_event", "cancel_event", "edit_event",
         };
 
         private static string TierLabel(EditingMode mode)
@@ -199,6 +199,7 @@ namespace OutlookAiAddIn
                     case "create_event": return CreateEvent(mbxKey, input);
                     case "reschedule_event": return RescheduleEvent(mbxKey, input);
                     case "cancel_event": return CancelEvent(mbxKey, input);
+                    case "edit_event": return EditEvent(mbxKey, input);
 
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }

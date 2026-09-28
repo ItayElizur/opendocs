@@ -383,6 +383,43 @@ namespace OutlookAiAddIn
             };
         }
 
+        // Shared by edit_event/draft_edit_event: replaces the attendee list
+        // wholesale (not a diff/merge - the caller supplies the full new
+        // list each time, reading the current one first via get_event if
+        // they need to preserve someone). Removes every recipient except
+        // the organizer, then re-adds via the same AddAttendees helper
+        // create_event/draft_event already use. Recipients indices are
+        // 1-based (confirmed via .NET reflection against the referenced
+        // PIA, matching every other Outlook collection in this codebase);
+        // iterating downward from Count avoids skipping an element after
+        // Remove shifts the rest down. OlMeetingRecipientType.olOrganizer
+        // == 0 (confirmed via reflection) is the only type excluded.
+        private static void ReplaceAttendees(Outlook.AppointmentItem appt, string requiredCsv, string optionalCsv)
+        {
+            for (int i = appt.Recipients.Count; i >= 1; i--)
+            {
+                if (appt.Recipients[i].Type != (int)Outlook.OlMeetingRecipientType.olOrganizer)
+                    appt.Recipients.Remove(i);
+            }
+            AddAttendees(appt, requiredCsv, Outlook.OlMeetingRecipientType.olRequired);
+            AddAttendees(appt, optionalCsv, Outlook.OlMeetingRecipientType.olOptional);
+            try { appt.Recipients.ResolveAll(); } catch { }
+        }
+
+        // Shared by edit_event/draft_edit_event's result text: describes
+        // which of the seven optional fields were actually touched, so the
+        // caller sees a precise summary instead of a generic "updated".
+        private static string DescribeEditEventChanges(DateTime? start, DateTime? end, string subject, string body, string location, bool attendeesChanged, string oldStart, string oldEnd)
+        {
+            var parts = new List<string>();
+            if (start.HasValue) parts.Add("time changed from " + oldStart + " - " + oldEnd + " to " + Iso(start.Value) + " - " + Iso(end.Value));
+            if (subject != null) parts.Add("subject changed");
+            if (body != null) parts.Add("body changed");
+            if (location != null) parts.Add("location changed");
+            if (attendeesChanged) parts.Add("attendees updated");
+            return parts.Count > 0 ? " (" + string.Join(", ", parts) + ")" : "";
+        }
+
         // Draft-tier: opens the appointment with the new Start/End already set but
         // NOT saved, exactly like draft_event - the user reviews the moved time in
         // the native window and decides whether to save it (and, if it's a
@@ -461,6 +498,187 @@ namespace OutlookAiAddIn
         // a plain appointment nobody needs to notify. Both members confirmed
         // present via reflection against the referenced PIA in CreateEvent above;
         // reused here rather than re-verified.
+        // Full-autonomy-only, general edit: unlike reschedule_event (Start/End
+        // only), this can touch start/end, subject, body, location, and
+        // attendees in one call. One unified mutation flow decides .Send() vs
+        // .Save() and whether the result is undo-able, rather than branching
+        // per field - see the design's Section 2 for the reasoning.
+        private static ToolResult EditEvent(string mbxKey, JsonElement input)
+        {
+            string id = ReqStr(input, "event_id");
+            string occDate = Str(input, "occurrence_date", null);
+            Outlook.AppointmentItem master = ItemById(id, null) as Outlook.AppointmentItem;
+            if (master == null)
+                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "edit_event" };
+
+            Outlook.AppointmentItem appt;
+            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "edit_event", out appt);
+            if (occurrenceError != null) return occurrenceError.Value;
+
+            if (IsCanceledMeeting(master))
+                return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "edit_event" };
+            if (IsReceivedMeeting(master))
+                return new ToolResult { Output = ReceivedMeetingError(appt), IsError = true, Summary = "edit_event" };
+
+            DateTime? start = DateArg(input, "start");
+            DateTime? end = DateArg(input, "end");
+            string subject = Str(input, "subject", null);
+            string body = Str(input, "body", null);
+            string location = Str(input, "location", null);
+            string requiredAttendees = Str(input, "required_attendees", null);
+            string optionalAttendees = Str(input, "optional_attendees", null);
+
+            if (!start.HasValue && !end.HasValue && subject == null && body == null && location == null &&
+                requiredAttendees == null && optionalAttendees == null)
+                return new ToolResult { Output = "At least one of start, end, subject, body, location, required_attendees, optional_attendees must be provided.", IsError = true, Summary = "edit_event" };
+
+            if (start.HasValue != end.HasValue)
+                return new ToolResult { Output = "start and end must be provided together.", IsError = true, Summary = "edit_event" };
+
+            if ((requiredAttendees != null || optionalAttendees != null) && occDate != null)
+                return new ToolResult { Output = "Attendee changes only apply to the whole series - omit occurrence_date.", IsError = true, Summary = "edit_event" };
+
+            if (occDate != null && start.HasValue)
+            {
+                ToolResult? collision = CheckOccurrenceReorderCollision(master, appt.Start, start.Value, appt.Subject ?? "", "edit_event");
+                if (collision != null) return collision.Value;
+            }
+
+            string scopeNote = occDate != null ? " (this occurrence only)" : "";
+            bool wasMeetingBefore = master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
+            bool isRecurringWholeSeriesTimeChange = occDate == null && master.IsRecurring && start.HasValue;
+
+            var props = new List<string>();
+            if (start.HasValue && !isRecurringWholeSeriesTimeChange) { props.Add("Start"); props.Add("End"); }
+            if (subject != null) props.Add("Subject");
+            if (body != null) props.Add("Body");
+            if (location != null) props.Add("Location");
+            object[] before = ReadProps(appt, props.ToArray());
+
+            string oldStart = Iso(appt.Start);
+            string oldEnd = Iso(appt.End);
+
+            // Outlook does not allow setting AppointmentItem.Start/.End directly
+            // on a recurring master (confirmed live 2026-09-28, see
+            // reschedule_event's own history) - RecurrencePattern's fields are
+            // the correct mechanism, same as create_event's recurrence support
+            // and reschedule_event's whole-series fix.
+            if (isRecurringWholeSeriesTimeChange)
+            {
+                Outlook.RecurrencePattern pattern = master.GetRecurrencePattern();
+                pattern.PatternStartDate = start.Value.Date;
+                pattern.StartTime = start.Value;
+                pattern.EndTime = end.Value;
+            }
+            else if (start.HasValue)
+            {
+                appt.Start = start.Value;
+                appt.End = end.Value;
+            }
+
+            if (subject != null) appt.Subject = subject;
+            if (body != null) appt.Body = body;
+            if (location != null) appt.Location = location;
+
+            bool attendeesChanged = false;
+            if (requiredAttendees != null || optionalAttendees != null)
+            {
+                ReplaceAttendees(appt, requiredAttendees ?? "", optionalAttendees ?? "");
+                if (appt.MeetingStatus != Outlook.OlMeetingStatus.olMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
+                // Confirmed default is already false; set explicitly so intent
+                // doesn't depend on that default never changing. Outlook's own
+                // mechanism for notifying only added/removed attendees rather
+                // than everyone on the list.
+                appt.ForceUpdateToAllAttendees = false;
+                attendeesChanged = true;
+            }
+
+            bool isMeetingNow = wasMeetingBefore || attendeesChanged;
+            // Barrier whenever the call sends an invite OR touches whole-series
+            // RecurrencePattern fields - the latter can't be snapshotted by
+            // SnapshotEntry even with zero attendee involvement (see
+            // reschedule_event's own whole-series fix for the same rule).
+            bool mustBarrier = isMeetingNow || isRecurringWholeSeriesTimeChange;
+            string changeSummary = DescribeEditEventChanges(start, end, subject, body, location, attendeesChanged, oldStart, oldEnd);
+
+            if (mustBarrier)
+            {
+                if (isMeetingNow) appt.Send(); else appt.Save();
+                RecordIrreversible(mbxKey, "edit_event of \"" + (appt.Subject ?? "") + "\"" + scopeNote +
+                                            (isMeetingNow ? " (update sent)" : "") +
+                                            (isRecurringWholeSeriesTimeChange ? " (whole series time change)" : ""));
+                return new ToolResult
+                {
+                    Output = "Updated" + (isMeetingNow ? " and sent update notice" : "") + scopeNote + ": \"" + (appt.Subject ?? "") + "\"." + changeSummary,
+                    Mutated = true,
+                    Summary = "edit_event",
+                };
+            }
+
+            try
+            {
+                appt.Save();
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException("EditEvent Save", ex);
+                if (occDate != null)
+                {
+                    // Same false-negative Save() risk confirmed for
+                    // reschedule_event's occurrence path: property setters
+                    // write immediately via RPC, independent of Save()'s own
+                    // finalize step, which can fail separately. Re-check by
+                    // the NEW date if a time change was requested (the
+                    // occurrence now sits there, not at occDate), else by the
+                    // unchanged occDate.
+                    Outlook.AppointmentItem recheck;
+                    string checkDate = start.HasValue ? Iso(start.Value) : occDate;
+                    ToolResult? stillMissing = ResolveOccurrenceTarget(master, checkDate, "edit_event", out recheck);
+                    if (stillMissing == null)
+                    {
+                        appt = recheck;
+                    }
+                    else
+                    {
+                        return new ToolResult
+                        {
+                            Output = "Could not save changes to \"" + (appt.Subject ?? "") + "\": " + ex.Message +
+                                     (start.HasValue ? " If this was a time change, it may have crossed another occurrence of the same series - check list_events for this series' other occurrence dates." : ""),
+                            IsError = true,
+                            Summary = "edit_event",
+                        };
+                    }
+                }
+                else
+                {
+                    return new ToolResult
+                    {
+                        Output = "Could not save changes to \"" + (appt.Subject ?? "") + "\": " + ex.Message,
+                        IsError = true,
+                        Summary = "edit_event",
+                    };
+                }
+            }
+
+            // RecordSnapshot reads appt.EntryID via ItemEntryIdOf(appt) - for an
+            // occurrence, that's the real, resolvable EntryID GetOccurrence's
+            // returned item gets once saved, so undo/redo works via the exact
+            // same SnapshotEntry mechanism as reschedule_event - no new
+            // undo-entry type needed. props is always non-empty here: reaching
+            // this branch requires mustBarrier == false, which means attendees
+            // were never touched (that forces isMeetingNow, hence a barrier)
+            // and, if a time change was requested, it's occurrence/non-recurring
+            // (whole-series-recurring also forces a barrier) - so at least one
+            // of Start/End/Subject/Body/Location is always in props.
+            RecordSnapshot(mbxKey, "edit_event", appt, appt.Subject ?? "", props.ToArray(), before);
+            return new ToolResult
+            {
+                Output = "Updated" + scopeNote + ": \"" + (appt.Subject ?? "") + "\"." + changeSummary,
+                Mutated = true,
+                Summary = "edit_event",
+            };
+        }
+
         private static readonly string[] RescheduleProps = { "Start", "End" };
 
         private static ToolResult RescheduleEvent(string mbxKey, JsonElement input)
