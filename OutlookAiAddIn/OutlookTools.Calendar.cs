@@ -376,9 +376,8 @@ namespace OutlookAiAddIn
             DateTime upperBound = original < nearest.Start ? nearest.Start : original;
             return new ToolResult
             {
-                Output = "Can't move \"" + subject + "\" to " + Iso(target) + " - it would cross (or land on the same day as) another occurrence of this series on " +
-                         nearest.Start.ToShortDateString() + ". Outlook doesn't allow reordering a series' occurrences relative to each other, and occurrences can't share a day. " +
-                         "Valid range for this occurrence: strictly between " + lowerBound.ToShortDateString() + " and " + upperBound.ToShortDateString() + ".",
+                Output = "Can't move \"" + subject + "\" to " + Iso(target) + " - it would cross or land on the same day as another occurrence of this series (on " +
+                         nearest.Start.ToShortDateString() + "). Valid range: strictly between " + lowerBound.ToShortDateString() + " and " + upperBound.ToShortDateString() + ".",
                 IsError = true,
                 Summary = toolName,
             };
