@@ -114,7 +114,7 @@ namespace OutlookAiAddIn
         // .Save() instead of .Display(false) - no native window, no review
         // step. Gated in OutlookTools.cs's ExecuteAsync (SendTierTools),
         // never reachable below Full Autonomy.
-        private static ToolResult SendEmail(JsonElement input)
+        private static ToolResult SendEmail(string mbxKey, JsonElement input)
         {
             // to is required, unlike draft_email's - draft_email opens a
             // compose window where a human can add a missing recipient
@@ -131,10 +131,11 @@ namespace OutlookAiAddIn
             m.Subject = subject;
             m.Body = SeedSignature(body);
             m.Send();
+            RecordIrreversible(mbxKey, "send_email to " + to);
             return new ToolResult { Output = "Sent to " + to + ": \"" + subject + "\".", Mutated = true, Summary = "send_email" };
         }
 
-        private static ToolResult SendReply(JsonElement input, bool all)
+        private static ToolResult SendReply(string mbxKey, JsonElement input, bool all)
         {
             string id = ReqStr(input, "message_id");
             string body = Str(input, "body", "");
@@ -147,10 +148,11 @@ namespace OutlookAiAddIn
             if (!string.IsNullOrEmpty(body)) reply.HTMLBody = PrependHtml(body, reply.HTMLBody);
             string to = reply.To;
             reply.Send();
+            RecordIrreversible(mbxKey, tool + " to " + to);
             return new ToolResult { Output = "Sent " + (all ? "reply-all" : "reply") + " to " + to + ": \"" + (orig.Subject ?? "") + "\".", Mutated = true, Summary = tool };
         }
 
-        private static ToolResult SendForward(JsonElement input)
+        private static ToolResult SendForward(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "message_id");
             string to = ReqStr(input, "to");
@@ -163,6 +165,7 @@ namespace OutlookAiAddIn
             fwd.To = to;
             if (!string.IsNullOrEmpty(body)) fwd.HTMLBody = PrependHtml(body, fwd.HTMLBody);
             fwd.Send();
+            RecordIrreversible(mbxKey, "send_forward to " + to);
             return new ToolResult { Output = "Forwarded to " + to + ": \"" + (orig.Subject ?? "") + "\".", Mutated = true, Summary = "send_forward" };
         }
 
@@ -172,7 +175,7 @@ namespace OutlookAiAddIn
         // calendar with invitees never notified. Both members confirmed via
         // reflection against the referenced Outlook PIA (_AppointmentItem
         // exposes both Send() and Save()) before writing this branch.
-        private static ToolResult CreateEvent(JsonElement input)
+        private static ToolResult CreateEvent(string mbxKey, JsonElement input)
         {
             // Unlike draft_event (where an omitted start/end just leaves
             // Outlook's own new-appointment default - "now", 30 min - sitting
@@ -203,6 +206,7 @@ namespace OutlookAiAddIn
                 AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional);
                 try { a.Recipients.ResolveAll(); } catch { }
                 a.Send();
+                RecordIrreversible(mbxKey, "create_event invite for \"" + (a.Subject ?? "") + "\"");
                 // This confirmation line is the only place the user sees who
                 // an irreversible, unreviewed invite went to - do not let an
                 // empty req (optional_attendees-only) produce a malformed
@@ -212,6 +216,7 @@ namespace OutlookAiAddIn
             }
 
             a.Save();
+            RecordCreated(mbxKey, "create_event", "event_id", a, a.Subject ?? "");
             return new ToolResult { Output = "Created event: \"" + (a.Subject ?? "") + "\".", Mutated = true, Summary = "create_event" };
         }
     }

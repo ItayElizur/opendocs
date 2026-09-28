@@ -106,6 +106,10 @@ namespace WordAiAddIn
                         return AddComment(input);
                     case "add_image":
                         return AddImage(input);
+                    case "undo_last_action":
+                        return UndoLastAction();
+                    case "redo_last_action":
+                        return RedoLastAction();
                     default:
                         return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }

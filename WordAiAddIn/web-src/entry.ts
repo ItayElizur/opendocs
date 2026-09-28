@@ -512,6 +512,20 @@ const ALL_WORD_TOOLS = [
         required: ['anchorText', 'commentText'],
       },
     },
+    {
+      name: 'undo_last_action',
+      description:
+        "Reverses the document's last action, exactly like Ctrl+Z - can undo an edit this assistant just made OR one the user made. " +
+        'Reports honestly whether anything was actually undone ("Nothing to undo." if the undo history is empty).',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'redo_last_action',
+      description:
+        'Re-applies the last action that was undone, exactly like Ctrl+Y/Ctrl+Shift+Z. ' +
+        'Reports honestly whether anything was actually redone ("Nothing to redo." if there is nothing to reapply).',
+      inputSchema: { type: 'object', properties: {} },
+    },
   ]
 
 // FT-1 Task 5: settings-screen labels/descriptions, one entry per tool above.
@@ -587,6 +601,14 @@ const WORD_TOOL_DISPLAY = {
     label: { en: 'Add comment', he: 'הוספת הערה' },
     description: { en: 'Adds a comment anchored to text in the document, without changing its content.', he: 'מוסיף הערה מעוגנת לטקסט במסמך, מבלי לשנות את תוכנו.' },
   },
+  undo_last_action: {
+    label: { en: 'Undo', he: 'ביטול' },
+    description: { en: "Reverses the document's last action, like Ctrl+Z.", he: 'מבטל את הפעולה האחרונה במסמך, כמו Ctrl+Z.' },
+  },
+  redo_last_action: {
+    label: { en: 'Redo', he: 'ביצוע חוזר' },
+    description: { en: 'Re-applies the last undone action, like Ctrl+Y.', he: 'מבצע מחדש את הפעולה האחרונה שבוטלה, כמו Ctrl+Y.' },
+  },
 }
 
 startAddIn({
@@ -606,7 +628,8 @@ startAddIn({
     'edit_table\'s insert_row/delete_row/insert_col/delete_col and edit_smartart\'s delete_node shift later row/column/node indices - re-read (read_table/read_smartart) before a second structural edit to the same table or diagram in the same run. ' +
     'apply_commands\' copyBlocks duplicates one or more paragraphs elsewhere in the document without removing the originals (unlike moveBlocks, which relocates them), and copyFormat copies one paragraph\'s complete formatting onto one or more others in a single call - like Format Painter, whole paragraphs only, and it never copies hyperlinks. ' +
     "Your available tools depend on the user's current editing mode (Read only, Comment only, Track changes, or Full autonomy); only call tools that are currently offered to you. " +
-    'If the user has selected text in the document, it will be included in your context as "Content selected by the user."',
+    'If the user has selected text in the document, it will be included in your context as "Content selected by the user." ' +
+    "undo_last_action/redo_last_action mirror Word's own Ctrl+Z/Ctrl+Y over the document's real undo history - use them if the user asks to undo/redo, or to back out a change you just made that turned out wrong.",
   starters: [
     { en: 'Summarize the key points of this document', he: 'סכם את הנקודות העיקריות במסמך' },
     { en: 'Polish the whole document for a more professional tone', he: 'לטש את כל המסמך לטון מקצועי יותר' },
