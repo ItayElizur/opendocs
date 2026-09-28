@@ -237,25 +237,26 @@ namespace OutlookAiAddIn
 
             string req = Str(input, "required_attendees", "");
             string opt = Str(input, "optional_attendees", "");
+            var unresolvedAttendees = new List<string>();
             if (!string.IsNullOrEmpty(req) || !string.IsNullOrEmpty(opt))
             {
                 a.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
                 // AddAttendees resolves each recipient individually now -
                 // the collection-level ResolveAll() that used to run here
                 // never reliably resolved anything (confirmed live via COM).
-                AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired);
-                AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional);
+                AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired, unresolvedAttendees);
+                AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional, unresolvedAttendees);
             }
             if (recurrence != null) ApplyRecurrence(a, recurrence);
             a.Display(false);
             return new ToolResult
             {
-                Output = "Opened an appointment draft in Outlook for the user to review and send." + (recurrence != null ? " Set to repeat " + recurrence.Type + ". Note: Outlook won't visually show the recurrence pattern in this review window until you save it once (a known Outlook limitation for brand-new unsaved items) - it applies correctly once saved or sent." : ""),
+                Output = "Opened an appointment draft in Outlook for the user to review and send." + (recurrence != null ? " Set to repeat " + recurrence.Type + ". Note: Outlook won't visually show the recurrence pattern in this review window until you save it once (a known Outlook limitation for brand-new unsaved items) - it applies correctly once saved or sent." : "") + FormatUnresolvedAttendeesNote(unresolvedAttendees),
                 Summary = "draft_event",
             };
         }
 
-        private static void AddAttendees(Outlook.AppointmentItem a, string csv, Outlook.OlMeetingRecipientType type)
+        private static void AddAttendees(Outlook.AppointmentItem a, string csv, Outlook.OlMeetingRecipientType type, List<string> unresolved)
         {
             if (string.IsNullOrEmpty(csv)) return;
             foreach (string part in csv.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
@@ -279,7 +280,20 @@ namespace OutlookAiAddIn
                 // account) - do it here so every caller gets a genuinely
                 // resolved recipient without needing its own resolve step.
                 try { r.Resolve(); } catch { }
+                // A genuinely unresolvable address (a real typo, not the
+                // ResolveAll() bug above) still fails silently otherwise -
+                // report it back so the caller can tell the model to check
+                // for typos, matching find_meeting_slots' own
+                // "Could not resolve: ..." pattern for unresolved attendees.
+                if (!r.Resolved) unresolved.Add(addr);
             }
+        }
+
+        // Shared by create_event/draft_event/edit_event/draft_edit_event's
+        // result text - see AddAttendees above.
+        private static string FormatUnresolvedAttendeesNote(List<string> unresolved)
+        {
+            return unresolved.Count > 0 ? " Could not resolve: " + string.Join(", ", unresolved) + " - check for typos." : "";
         }
 
         // Send-and-dispatch, Full-autonomy-only counterparts to the
@@ -376,14 +390,15 @@ namespace OutlookAiAddIn
             string req = Str(input, "required_attendees", "");
             string opt = Str(input, "optional_attendees", "");
             bool isMeeting = !string.IsNullOrEmpty(req) || !string.IsNullOrEmpty(opt);
+            var unresolvedAttendees = new List<string>();
             if (isMeeting)
             {
                 a.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
                 // AddAttendees resolves each recipient individually now -
                 // the collection-level ResolveAll() that used to run here
                 // never reliably resolved anything (confirmed live via COM).
-                AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired);
-                AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional);
+                AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired, unresolvedAttendees);
+                AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional, unresolvedAttendees);
             }
             if (recurrence != null) ApplyRecurrence(a, recurrence);
 
@@ -398,7 +413,7 @@ namespace OutlookAiAddIn
                 string attendeeList = string.IsNullOrEmpty(req) ? opt : string.IsNullOrEmpty(opt) ? req : req + "; " + opt;
                 return new ToolResult
                 {
-                    Output = "Created and sent invite: \"" + (a.Subject ?? "") + "\" to " + attendeeList + "." + (recurrence != null ? " Repeats " + recurrence.Type + "." : ""),
+                    Output = "Created and sent invite: \"" + (a.Subject ?? "") + "\" to " + attendeeList + "." + (recurrence != null ? " Repeats " + recurrence.Type + "." : "") + FormatUnresolvedAttendeesNote(unresolvedAttendees),
                     Mutated = true,
                     Summary = "create_event",
                 };

@@ -396,7 +396,7 @@ namespace OutlookAiAddIn
         // reflection against the referenced PIA, matching every other
         // Outlook collection in this codebase); iterating downward from
         // Count avoids skipping an element after Remove shifts the rest down.
-        private static void ReplaceAttendees(Outlook.AppointmentItem appt, string requiredCsv, string optionalCsv)
+        private static void ReplaceAttendees(Outlook.AppointmentItem appt, string requiredCsv, string optionalCsv, List<string> unresolved)
         {
             for (int i = appt.Recipients.Count; i >= 1; i--)
             {
@@ -407,8 +407,8 @@ namespace OutlookAiAddIn
             // AddAttendees resolves each recipient individually now - the
             // collection-level ResolveAll() that used to run here never
             // reliably resolved anything (confirmed live via COM).
-            if (requiredCsv != null) AddAttendees(appt, requiredCsv, Outlook.OlMeetingRecipientType.olRequired);
-            if (optionalCsv != null) AddAttendees(appt, optionalCsv, Outlook.OlMeetingRecipientType.olOptional);
+            if (requiredCsv != null) AddAttendees(appt, requiredCsv, Outlook.OlMeetingRecipientType.olRequired, unresolved);
+            if (optionalCsv != null) AddAttendees(appt, optionalCsv, Outlook.OlMeetingRecipientType.olOptional, unresolved);
         }
 
         // Counts real attendees only, excluding the organizer - used by
@@ -529,10 +529,11 @@ namespace OutlookAiAddIn
 
             bool attendeesChanged = false;
             bool revertToNonMeeting = false;
+            var unresolvedAttendees = new List<string>();
             if (requiredAttendees != null || optionalAttendees != null)
             {
                 int recipientsBefore = CountAttendeeRecipients(appt);
-                ReplaceAttendees(appt, requiredAttendees, optionalAttendees);
+                ReplaceAttendees(appt, requiredAttendees, optionalAttendees, unresolvedAttendees);
                 int recipientsAfter = CountAttendeeRecipients(appt);
                 // If clearing brought the real attendee count to zero, the
                 // event should revert to olNonMeeting - otherwise it stays
@@ -613,7 +614,7 @@ namespace OutlookAiAddIn
                                             (isRecurringWholeSeriesTimeChange ? " (whole series time change)" : ""));
                 return new ToolResult
                 {
-                    Output = "Updated" + (isMeetingNow ? " and sent update notice" : "") + scopeNote + ": \"" + (appt.Subject ?? "") + "\"." + changeSummary,
+                    Output = "Updated" + (isMeetingNow ? " and sent update notice" : "") + scopeNote + ": \"" + (appt.Subject ?? "") + "\"." + changeSummary + FormatUnresolvedAttendeesNote(unresolvedAttendees),
                     Mutated = true,
                     Summary = "edit_event",
                 };
@@ -677,7 +678,7 @@ namespace OutlookAiAddIn
             RecordSnapshot(mbxKey, "edit_event", appt, appt.Subject ?? "", props.ToArray(), before);
             return new ToolResult
             {
-                Output = "Updated" + scopeNote + ": \"" + (appt.Subject ?? "") + "\"." + changeSummary,
+                Output = "Updated" + scopeNote + ": \"" + (appt.Subject ?? "") + "\"." + changeSummary + FormatUnresolvedAttendeesNote(unresolvedAttendees),
                 Mutated = true,
                 Summary = "edit_event",
             };
@@ -754,10 +755,11 @@ namespace OutlookAiAddIn
             if (location != null) appt.Location = location;
 
             bool attendeesChanged = false;
+            var unresolvedAttendees = new List<string>();
             if (requiredAttendees != null || optionalAttendees != null)
             {
                 int recipientsBefore = CountAttendeeRecipients(appt);
-                ReplaceAttendees(appt, requiredAttendees, optionalAttendees);
+                ReplaceAttendees(appt, requiredAttendees, optionalAttendees, unresolvedAttendees);
                 int recipientsAfter = CountAttendeeRecipients(appt);
                 // Same revert-to-non-meeting fix as EditEvent: if clearing
                 // attendees brought the real attendee count to zero, don't
@@ -781,7 +783,7 @@ namespace OutlookAiAddIn
             return new ToolResult
             {
                 Output = "Opened \"" + (appt.Subject ?? "") + "\"" + scopeNote + " with the requested changes in Outlook for the user to review and " +
-                         (isMeeting ? "save/send." : "save.") + (attendeesChanged ? " Attendee list updated - review before sending." : ""),
+                         (isMeeting ? "save/send." : "save.") + (attendeesChanged ? " Attendee list updated - review before sending." : "") + FormatUnresolvedAttendeesNote(unresolvedAttendees),
                 Summary = "draft_edit_event",
             };
         }
