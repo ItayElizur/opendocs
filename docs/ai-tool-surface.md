@@ -515,12 +515,20 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 >   - **Barriers**: `send_*`, `create_event` with attendees, `reschedule_event`
 >     and `cancel_event` on a still-active meeting the user organizes (both
 >     send a notice to attendees), `accept/decline_meeting`, `delete_email
->     permanent:true`, and — regardless of plain-appointment vs. meeting —
->     any occurrence-level cancellation via `cancel_event`'s `occurrence_date`
+>     permanent:true`, — regardless of plain-appointment vs. meeting — any
+>     occurrence-level cancellation via `cancel_event`'s `occurrence_date`
 >     (added 2026-09-28: `RecurrencePattern.Exceptions`/`Exception` are
 >     read-only via COM, confirmed by reflection, so a deleted occurrence has
->     no API to reverse it). Undo stops at a barrier instead of reaching past
->     it.
+>     no API to reverse it), and — again regardless of plain-appointment vs.
+>     meeting — `reschedule_event` on the **whole series** when `event_id`
+>     resolves to a genuinely recurring master (confirmed live 2026-09-28:
+>     Outlook rejects setting `Start`/`End` directly on a recurring master at
+>     all, so this branch writes to `RecurrencePattern` fields instead, which
+>     the undo mechanism can't yet read/write). This is the one case where an
+>     otherwise-undo-able-looking `reschedule_event` call (no attendees, no
+>     `occurrence_date`) is still a barrier — only true non-recurring events
+>     stay undo-able via the plain `Start`/`End` snapshot. Undo stops at a
+>     barrier instead of reaching past it.
 >   - **Known gap — `set_event_categories`**: the snapshot only covers the
 >     appointment's own `Categories` string. If the assigned name wasn't
 >     already in the mailbox's master category list, Outlook auto-adds it
@@ -1012,7 +1020,7 @@ index otherwise.
 
 | Tool | Notes |
 |---|---|
-| `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Covers `mark_email_read/unread`, `flag_email_important`, `move_email`, non-permanent `delete_email`, `create_task`, `update_task`, `set_reminder`, `set_email_reminder`, `set_event_categories`, `set_category_color`, `set_event_availability`, `reschedule_event` without attendees (**including an occurrence-level reschedule via `occurrence_date`, added 2026-09-28** — same `SnapshotEntry` mechanism, since a saved occurrence has its own real `EntryID`), `cancel_event` on a plain or already-canceled appointment, and `create_event` without attendees. Sends, invites, meeting responses, `reschedule_event`/`cancel_event` on a still-active organized meeting (attendees notified), permanent deletes, and **any occurrence-level cancellation via `cancel_event`'s `occurrence_date` (added 2026-09-28, plain appointment or meeting alike — `RecurrencePattern.Exceptions`/`Exception` are read-only via COM, so a deleted occurrence can't be reversed)** are barriers: undo reports it can't go past them. It refuses if the item was changed since the assistant's action, and never touches the user's own manual changes. **Not verified against a live Outlook client**, except `set_event_availability`'s undo/redo round trip (verified 2026-09-28) and, for the recurring-series feature, occurrence-level reschedule/cancellation against a plain (non-meeting) recurring series (verified 2026-09-28 — see the dated update near the top of this document; the meeting-occurrence case is unverified). |
+| `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Covers `mark_email_read/unread`, `flag_email_important`, `move_email`, non-permanent `delete_email`, `create_task`, `update_task`, `set_reminder`, `set_email_reminder`, `set_event_categories`, `set_category_color`, `set_event_availability`, `reschedule_event` on a non-recurring event or a single occurrence via `occurrence_date` (**added 2026-09-28** — same `SnapshotEntry` mechanism, since a saved occurrence has its own real `EntryID`), `cancel_event` on a plain or already-canceled appointment, and `create_event` without attendees. Sends, invites, meeting responses, `reschedule_event`/`cancel_event` on a still-active organized meeting (attendees notified), permanent deletes, any occurrence-level cancellation via `cancel_event`'s `occurrence_date` (**added 2026-09-28**, plain appointment or meeting alike — `RecurrencePattern.Exceptions`/`Exception` are read-only via COM, so a deleted occurrence can't be reversed), and **`reschedule_event` on the whole series when `event_id` is a genuinely recurring master** (**added 2026-09-28** — Outlook rejects setting `Start`/`End` directly on a recurring master, so this path writes `RecurrencePattern` fields instead, which undo can't yet target; a non-recurring event's whole-item reschedule is unaffected and stays undo-able) are barriers: undo reports it can't go past them. It refuses if the item was changed since the assistant's action, and never touches the user's own manual changes. **Not verified against a live Outlook client**, except `set_event_availability`'s undo/redo round trip (verified 2026-09-28) and, for the recurring-series feature, occurrence-level reschedule/cancellation against a plain (non-meeting) recurring series (verified 2026-09-28 — see the dated update near the top of this document; the meeting-occurrence case, and the whole-series-recurring `RecurrencePattern` reschedule fix, are both unverified live). |
 | `redo_last_action` | Re-applies the most recently undone action, with the same "changed since" check. The redo list is cleared by any new recorded action or barrier. |
 
 ### Draft-and-display tools (7 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
@@ -1209,12 +1217,30 @@ own UI). What remains unconfirmed:
   actual cause later turned out to be unrelated (see point 5 in the dated update) —
   not a fix confirmed by live-observing the bug on a genuine meeting occurrence, so
   the fix itself remains unverified against the scenario it targets.
-- **Whether the whole-series `Start`/`End` reassignment on a recurring master
-  `AppointmentItem` behaves as assumed remains unverified**: whether directly
-  setting `Start`/`End` on the master shifts the whole recurring pattern correctly
-  vs. corrupting it is unconfirmed against live Outlook (PR #21's still-open
-  Finding #2 — a pre-existing gap from the `reschedule_event` PR, not newly
-  introduced or closed by this feature).
+- **PR #21's Finding #2 (whole-series `Start`/`End` reassignment on a recurring
+  master) is resolved — confirmed live 2026-09-28, and it was worse than
+  "unverified": setting `AppointmentItem.Start`/`.End` directly on a genuinely
+  recurring master throws `COMException 0xAF620009 "The object does not support
+  this method."` from `set_Start`, unconditionally. Outlook simply does not allow
+  it. Fixed in `RescheduleEvent` by writing to `RecurrencePattern.PatternStartDate`/
+  `StartTime`/`EndTime` instead (the same mechanism `create_event`'s recurrence
+  support already uses for a brand-new series — see `ApplyRecurrence` in
+  `OutlookTools.Compose.cs`) whenever the whole series (not a single occurrence) is
+  being rescheduled. This is undocumented-but-native Outlook behavior, not a
+  workaround. Consequence: whole-series reschedule of a genuinely recurring master
+  is now a **barrier**, not undo-able (for both the meeting and non-meeting case) —
+  the existing `SnapshotEntry` undo mechanism only reads/writes plain item
+  properties (exactly what just failed), and there's no `RecurrencePattern`-aware
+  undo entry type yet. This is a deliberate asymmetry from every other reschedule
+  branch, which stay undo-able where the underlying mutation actually works.
+  Occurrence-level reschedule and non-recurring plain events are unaffected.
+  **Still unverified live** (this specific fix, not the underlying limitation it
+  works around): whether `PatternStartDate`/`StartTime`/`EndTime` interact
+  correctly with the series' existing `DayOfWeekMask`/other pattern fields when
+  only the time (not the day) changes, whether calling `.Send()`/`.Save()` on
+  `appt` (which equals `master` here) after mutating the pattern behaves
+  identically to mutating `appt` directly, and what redo/undo-refusal messaging
+  actually looks like for this barrier in practice.
 - **`CheckOccurrenceReorderCollision` may not cover every reason Outlook can reject an
   occurrence reorder.** It's confirmed live for the two specific rejection reasons
   reproduced by hand in Outlook's own UI (see above), but every such rejection surfaces
