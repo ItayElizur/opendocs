@@ -509,7 +509,25 @@ namespace OutlookAiAddIn
             if (requiredAttendees != null || optionalAttendees != null)
             {
                 ReplaceAttendees(appt, requiredAttendees, optionalAttendees);
-                if (appt.MeetingStatus != Outlook.OlMeetingStatus.olMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
+                // If clearing brought the attendee list to zero, revert
+                // MeetingStatus back to olNonMeeting - otherwise an event that
+                // was ever a meeting stays permanently "a meeting" (and thus a
+                // permanent undo barrier) even after every attendee is removed.
+                // Confirmed live via COM: setting MeetingStatus back to
+                // olNonMeeting after clearing Recipients works and persists
+                // (verified via a fresh re-fetch by EntryID, not just an
+                // in-memory read), and .Send() afterward still succeeds - so
+                // this doesn't interfere with notifying just-removed attendees
+                // (isMeetingNow below is based on wasMeetingBefore, captured
+                // before this mutation, so that notification still fires).
+                if (appt.Recipients.Count == 0)
+                {
+                    if (appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olNonMeeting;
+                }
+                else if (appt.MeetingStatus != Outlook.OlMeetingStatus.olMeeting)
+                {
+                    appt.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
+                }
                 // Confirmed default is already false; set explicitly so intent
                 // doesn't depend on that default never changing. Outlook's own
                 // mechanism for notifying only added/removed attendees rather
@@ -675,9 +693,19 @@ namespace OutlookAiAddIn
             if (requiredAttendees != null || optionalAttendees != null)
             {
                 ReplaceAttendees(appt, requiredAttendees, optionalAttendees);
-                if (appt.MeetingStatus != Outlook.OlMeetingStatus.olMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
+                // Same revert-to-non-meeting fix as EditEvent: if clearing
+                // attendees brought the count to zero, don't leave the item
+                // permanently marked as a meeting.
+                if (appt.Recipients.Count == 0)
+                {
+                    if (appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olNonMeeting;
+                }
+                else if (appt.MeetingStatus != Outlook.OlMeetingStatus.olMeeting)
+                {
+                    appt.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
+                }
                 attendeesChanged = true;
-                isMeeting = true;
+                isMeeting = appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
             }
 
             appt.Display(false);

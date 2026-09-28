@@ -221,7 +221,7 @@ namespace OutlookAiAddIn
             a.Display(false);
             return new ToolResult
             {
-                Output = "Opened an appointment draft in Outlook for the user to review and send." + (recurrence != null ? " Set to repeat " + recurrence.Type + "." : ""),
+                Output = "Opened an appointment draft in Outlook for the user to review and send." + (recurrence != null ? " Set to repeat " + recurrence.Type + ". Note: Outlook won't visually show the recurrence pattern in this review window until you save it once (a known Outlook limitation for brand-new unsaved items) - it applies correctly once saved or sent." : ""),
                 Summary = "draft_event",
             };
         }
