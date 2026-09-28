@@ -280,6 +280,24 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > the classic COM object model this add-in automates, which is why the
 > `olMeetingReceived` case is a hard refusal rather than a half-working
 > attempt.
+>
+> **Update 2026-09-28: fixed a gap in the organizer-authority check, wired
+> into undo/redo.** The original check only excluded the exact
+> `olMeetingReceived` value; `OlMeetingStatus` actually has 5 values
+> (`olNonMeeting`, `olMeeting`, `olMeetingReceived`, `olMeetingCanceled`,
+> `olMeetingReceivedAndCanceled`), so an attendee's copy of a meeting the
+> organizer has since canceled (`olMeetingReceivedAndCanceled`) — and the
+> organizer's own canceled copy (`olMeetingCanceled`) — both fell through to
+> the silent `.Save()` path, reporting a `Mutated: true` "Rescheduled" success
+> on a canceled or not-actually-yours meeting. Both tools now check for
+> either canceled status first (a clean `IsError`: "has been canceled, so
+> there's nothing to reschedule"), then the (now also two-valued)
+> received-meeting check. Also merged with PR #23 (undo/redo) and #20
+> (`set_event_availability`), which this branch predates: `reschedule_event`
+> now records a `Start`/`End` snapshot (undo-able) on its `.Save()` branch and
+> a barrier (not undo-able) on its `.Send()` branch, mirroring `create_event`'s
+> two branches. `draft_reschedule_event` needs no wiring — like `draft_event`,
+> it never saves/sends anything itself.
 
 > **Update 2026-09-27 (Outlook gains `set_event_availability`):** one new
 > tool, added to `OutlookAiAddIn/OutlookTools.Categories.cs` right beside
@@ -420,8 +438,9 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 >   - **Property snapshots** (before/after values, restored and `Save()`d):
 >     `mark_email_read/unread` (`UnRead`), `flag_email_important` (full
 >     `Importance`, so Low is preserved), `set_event_categories`,
->     `set_event_availability` (`BusyStatus`), `set_reminder`, and
->     `update_task` (task fields as a group, or the flagged-mail fields).
+>     `set_event_availability` (`BusyStatus`), `reschedule_event` without
+>     attendees (`Start`/`End`), `set_reminder`, and `update_task` (task
+>     fields as a group, or the flagged-mail fields).
 >   - **`set_email_reminder`**: if the message wasn't flagged before, undo
 >     calls `ClearTaskFlag()`, and redo calls `MarkAsTask` again.
 >   - **Moves**: `move_email` and non-permanent `delete_email`. The folder is
@@ -433,7 +452,8 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 >     moves it back.
 >   - **`set_category_color`**: undo restores the old color, or removes a tag
 >     the assistant created.
->   - **Barriers**: `send_*`, `create_event` with attendees,
+>   - **Barriers**: `send_*`, `create_event` with attendees, `reschedule_event`
+>     on a meeting the user organizes (sends an update notice to attendees),
 >     `accept/decline_meeting` and `delete_email permanent:true`. Undo
 >     stops at a barrier instead of reaching past it.
 >   - **Known gap — `set_event_categories`**: the snapshot only covers the
@@ -815,7 +835,7 @@ index otherwise.
 
 | Tool | Notes |
 |---|---|
-| `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Covers `mark_email_read/unread`, `flag_email_important`, `move_email`, non-permanent `delete_email`, `create_task`, `update_task`, `set_reminder`, `set_email_reminder`, `set_event_categories`, `set_category_color`, `set_event_availability`, and `create_event` without attendees. Sends, invites, meeting responses and permanent deletes are barriers: undo reports it can't go past them. It refuses if the item was changed since the assistant's action, and never touches the user's own manual changes. **Not verified against a live Outlook client**, except `set_event_availability`'s undo/redo round trip (verified 2026-09-28). |
+| `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Covers `mark_email_read/unread`, `flag_email_important`, `move_email`, non-permanent `delete_email`, `create_task`, `update_task`, `set_reminder`, `set_email_reminder`, `set_event_categories`, `set_category_color`, `set_event_availability`, `reschedule_event` without attendees, and `create_event` without attendees. Sends, invites, meeting responses, `reschedule_event` on an organized meeting (attendees notified), and permanent deletes are barriers: undo reports it can't go past them. It refuses if the item was changed since the assistant's action, and never touches the user's own manual changes. **Not verified against a live Outlook client**, except `set_event_availability`'s undo/redo round trip (verified 2026-09-28). |
 | `redo_last_action` | Re-applies the most recently undone action, with the same "changed since" check. The redo list is cleared by any new recorded action or barrier. |
 
 ### Draft-and-display tools (6 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)

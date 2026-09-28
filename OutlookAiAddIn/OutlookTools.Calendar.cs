@@ -247,22 +247,41 @@ namespace OutlookAiAddIn
         }
 
         // Shared by draft_reschedule_event/reschedule_event: an olMeetingReceived
-        // appointment is one the user only attends, not organizes - Outlook gives
-        // attendees no authority to unilaterally move someone else's meeting.
-        // Confirmed via .NET reflection against the referenced
-        // Microsoft.Office.Interop.Outlook 15.0.0.0 PIA that neither
-        // AppointmentItem/_AppointmentItem nor MeetingItem/_MeetingItem expose any
-        // "Propose New Time" member - _AppointmentItem.Respond only takes an
-        // OlMeetingResponse (Accept/Decline/Tentative), no counter-proposal
-        // overload. Real Outlook's "Propose New Time" is a ribbon/UI feature (MAPI
+        // (or olMeetingReceivedAndCanceled) appointment is one the user only
+        // attends, not organizes - Outlook gives attendees no authority to
+        // unilaterally move someone else's meeting. Confirmed via .NET
+        // reflection against the referenced Microsoft.Office.Interop.Outlook
+        // 15.0.0.0 PIA that neither AppointmentItem/_AppointmentItem nor
+        // MeetingItem/_MeetingItem expose any "Propose New Time" member -
+        // _AppointmentItem.Respond only takes an OlMeetingResponse
+        // (Accept/Decline/Tentative), no counter-proposal overload. Real
+        // Outlook's "Propose New Time" is a ribbon/UI feature (MAPI
         // counter-proposal properties), not one the classic COM object model
         // exposes cleanly, so there is no authoritative or even semi-authoritative
         // way to honor a reschedule request on a received meeting here - both
         // tools refuse up front instead of silently attempting a Save()/Send()
         // Outlook wouldn't actually honor as a real reschedule.
+        //
+        // OlMeetingStatus has 5 values: olNonMeeting (0), olMeeting (1),
+        // olMeetingReceived (3), olMeetingCanceled (5),
+        // olMeetingReceivedAndCanceled (7) - checking only the exact
+        // olMeetingReceived value here would let an attendee's copy of a
+        // meeting the organizer has since canceled (olMeetingReceivedAndCanceled)
+        // through silently, so both "received" statuses count.
         private static bool IsReceivedMeeting(Outlook.AppointmentItem appt)
         {
-            return appt.MeetingStatus == Outlook.OlMeetingStatus.olMeetingReceived;
+            return appt.MeetingStatus == Outlook.OlMeetingStatus.olMeetingReceived ||
+                   appt.MeetingStatus == Outlook.OlMeetingStatus.olMeetingReceivedAndCanceled;
+        }
+
+        // Separate from IsReceivedMeeting: covers the organizer's own
+        // olMeetingCanceled copy too (not just the attendee-side
+        // olMeetingReceivedAndCanceled) - rescheduling a canceled meeting is
+        // nonsensical regardless of who canceled it or who's asking.
+        private static bool IsCanceledMeeting(Outlook.AppointmentItem appt)
+        {
+            return appt.MeetingStatus == Outlook.OlMeetingStatus.olMeetingCanceled ||
+                   appt.MeetingStatus == Outlook.OlMeetingStatus.olMeetingReceivedAndCanceled;
         }
 
         private static string ReceivedMeetingError(Outlook.AppointmentItem appt)
@@ -271,6 +290,11 @@ namespace OutlookAiAddIn
                    (string.IsNullOrEmpty(appt.Organizer) ? "someone else" : appt.Organizer) +
                    " - you're only an attendee, not the organizer, so this tool has no authority to move it. " +
                    "Use Outlook's own \"Propose New Time\" option on the meeting instead.";
+        }
+
+        private static string CanceledMeetingError(Outlook.AppointmentItem appt)
+        {
+            return "\"" + (appt.Subject ?? "") + "\" has been canceled, so there's nothing to reschedule.";
         }
 
         // Draft-tier: opens the appointment with the new Start/End already set but
@@ -285,6 +309,8 @@ namespace OutlookAiAddIn
             if (appt == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "draft_reschedule_event" };
 
+            if (IsCanceledMeeting(appt))
+                return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "draft_reschedule_event" };
             if (IsReceivedMeeting(appt))
                 return new ToolResult { Output = ReceivedMeetingError(appt), IsError = true, Summary = "draft_reschedule_event" };
 
@@ -312,13 +338,17 @@ namespace OutlookAiAddIn
         // a plain appointment nobody needs to notify. Both members confirmed
         // present via reflection against the referenced PIA in CreateEvent above;
         // reused here rather than re-verified.
-        private static ToolResult RescheduleEvent(JsonElement input)
+        private static readonly string[] RescheduleProps = { "Start", "End" };
+
+        private static ToolResult RescheduleEvent(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
             Outlook.AppointmentItem appt = ItemById(id, null) as Outlook.AppointmentItem;
             if (appt == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "reschedule_event" };
 
+            if (IsCanceledMeeting(appt))
+                return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "reschedule_event" };
             if (IsReceivedMeeting(appt))
                 return new ToolResult { Output = ReceivedMeetingError(appt), IsError = true, Summary = "reschedule_event" };
 
@@ -329,12 +359,17 @@ namespace OutlookAiAddIn
 
             string oldStart = Iso(appt.Start);
             string oldEnd = Iso(appt.End);
+            object[] before = ReadProps(appt, RescheduleProps);
             appt.Start = start.Value;
             appt.End = end.Value;
 
             if (appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting)
             {
                 appt.Send();
+                // Barrier, not a snapshot: like create_event's invite branch, this
+                // is an irreversible, unreviewed send - undo must stop here rather
+                // than silently move the meeting back without telling attendees.
+                RecordIrreversible(mbxKey, "reschedule_event invite update for \"" + (appt.Subject ?? "") + "\"");
                 // This confirmation line is the only place the user sees that an
                 // irreversible, unreviewed reschedule notice went out to attendees.
                 return new ToolResult
@@ -347,6 +382,7 @@ namespace OutlookAiAddIn
             }
 
             appt.Save();
+            RecordSnapshot(mbxKey, "reschedule_event", appt, appt.Subject ?? "", RescheduleProps, before);
             return new ToolResult
             {
                 Output = "Rescheduled: \"" + (appt.Subject ?? "") + "\" from " + oldStart + " - " + oldEnd +
