@@ -75,6 +75,7 @@ namespace OutlookAiAddIn
             "create_task", "update_task", "set_reminder", "set_email_reminder",
             "draft_email", "reply_email", "reply_all_email", "forward_email", "draft_event",
             "set_event_categories", "set_category_color", "set_event_availability", "apply_search", "draft_cancel_event", "draft_edit_event",
+            "draft_accept_meeting", "draft_decline_meeting", "draft_tentative_meeting",
             // undo/redo only replay the assistant's own recorded actions (see
             // OutlookTools.Undo.cs) and never send anything - sends and
             // meeting responses are barriers, not replayable entries - so
@@ -174,6 +175,9 @@ namespace OutlookAiAddIn
                     case "delete_email": return DeleteEmail(mbxKey, input);
                     case "undo_last_action": return UndoLastAction(mbxKey);
                     case "redo_last_action": return RedoLastAction(mbxKey);
+                    case "draft_accept_meeting": return DraftRespondMeeting(input, Outlook.OlMeetingResponse.olMeetingAccepted, "draft_accept_meeting");
+                    case "draft_decline_meeting": return DraftRespondMeeting(input, Outlook.OlMeetingResponse.olMeetingDeclined, "draft_decline_meeting");
+                    case "draft_tentative_meeting": return DraftRespondMeeting(input, Outlook.OlMeetingResponse.olMeetingTentative, "draft_tentative_meeting");
                     case "accept_meeting": return RespondMeeting(mbxKey, input, Outlook.OlMeetingResponse.olMeetingAccepted, "accept_meeting");
                     case "decline_meeting": return RespondMeeting(mbxKey, input, Outlook.OlMeetingResponse.olMeetingDeclined, "decline_meeting");
                     case "tentative_meeting": return RespondMeeting(mbxKey, input, Outlook.OlMeetingResponse.olMeetingTentative, "tentative_meeting");

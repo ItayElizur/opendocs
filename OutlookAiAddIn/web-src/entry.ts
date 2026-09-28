@@ -249,6 +249,33 @@ const ALL_OUTLOOK_TOOLS = [
     },
   },
   {
+    name: 'draft_accept_meeting',
+    description: 'Opens an acceptance of a meeting invitation for the user to review and send themselves. Pass message to pre-fill a comment.',
+    inputSchema: {
+      type: 'object',
+      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional comment pre-filled in the response.' } },
+      required: ['event_id'],
+    },
+  },
+  {
+    name: 'draft_decline_meeting',
+    description: 'Opens a decline of a meeting invitation for the user to review and send themselves. Pass message to pre-fill a comment.',
+    inputSchema: {
+      type: 'object',
+      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional comment pre-filled in the response.' } },
+      required: ['event_id'],
+    },
+  },
+  {
+    name: 'draft_tentative_meeting',
+    description: 'Opens a tentative response to a meeting invitation for the user to review and send themselves. Pass message to pre-fill a comment.',
+    inputSchema: {
+      type: 'object',
+      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional comment pre-filled in the response.' } },
+      required: ['event_id'],
+    },
+  },
+  {
     name: 'set_event_categories',
     description:
       'Colors a calendar event with one or more color tags (Outlook "Categories"), shown as a colored block on the event. Pass names from list_color_categories, comma-separated for more than one; an empty/omitted categories clears all tags from the event. A name not yet in the master list is auto-added with an arbitrary color - call set_category_color first to control it.',
@@ -571,6 +598,9 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   accept_meeting: d('Accept meeting', 'אישור פגישה', 'Accepts a meeting invitation.', 'מאשר הזמנה לפגישה.'),
   decline_meeting: d('Decline meeting', 'דחיית פגישה', 'Declines a meeting invitation.', 'דוחה הזמנה לפגישה.'),
   tentative_meeting: d('Tentative response', 'תגובה זמנית', 'Responds tentatively to a meeting invitation.', 'משיב תשובה זמנית להזמנה לפגישה.'),
+  draft_accept_meeting: d('Draft acceptance', 'טיוטת אישור', 'Opens a meeting acceptance to review and send.', 'פותח אישור פגישה לבדיקה ולשליחה.'),
+  draft_decline_meeting: d('Draft decline', 'טיוטת דחייה', 'Opens a meeting decline to review and send.', 'פותח דחיית פגישה לבדיקה ולשליחה.'),
+  draft_tentative_meeting: d('Draft tentative response', 'טיוטת תגובה זמנית', 'Opens a tentative response to review and send.', 'פותח תגובה זמנית לבדיקה ולשליחה.'),
   set_event_categories: d('Color event', 'צביעת אירוע', 'Applies or clears color tags on a calendar event.', 'מחיל או מנקה תגיות צבע על אירוע יומן.'),
   set_category_color: d('Set tag color', 'הגדרת צבע תגית', 'Creates or recolors a color tag.', 'יוצר או משנה צבע של תגית.'),
   set_event_availability: d('Set availability', 'הגדרת זמינות', 'Sets an event\'s Free/Busy/Tentative/Out of Office status.', 'מגדיר את סטטוס הזמינות של אירוע (פנוי / עסוק / בעבודה במקום אחר / מחוץ למשרד).'),
@@ -654,6 +684,9 @@ startAddIn({
     'draft_event',
     'draft_cancel_event',
     'draft_edit_event',
+    'draft_accept_meeting',
+    'draft_decline_meeting',
+    'draft_tentative_meeting',
     'set_event_categories',
     'set_category_color',
     'set_event_availability',

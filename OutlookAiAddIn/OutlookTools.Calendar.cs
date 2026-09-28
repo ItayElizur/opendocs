@@ -255,6 +255,46 @@ namespace OutlookAiAddIn
             };
         }
 
+        // Draft-tier counterpart to RespondMeeting: same appt.Respond() call
+        // (NoUIFlag=true, SendResponse=false - never sent by Outlook itself),
+        // but opens the response for the user to review/edit and send
+        // themselves instead of calling .Send() here. Never records
+        // undo/redo - draft tools never persist anything, same contract as
+        // draft_event.
+        private static ToolResult DraftRespondMeeting(JsonElement input, Outlook.OlMeetingResponse response, string toolName)
+        {
+            string id = ReqStr(input, "event_id");
+            object item = ItemById(id, null);
+
+            Outlook.AppointmentItem appt = item as Outlook.AppointmentItem;
+            if (appt == null)
+            {
+                Outlook.MeetingItem mi = item as Outlook.MeetingItem;
+                if (mi != null) appt = mi.GetAssociatedAppointment(false);
+            }
+            if (appt == null)
+                return new ToolResult { Output = "event_id does not resolve to a meeting.", IsError = true, Summary = toolName };
+
+            string message = Str(input, "message", null);
+
+            object respObj = appt.Respond(response, true, false);
+            Outlook.MeetingItem resp = respObj as Outlook.MeetingItem;
+            if (resp != null)
+            {
+                if (!string.IsNullOrEmpty(message)) resp.Body = message;
+                resp.Display(false);
+            }
+
+            string verbing = response == Outlook.OlMeetingResponse.olMeetingAccepted ? "an acceptance"
+                            : response == Outlook.OlMeetingResponse.olMeetingTentative ? "a tentative response"
+                            : "a decline";
+            return new ToolResult
+            {
+                Output = "Opened " + verbing + " to \"" + (appt.Subject ?? "") + "\" in Outlook for the user to review and send." + (!string.IsNullOrEmpty(message) ? " Comment pre-filled." : ""),
+                Summary = toolName,
+            };
+        }
+
         // Shared by draft_edit_event/edit_event: an olMeetingReceived
         // (or olMeetingReceivedAndCanceled) appointment is one the user only
         // attends, not organizes - Outlook gives attendees no authority to
