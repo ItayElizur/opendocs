@@ -234,8 +234,19 @@ namespace OutlookAiAddIn
             dynamic moved = d.Move(deleted);
             if (permanent)
             {
+                bool hardDeleted = true;
                 try { moved.Delete(); }
-                catch (Exception ex) { DebugLog.WriteException("DeleteEmail permanent", ex); }
+                catch (Exception ex) { DebugLog.WriteException("DeleteEmail permanent", ex); hardDeleted = false; }
+                if (!hardDeleted)
+                {
+                    string failedNewId = "";
+                    try { failedNewId = moved.EntryID; } catch { }
+                    if (sourceFolder != null && failedNewId.Length > 0)
+                        RecordMove(mbxKey, "delete_email", "message_id", subject, oldId, failedNewId, sourceFolder, deleted);
+                    else
+                        RecordIrreversible(mbxKey, "delete_email of \"" + subject + "\", original folder unknown");
+                    return new ToolResult { Output = "Could not permanently delete \"" + subject + "\" - it was moved to Deleted Items but the hard delete failed, so it is still recoverable there.", IsError = true, Mutated = true, Summary = "delete_email" };
+                }
                 RecordIrreversible(mbxKey, "permanent delete_email of \"" + subject + "\"");
                 return new ToolResult { Output = "Permanently deleted \"" + subject + "\" (removed from Deleted Items; may still be server-recoverable).", Mutated = true, Summary = "delete_email" };
             }

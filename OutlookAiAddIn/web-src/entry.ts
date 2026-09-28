@@ -198,7 +198,7 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'delete_email',
-    description: 'Moves a message to Deleted Items (permanent:true also removes it from there).',
+    description: 'Moves a message to Deleted Items. permanent:true also removes it from there, which is irreversible and requires Full autonomy mode - otherwise omit permanent or set it to false.',
     inputSchema: {
       type: 'object',
       properties: { message_id: MESSAGE_ID, permanent: { type: 'boolean' }, folder: FOLDER },
@@ -437,7 +437,7 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   mark_email_unread: d('Mark unread', 'סימון כלא נקרא', 'Marks a message as unread.', 'מסמן הודעה כלא נקראה.'),
   flag_email_important: d('Flag importance', 'סימון חשיבות', 'Sets a message to High or Normal importance.', 'מגדיר חשיבות גבוהה או רגילה להודעה.'),
   move_email: d('Move email', 'העברת הודעה', 'Moves a message to another folder.', 'מעביר הודעה לתיקייה אחרת.'),
-  delete_email: d('Delete email', 'מחיקת הודעה', 'Moves a message to Deleted Items.', 'מעביר הודעה לפריטים שנמחקו.'),
+  delete_email: d('Delete email', 'מחיקת הודעה', 'Moves a message to Deleted Items, or permanently deletes it (Full autonomy only).', 'מעביר הודעה לפריטים שנמחקו, או מוחק אותה לצמיתות (רק במצב אוטונומיה מלאה).'),
   undo_last_action: d('Undo', 'ביטול', "Reverses the assistant's most recent action. Sent items can't be undone.", 'מבטל את הפעולה האחרונה של העוזר. לא ניתן לבטל פריטים שנשלחו.'),
   redo_last_action: d('Redo', 'ביצוע חוזר', 'Re-applies the action the assistant last undid.', 'מבצע מחדש את הפעולה שהעוזר ביטל לאחרונה.'),
   accept_meeting: d('Accept meeting', 'אישור פגישה', 'Accepts a meeting invitation.', 'מאשר הזמנה לפגישה.'),

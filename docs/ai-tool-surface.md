@@ -244,6 +244,33 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > wiring into the tool switch; `dotnet test` unaffected (no new pure logic —
 > the color-name map is a small dictionary, not extracted for unit testing).
 
+> **Update 2026-09-27 (delete_email's permanent path split to its own tier):**
+> another instance of the same class of gap closed by `aeae77c`/`b3fc5d2`
+> (category tools left one gate too low) — here `delete_email` as a whole sat
+> in `DraftTierTools`, but the tool bundles two risk classes under one name:
+> `permanent: false` (default) just moves the message to Deleted Items, fully
+> reversible, correctly Draft-tier; `permanent: true` additionally calls
+> `.Delete()` from there, irreversible from within Outlook ("may still be
+> server-recoverable" per its own result text — not a claim it can be undone
+> here), which belongs at Full autonomy alongside `send_email` and friends,
+> not one gate below it. `OutlookTools.cs`'s `ExecuteAsync` tier check is
+> otherwise purely name-based (`AlwaysAllowedTools`/`DraftTierTools`/
+> `ApprovalTierTools`/`SendTierTools`, checked before `input` is inspected at
+> all) — added one narrow, input-aware special case immediately after the
+> name-based check: if `name == "delete_email"` and `input.permanent == true`
+> and the caller's mode is below Full autonomy, block with a message naming
+> Full autonomy specifically (not delete_email in general — the tool is still
+> fine at Draft only for the non-permanent path). Deliberately not
+> generalized into a per-argument gating system for every tool; `delete_email`
+> stays in `DraftTierTools` and in `entry.ts`'s `commentOnlyExtraTools`
+> unchanged, since the tool overall is still reachable from Draft only.
+> `entry.ts`'s `delete_email` description now says plainly that
+> `permanent: true` requires Full autonomy, so the model doesn't attempt it
+> needlessly at a lower tier and get a confusing runtime block. No existing
+> automated test covers Outlook's tier-gate logic (it lives in the VSTO
+> project, not `OfficeAi.Shared`); verified by code review plus
+> `OutlookAiAddIn` MSBuild.
+
 > **Update 2026-09-27 (undo/redo tooling — Word, PowerPoint; a custom
 > undo/redo stack for Outlook; Excel's removed 2026-09-28):** added
 > `undo_last_action`/`redo_last_action` to Word and (reversing this
@@ -696,7 +723,7 @@ index otherwise.
 | `mark_email_read` / `mark_email_unread` | `MailItem.UnRead` + `.Save()`. |
 | `flag_email_important` | `Importance = olImportanceHigh/Normal` + `.Save()`. `important` defaults true. |
 | `move_email` | `MailItem.Move(ResolveFolder(destination))`; returns `{message_id: <new EntryID>, old_message_id}`. |
-| `delete_email` | Non-permanent → `Move` to Deleted Items (returns new id); `permanent: true` → then `.Delete()` from there (no single-call hard delete in the OM — documented as "may still be server-recoverable"). |
+| `delete_email` | Non-permanent (default) → `Move` to Deleted Items (returns new id) — Draft only, same risk class as `move_email`. `permanent: true` → then `.Delete()` from there (no single-call hard delete in the OM — documented as "may still be server-recoverable") — **Full autonomy required**, gated by an input-aware check in `ExecuteAsync` alongside the name-based tier tables (2026-09-27; see update below), since the tool name alone sits in `DraftTierTools`. |
 | `accept_meeting` / `decline_meeting` | Resolves to `AppointmentItem` (via `MeetingItem.GetAssociatedAppointment(false)` when the id is a meeting request), `appt.Respond(olMeetingAccepted/Declined, true, false)`, then `.Send()` on the response if non-null. |
 | `set_event_categories` | `AppointmentItem.Categories` (comma-separated tag names, the color shown on the event in the calendar grid) + `.Save()`; empty/omitted `categories` clears all tags. A name outside the master list is auto-added by Outlook on `Save` with an arbitrary color — call `set_category_color` first to control it. |
 | `set_category_color` | `Namespace.Categories[name]` — updates `.Color` if the tag exists, else `Categories.Add(name, color)` creates it. Same master list `list_color_categories` reads. |
