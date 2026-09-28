@@ -246,7 +246,7 @@ namespace OutlookAiAddIn
             };
         }
 
-        // Shared by draft_edit_event/edit_event's time-change path: an olMeetingReceived
+        // Shared by draft_edit_event/edit_event: an olMeetingReceived
         // (or olMeetingReceivedAndCanceled) appointment is one the user only
         // attends, not organizes - Outlook gives attendees no authority to
         // unilaterally move someone else's meeting. Confirmed via .NET
