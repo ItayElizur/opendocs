@@ -675,6 +675,91 @@ namespace OutlookAiAddIn
             };
         }
 
+        // Draft-tier counterpart to EditEvent: same validation and mutation
+        // selection, but every change stays unsaved on the in-memory COM
+        // object until appt.Display(false) opens it for the user to review
+        // and save/send themselves. Never calls .Save()/.Send(), never
+        // touches ForceUpdateToAllAttendees, never records undo/redo -
+        // draft tools never persist anything, same contract as draft_event.
+        private static ToolResult DraftEditEvent(JsonElement input)
+        {
+            string id = ReqStr(input, "event_id");
+            string occDate = Str(input, "occurrence_date", null);
+            Outlook.AppointmentItem master = ItemById(id, null) as Outlook.AppointmentItem;
+            if (master == null)
+                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "draft_edit_event" };
+
+            Outlook.AppointmentItem appt;
+            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_edit_event", out appt);
+            if (occurrenceError != null) return occurrenceError.Value;
+
+            if (IsCanceledMeeting(master))
+                return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "draft_edit_event" };
+            if (IsReceivedMeeting(master))
+                return new ToolResult { Output = ReceivedMeetingError(appt), IsError = true, Summary = "draft_edit_event" };
+
+            DateTime? start = DateArg(input, "start");
+            DateTime? end = DateArg(input, "end");
+            string subject = Str(input, "subject", null);
+            string body = Str(input, "body", null);
+            string location = Str(input, "location", null);
+            string requiredAttendees = Str(input, "required_attendees", null);
+            string optionalAttendees = Str(input, "optional_attendees", null);
+
+            if (!start.HasValue && !end.HasValue && subject == null && body == null && location == null &&
+                requiredAttendees == null && optionalAttendees == null)
+                return new ToolResult { Output = "At least one of start, end, subject, body, location, required_attendees, optional_attendees must be provided.", IsError = true, Summary = "draft_edit_event" };
+
+            if (start.HasValue != end.HasValue)
+                return new ToolResult { Output = "start and end must be provided together.", IsError = true, Summary = "draft_edit_event" };
+
+            if ((requiredAttendees != null || optionalAttendees != null) && occDate != null)
+                return new ToolResult { Output = "Attendee changes only apply to the whole series - omit occurrence_date.", IsError = true, Summary = "draft_edit_event" };
+
+            if (occDate != null && start.HasValue)
+            {
+                ToolResult? collision = CheckOccurrenceReorderCollision(master, appt.Start, start.Value, appt.Subject ?? "", "draft_edit_event");
+                if (collision != null) return collision.Value;
+            }
+
+            string scopeNote = occDate != null ? " (just this occurrence, not the whole series)" : "";
+            bool isMeeting = master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
+
+            if (occDate == null && master.IsRecurring && start.HasValue)
+            {
+                Outlook.RecurrencePattern pattern = master.GetRecurrencePattern();
+                pattern.PatternStartDate = start.Value.Date;
+                pattern.StartTime = start.Value;
+                pattern.EndTime = end.Value;
+            }
+            else if (start.HasValue)
+            {
+                appt.Start = start.Value;
+                appt.End = end.Value;
+            }
+
+            if (subject != null) appt.Subject = subject;
+            if (body != null) appt.Body = body;
+            if (location != null) appt.Location = location;
+
+            bool attendeesChanged = false;
+            if (requiredAttendees != null || optionalAttendees != null)
+            {
+                ReplaceAttendees(appt, requiredAttendees, optionalAttendees);
+                if (appt.MeetingStatus != Outlook.OlMeetingStatus.olMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
+                attendeesChanged = true;
+                isMeeting = true;
+            }
+
+            appt.Display(false);
+            return new ToolResult
+            {
+                Output = "Opened \"" + (appt.Subject ?? "") + "\"" + scopeNote + " with the requested changes in Outlook for the user to review and " +
+                         (isMeeting ? "save/send." : "save.") + (attendeesChanged ? " Attendee list updated - review before sending." : ""),
+                Summary = "draft_edit_event",
+            };
+        }
+
         // Full-autonomy-only counterpart to draft_reschedule_event above: sets the
         // new Start/End directly, then - like create_event's attendee-present
         // branch - .Send() if this is a meeting the user organizes (dispatching

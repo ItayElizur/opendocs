@@ -413,6 +413,26 @@ const ALL_OUTLOOK_TOOLS = [
     },
   },
   {
+    name: 'draft_edit_event',
+    description:
+      'Opens an existing calendar event with requested changes already applied, unsaved, for the user to review and save/send. Any combination of start+end (together), subject, body, location, required_attendees, optional_attendees - at least one must be given. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to target one occurrence instead - occurrence-level edits can only change start/end/subject/body/location, not attendees. To add/remove specific attendees while keeping others, read the current list with get_event first and pass the full new list here.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to edit (from list_events\' start value). Omit to act on the whole series. Cannot be combined with required_attendees/optional_attendees.' },
+        start: { type: 'string', description: 'New start date-time, e.g. "2026-09-01T14:00". Must be given together with end.' },
+        end: { type: 'string', description: 'New end date-time. Must be given together with start.' },
+        subject: { type: 'string' },
+        body: { type: 'string' },
+        location: { type: 'string' },
+        required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole required-attendee list. Whole-series/non-recurring only.' },
+        optional_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole optional-attendee list. Whole-series/non-recurring only.' },
+      },
+      required: ['event_id'],
+    },
+  },
+  {
     name: 'draft_cancel_event',
     description:
       'Opens an existing calendar event for the user to review before canceling it themselves - for a meeting the user organizes, via Outlook\'s own Cancel Meeting/Send Cancellation buttons; for a plain appointment, via Delete. Never sends, deletes, or changes anything itself. Only works on events the user organizes or a plain appointment - on a meeting the user only attends, use decline_meeting instead. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to preview canceling just that one occurrence instead.',
