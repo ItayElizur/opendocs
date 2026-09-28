@@ -979,6 +979,23 @@ occurrences of a calendar series **share one `EntryID`**, so `get_event` /
 — they necessarily act on the master series. `list_events` carries each occurrence's
 `start` as the disambiguator.
 
+**Known limitation, confirmed live 2026-09-28 (Gmail-connected calendar):** on a
+mailbox connected via Google's Gmail/Google Workspace sync, moving a calendar item
+to Deleted Items does not appear to be durable the way it is on Exchange — a
+`cancel_event` call that reported success moving an item to Deleted Items was
+followed immediately (no other action in between) by that item relocating itself
+to a `Drafts` folder, with no code in this add-in touching it a second time. Most
+likely Google Calendar's own sync reconciling the move shortly after, outside this
+add-in's control. `undo_last_action`'s own "did the item change since?" conflict
+check caught the mismatch and refused rather than guessing or overwriting — the
+system's designed safety net worked correctly, and no data was lost — but this
+means `RecordMove`'s core assumption (an item stays wherever the last recorded
+move put it, until this add-in moves it again) does not reliably hold for
+Gmail-connected calendars specifically. Not something to build a targeted
+workaround for without more data — surfacing this as a known account-type-specific
+risk rather than a code bug in `cancel_event`, `reschedule_event`, or the undo
+stack.
+
 ### Unproven at runtime (as of 2026-08-28)
 
 The project builds clean (MSBuild Debug + Release, 0 warnings; `dotnet test` 136 pass
