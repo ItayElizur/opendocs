@@ -391,5 +391,118 @@ namespace OutlookAiAddIn
                 Summary = "reschedule_event",
             };
         }
+
+        // Shared by draft_cancel_event/cancel_event - same organizer-authority
+        // shape as reschedule_event above (IsCanceledMeeting/IsReceivedMeeting
+        // reused, not duplicated), but an attendee's remedy for a meeting they
+        // don't organize is decline_meeting, not "Propose New Time".
+        private static string ReceivedMeetingCancelError(Outlook.AppointmentItem appt)
+        {
+            return "\"" + (appt.Subject ?? "") + "\" is a meeting organized by " +
+                   (string.IsNullOrEmpty(appt.Organizer) ? "someone else" : appt.Organizer) +
+                   " - you're only an attendee, not the organizer, so this tool has no authority to cancel it. " +
+                   "Use decline_meeting instead.";
+        }
+
+        private static string AlreadyCanceledError(Outlook.AppointmentItem appt)
+        {
+            return "\"" + (appt.Subject ?? "") + "\" has already been canceled.";
+        }
+
+        // Draft-tier: for a meeting the user organizes, marks it
+        // olMeetingCanceled (unsaved) and opens it so the user sees Outlook's
+        // own "Send Cancellation" state before deciding whether to send -
+        // mirrors draft_reschedule_event setting Start/End unsaved before
+        // Display(false). For a plain appointment there's no send step to
+        // preview; it just opens the item unchanged for the user to delete
+        // themselves. Never sends or deletes anything itself.
+        private static ToolResult DraftCancelEvent(JsonElement input)
+        {
+            string id = ReqStr(input, "event_id");
+            Outlook.AppointmentItem appt = ItemById(id, null) as Outlook.AppointmentItem;
+            if (appt == null)
+                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "draft_cancel_event" };
+
+            if (IsCanceledMeeting(appt))
+                return new ToolResult { Output = AlreadyCanceledError(appt), IsError = true, Summary = "draft_cancel_event" };
+            if (IsReceivedMeeting(appt))
+                return new ToolResult { Output = ReceivedMeetingCancelError(appt), IsError = true, Summary = "draft_cancel_event" };
+
+            bool isMeeting = appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
+            if (isMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olMeetingCanceled;
+            appt.Display(false);
+            return new ToolResult
+            {
+                Output = "Opened \"" + (appt.Subject ?? "") + "\" in Outlook for the user to review and " +
+                         (isMeeting ? "send the cancellation to attendees (or close without sending to keep the meeting)."
+                                    : "delete from the calendar."),
+                Summary = "draft_cancel_event",
+            };
+        }
+
+        // Full-autonomy-only counterpart to draft_cancel_event above: for a
+        // meeting the user organizes, sends the cancellation notice
+        // immediately (no review step, mirroring reschedule_event's/
+        // create_event's attendee-present branches) then removes it from the
+        // user's own calendar; for a plain appointment, just removes it -
+        // nobody to notify. Either way the item is moved to Deleted Items
+        // (recoverable there), same as delete_email's non-permanent path, not
+        // permanently deleted.
+        private static ToolResult CancelEvent(string mbxKey, JsonElement input)
+        {
+            string id = ReqStr(input, "event_id");
+            Outlook.AppointmentItem appt = ItemById(id, null) as Outlook.AppointmentItem;
+            if (appt == null)
+                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "cancel_event" };
+
+            if (IsCanceledMeeting(appt))
+                return new ToolResult { Output = AlreadyCanceledError(appt), IsError = true, Summary = "cancel_event" };
+            if (IsReceivedMeeting(appt))
+                return new ToolResult { Output = ReceivedMeetingCancelError(appt), IsError = true, Summary = "cancel_event" };
+
+            string subject = appt.Subject ?? "";
+            bool isMeeting = appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
+            Outlook.Folder sourceFolder = (Outlook.Folder)appt.Parent;
+            Outlook.Folder deletedFolder = (Outlook.Folder)sourceFolder.Store.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems);
+
+            if (isMeeting)
+            {
+                appt.MeetingStatus = Outlook.OlMeetingStatus.olMeetingCanceled;
+                appt.Send();
+                // Barrier, not a move snapshot: the cancellation notice already
+                // went out to attendees, so restoring this copy to the calendar
+                // would only half-undo the action and misleadingly imply it was
+                // fully reversed.
+                RecordIrreversible(mbxKey, "cancel_event invite cancellation for \"" + subject + "\"");
+                // Unverified whether Outlook still allows moving the item after
+                // Send() on a now-canceled meeting - reflection confirms both
+                // members exist, but chaining them hasn't been exercised
+                // against a live client. Fails soft: the notice is the
+                // irreversible part and already went out either way.
+                bool removedLocally = true;
+                try { appt.Move(deletedFolder); }
+                catch (Exception ex) { DebugLog.WriteException("CancelEvent post-send move", ex); removedLocally = false; }
+                return new ToolResult
+                {
+                    Output = "Canceled and notified attendees: \"" + subject + "\"" +
+                             (removedLocally
+                                 ? " removed from your calendar."
+                                 : " (Outlook would not remove it from your calendar after sending - delete it manually)."),
+                    Mutated = true,
+                    Summary = "cancel_event",
+                };
+            }
+
+            string oldId = appt.EntryID;
+            dynamic moved = appt.Move(deletedFolder);
+            string newId = moved.EntryID;
+            RecordMove(mbxKey, "cancel_event", "event_id", subject, oldId, newId, sourceFolder, deletedFolder);
+            return new ToolResult
+            {
+                Output = "Canceled: \"" + subject + "\" moved to Deleted Items.\nevent_id: " + newId,
+                Mutated = true,
+                Summary = "cancel_event",
+            };
+        }
     }
 }

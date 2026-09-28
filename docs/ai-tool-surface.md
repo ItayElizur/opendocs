@@ -299,6 +299,45 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > two branches. `draft_reschedule_event` needs no wiring — like `draft_event`,
 > it never saves/sends anything itself.
 
+> **Update 2026-09-28 (Outlook gains cancel tools):** two more tools in
+> `OutlookAiAddIn/OutlookTools.Calendar.cs`, right beside `reschedule_event`/
+> `draft_reschedule_event` and reusing their `IsCanceledMeeting`/
+> `IsReceivedMeeting` organizer-authority checks rather than duplicating them.
+> `draft_cancel_event` (Draft tier) marks a meeting the user organizes
+> `olMeetingCanceled` (unsaved) and opens it, so Outlook's own inspector shows
+> the "Send Cancellation" option for the user to decide on; for a plain
+> appointment it just opens the item unchanged, since there's no send step to
+> preview — the user deletes it themselves. `cancel_event` (Full autonomy
+> only, `SendTierTools`) does it immediately: sets `olMeetingCanceled` and
+> `.Send()`s the cancellation notice for an organized meeting, or skips
+> straight to removal for a plain appointment; either way the item is then
+> moved to Deleted Items (recoverable there), same as `delete_email`'s
+> non-permanent path, not permanently deleted. Both refuse (clean `IsError`)
+> on an already-canceled event or a meeting the user only attends — for the
+> latter, the message points at `decline_meeting` instead of "Propose New
+> Time" (canceling isn't something an attendee can do to someone else's
+> meeting at all, unlike rescheduling where Outlook at least has a
+> UI-level counter-proposal feature this add-in can't reach).
+>
+> **Undo/redo:** `cancel_event` on a plain appointment records a move (undo
+> moves it back out of Deleted Items), matching `delete_email`'s pattern.
+> `cancel_event` on an organized meeting is a barrier, not a move snapshot —
+> the cancellation notice already went out, so restoring the calendar entry
+> would only half-undo the action and misleadingly imply it was fully
+> reversed. `draft_cancel_event` needs no wiring — it never saves/sends.
+>
+> **Verification status: unproven at runtime**, same caveat as `reschedule_event`
+> above — no live Outlook was available. One specific sequence is new and
+> untested even relative to that PR: `cancel_event`'s organized-meeting branch
+> calls `.Move()` right after `.Send()` on the same item, which no existing
+> tool in this add-in does (every other `.Send()` call — `create_event`'s
+> invite branch, `reschedule_event`'s notify branch — only reads properties
+> off the item afterward, never mutates its folder). Whether Outlook still
+> allows relocating a just-canceled-and-sent appointment is unconfirmed; the
+> code fails soft (catches the exception, reports the notice went out
+> regardless and tells the user to delete manually if the move didn't take) —
+> see the manual test steps for this specifically.
+
 > **Update 2026-09-27 (Outlook gains `set_event_availability`):** one new
 > tool, added to `OutlookAiAddIn/OutlookTools.Categories.cs` right beside
 > `set_event_categories`/`set_category_color` since it's the same shape (a
@@ -443,19 +482,20 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 >     fields as a group, or the flagged-mail fields).
 >   - **`set_email_reminder`**: if the message wasn't flagged before, undo
 >     calls `ClearTaskFlag()`, and redo calls `MarkAsTask` again.
->   - **Moves**: `move_email` and non-permanent `delete_email`. The folder is
->     resolved by its own EntryID/StoreID via `Namespace.GetFolderFromID`,
->     and the new EntryID after each move is rewritten into every entry
->     for that item.
+>   - **Moves**: `move_email`, non-permanent `delete_email`, and `cancel_event`
+>     on a plain appointment (no attendees to notify, so canceling it is just
+>     a move to Deleted Items). The folder is resolved by its own
+>     EntryID/StoreID via `Namespace.GetFolderFromID`, and the new EntryID
+>     after each move is rewritten into every entry for that item.
 >   - **Created items**: `create_task` and `create_event` without
 >     attendees. Undo moves the item to Deleted Items (recoverable); redo
 >     moves it back.
 >   - **`set_category_color`**: undo restores the old color, or removes a tag
 >     the assistant created.
 >   - **Barriers**: `send_*`, `create_event` with attendees, `reschedule_event`
->     on a meeting the user organizes (sends an update notice to attendees),
->     `accept/decline_meeting` and `delete_email permanent:true`. Undo
->     stops at a barrier instead of reaching past it.
+>     and `cancel_event` on a meeting the user organizes (both send a notice
+>     to attendees), `accept/decline_meeting` and `delete_email
+>     permanent:true`. Undo stops at a barrier instead of reaching past it.
 >   - **Known gap — `set_event_categories`**: the snapshot only covers the
 >     appointment's own `Categories` string. If the assigned name wasn't
 >     already in the mailbox's master category list, Outlook auto-adds it
@@ -727,10 +767,10 @@ index otherwise.
   mailbox unreviewed — `mark_email_read`/`unread`, `flag_email_important`,
   `move_email`, `delete_email`, `create_task`, `update_task`, `set_reminder`,
   `set_email_reminder`, `draft_email`, `reply_email`, `reply_all_email`,
-  `forward_email`, `draft_event`, `draft_reschedule_event`); `TrackChanges` → **Automate approvals** (adds
+  `forward_email`, `draft_event`, `draft_reschedule_event`, `draft_cancel_event`); `TrackChanges` → **Automate approvals** (adds
   `accept_meeting`/`decline_meeting` — these already call `resp.Send()` to notify the
   organizer, so they get their own explicit tier rather than hiding in Draft only or
-  Full autonomy); `FullAutonomy` → unchanged name, adds the six auto-send tools (see
+  Full autonomy); `FullAutonomy` → unchanged name, adds the seven auto-send tools (see
   below). Each tier is a strict superset of the one before it. `entry.ts` passes
   `availableModes: ['readOnly','commentOnly','trackChanges','fullAutonomy']` and a
   `modeOverrides` map so the mode menu shows Outlook's own labels/descriptions instead
@@ -835,10 +875,10 @@ index otherwise.
 
 | Tool | Notes |
 |---|---|
-| `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Covers `mark_email_read/unread`, `flag_email_important`, `move_email`, non-permanent `delete_email`, `create_task`, `update_task`, `set_reminder`, `set_email_reminder`, `set_event_categories`, `set_category_color`, `set_event_availability`, `reschedule_event` without attendees, and `create_event` without attendees. Sends, invites, meeting responses, `reschedule_event` on an organized meeting (attendees notified), and permanent deletes are barriers: undo reports it can't go past them. It refuses if the item was changed since the assistant's action, and never touches the user's own manual changes. **Not verified against a live Outlook client**, except `set_event_availability`'s undo/redo round trip (verified 2026-09-28). |
+| `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Covers `mark_email_read/unread`, `flag_email_important`, `move_email`, non-permanent `delete_email`, `create_task`, `update_task`, `set_reminder`, `set_email_reminder`, `set_event_categories`, `set_category_color`, `set_event_availability`, `reschedule_event` without attendees, `cancel_event` on a plain appointment, and `create_event` without attendees. Sends, invites, meeting responses, `reschedule_event`/`cancel_event` on an organized meeting (attendees notified), and permanent deletes are barriers: undo reports it can't go past them. It refuses if the item was changed since the assistant's action, and never touches the user's own manual changes. **Not verified against a live Outlook client**, except `set_event_availability`'s undo/redo round trip (verified 2026-09-28). |
 | `redo_last_action` | Re-applies the most recently undone action, with the same "changed since" check. The redo list is cleared by any new recorded action or barrier. |
 
-### Draft-and-display tools (6 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
+### Draft-and-display tools (7 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
 
 | Tool | Notes |
 |---|---|
@@ -848,12 +888,13 @@ index otherwise.
 | `forward_email` | `orig.Forward()`, optional `To`, `body` prepended; `Display(false)`. |
 | `draft_event` | `CreateItem(olAppointmentItem)`; with `required_attendees`/`optional_attendees` → `MeetingStatus = olMeeting`, `Recipients.Add(...).Type`, `Recipients.ResolveAll()`; `Display(false)`. Same `"— Created with OpenDocs"` signature appended to a non-empty body. |
 | `draft_reschedule_event` (added 2026-09-27) | Resolves `event_id` via `ItemById`, sets `Start`/`End` from required `start`/`end`, `Display(false)`s unsaved — never touches attendees. Refuses (`IsError`) up front on `MeetingStatus == olMeetingReceived` (the user is only an attendee, not the organizer) — see the "Update 2026-09-27" note above and "Excluded / deferred" below. |
+| `draft_cancel_event` (added 2026-09-28) | Resolves `event_id`; for an organized meeting, sets `MeetingStatus = olMeetingCanceled` (unsaved) so the opened window shows Outlook's own "Send Cancellation" option; for a plain appointment, opens it unchanged (nothing to preview — the user deletes it themselves). `Display(false)`s either way, never sends/deletes. Refuses (`IsError`) on an already-canceled event or a meeting the user only attends (points at `decline_meeting`) — see the "Update 2026-09-28" note above. |
 
 **These never call `.Send()` (mail) or save a calendar event.** The user sends from the
 opened Outlook window. Available from Draft only mode upward (tier 2 — see "Editing
 modes" above), not gated behind Full autonomy.
 
-### Auto-send tools (6 — Full autonomy only; send/create immediately, no review window; `Mutated = true`)
+### Auto-send tools (7 — Full autonomy only; send/create immediately, no review window; `Mutated = true`)
 
 > **Added 2026-09-19**, reversing part of the "no auto-send tool" decision below —
 > narrowed to Full autonomy specifically, not removed generally. Every draft/compose
@@ -867,6 +908,7 @@ modes" above), not gated behind Full autonomy.
 | `send_forward` | Same as `forward_email`, but `.Send()`; `to` is required (unlike `forward_email`, where it's optional). |
 | `create_event` | Same construction as `draft_event`. No attendees → `a.Save()` (a plain calendar entry, nobody to notify). Attendees present → `MeetingStatus = olMeeting` then `a.Send()`, dispatching the invite. Both `AppointmentItem.Send()`/`.Save()` confirmed present via .NET reflection against the referenced PIA before writing this — not assumed from `draft_event`'s non-sending shape. |
 | `reschedule_event` (added 2026-09-27) | Resolves `event_id`, sets `Start`/`End` from required `start`/`end`, then `.Save()` (`olNonMeeting`) or `.Send()` (`olMeeting` — dispatches the reschedule notice to attendees) — mirrors `create_event`'s attendee-present branch. Refuses (`IsError`) on `olMeetingReceived`, same as `draft_reschedule_event` — the user isn't the organizer, and reflection against the referenced PIA found no "Propose New Time" member to fall back to (see "Excluded / deferred"). Returns old and new start/end (via `Iso(...)`) and says explicitly when a reschedule notice was sent. |
+| `cancel_event` (added 2026-09-28) | Resolves `event_id`. Organized meeting → `MeetingStatus = olMeetingCanceled` then `.Send()` (dispatches the cancellation notice), then moves the item to Deleted Items (best-effort — see the "Update 2026-09-28" note above for the unverified `.Send()`-then-`.Move()` sequence). Plain appointment → moves straight to Deleted Items, nobody to notify. Refuses (`IsError`) on an already-canceled event or `olMeetingReceived`/`olMeetingReceivedAndCanceled` (points at `decline_meeting`, not "Propose New Time" — canceling isn't something an attendee can request at all). |
 
 Gated by `OutlookTools.cs`'s `SendTierTools` set, requiring `EditingMode.FullAutonomy`
 exactly (the ordinal check's top tier) — not reachable from Draft only or Automate
@@ -915,9 +957,10 @@ Everything is addressed by `EntryID`. It is stable while an item stays put but c
 on `Move` and is store-specific; the mutating tools that move items return the new id,
 and every other tool re-resolves via `GetItemFromID` each call. All recurring
 occurrences of a calendar series **share one `EntryID`**, so `get_event` /
-`accept_meeting` / `decline_meeting` / `reschedule_event` / `draft_reschedule_event`
-cannot target a single occurrence unambiguously — they necessarily act on the master
-series. `list_events` carries each occurrence's `start` as the disambiguator.
+`accept_meeting` / `decline_meeting` / `reschedule_event` / `draft_reschedule_event` /
+`cancel_event` / `draft_cancel_event` cannot target a single occurrence unambiguously
+— they necessarily act on the master series. `list_events` carries each occurrence's
+`start` as the disambiguator.
 
 ### Unproven at runtime (as of 2026-08-28)
 
@@ -957,6 +1000,17 @@ which these tools touch, by design, since they only move a single Start/End pair
 The one thing that *was* checked concretely, not assumed: the "no Propose New Time
 member" claim behind the `olMeetingReceived` refusal, confirmed via .NET reflection
 against the referenced PIA (see the "Update 2026-09-27" note above).
+
+`cancel_event`/`draft_cancel_event` (added 2026-09-28) are likewise **compiled but
+not exercised against a live Outlook**, and carry one risk beyond what
+`reschedule_event` already flags: `cancel_event`'s organized-meeting branch calls
+`.Move()` immediately after `.Send()` on the same item, a sequence no existing tool
+here performs (every prior `.Send()` call only reads properties off the item
+afterward). Whether Outlook still permits relocating a just-canceled-and-sent
+appointment is unconfirmed; the code catches a failure there and reports the
+(genuinely-sent) cancellation succeeded regardless, telling the user to delete the
+stray calendar entry manually if the move didn't take — see the "Update 2026-09-28"
+note above.
 
 ---
 
