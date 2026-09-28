@@ -409,6 +409,23 @@ namespace OutlookAiAddIn
             try { appt.Recipients.ResolveAll(); } catch { }
         }
 
+        // Counts real attendees only, excluding the organizer - used by
+        // EditEvent/DraftEditEvent to decide whether clearing attendees
+        // should revert MeetingStatus back to olNonMeeting. Confirmed live
+        // via COM that the organizer does NOT appear in Recipients even
+        // after a real .Send() (Recipients.Count matched exactly the number
+        // of real invited attendees, organizer never counted) - this
+        // exclusion is defensive insurance for any account/Exchange
+        // configuration where that might differ, not a fix for an observed
+        // bug.
+        private static int CountAttendeeRecipients(Outlook.AppointmentItem appt)
+        {
+            int count = 0;
+            for (int i = 1; i <= appt.Recipients.Count; i++)
+                if (appt.Recipients[i].Type != (int)Outlook.OlMeetingRecipientType.olOrganizer) count++;
+            return count;
+        }
+
         // Shared by edit_event/draft_edit_event's result text: describes
         // which of the seven optional fields were actually touched, so the
         // caller sees a precise summary instead of a generic "updated".
@@ -460,6 +477,9 @@ namespace OutlookAiAddIn
             if (start.HasValue != end.HasValue)
                 return new ToolResult { Output = "start and end must be provided together.", IsError = true, Summary = "edit_event" };
 
+            if (start.HasValue && end.Value <= start.Value)
+                return new ToolResult { Output = "end must be after start.", IsError = true, Summary = "edit_event" };
+
             if ((requiredAttendees != null || optionalAttendees != null) && occDate != null)
                 return new ToolResult { Output = "Attendee changes only apply to the whole series - omit occurrence_date.", IsError = true, Summary = "edit_event" };
 
@@ -506,24 +526,29 @@ namespace OutlookAiAddIn
             if (location != null) appt.Location = location;
 
             bool attendeesChanged = false;
+            bool revertToNonMeeting = false;
             if (requiredAttendees != null || optionalAttendees != null)
             {
-                int recipientsBefore = appt.Recipients.Count;
+                int recipientsBefore = CountAttendeeRecipients(appt);
                 ReplaceAttendees(appt, requiredAttendees, optionalAttendees);
-                // If clearing brought the attendee list to zero, revert
-                // MeetingStatus back to olNonMeeting - otherwise an event that
-                // was ever a meeting stays permanently "a meeting" (and thus a
-                // permanent undo barrier) even after every attendee is removed.
-                // Confirmed live via COM: setting MeetingStatus back to
-                // olNonMeeting after clearing Recipients works and persists
-                // (verified via a fresh re-fetch by EntryID, not just an
-                // in-memory read), and .Send() afterward still succeeds - so
-                // this doesn't interfere with notifying just-removed attendees
-                // (isMeetingNow below is based on wasMeetingBefore, captured
-                // before this mutation, so that notification still fires).
-                if (appt.Recipients.Count == 0)
+                int recipientsAfter = CountAttendeeRecipients(appt);
+                // If clearing brought the real attendee count to zero, the
+                // event should revert to olNonMeeting - otherwise it stays
+                // permanently "a meeting" (and thus a permanent undo barrier)
+                // even after every attendee is removed. The actual flip is
+                // deferred to just after .Send() below (not done here) - a
+                // code review of this method noted that flipping MeetingStatus
+                // to olNonMeeting BEFORE .Send() risks Outlook not treating
+                // the send as a cancellation notice to the just-removed
+                // attendees. Deferring is safe: reaching recipientsAfter == 0
+                // from a meeting always means wasMeetingBefore was true, which
+                // always forces isMeetingNow/mustBarrier true below, so the
+                // .Send() branch always runs when this flag is set - there is
+                // no code path where revertToNonMeeting is set but .Send() is
+                // skipped.
+                if (recipientsAfter == 0)
                 {
-                    if (appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olNonMeeting;
+                    if (appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting) revertToNonMeeting = true;
                 }
                 else if (appt.MeetingStatus != Outlook.OlMeetingStatus.olMeeting)
                 {
@@ -540,7 +565,7 @@ namespace OutlookAiAddIn
                 // change (which would otherwise force isMeetingNow below and
                 // burn a real .Send()/undo barrier for a call that changed
                 // nothing).
-                attendeesChanged = !(recipientsBefore == 0 && appt.Recipients.Count == 0);
+                attendeesChanged = !(recipientsBefore == 0 && recipientsAfter == 0);
             }
 
             bool isMeetingNow = wasMeetingBefore || attendeesChanged;
@@ -553,16 +578,34 @@ namespace OutlookAiAddIn
 
             if (mustBarrier)
             {
-                // .Send() alone can leave the item's own Saved flag stuck
-                // False even after a successful send - confirmed live via COM
-                // (create a recurring meeting, clear its attendees, revert
-                // MeetingStatus, .Send(): Saved reads False even on a fresh
-                // re-fetch by EntryID, causing Outlook to prompt "save
-                // changes?" if the user later just opens and closes the item
-                // with nothing to change). An explicit .Save() right after
-                // .Send() clears it - confirmed the same sequence with the
-                // extra Save() reads Saved=True on a fresh re-fetch.
-                if (isMeetingNow) { appt.Send(); appt.Save(); } else appt.Save();
+                if (isMeetingNow)
+                {
+                    // Send while still flagged as a meeting so Outlook treats
+                    // this as a real meeting update/cancellation to whoever
+                    // was just removed, THEN apply the deferred revert to
+                    // olNonMeeting (if attendees were cleared to zero), THEN
+                    // Save. .Send() alone can leave the item's own Saved flag
+                    // stuck False even after a successful send - confirmed
+                    // live via COM (create a recurring meeting, clear its
+                    // attendees, revert MeetingStatus, .Send(): Saved reads
+                    // False even on a fresh re-fetch by EntryID, causing
+                    // Outlook to prompt "save changes?" if the user later just
+                    // opens and closes the item with nothing to change). An
+                    // explicit .Save() right after .Send() clears it -
+                    // confirmed the same sequence with the extra Save() reads
+                    // Saved=True on a fresh re-fetch. The Save() is wrapped
+                    // since it runs after the irreversible Send() has already
+                    // succeeded - a failure here must not be reported as a
+                    // failed edit_event call (the update already went out).
+                    appt.Send();
+                    if (revertToNonMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olNonMeeting;
+                    try { appt.Save(); }
+                    catch (Exception ex) { DebugLog.WriteException("EditEvent post-send Save", ex); }
+                }
+                else
+                {
+                    appt.Save();
+                }
                 RecordIrreversible(mbxKey, "edit_event of \"" + (appt.Subject ?? "") + "\"" + scopeNote +
                                             (isMeetingNow ? " (update sent)" : "") +
                                             (isRecurringWholeSeriesTimeChange ? " (whole series time change)" : ""));
@@ -676,6 +719,9 @@ namespace OutlookAiAddIn
             if (start.HasValue != end.HasValue)
                 return new ToolResult { Output = "start and end must be provided together.", IsError = true, Summary = "draft_edit_event" };
 
+            if (start.HasValue && end.Value <= start.Value)
+                return new ToolResult { Output = "end must be after start.", IsError = true, Summary = "draft_edit_event" };
+
             if ((requiredAttendees != null || optionalAttendees != null) && occDate != null)
                 return new ToolResult { Output = "Attendee changes only apply to the whole series - omit occurrence_date.", IsError = true, Summary = "draft_edit_event" };
 
@@ -708,12 +754,14 @@ namespace OutlookAiAddIn
             bool attendeesChanged = false;
             if (requiredAttendees != null || optionalAttendees != null)
             {
-                int recipientsBefore = appt.Recipients.Count;
+                int recipientsBefore = CountAttendeeRecipients(appt);
                 ReplaceAttendees(appt, requiredAttendees, optionalAttendees);
+                int recipientsAfter = CountAttendeeRecipients(appt);
                 // Same revert-to-non-meeting fix as EditEvent: if clearing
-                // attendees brought the count to zero, don't leave the item
-                // permanently marked as a meeting.
-                if (appt.Recipients.Count == 0)
+                // attendees brought the real attendee count to zero, don't
+                // leave the item permanently marked as a meeting. No .Send()
+                // ordering concern here - draft tools never send.
+                if (recipientsAfter == 0)
                 {
                     if (appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olNonMeeting;
                 }
@@ -723,7 +771,7 @@ namespace OutlookAiAddIn
                 }
                 // Same no-op guard as EditEvent: an already-empty attendee
                 // list touched with e.g. required_attendees="" changes nothing.
-                attendeesChanged = !(recipientsBefore == 0 && appt.Recipients.Count == 0);
+                attendeesChanged = !(recipientsBefore == 0 && recipientsAfter == 0);
                 isMeeting = appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
             }
 

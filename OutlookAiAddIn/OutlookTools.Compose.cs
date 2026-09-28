@@ -63,15 +63,26 @@ namespace OutlookAiAddIn
             pattern.RecurrenceType = RecurrenceTypeMap[spec.Type];
             pattern.Interval = spec.Interval;
 
-            if (spec.DaysOfWeek != null)
+            // RecurrenceValidator.Parse requires the fields each type needs
+            // but doesn't reject irrelevant extras a caller might also send
+            // (e.g. day_of_month alongside type "weekly") - only write the
+            // fields the chosen type actually uses, so an irrelevant extra
+            // value never reaches RecurrencePattern (avoids setting a
+            // property Outlook may not expect for the active RecurrenceType).
+            bool usesDaysOfWeek = spec.Type == "weekly" || spec.Type == "monthlyNth" || spec.Type == "yearlyNth";
+            bool usesDayOfMonth = spec.Type == "monthly" || spec.Type == "yearly";
+            bool usesInstance = spec.Type == "monthlyNth" || spec.Type == "yearlyNth";
+            bool usesMonthOfYear = spec.Type == "yearly" || spec.Type == "yearlyNth";
+
+            if (usesDaysOfWeek && spec.DaysOfWeek != null)
             {
                 Outlook.OlDaysOfWeek mask = 0;
                 foreach (string d in spec.DaysOfWeek) mask |= DayFlagMap[d];
                 pattern.DayOfWeekMask = mask;
             }
-            if (spec.DayOfMonth.HasValue) pattern.DayOfMonth = spec.DayOfMonth.Value;
-            if (spec.Instance.HasValue) pattern.Instance = spec.Instance.Value;
-            if (spec.MonthOfYear.HasValue) pattern.MonthOfYear = spec.MonthOfYear.Value;
+            if (usesDayOfMonth && spec.DayOfMonth.HasValue) pattern.DayOfMonth = spec.DayOfMonth.Value;
+            if (usesInstance && spec.Instance.HasValue) pattern.Instance = spec.Instance.Value;
+            if (usesMonthOfYear && spec.MonthOfYear.HasValue) pattern.MonthOfYear = spec.MonthOfYear.Value;
 
             if (spec.Count.HasValue) pattern.Occurrences = spec.Count.Value;
             else if (spec.Until.HasValue) pattern.PatternEndDate = spec.Until.Value;
@@ -87,17 +98,29 @@ namespace OutlookAiAddIn
         {
             error = null;
             JsonElement rec;
-            if (input.ValueKind != JsonValueKind.Object || !input.TryGetProperty("recurrence", out rec) || rec.ValueKind != JsonValueKind.Object)
+            if (input.ValueKind != JsonValueKind.Object || !input.TryGetProperty("recurrence", out rec) || rec.ValueKind == JsonValueKind.Null)
                 return null;
+            if (rec.ValueKind != JsonValueKind.Object)
+            {
+                error = "recurrence must be an object, e.g. {\"type\": \"weekly\"}.";
+                return null;
+            }
 
             string type = Str(rec, "type", null);
             int interval = Int(rec, "interval", 1);
             string[] days = StrArray(rec, "days_of_week");
+            if (days != null && days.Length == 0) days = null;
             int? dayOfMonth = OptInt(rec, "day_of_month");
             int? instance = OptInt(rec, "instance");
             int? monthOfYear = OptInt(rec, "month_of_year");
             int? count = OptInt(rec, "count");
             DateTime? until = DateArg(rec, "until");
+
+            if (until.HasValue && until.Value.Date < start.Date)
+            {
+                error = "recurrence.until (" + Iso(until.Value) + ") must be on or after start (" + Iso(start) + ").";
+                return null;
+            }
 
             // Fill in defaults from the event's own start date when the
             // caller omits a field the chosen type needs, rather than
@@ -106,7 +129,11 @@ namespace OutlookAiAddIn
             // genuinely missing - an explicitly-provided value is never
             // overridden. RecurrenceValidator.Parse stays the strict, pure
             // validator; by the time it runs here the spec already looks
-            // complete for whichever type was requested.
+            // complete for whichever type was requested. An empty
+            // days_of_week array is treated the same as omitted (above) -
+            // it can't satisfy any type's requirement as-is, and a caller
+            // sending [] almost certainly meant "use the default", not
+            // "explicitly zero days".
             string startDay = start.DayOfWeek.ToString().ToLowerInvariant();
             switch (type)
             {
@@ -188,7 +215,7 @@ namespace OutlookAiAddIn
             DateTime? end = DateArg(input, "end");
 
             JsonElement recField;
-            bool hasRecurrenceField = input.ValueKind == JsonValueKind.Object && input.TryGetProperty("recurrence", out recField) && recField.ValueKind == JsonValueKind.Object;
+            bool hasRecurrenceField = input.ValueKind == JsonValueKind.Object && input.TryGetProperty("recurrence", out recField) && recField.ValueKind != JsonValueKind.Null;
 
             RecurrenceSpec recurrence = null;
             if (hasRecurrenceField)
