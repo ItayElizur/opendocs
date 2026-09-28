@@ -299,8 +299,7 @@ namespace OutlookAiAddIn
                 if (WasMarkedAsTask) return Apply(After, Before, "Redid");
 
                 Outlook.MailItem mail = (Outlook.MailItem)ItemById(ItemEntryId, ItemStoreId);
-                if (mail.IsMarkedAsTask)
-                    throw new UndoConflictException("the message has been flagged again since.");
+                EnsureUnchanged(mail, Props, Before);
                 mail.MarkAsTask(Interval);
                 List<string> skipped = WriteProps(mail, Props, After);
                 mail.Save();

@@ -342,6 +342,13 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 >   - **Barriers**: `send_*`, `create_event` with attendees,
 >     `accept/decline_meeting` and `delete_email permanent:true`. Undo
 >     stops at a barrier instead of reaching past it.
+>   - **Known gap — `set_event_categories`**: the snapshot only covers the
+>     appointment's own `Categories` string. If the assigned name wasn't
+>     already in the mailbox's master category list, Outlook auto-adds it
+>     on `Save()` with an arbitrary color (see the mutating-tools table
+>     below); undo restores the appointment but does not remove that
+>     auto-created master category entry, which is a permanent side effect
+>     undo can't see or reverse.
 >
 >   Before reversing, each entry checks that the item still holds what the
 >   assistant left there. If it was changed since (by the user or anything

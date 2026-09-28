@@ -228,7 +228,9 @@ namespace OutlookAiAddIn
             string oldId = id;
             try { oldId = d.EntryID; } catch { }
 
-            Outlook.Folder deleted = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems);
+            Outlook.Folder deleted = sourceFolder != null
+                ? (Outlook.Folder)sourceFolder.Store.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems)
+                : (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems);
             dynamic moved = d.Move(deleted);
             if (permanent)
             {
