@@ -246,7 +246,7 @@ namespace OutlookAiAddIn
             };
         }
 
-        // Shared by draft_reschedule_event/reschedule_event: an olMeetingReceived
+        // Shared by draft_edit_event/edit_event's time-change path: an olMeetingReceived
         // (or olMeetingReceivedAndCanceled) appointment is one the user only
         // attends, not organizes - Outlook gives attendees no authority to
         // unilaterally move someone else's meeting. Confirmed via .NET
@@ -423,79 +423,8 @@ namespace OutlookAiAddIn
             return parts.Count > 0 ? " (" + string.Join(", ", parts) + ")" : "";
         }
 
-        // Draft-tier: opens the appointment with the new Start/End already set but
-        // NOT saved, exactly like draft_event - the user reviews the moved time in
-        // the native window and decides whether to save it (and, if it's a
-        // meeting, whether to send the update themselves). Never touches
-        // attendees.
-        private static ToolResult DraftRescheduleEvent(JsonElement input)
-        {
-            string id = ReqStr(input, "event_id");
-            string occDate = Str(input, "occurrence_date", null);
-            Outlook.AppointmentItem master = ItemById(id, null) as Outlook.AppointmentItem;
-            if (master == null)
-                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "draft_reschedule_event" };
-
-            Outlook.AppointmentItem appt;
-            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_reschedule_event", out appt);
-            if (occurrenceError != null) return occurrenceError.Value;
-
-            if (IsCanceledMeeting(master))
-                return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "draft_reschedule_event" };
-            if (IsReceivedMeeting(master))
-                return new ToolResult { Output = ReceivedMeetingError(appt), IsError = true, Summary = "draft_reschedule_event" };
-
-            DateTime? start = DateArg(input, "start");
-            DateTime? end = DateArg(input, "end");
-            if (!start.HasValue) return new ToolResult { Output = "start is required.", IsError = true, Summary = "draft_reschedule_event" };
-            if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = "draft_reschedule_event" };
-
-            if (occDate != null)
-            {
-                ToolResult? collision = CheckOccurrenceReorderCollision(master, appt.Start, start.Value, appt.Subject ?? "", "draft_reschedule_event");
-                if (collision != null) return collision.Value;
-            }
-
-            bool isMeeting = master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
-            string scopeNote = occDate != null ? " (just this occurrence, not the whole series)" : "";
-
-            if (occDate == null && master.IsRecurring)
-            {
-                // Same COM restriction as RescheduleEvent's whole-series fix
-                // (confirmed live 2026-09-28): Outlook does not allow setting
-                // AppointmentItem.Start/.End directly on a recurring master.
-                // Set the RecurrencePattern fields instead - unsaved, same as
-                // the non-recurring case below just sets Start/End unsaved -
-                // then Display(false) so the user reviews the pending change
-                // in Outlook's own window before saving/sending it themselves.
-                // Never calls .Save()/.Send() here, so there's no undo/barrier
-                // consideration - draft tools never persist anything.
-                Outlook.RecurrencePattern pattern = master.GetRecurrencePattern();
-                pattern.PatternStartDate = start.Value.Date;
-                pattern.StartTime = start.Value;
-                pattern.EndTime = end.Value;
-                appt.Display(false);
-                return new ToolResult
-                {
-                    Output = "Opened \"" + (appt.Subject ?? "") + "\" with the whole series' new time (" + Iso(start.Value) + " to " + Iso(end.Value) +
-                             ") in Outlook for the user to review and " + (isMeeting ? "save/send the update." : "save."),
-                    Summary = "draft_reschedule_event",
-                };
-            }
-
-            appt.Start = start.Value;
-            appt.End = end.Value;
-            appt.Display(false);
-            return new ToolResult
-            {
-                Output = "Opened \"" + (appt.Subject ?? "") + "\"" + scopeNote + " with the new time (" + Iso(start.Value) + " to " + Iso(end.Value) +
-                         ") in Outlook for the user to review and " + (isMeeting ? "save/send the update." : "save."),
-                Summary = "draft_reschedule_event",
-            };
-        }
-
-        // Full-autonomy-only, general edit: unlike reschedule_event (Start/End
-        // only), this can touch start/end, subject, body, location, and
+        // Full-autonomy-only, general edit: unlike the retired per-field
+        // reschedule tool (Start/End only), this can touch start/end, subject, body, location, and
         // attendees in one call. One unified mutation flow decides .Send() vs
         // .Save() and whether the result is undo-able, rather than branching
         // per field - see the design's Section 2 for the reasoning.
@@ -555,10 +484,10 @@ namespace OutlookAiAddIn
             string oldEnd = Iso(appt.End);
 
             // Outlook does not allow setting AppointmentItem.Start/.End directly
-            // on a recurring master (confirmed live 2026-09-28, see
-            // reschedule_event's own history) - RecurrencePattern's fields are
-            // the correct mechanism, same as create_event's recurrence support
-            // and reschedule_event's whole-series fix.
+            // on a recurring master (confirmed live 2026-09-28, see the
+            // retired reschedule tool's own history) - RecurrencePattern's
+            // fields are the correct mechanism, same as create_event's
+            // recurrence support and that retired tool's whole-series fix.
             if (isRecurringWholeSeriesTimeChange)
             {
                 Outlook.RecurrencePattern pattern = master.GetRecurrencePattern();
@@ -592,8 +521,8 @@ namespace OutlookAiAddIn
             bool isMeetingNow = wasMeetingBefore || attendeesChanged;
             // Barrier whenever the call sends an invite OR touches whole-series
             // RecurrencePattern fields - the latter can't be snapshotted by
-            // SnapshotEntry even with zero attendee involvement (see
-            // reschedule_event's own whole-series fix for the same rule).
+            // SnapshotEntry even with zero attendee involvement (see the
+            // retired reschedule tool's own whole-series fix for the same rule).
             bool mustBarrier = isMeetingNow || isRecurringWholeSeriesTimeChange;
             string changeSummary = DescribeEditEventChanges(start, end, subject, body, location, attendeesChanged, oldStart, oldEnd);
 
@@ -620,8 +549,8 @@ namespace OutlookAiAddIn
                 DebugLog.WriteException("EditEvent Save", ex);
                 if (occDate != null)
                 {
-                    // Same false-negative Save() risk confirmed for
-                    // reschedule_event's occurrence path: property setters
+                    // Same false-negative Save() risk confirmed for the
+                    // retired reschedule tool's occurrence path: property setters
                     // write immediately via RPC, independent of Save()'s own
                     // finalize step, which can fail separately. Re-check by
                     // the NEW date if a time change was requested (the
@@ -659,7 +588,7 @@ namespace OutlookAiAddIn
             // RecordSnapshot reads appt.EntryID via ItemEntryIdOf(appt) - for an
             // occurrence, that's the real, resolvable EntryID GetOccurrence's
             // returned item gets once saved, so undo/redo works via the exact
-            // same SnapshotEntry mechanism as reschedule_event - no new
+            // same SnapshotEntry mechanism as the retired reschedule tool - no new
             // undo-entry type needed. props is always non-empty here: reaching
             // this branch requires mustBarrier == false, which means attendees
             // were never touched (that forces isMeetingNow, hence a barrier)
@@ -760,173 +689,8 @@ namespace OutlookAiAddIn
             };
         }
 
-        // Full-autonomy-only counterpart to draft_reschedule_event above: sets the
-        // new Start/End directly, then - like create_event's attendee-present
-        // branch - .Send() if this is a meeting the user organizes (dispatching
-        // the reschedule notice to attendees with no review step) or .Save() for
-        // a plain appointment nobody needs to notify. Both members confirmed
-        // present via reflection against the referenced PIA in CreateEvent above;
-        // reused here rather than re-verified.
-        private static readonly string[] RescheduleProps = { "Start", "End" };
-
-        private static ToolResult RescheduleEvent(string mbxKey, JsonElement input)
-        {
-            string id = ReqStr(input, "event_id");
-            string occDate = Str(input, "occurrence_date", null);
-            Outlook.AppointmentItem master = ItemById(id, null) as Outlook.AppointmentItem;
-            if (master == null)
-                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "reschedule_event" };
-
-            Outlook.AppointmentItem appt;
-            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "reschedule_event", out appt);
-            if (occurrenceError != null) return occurrenceError.Value;
-
-            if (IsCanceledMeeting(master))
-                return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "reschedule_event" };
-            if (IsReceivedMeeting(master))
-                return new ToolResult { Output = ReceivedMeetingError(appt), IsError = true, Summary = "reschedule_event" };
-
-            DateTime? start = DateArg(input, "start");
-            DateTime? end = DateArg(input, "end");
-            if (!start.HasValue) return new ToolResult { Output = "start is required.", IsError = true, Summary = "reschedule_event" };
-            if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = "reschedule_event" };
-
-            if (occDate != null)
-            {
-                ToolResult? collision = CheckOccurrenceReorderCollision(master, appt.Start, start.Value, appt.Subject ?? "", "reschedule_event");
-                if (collision != null) return collision.Value;
-            }
-
-            string scopeNote = occDate != null ? " (this occurrence only)" : "";
-            string oldStart = Iso(appt.Start);
-            string oldEnd = Iso(appt.End);
-
-            if (occDate == null && master.IsRecurring)
-            {
-                // Outlook does not allow setting AppointmentItem.Start/.End
-                // directly on a recurring master - confirmed live 2026-09-28
-                // (COMException 0xAF620009 "The object does not support this
-                // method" from set_Start), closing PR #21's previously-
-                // "unverified" Finding #2 as genuinely broken, not just
-                // unconfirmed. The correct mechanism is RecurrencePattern's
-                // own fields - the same ones create_event's recurrence
-                // support already writes to for a brand-new series (see
-                // ApplyRecurrence in OutlookTools.Compose.cs). This is
-                // Outlook's own native mechanism for rescheduling an entire
-                // series, not a workaround.
-                Outlook.RecurrencePattern pattern = master.GetRecurrencePattern();
-                pattern.PatternStartDate = start.Value.Date;
-                pattern.StartTime = start.Value;
-                pattern.EndTime = end.Value;
-
-                bool isMeetingWhole = master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
-                if (isMeetingWhole) appt.Send(); else appt.Save();
-
-                // Barrier, not a snapshot, for BOTH the meeting and
-                // non-meeting case - unlike every other branch in this
-                // method. Undoing this would need to write back to
-                // PatternStartDate/StartTime/EndTime, not Start/End - the
-                // existing SnapshotEntry mechanism only knows how to
-                // read/write plain item properties (exactly what just
-                // failed above for a recurring master), so there is no
-                // undo path for this yet. Deliberate, approved asymmetry.
-                RecordIrreversible(mbxKey, "reschedule_event of the whole series \"" + (appt.Subject ?? "") + "\"" +
-                                            (isMeetingWhole ? " (update notice sent)" : ""));
-                return new ToolResult
-                {
-                    Output = "Rescheduled the whole series" + (isMeetingWhole ? " and sent update notice" : "") + ": \"" + (appt.Subject ?? "") + "\" from " +
-                             oldStart + " - " + oldEnd + " to " + Iso(start.Value) + " - " + Iso(end.Value) + ".",
-                    Mutated = true,
-                    Summary = "reschedule_event",
-                };
-            }
-
-            object[] before = ReadProps(appt, RescheduleProps);
-            appt.Start = start.Value;
-            appt.End = end.Value;
-
-            if (master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting)
-            {
-                appt.Send();
-                // Barrier, not a snapshot: like create_event's invite branch, this
-                // is an irreversible, unreviewed send - undo must stop here rather
-                // than silently move the meeting back without telling attendees.
-                RecordIrreversible(mbxKey, "reschedule_event invite update for \"" + (appt.Subject ?? "") + "\"" + scopeNote);
-                return new ToolResult
-                {
-                    Output = "Rescheduled and sent update notice" + scopeNote + ": \"" + (appt.Subject ?? "") + "\" from " + oldStart + " - " + oldEnd +
-                             " to " + Iso(start.Value) + " - " + Iso(end.Value) + ".",
-                    Mutated = true,
-                    Summary = "reschedule_event",
-                };
-            }
-
-            try
-            {
-                appt.Save();
-            }
-            catch (Exception ex)
-            {
-                DebugLog.WriteException("RescheduleEvent occurrence Save", ex);
-                // Outlook can throw "Cannot save this item" on an occurrence's
-                // Save() even when the Start/End write already persisted -
-                // confirmed live 2026-09-28: a reschedule that reported this
-                // exception had actually moved the occurrence, per a
-                // subsequent list_events call. Property setters on
-                // AppointmentItem write immediately via RPC, independent of
-                // Save()'s own finalize step, which can fail separately.
-                // Re-check whether an occurrence now exists at the target
-                // date before reporting failure, reusing ResolveOccurrenceTarget
-                // rather than re-implementing the lookup.
-                Outlook.AppointmentItem moved;
-                ToolResult? notFound = ResolveOccurrenceTarget(master, Iso(start.Value), "reschedule_event", out moved);
-                if (notFound != null)
-                {
-                    // Outlook's COM automation collapses a specific, useful
-                    // validation message ("Cannot reschedule an occurrence...
-                    // if it skips over a later occurrence of the same
-                    // appointment") into this same generic "Cannot save this
-                    // item." (HRESULT 0x80020009) regardless of cause -
-                    // confirmed live 2026-09-28 by reproducing the same
-                    // failure through Outlook's own UI and seeing the
-                    // specific message there, while the automation
-                    // exception's .Message/.InnerException never carry it.
-                    // Since the specific cause can't be detected from the
-                    // exception itself, proactively suggest the most common
-                    // one instead of returning the unhelpful generic text
-                    // alone.
-                    return new ToolResult
-                    {
-                        Output = "Could not reschedule \"" + (appt.Subject ?? "") + "\" to " + Iso(start.Value) + ": " + ex.Message +
-                                 " This usually means the new date would move this occurrence past another occurrence in the same series - " +
-                                 "Outlook doesn't allow reordering occurrences relative to each other. Try a date before the next occurrence " +
-                                 "or after the previous one (check list_events for the series' other occurrence dates), or reschedule the whole series instead.",
-                        IsError = true,
-                        Summary = "reschedule_event",
-                    };
-                }
-                appt = moved; // use the freshly-resolved item for undo recording - the original `appt` reference may be stale
-            }
-            // RecordSnapshot reads appt.EntryID via ItemEntryIdOf(appt) - for an
-            // occurrence, that's the real, resolvable EntryID GetOccurrence's
-            // returned item gets once saved (an occurrence becomes a distinct,
-            // independently-addressable "exception" item, not a phantom only
-            // reachable through the pattern), so undo/redo works via the exact
-            // same SnapshotEntry mechanism as every other reschedule - no new
-            // undo-entry type needed. Verified live 2026-09-28 (see the
-            // false-negative Save() handling above).
-            RecordSnapshot(mbxKey, "reschedule_event", appt, appt.Subject ?? "", RescheduleProps, before);
-            return new ToolResult
-            {
-                Output = "Rescheduled" + scopeNote + ": \"" + (appt.Subject ?? "") + "\" from " + oldStart + " - " + oldEnd +
-                         " to " + Iso(start.Value) + " - " + Iso(end.Value) + ".",
-                Mutated = true,
-                Summary = "reschedule_event",
-            };
-        }
-
         // Shared by draft_cancel_event/cancel_event - same organizer-authority
-        // shape as reschedule_event above (IsCanceledMeeting/IsReceivedMeeting
+        // shape as edit_event above (IsCanceledMeeting/IsReceivedMeeting
         // reused, not duplicated), but an attendee's remedy for a meeting they
         // don't organize is decline_meeting, not "Propose New Time".
         private static string ReceivedMeetingCancelError(Outlook.AppointmentItem appt)
@@ -950,15 +714,15 @@ namespace OutlookAiAddIn
         // Cancellation" UI (or Delete, for a plain appointment) from there.
         //
         // Originally set MeetingStatus = olMeetingCanceled unsaved before
-        // Display(false), mirroring draft_reschedule_event's unsaved
+        // Display(false), mirroring the retired draft reschedule tool's unsaved
         // Start/End - removed 2026-09-28 after live testing showed Outlook
         // persists that change when the Inspector closes even without the
         // user clicking "Send Cancellation" (unlike Start/End, an unsaved
         // MeetingStatus change apparently isn't purely cosmetic here). That
         // silently canceled the meeting locally with attendees never
         // notified - worse than doing nothing, since it also means this tool
-        // can no longer be un-done or reattempted (cancel_event/
-        // reschedule_event both refuse on an already-canceled item). Never
+        // can no longer be un-done or reattempted (cancel_event/edit_event
+        // both refuse on an already-canceled item). Never
         // mutates the item at all now.
         private static ToolResult DraftCancelEvent(JsonElement input)
         {
@@ -991,7 +755,7 @@ namespace OutlookAiAddIn
 
         // Full-autonomy-only counterpart to draft_cancel_event above: for a
         // meeting the user organizes, sends the cancellation notice
-        // immediately (no review step, mirroring reschedule_event's/
+        // immediately (no review step, mirroring edit_event's/
         // create_event's attendee-present branches) then removes it from the
         // user's own calendar; for a plain appointment, just removes it -
         // nobody to notify. Either way the item is moved to Deleted Items
@@ -1053,9 +817,10 @@ namespace OutlookAiAddIn
                     catch (Exception ex)
                     {
                         DebugLog.WriteException("CancelEvent occurrence delete", ex);
-                        // Same false-negative risk confirmed for RescheduleEvent's
-                        // occurrence Save() - re-check via ResolveOccurrenceTarget
-                        // rather than assume the exception means the delete failed.
+                        // Same false-negative risk confirmed for the retired
+                        // reschedule tool's occurrence Save() - re-check via
+                        // ResolveOccurrenceTarget rather than assume the
+                        // exception means the delete failed.
                         Outlook.AppointmentItem recheck;
                         ToolResult? stillGone = ResolveOccurrenceTarget(master, occDate, "cancel_event", out recheck);
                         removedLocally = stillGone != null; // non-null = "no occurrence found" = it's gone = delete succeeded despite the exception
@@ -1101,8 +866,9 @@ namespace OutlookAiAddIn
                 catch (Exception ex)
                 {
                     DebugLog.WriteException("CancelEvent occurrence delete", ex);
-                    // Same false-negative risk confirmed for RescheduleEvent's
-                    // occurrence Save() - re-check before reporting failure.
+                    // Same false-negative risk confirmed for the retired
+                    // reschedule tool's occurrence Save() - re-check before
+                    // reporting failure.
                     Outlook.AppointmentItem recheck;
                     ToolResult? stillGone = ResolveOccurrenceTarget(master, occDate, "cancel_event", out recheck);
                     if (stillGone == null)
