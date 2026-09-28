@@ -553,7 +553,16 @@ namespace OutlookAiAddIn
 
             if (mustBarrier)
             {
-                if (isMeetingNow) appt.Send(); else appt.Save();
+                // .Send() alone can leave the item's own Saved flag stuck
+                // False even after a successful send - confirmed live via COM
+                // (create a recurring meeting, clear its attendees, revert
+                // MeetingStatus, .Send(): Saved reads False even on a fresh
+                // re-fetch by EntryID, causing Outlook to prompt "save
+                // changes?" if the user later just opens and closes the item
+                // with nothing to change). An explicit .Save() right after
+                // .Send() clears it - confirmed the same sequence with the
+                // extra Save() reads Saved=True on a fresh re-fetch.
+                if (isMeetingNow) { appt.Send(); appt.Save(); } else appt.Save();
                 RecordIrreversible(mbxKey, "edit_event of \"" + (appt.Subject ?? "") + "\"" + scopeNote +
                                             (isMeetingNow ? " (update sent)" : "") +
                                             (isRecurringWholeSeriesTimeChange ? " (whole series time change)" : ""));
