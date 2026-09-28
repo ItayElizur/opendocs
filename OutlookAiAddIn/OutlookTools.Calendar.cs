@@ -238,18 +238,20 @@ namespace OutlookAiAddIn
 
             object respObj = appt.Respond(response, true, false);
             Outlook.MeetingItem resp = respObj as Outlook.MeetingItem;
+            bool sendSucceeded = false;
             if (resp != null)
             {
                 if (!string.IsNullOrEmpty(message)) resp.Body = message;
-                try { resp.Send(); } catch (Exception ex) { DebugLog.WriteException(toolName + " Send", ex); }
+                try { resp.Send(); sendSucceeded = true; } catch (Exception ex) { DebugLog.WriteException(toolName + " Send", ex); }
             }
-            RecordIrreversible(mbxKey, toolName + " for \"" + (appt.Subject ?? "") + "\"" + (!string.IsNullOrEmpty(message) ? " with a comment" : ""));
+            bool commentSent = !string.IsNullOrEmpty(message) && resp != null && sendSucceeded;
+            RecordIrreversible(mbxKey, toolName + " for \"" + (appt.Subject ?? "") + "\"" + (commentSent ? " with a comment" : ""));
             string verb = response == Outlook.OlMeetingResponse.olMeetingAccepted ? "Accepted"
                         : response == Outlook.OlMeetingResponse.olMeetingTentative ? "Responded tentatively to"
                         : "Declined";
             return new ToolResult
             {
-                Output = verb + ": " + (appt.Subject ?? "") + (!string.IsNullOrEmpty(message) ? " (comment sent)" : ""),
+                Output = verb + ": " + (appt.Subject ?? "") + (commentSent ? " (comment sent)" : ""),
                 Mutated = true,
                 Summary = toolName,
             };
@@ -261,6 +263,14 @@ namespace OutlookAiAddIn
         // themselves instead of calling .Send() here. Never records
         // undo/redo - draft tools never persist anything, same contract as
         // draft_event.
+        //
+        // UNVERIFIED: whether appt.Respond() itself commits local calendar
+        // changes at call time (e.g. replacing the appointment with a new
+        // EntryID on accept/tentative, or removing/moving the original
+        // appointment on decline), independent of the .Display() call below
+        // ever being acted on. If so, this "nothing persists until the user
+        // acts" contract would not actually hold. Not confirmed either way -
+        // needs a live test closing the response window without sending.
         private static ToolResult DraftRespondMeeting(JsonElement input, Outlook.OlMeetingResponse response, string toolName)
         {
             string id = ReqStr(input, "event_id");
@@ -290,7 +300,7 @@ namespace OutlookAiAddIn
                             : "a decline";
             return new ToolResult
             {
-                Output = "Opened " + verbing + " to \"" + (appt.Subject ?? "") + "\" in Outlook for the user to review and send." + (!string.IsNullOrEmpty(message) ? " Comment pre-filled." : ""),
+                Output = "Opened " + verbing + " to \"" + (appt.Subject ?? "") + "\" in Outlook for the user to review and send." + (!string.IsNullOrEmpty(message) && resp != null ? " Comment pre-filled." : ""),
                 Summary = toolName,
             };
         }

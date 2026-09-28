@@ -753,7 +753,18 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > existing draft tools, never record undo/redo (same contract as `draft_event`/
 > `draft_edit_event`/`draft_cancel_event` — nothing is saved or sent until the user acts
 > on the opened window). `message` pre-fills the same `resp.Body` there, subject to the
-> same unverified-live caveat.
+> same unverified-live caveat. A second, separate unverified-live risk applies to the
+> draft tools specifically: it is **unconfirmed whether `AppointmentItem.Respond()`
+> itself commits local calendar changes at call time** — independent of whether
+> `.Send()` or `.Display()` is subsequently called — such as replacing the appointment
+> with a new EntryID on accept/tentative, or removing/moving the original appointment
+> on decline. If Outlook's COM implementation does this, the draft tools' "nothing
+> persists until the user acts" contract would not actually hold, even though they
+> correctly never call `.Send()`/`RecordIrreversible`/`RecordSnapshot`. Needs a live
+> test: open each draft response, close the window without sending, then confirm the
+> appointment still exists under the same EntryID, `ResponseStatus` is unchanged, and
+> the item is still in the inbox/calendar as before — `draft_decline_meeting` most
+> carefully, since decline is the destructive direction.
 
 ## Architecture
 
@@ -1375,6 +1386,19 @@ own UI). What remains unconfirmed:
   silently dropped or overwritten by Outlook's own response-body template — has not
   been confirmed against a real received invite (a self-organized item can't exercise
   this path meaningfully).
+- **`draft_accept_meeting`/`draft_decline_meeting`/`draft_tentative_meeting`'s
+  "nothing persists until the user acts" claim (added 2026-09-29)** rests on an
+  unverified assumption about `AppointmentItem.Respond()` itself: it is unconfirmed
+  whether `Respond()` commits local calendar changes at call time — e.g. replacing
+  the appointment with a new EntryID on accept/tentative, or removing/moving the
+  original appointment on decline — independent of whether `.Send()` or `.Display()`
+  is subsequently called. `DraftRespondMeeting` correctly never calls `.Send()`,
+  `RecordIrreversible`, or `RecordSnapshot`, but if `Respond()` has side effects of
+  its own, the draft contract would be silently violated regardless. Needs a live
+  test: open each draft response, close the window without sending, then verify the
+  appointment still exists under the same EntryID, `ResponseStatus` is unchanged, and
+  the item is still in the inbox/calendar as before — test `draft_decline_meeting`
+  most carefully, since decline is the destructive direction.
 
 ---
 
