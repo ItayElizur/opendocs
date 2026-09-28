@@ -244,11 +244,11 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > wiring into the tool switch; `dotnet test` unaffected (no new pure logic —
 > the color-name map is a small dictionary, not extracted for unit testing).
 
-> **Update 2026-09-27 (undo/redo tooling — Word, Excel, PowerPoint; a small
-> custom inverse-op tool for Outlook):** added `undo_last_action`/
-> `redo_last_action` to Word, Excel, and (reversing this document's own
-> earlier "no undo/redo tool" conclusion for it) PowerPoint, plus a narrowly
-> scoped `undo_last_action` for Outlook. **None of this is runtime-verified
+> **Update 2026-09-27 (undo/redo tooling — Word, PowerPoint; a custom
+> undo/redo stack for Outlook; Excel's removed 2026-09-28):** added
+> `undo_last_action`/`redo_last_action` to Word and (reversing this
+> document's own earlier "no undo/redo tool" conclusion for it) PowerPoint,
+> plus a custom stack of the assistant's own actions for Outlook. **None of this is runtime-verified
 > against a live Office/Outlook client** — no live instance was reachable;
 > every mechanism below was instead confirmed by .NET reflection directly
 > against the exact PIA versions these projects reference (15.0.0.0), the
@@ -270,20 +270,16 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 >   action." vs. "Nothing to undo." (same for redo) instead of always
 >   claiming success. Gated the same as every other Word mutating tool:
 >   blocked in Read Only/Comment Only, available from Track Changes upward.
-> - **Excel** (`ExcelAiAddIn/ExcelTools.History.cs`): also corrected from the
->   initial plan. `Application.Undo()` is real but returns `void` — no signal
->   at all — and Excel has **no `Application.Redo()` method whatsoever**
->   (confirmed absent by reflection; Excel's object model has never exposed
->   one, Ctrl+Y is UI-only). Both tools instead dispatch through
->   `Application.CommandBars.ExecuteMso("Undo"/"Redo")`, checking
->   `GetEnabledMso` first for an honest result - the same ribbon-command API
->   PowerPoint now uses (see below). This is **best-effort on Excel
->   specifically**: Excel is well known to clear its undo stack the instant
->   automation touches the object model, so "Nothing to undo" immediately
->   after an edit can be correct behavior, not a bug — both the tool
->   description and the result message say so explicitly. Gated the same as
->   `propose_operations` (blocked in Read Only/Comment Only, available from
->   Track Changes upward).
+> - **Excel — removed (2026-09-28).** The first version dispatched
+>   `Application.CommandBars.ExecuteMso("Undo"/"Redo")` (Excel has no
+>   `Application.Redo()`, and `Application.Undo()` returns `void`). That
+>   can't work for the assistant's edits: every write this add-in makes goes
+>   through the object model (`propose_operations`, find/replace, and so on),
+>   and Excel clears its whole undo stack on any object-model change. So
+>   right after an AI edit there is nothing to undo, and later the tool would
+>   undo the *user's* next manual edit instead. `Application.OnUndo` only
+>   takes a VBA macro name, so it isn't usable from a C# add-in. A snapshot-
+>   based custom undo was considered and not pursued; the tools were removed.
 > - **PowerPoint** (`PowerPointAiAddIn/PowerPointTools.History.cs`) —
 >   **reversing this document's earlier conclusion that PowerPoint should be
 >   excluded entirely.** That conclusion was correct that no
@@ -313,42 +309,46 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 >   still-valid placeholder refusal, which stands for an unrelated reason —
 >   see that method's comment). Gated the same as every other PowerPoint
 >   mutating tool (Track Changes upward).
-> - **Outlook** (`OutlookAiAddIn/OutlookTools.Undo.cs`) — a deliberately small,
->   **custom** mechanism, not a native-undo wrapper: Outlook has no undo hook
->   for item-level mutations at all. `undo_last_action` records just enough
->   about the single most recent call to `move_email` / `mark_email_read` /
->   `mark_email_unread` / `flag_email_important` to reverse it — an in-memory,
->   per-mailbox `Dictionary<string, ReversibleAction>` keyed the same way
->   `ModeByMailbox` is (the `mbx-<hash>` key from `GetChatId()`), holding one
->   pending record, not a history. `move_email`'s record captures the
->   **source folder's own EntryID/StoreID** (via `((Outlook.Folder)item.
->   Parent)`, read *before* the move) rather than just its name, so undo
->   re-resolves it precisely via `Namespace.GetFolderFromID` — a name-based
->   lookup (`ResolveFolder`) can't tell apart two same-named folders in
->   different parents/stores. The mark/flag tools record the prior boolean
->   (previous `UnRead`; previous "was High importance") and simply restore
->   it. `flag_email_important`'s prior state is deliberately captured as a
->   bool, matching the tool's own two-value (`High`/`Normal`) range — if the
->   original importance was actually `olImportanceLow`, undo restores
->   `Normal`, not `Low`; a documented simplification, not an oversight.
->   Recording happens at the end of each of those four tools' *existing*
->   handlers in `OutlookTools.Mail.cs` (one call added per handler, no logic
->   duplicated), and is a one-shot: `undo_last_action` clears the record
->   before attempting the reversal, so a failed undo can never be retried
->   against already-changed state. Explicitly **excluded** (per the original
->   scope for this tool): `delete_email` (especially `permanent:true`), all
->   five auto-send tools, and `accept_meeting`/`decline_meeting` (already
->   notify the organizer — irreversible in effect). **No `redo_last_action`
->   for Outlook** — once a single one-shot record has been reversed there is
->   nothing sensible left to redo; asked for one, the model is expected to
->   say so rather than fabricate a tool call. Gated at Draft tier
->   (`CommentOnly`), the same tier as the four actions it can reverse —
->   undoing a Draft-tier action doesn't need more permission than making it
->   did. **This is the least verified part of this update**: unlike the
->   category tools above (verified live), nothing here has been exercised
->   against a running Outlook client — `Namespace.GetFolderFromID` with a
->   folder's own (not an item's) EntryID/StoreID is assumed to behave as
->   documented, not confirmed live.
+> - **Outlook** (`OutlookAiAddIn/OutlookTools.Undo.cs`, stack logic in
+>   `OfficeAi.Shared/ActionHistory.cs`) — a **custom** undo/redo stack of
+>   the assistant's own actions, not a native-undo wrapper. Native Undo via
+>   `Explorer.CommandBars.ExecuteMso("Undo")` was tried and tested by hand
+>   on 2026-09-28. It's a single slot tied to the window that toggles
+>   undo/redo, it doesn't see object-model changes (a `move_email` followed by
+>   the ribbon Undo did nothing), and after one use both our tool and the
+>   ribbon button failed with "The operation cannot be performed because the
+>   message has changed." Outlook has no API to put an object-model change
+>   onto that slot.
+>
+>   How it works: an in-memory stack per mailbox chat (keyed like
+>   `ModeByMailbox`, capped at 50, lost on restart). Each mutating handler
+>   records one entry after its change succeeds:
+>   - **Property snapshots** (before/after values, restored and `Save()`d):
+>     `mark_email_read/unread` (`UnRead`), `flag_email_important` (full
+>     `Importance`, so Low is preserved), `set_event_categories`,
+>     `set_reminder`, and `update_task` (task fields as a group, or the
+>     flagged-mail fields).
+>   - **`set_email_reminder`**: if the message wasn't flagged before, undo
+>     calls `ClearTaskFlag()`, and redo calls `MarkAsTask` again.
+>   - **Moves**: `move_email` and non-permanent `delete_email`. The folder is
+>     resolved by its own EntryID/StoreID via `Namespace.GetFolderFromID`,
+>     and the new EntryID after each move is rewritten into every entry
+>     for that item.
+>   - **Created items**: `create_task` and `create_event` without
+>     attendees. Undo moves the item to Deleted Items (recoverable); redo
+>     moves it back.
+>   - **`set_category_color`**: undo restores the old color, or removes a tag
+>     the assistant created.
+>   - **Barriers**: `send_*`, `create_event` with attendees,
+>     `accept/decline_meeting` and `delete_email permanent:true`. Undo
+>     stops at a barrier instead of reaching past it.
+>
+>   Before reversing, each entry checks that the item still holds what the
+>   assistant left there. If it was changed since (by the user or anything
+>   else), undo refuses rather than overwrite it. A failed or refused entry
+>   is dropped, never retried. `redo_last_action` re-applies undone entries
+>   until the next new action. Both tools are gated at Draft tier. **Not
+>   verified against a live Outlook client.**
 
 ## Architecture
 
@@ -447,7 +447,7 @@ checklist's claim that these are unimplemented is wrong for the current source.
 
 ## Excel (`ExcelAiAddIn/ExcelTools.cs`)
 
-### Top-level tools (12: the 10 below, plus `undo_last_action`/`redo_last_action` added 2026-09-27)
+### Top-level tools (10)
 
 All 9 read/query tools plus `propose_operations` are implemented and genuinely
 functional — full 1:1 parity with genoffice's naming and shape (`get_workbook_context`,
@@ -456,12 +456,9 @@ functional — full 1:1 parity with genoffice's naming and shape (`get_workbook_
 (deliberately out of scope — genoffice's is an internal prompt-budget mechanism for
 managing its larger op count in context, not needed at officeoffice's current scale).
 
-`undo_last_action`/`redo_last_action` (`ExcelTools.History.cs`) are **best-effort on
-Excel specifically** — see the dated Update block near the top of this document for why
-(`Application.Undo()` returns `void`, no `Application.Redo()` exists at all, so both
-dispatch through `Application.CommandBars.ExecuteMso("Undo"/"Redo")` with a
-`GetEnabledMso` pre-check instead). Gated the same as `propose_operations` (Track
-Changes upward).
+No `undo_last_action`/`redo_last_action` for Excel: they were added on 2026-09-27 and
+removed on 2026-09-28, because Excel clears its undo stack on any object-model write
+(see the dated Update block near the top of this document).
 
 Notable native-COM advantage: `find_cells`'s `errors_only` mode uses
 `Range.SpecialCells(xlCellTypeFormulas, xlErrors)` — a genuinely native error-cell
@@ -706,20 +703,18 @@ index otherwise.
 > reachable from Draft only upward (`DraftTierTools`), not gated to Full
 > autonomy. Not rewritten here; see that section for the real gate.
 
-### Undo tool (1 — Draft tier or higher, matching the tier of what it reverses; `Mutated` varies)
+### Undo/redo tools (2 — Draft tier or higher; `Mutated` on success)
 
-> **Added 2026-09-27.** A deliberately small, **custom** inverse-op mechanism
-> — Outlook has no native undo hook for item-level mutations, unlike Word/
-> Excel/PowerPoint's real or ribbon-dispatched Undo (see the dated Update
-> block near the top of this document for full detail and the reflection
-> evidence behind Word/Excel/PowerPoint's tools). **Not a general mutation
-> log** — it reverses exactly one thing: the single most recent call to one
-> of four specific tools, recorded in an in-memory, per-mailbox dictionary
-> (`OutlookTools.Undo.cs`) keyed the same way `ModeByMailbox` is.
+> **Added 2026-09-27, reworked 2026-09-28** into a custom undo/redo stack of
+> the assistant's own actions (`OutlookTools.Undo.cs` +
+> `OfficeAi.Shared/ActionHistory.cs`). Outlook's native Undo can't be used —
+> see the dated Update block near the top of this document for what was
+> tested and the full list of what each tool records.
 
 | Tool | Notes |
 |---|---|
-| `undo_last_action` | Reverses the last `move_email` (moves the item back to its original folder, resolved by the folder's own EntryID/StoreID via `Namespace.GetFolderFromID`, captured before the move — not by name, which can't disambiguate two same-named folders), `mark_email_read`/`mark_email_unread` (restores the prior `UnRead` value), or `flag_email_important` (restores the prior High/Normal importance — a prior `olImportanceLow` is not distinguished, restores to Normal). One-shot: the record is cleared before the reversal is attempted, so a failed undo can't be retried against already-changed state. Explicitly does **not** cover `delete_email`, any of the 5 auto-send tools, or `accept_meeting`/`decline_meeting` (already notify the organizer). Gated at Draft tier (`CommentOnly`) — the same tier as the actions it reverses. **No `redo_last_action`** — nothing sensible to redo after reversing a one-shot record. **Not verified against a live Outlook client.** |
+| `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Covers `mark_email_read/unread`, `flag_email_important`, `move_email`, non-permanent `delete_email`, `create_task`, `update_task`, `set_reminder`, `set_email_reminder`, `set_event_categories`, `set_category_color`, and `create_event` without attendees. Sends, invites, meeting responses and permanent deletes are barriers: undo reports it can't go past them. It refuses if the item was changed since the assistant's action, and never touches the user's own manual changes. **Not verified against a live Outlook client.** |
+| `redo_last_action` | Re-applies the most recently undone action, with the same "changed since" check. The redo list is cleared by any new recorded action or barrier. |
 
 ### Draft-and-display tools (5 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
 
