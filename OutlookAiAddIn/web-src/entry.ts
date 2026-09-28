@@ -380,7 +380,7 @@ const ALL_OUTLOOK_TOOLS = [
         recurrence: {
           type: 'object',
           description:
-            'Makes this a recurring series. type is required: "daily", "weekly", "monthly" (needs day_of_month), "monthlyNth"/"yearlyNth" (needs instance 1-4 or 5 for "last", plus a single days_of_week entry; yearlyNth also needs month_of_year), or "yearly" (needs month_of_year and day_of_month). interval defaults to 1 (every N days/weeks/months/years). At most one of count (end after N occurrences) or until (end by date) - omit both for no end date.',
+            'Makes this a recurring series. type is required: "daily", "weekly", "monthly", "monthlyNth"/"yearlyNth", or "yearly". If you omit days_of_week/day_of_month/instance/month_of_year for the type you chose, they default from start\'s own date - e.g. weekly defaults to start\'s day of week, monthly to start\'s day of month, monthlyNth/yearlyNth to start\'s day of week and which occurrence of it in the month start falls on. Pass them explicitly to override. interval defaults to 1 (every N days/weeks/months/years). At most one of count (end after N occurrences) or until (end by date) - omit both for no end date.',
           properties: {
             type: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'monthlyNth', 'yearly', 'yearlyNth'] },
             interval: { type: 'number', description: 'Every N days/weeks/months/years. Default 1.' },
@@ -471,7 +471,7 @@ const ALL_OUTLOOK_TOOLS = [
         recurrence: {
           type: 'object',
           description:
-            'Makes this a recurring series. type is required: "daily", "weekly", "monthly" (needs day_of_month), "monthlyNth"/"yearlyNth" (needs instance 1-4 or 5 for "last", plus a single days_of_week entry; yearlyNth also needs month_of_year), or "yearly" (needs month_of_year and day_of_month). interval defaults to 1 (every N days/weeks/months/years). At most one of count (end after N occurrences) or until (end by date) - omit both for no end date.',
+            'Makes this a recurring series. type is required: "daily", "weekly", "monthly", "monthlyNth"/"yearlyNth", or "yearly". If you omit days_of_week/day_of_month/instance/month_of_year for the type you chose, they default from start\'s own date - e.g. weekly defaults to start\'s day of week, monthly to start\'s day of month, monthlyNth/yearlyNth to start\'s day of week and which occurrence of it in the month start falls on. Pass them explicitly to override. interval defaults to 1 (every N days/weeks/months/years). At most one of count (end after N occurrences) or until (end by date) - omit both for no end date.',
           properties: {
             type: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'monthlyNth', 'yearly', 'yearlyNth'] },
             interval: { type: 'number', description: 'Every N days/weeks/months/years. Default 1.' },

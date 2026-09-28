@@ -21,6 +21,19 @@ namespace OfficeAi.Shared
             "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
         };
 
+        // Which occurrence of its weekday `dayOfMonth` represents within a
+        // month of `daysInMonth` days - 1-4 for 1st-4th, 5 if it's the last
+        // such weekday in the month (matches RecurrencePattern.Instance's
+        // own 1-4/5-for-"last" convention). Pure integer math so callers
+        // (OutlookAiAddIn) can pass DateTime.Day/DateTime.DaysInMonth
+        // without this project needing a DateTime dependency beyond what
+        // it already has.
+        public static int NthWeekdayOfMonth(int dayOfMonth, int daysInMonth)
+        {
+            int n = (dayOfMonth - 1) / 7 + 1;
+            return dayOfMonth + 7 > daysInMonth ? 5 : n;
+        }
+
         public static RecurrenceSpec Parse(string type, int interval, string[] daysOfWeek, int? dayOfMonth,
             int? instance, int? monthOfYear, int? count, DateTime? until, out string error)
         {

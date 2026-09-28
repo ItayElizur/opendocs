@@ -227,4 +227,47 @@ public class RecurrenceValidatorTests
         Assert.Null(spec.Count);
         Assert.Null(spec.Until);
     }
+
+    [Fact]
+    public void NthWeekdayOfMonth_FirstWeekOfMonth_ReturnsOne()
+    {
+        Assert.Equal(1, RecurrenceValidator.NthWeekdayOfMonth(1, 31));
+        Assert.Equal(1, RecurrenceValidator.NthWeekdayOfMonth(7, 31));
+    }
+
+    [Fact]
+    public void NthWeekdayOfMonth_SecondWeek_ReturnsTwo()
+    {
+        Assert.Equal(2, RecurrenceValidator.NthWeekdayOfMonth(8, 31));
+        Assert.Equal(2, RecurrenceValidator.NthWeekdayOfMonth(14, 31));
+    }
+
+    [Fact]
+    public void NthWeekdayOfMonth_ThirdWeek_ReturnsThree()
+    {
+        Assert.Equal(3, RecurrenceValidator.NthWeekdayOfMonth(15, 31));
+        Assert.Equal(3, RecurrenceValidator.NthWeekdayOfMonth(21, 31));
+    }
+
+    [Fact]
+    public void NthWeekdayOfMonth_FourthWeek_NotLast_ReturnsFour()
+    {
+        // Day 22 in a 31-day month: 22+7=29 <= 31, so a 5th occurrence of
+        // this weekday still exists later in the month - day 22 is not last.
+        Assert.Equal(4, RecurrenceValidator.NthWeekdayOfMonth(22, 31));
+    }
+
+    [Fact]
+    public void NthWeekdayOfMonth_LastOccurrenceInMonth_ReturnsFive()
+    {
+        // Day 29 in a 31-day month: 29+7=36 > 31, no later occurrence this month - it's last.
+        Assert.Equal(5, RecurrenceValidator.NthWeekdayOfMonth(29, 31));
+    }
+
+    [Fact]
+    public void NthWeekdayOfMonth_ShortMonth_FifthWeekDoesNotExist()
+    {
+        // February, 28 days: day 22 is the 4th occurrence, and 22+7=29 > 28, so it's also the last.
+        Assert.Equal(5, RecurrenceValidator.NthWeekdayOfMonth(22, 28));
+    }
 }

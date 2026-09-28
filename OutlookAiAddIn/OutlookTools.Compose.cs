@@ -83,7 +83,7 @@ namespace OutlookAiAddIn
         // null) when the field is omitted entirely; returns a populated
         // RecurrenceSpec on success; returns null with error set to a
         // model-facing IsError message on any validation failure.
-        private static RecurrenceSpec ReadRecurrence(JsonElement input, out string error)
+        private static RecurrenceSpec ReadRecurrence(JsonElement input, DateTime start, out string error)
         {
             error = null;
             JsonElement rec;
@@ -98,6 +98,41 @@ namespace OutlookAiAddIn
             int? monthOfYear = OptInt(rec, "month_of_year");
             int? count = OptInt(rec, "count");
             DateTime? until = DateArg(rec, "until");
+
+            // Fill in defaults from the event's own start date when the
+            // caller omits a field the chosen type needs, rather than
+            // forcing every call to spell out values already implied by
+            // "recurring starting from <start>". Only fills what's
+            // genuinely missing - an explicitly-provided value is never
+            // overridden. RecurrenceValidator.Parse stays the strict, pure
+            // validator; by the time it runs here the spec already looks
+            // complete for whichever type was requested.
+            string startDay = start.DayOfWeek.ToString().ToLowerInvariant();
+            switch (type)
+            {
+                case "weekly":
+                    if (days == null) days = new[] { startDay };
+                    break;
+                case "monthly":
+                    if (!dayOfMonth.HasValue) dayOfMonth = start.Day;
+                    break;
+                case "monthlyNth":
+                    if (days == null) days = new[] { startDay };
+                    if (!instance.HasValue) instance = RecurrenceValidator.NthWeekdayOfMonth(start.Day, DateTime.DaysInMonth(start.Year, start.Month));
+                    break;
+                case "yearly":
+                    if (!dayOfMonth.HasValue) dayOfMonth = start.Day;
+                    if (!monthOfYear.HasValue) monthOfYear = start.Month;
+                    break;
+                case "yearlyNth":
+                    if (days == null) days = new[] { startDay };
+                    if (!instance.HasValue) instance = RecurrenceValidator.NthWeekdayOfMonth(start.Day, DateTime.DaysInMonth(start.Year, start.Month));
+                    if (!monthOfYear.HasValue) monthOfYear = start.Month;
+                    break;
+                    // "daily" needs none of these; an unrecognized type falls
+                    // through unchanged to RecurrenceValidator.Parse's own
+                    // "not valid" error.
+            }
 
             return RecurrenceValidator.Parse(type, interval, days, dayOfMonth, instance, monthOfYear, count, until, out error);
         }
@@ -149,17 +184,27 @@ namespace OutlookAiAddIn
 
         private static ToolResult DraftEvent(JsonElement input)
         {
-            string recurrenceError;
-            RecurrenceSpec recurrence = ReadRecurrence(input, out recurrenceError);
-            if (recurrenceError != null) return new ToolResult { Output = recurrenceError, IsError = true, Summary = "draft_event" };
+            DateTime? start = DateArg(input, "start");
+            DateTime? end = DateArg(input, "end");
+
+            JsonElement recField;
+            bool hasRecurrenceField = input.ValueKind == JsonValueKind.Object && input.TryGetProperty("recurrence", out recField) && recField.ValueKind == JsonValueKind.Object;
+
+            RecurrenceSpec recurrence = null;
+            if (hasRecurrenceField)
+            {
+                if (!start.HasValue)
+                    return new ToolResult { Output = "start is required when recurrence is specified, so defaults (day of week, day of month, etc.) can be derived from it.", IsError = true, Summary = "draft_event" };
+                string recurrenceError;
+                recurrence = ReadRecurrence(input, start.Value, out recurrenceError);
+                if (recurrenceError != null) return new ToolResult { Output = recurrenceError, IsError = true, Summary = "draft_event" };
+            }
 
             Outlook.AppointmentItem a = (Outlook.AppointmentItem)App.CreateItem(Outlook.OlItemType.olAppointmentItem);
             a.Subject = Str(input, "subject", "");
             a.Location = Str(input, "location", "");
             a.Body = SeedSignature(Str(input, "body", ""));
 
-            DateTime? start = DateArg(input, "start");
-            DateTime? end = DateArg(input, "end");
             if (start.HasValue) a.Start = start.Value;
             if (end.HasValue) a.End = end.Value;
 
@@ -276,7 +321,7 @@ namespace OutlookAiAddIn
             if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = "create_event" };
 
             string recurrenceError;
-            RecurrenceSpec recurrence = ReadRecurrence(input, out recurrenceError);
+            RecurrenceSpec recurrence = ReadRecurrence(input, start.Value, out recurrenceError);
             if (recurrenceError != null) return new ToolResult { Output = recurrenceError, IsError = true, Summary = "create_event" };
 
             Outlook.AppointmentItem a = (Outlook.AppointmentItem)App.CreateItem(Outlook.OlItemType.olAppointmentItem);
