@@ -366,7 +366,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'draft_event',
     description:
-      'Opens a new appointment/meeting window in Outlook, pre-filled. With attendees it becomes a meeting request. The user reviews and sends/saves it.',
+      'Opens a new appointment/meeting window in Outlook, pre-filled. With attendees it becomes a meeting request. The user reviews and sends/saves it. Pass recurrence to make it a repeating series.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -377,6 +377,22 @@ const ALL_OUTLOOK_TOOLS = [
         body: { type: 'string' },
         required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>".' },
         optional_attendees: { type: 'string' },
+        recurrence: {
+          type: 'object',
+          description:
+            'Makes this a recurring series. type is required: "daily", "weekly", "monthly" (needs day_of_month), "monthlyNth"/"yearlyNth" (needs instance 1-4 or 5 for "last", plus a single days_of_week entry; yearlyNth also needs month_of_year), or "yearly" (needs month_of_year and day_of_month). interval defaults to 1 (every N days/weeks/months/years). At most one of count (end after N occurrences) or until (end by date) - omit both for no end date.',
+          properties: {
+            type: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'monthlyNth', 'yearly', 'yearlyNth'] },
+            interval: { type: 'number', description: 'Every N days/weeks/months/years. Default 1.' },
+            days_of_week: { type: 'array', items: { type: 'string' }, description: 'e.g. ["monday","wednesday"] for weekly; exactly one day for monthlyNth/yearlyNth.' },
+            day_of_month: { type: 'number', description: '1-31. Required for monthly and yearly.' },
+            instance: { type: 'number', description: '1-4 for 1st-4th, 5 for "last". Required for monthlyNth/yearlyNth.' },
+            month_of_year: { type: 'number', description: '1-12. Required for yearly and yearlyNth.' },
+            count: { type: 'number', description: 'End after N occurrences. Mutually exclusive with until.' },
+            until: { type: 'string', description: 'End by this date. Mutually exclusive with count.' },
+          },
+          required: ['type'],
+        },
       },
       required: [],
     },
@@ -441,7 +457,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'create_event',
     description:
-      'Creates a calendar event immediately - NO review window. With attendees, sends the meeting invite right away (notifies them). Only available in Full autonomy. Prefer draft_event unless the user clearly wants this created/sent right now.',
+      'Creates a calendar event immediately - NO review window, including for a recurring series. With attendees, sends the meeting invite right away (notifies them). Only available in Full autonomy. Prefer draft_event unless the user clearly wants this created/sent right now. Pass recurrence to make it a repeating series.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -452,6 +468,22 @@ const ALL_OUTLOOK_TOOLS = [
         body: { type: 'string' },
         required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Presence of attendees sends the invite instead of just saving the event.' },
         optional_attendees: { type: 'string' },
+        recurrence: {
+          type: 'object',
+          description:
+            'Makes this a recurring series. type is required: "daily", "weekly", "monthly" (needs day_of_month), "monthlyNth"/"yearlyNth" (needs instance 1-4 or 5 for "last", plus a single days_of_week entry; yearlyNth also needs month_of_year), or "yearly" (needs month_of_year and day_of_month). interval defaults to 1 (every N days/weeks/months/years). At most one of count (end after N occurrences) or until (end by date) - omit both for no end date.',
+          properties: {
+            type: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'monthlyNth', 'yearly', 'yearlyNth'] },
+            interval: { type: 'number', description: 'Every N days/weeks/months/years. Default 1.' },
+            days_of_week: { type: 'array', items: { type: 'string' }, description: 'e.g. ["monday","wednesday"] for weekly; exactly one day for monthlyNth/yearlyNth.' },
+            day_of_month: { type: 'number', description: '1-31. Required for monthly and yearly.' },
+            instance: { type: 'number', description: '1-4 for 1st-4th, 5 for "last". Required for monthlyNth/yearlyNth.' },
+            month_of_year: { type: 'number', description: '1-12. Required for yearly and yearlyNth.' },
+            count: { type: 'number', description: 'End after N occurrences. Mutually exclusive with until.' },
+            until: { type: 'string', description: 'End by this date. Mutually exclusive with count.' },
+          },
+          required: ['type'],
+        },
       },
       required: ['start', 'end'],
     },
