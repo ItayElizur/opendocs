@@ -508,6 +508,7 @@ namespace OutlookAiAddIn
             bool attendeesChanged = false;
             if (requiredAttendees != null || optionalAttendees != null)
             {
+                int recipientsBefore = appt.Recipients.Count;
                 ReplaceAttendees(appt, requiredAttendees, optionalAttendees);
                 // If clearing brought the attendee list to zero, revert
                 // MeetingStatus back to olNonMeeting - otherwise an event that
@@ -533,7 +534,13 @@ namespace OutlookAiAddIn
                 // mechanism for notifying only added/removed attendees rather
                 // than everyone on the list.
                 appt.ForceUpdateToAllAttendees = false;
-                attendeesChanged = true;
+                // A call supplying e.g. required_attendees="" on an event that
+                // already has zero attendees is a true no-op - nothing was
+                // added or removed, so it shouldn't count as an attendee
+                // change (which would otherwise force isMeetingNow below and
+                // burn a real .Send()/undo barrier for a call that changed
+                // nothing).
+                attendeesChanged = !(recipientsBefore == 0 && appt.Recipients.Count == 0);
             }
 
             bool isMeetingNow = wasMeetingBefore || attendeesChanged;
@@ -692,6 +699,7 @@ namespace OutlookAiAddIn
             bool attendeesChanged = false;
             if (requiredAttendees != null || optionalAttendees != null)
             {
+                int recipientsBefore = appt.Recipients.Count;
                 ReplaceAttendees(appt, requiredAttendees, optionalAttendees);
                 // Same revert-to-non-meeting fix as EditEvent: if clearing
                 // attendees brought the count to zero, don't leave the item
@@ -704,7 +712,9 @@ namespace OutlookAiAddIn
                 {
                     appt.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
                 }
-                attendeesChanged = true;
+                // Same no-op guard as EditEvent: an already-empty attendee
+                // list touched with e.g. required_attendees="" changes nothing.
+                attendeesChanged = !(recipientsBefore == 0 && appt.Recipients.Count == 0);
                 isMeeting = appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
             }
 
