@@ -327,6 +327,63 @@ namespace OutlookAiAddIn
             return null;
         }
 
+        // Checks whether moving an occurrence from `original` to `target` would
+        // cross or land on the same day as another occurrence of the same series -
+        // Outlook rejects both (confirmed live 2026-09-28 by reproducing the
+        // specific error manually in Outlook's UI: "Cannot reschedule an occurrence
+        // of the recurring appointment ... if it skips over a later occurrence of
+        // the same appointment" - both cases surface only as a generic
+        // COMException "Cannot save this item." from .Save(), with no way to
+        // distinguish the cause from the exception itself). Checking this
+        // ourselves first gives an exact, deterministic answer instead of relying
+        // on Outlook's collapsed generic exception message.
+        //
+        // Queries the Calendar folder the same way ListEvents does (Sort("[Start]")
+        // -> IncludeRecurrences = true -> Restrict, in that order - load-bearing,
+        // see ListEvents' own comment) over the range between `original` and
+        // `target` (inclusive of both endpoint days), then keeps only occurrences
+        // of THIS series (matching master's EntryID) other than the one being
+        // moved (excluded by day - it's still sitting at `original` since nothing
+        // has been saved yet). If any remain, the closest one to `original` is the
+        // binding obstruction; returns null if the move is clear.
+        private static ToolResult? CheckOccurrenceReorderCollision(Outlook.AppointmentItem master, DateTime original, DateTime target, string subject, string toolName)
+        {
+            DateTime rangeStart = (original < target ? original : target).Date;
+            DateTime rangeEnd = (original < target ? target : original).Date.AddDays(1);
+
+            Outlook.Folder cal = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderCalendar);
+            Outlook.Items items = cal.Items;
+            items.Sort("[Start]");
+            items.IncludeRecurrences = true;
+            string filter = "[Start] >= '" + rangeStart.ToString("g", CultureInfo.CurrentCulture) +
+                            "' AND [Start] < '" + rangeEnd.ToString("g", CultureInfo.CurrentCulture) + "'";
+            Outlook.Items restricted = items.Restrict(filter);
+
+            Outlook.AppointmentItem nearest = null;
+            foreach (object o in restricted)
+            {
+                Outlook.AppointmentItem candidate = o as Outlook.AppointmentItem;
+                if (candidate == null) continue;
+                if (!SameEntryId(candidate.EntryID, master.EntryID)) continue;
+                if (candidate.Start.Date == original.Date) continue; // the occurrence being moved itself
+                if (nearest == null || Math.Abs((candidate.Start - original).TotalMinutes) < Math.Abs((nearest.Start - original).TotalMinutes))
+                    nearest = candidate;
+            }
+
+            if (nearest == null) return null;
+
+            DateTime lowerBound = original < nearest.Start ? original : nearest.Start;
+            DateTime upperBound = original < nearest.Start ? nearest.Start : original;
+            return new ToolResult
+            {
+                Output = "Can't move \"" + subject + "\" to " + Iso(target) + " - it would cross (or land on the same day as) another occurrence of this series on " +
+                         nearest.Start.ToShortDateString() + ". Outlook doesn't allow reordering a series' occurrences relative to each other, and occurrences can't share a day. " +
+                         "Valid range for this occurrence: strictly between " + lowerBound.ToShortDateString() + " and " + upperBound.ToShortDateString() + ".",
+                IsError = true,
+                Summary = toolName,
+            };
+        }
+
         // Draft-tier: opens the appointment with the new Start/End already set but
         // NOT saved, exactly like draft_event - the user reviews the moved time in
         // the native window and decides whether to save it (and, if it's a
@@ -353,6 +410,12 @@ namespace OutlookAiAddIn
             DateTime? end = DateArg(input, "end");
             if (!start.HasValue) return new ToolResult { Output = "start is required.", IsError = true, Summary = "draft_reschedule_event" };
             if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = "draft_reschedule_event" };
+
+            if (occDate != null)
+            {
+                ToolResult? collision = CheckOccurrenceReorderCollision(master, appt.Start, start.Value, appt.Subject ?? "", "draft_reschedule_event");
+                if (collision != null) return collision.Value;
+            }
 
             bool isMeeting = master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
             string scopeNote = occDate != null ? " (just this occurrence, not the whole series)" : "";
@@ -397,6 +460,12 @@ namespace OutlookAiAddIn
             DateTime? end = DateArg(input, "end");
             if (!start.HasValue) return new ToolResult { Output = "start is required.", IsError = true, Summary = "reschedule_event" };
             if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = "reschedule_event" };
+
+            if (occDate != null)
+            {
+                ToolResult? collision = CheckOccurrenceReorderCollision(master, appt.Start, start.Value, appt.Subject ?? "", "reschedule_event");
+                if (collision != null) return collision.Value;
+            }
 
             string scopeNote = occDate != null ? " (this occurrence only)" : "";
             string oldStart = Iso(appt.Start);
