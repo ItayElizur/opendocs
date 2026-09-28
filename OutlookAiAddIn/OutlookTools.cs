@@ -51,9 +51,10 @@ namespace OutlookAiAddIn
 
         // Tier 2 ("Draft only" / CommentOnly): mutates the mailbox or opens a
         // draft, but never leaves it unreviewed. set_event_categories/
-        // set_category_color belong here, not in SendTierTools below - both
-        // are purely local (appt.Categories/.Save(), cats.Add()/.Color),
-        // never call .Send(), and carry the same risk profile as
+        // set_category_color/set_event_availability belong here, not in
+        // SendTierTools below - all three are purely local
+        // (appt.Categories/.BusyStatus/.Save(), cats.Add()/.Color), never
+        // call .Send(), and carry the same risk profile as
         // move_email/flag_email_important right next to them. An earlier
         // version of this fix put them in SendTierTools to match their old
         // (pre-four-tier) Full-Autonomy-only gate, but that was restoring
@@ -73,7 +74,12 @@ namespace OutlookAiAddIn
             "mark_email_read", "mark_email_unread", "flag_email_important", "move_email", "delete_email",
             "create_task", "update_task", "set_reminder", "set_email_reminder",
             "draft_email", "reply_email", "reply_all_email", "forward_email", "draft_event",
-            "set_event_categories", "set_category_color", "apply_search", "draft_reschedule_event",
+            "set_event_categories", "set_category_color", "set_event_availability", "apply_search", "draft_reschedule_event",
+            // undo/redo only replay the assistant's own recorded actions (see
+            // OutlookTools.Undo.cs) and never send anything - sends and
+            // meeting responses are barriers, not replayable entries - so
+            // they sit at the Draft tier like the actions they mostly reverse.
+            "undo_last_action", "redo_last_action",
         };
 
         // Tier 3 ("Automate approvals" / TrackChanges): already calls
@@ -123,6 +129,26 @@ namespace OutlookAiAddIn
                             Summary = name,
                         };
                     }
+
+                    // delete_email is a single tool spanning two risk classes:
+                    // permanent:false (default) just moves to Deleted Items -
+                    // fully reversible, same Draft-tier gate as move_email
+                    // above. permanent:true additionally calls .Delete() from
+                    // there, which is irreversible from within Outlook (see
+                    // DeleteEmail's own result text) - the same risk class as
+                    // SendTierTools, so it needs that gate too even though the
+                    // tool NAME sits in DraftTierTools. This is name-based
+                    // gating's one input-aware exception; keep it that way
+                    // rather than generalizing to a per-argument system.
+                    if (name == "delete_email" && Bool(input, "permanent", false) && (int)mode < (int)EditingMode.FullAutonomy)
+                    {
+                        return new ToolResult
+                        {
+                            Output = "Blocked: permanent delete requires " + TierLabel(EditingMode.FullAutonomy) + " mode or higher (currently " + TierLabel(mode) + "). Omit permanent, or set it to false, to move the message to Deleted Items instead.",
+                            IsError = true,
+                            Summary = name,
+                        };
+                    }
                 }
 
                 switch (name)
@@ -141,19 +167,22 @@ namespace OutlookAiAddIn
                     case "get_attachment": return GetAttachment(input);
                     case "list_color_categories": return ListColorCategories(input);
 
-                    case "mark_email_read": return MarkEmail(input, false);
-                    case "mark_email_unread": return MarkEmail(input, true);
-                    case "flag_email_important": return FlagEmailImportant(input);
-                    case "move_email": return MoveEmail(input);
-                    case "delete_email": return DeleteEmail(input);
-                    case "accept_meeting": return RespondMeeting(input, true);
-                    case "decline_meeting": return RespondMeeting(input, false);
-                    case "set_event_categories": return SetEventCategories(input);
-                    case "set_category_color": return SetCategoryColor(input);
-                    case "create_task": return CreateTask(input);
-                    case "update_task": return UpdateTask(input);
-                    case "set_reminder": return SetReminder(input);
-                    case "set_email_reminder": return SetEmailReminder(input);
+                    case "mark_email_read": return MarkEmail(mbxKey, input, false);
+                    case "mark_email_unread": return MarkEmail(mbxKey, input, true);
+                    case "flag_email_important": return FlagEmailImportant(mbxKey, input);
+                    case "move_email": return MoveEmail(mbxKey, input);
+                    case "delete_email": return DeleteEmail(mbxKey, input);
+                    case "undo_last_action": return UndoLastAction(mbxKey);
+                    case "redo_last_action": return RedoLastAction(mbxKey);
+                    case "accept_meeting": return RespondMeeting(mbxKey, input, true);
+                    case "decline_meeting": return RespondMeeting(mbxKey, input, false);
+                    case "set_event_categories": return SetEventCategories(mbxKey, input);
+                    case "set_category_color": return SetCategoryColor(mbxKey, input);
+                    case "set_event_availability": return SetEventAvailability(mbxKey, input);
+                    case "create_task": return CreateTask(mbxKey, input);
+                    case "update_task": return UpdateTask(mbxKey, input);
+                    case "set_reminder": return SetReminder(mbxKey, input);
+                    case "set_email_reminder": return SetEmailReminder(mbxKey, input);
 
                     case "draft_email": return DraftEmail(input);
                     case "reply_email": return ReplyEmail(input, false);
@@ -162,12 +191,12 @@ namespace OutlookAiAddIn
                     case "draft_event": return DraftEvent(input);
                     case "draft_reschedule_event": return DraftRescheduleEvent(input);
 
-                    case "send_email": return SendEmail(input);
-                    case "send_reply": return SendReply(input, false);
-                    case "send_reply_all": return SendReply(input, true);
-                    case "send_forward": return SendForward(input);
-                    case "create_event": return CreateEvent(input);
-                    case "reschedule_event": return RescheduleEvent(input);
+                    case "send_email": return SendEmail(mbxKey, input);
+                    case "send_reply": return SendReply(mbxKey, input, false);
+                    case "send_reply_all": return SendReply(mbxKey, input, true);
+                    case "send_forward": return SendForward(mbxKey, input);
+                    case "create_event": return CreateEvent(mbxKey, input);
+                    case "reschedule_event": return RescheduleEvent(mbxKey, input);
 
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }

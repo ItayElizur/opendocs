@@ -198,12 +198,28 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'delete_email',
-    description: 'Moves a message to Deleted Items (permanent:true also removes it from there).',
+    description: 'Moves a message to Deleted Items. permanent:true also removes it from there, which is irreversible and requires Full autonomy mode - otherwise omit permanent or set it to false.',
     inputSchema: {
       type: 'object',
       properties: { message_id: MESSAGE_ID, permanent: { type: 'boolean' }, folder: FOLDER },
       required: ['message_id'],
     },
+  },
+  {
+    name: 'undo_last_action',
+    description:
+      "Reverses YOUR most recent action in this chat (call repeatedly to step further back). Covers mark_email_read/unread, flag_email_important, move_email, " +
+      'delete_email (non-permanent - moves it back out of Deleted Items), create_task, update_task, set_reminder, set_email_reminder, set_event_categories, ' +
+      'set_category_color, set_event_availability, and create_event without attendees (moved to Deleted Items). Sends, meeting invites, accept/decline_meeting and permanent deletes ' +
+      "can't be reversed and block undo past them. Never touches changes the user made directly in Outlook, and refuses if the item was changed since. " +
+      'A move changes message_id - use the one in the result.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'redo_last_action',
+    description:
+      'Re-applies the action most recently reversed by undo_last_action. Only available until you make a new change.',
+    inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'accept_meeting',
@@ -241,6 +257,19 @@ const ALL_OUTLOOK_TOOLS = [
         },
       },
       required: ['name', 'color'],
+    },
+  },
+  {
+    name: 'set_event_availability',
+    description:
+      'Sets a calendar event\'s "Show As" availability (Free/Tentative/Busy/Out of Office/Working Elsewhere) - the same dropdown Outlook\'s appointment form shows. Nothing to do with color tags/categories.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        availability: { type: 'string', enum: ['free', 'tentative', 'busy', 'outOfOffice', 'workingElsewhere'] },
+      },
+      required: ['event_id', 'availability'],
     },
   },
   {
@@ -449,11 +478,14 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   mark_email_unread: d('Mark unread', 'סימון כלא נקרא', 'Marks a message as unread.', 'מסמן הודעה כלא נקראה.'),
   flag_email_important: d('Flag importance', 'סימון חשיבות', 'Sets a message to High or Normal importance.', 'מגדיר חשיבות גבוהה או רגילה להודעה.'),
   move_email: d('Move email', 'העברת הודעה', 'Moves a message to another folder.', 'מעביר הודעה לתיקייה אחרת.'),
-  delete_email: d('Delete email', 'מחיקת הודעה', 'Moves a message to Deleted Items.', 'מעביר הודעה לפריטים שנמחקו.'),
+  delete_email: d('Delete email', 'מחיקת הודעה', 'Moves a message to Deleted Items, or permanently deletes it (Full autonomy only).', 'מעביר הודעה לפריטים שנמחקו, או מוחק אותה לצמיתות (רק במצב אוטונומיה מלאה).'),
+  undo_last_action: d('Undo', 'ביטול', "Reverses the assistant's most recent action. Sent items can't be undone.", 'מבטל את הפעולה האחרונה של העוזר. לא ניתן לבטל פריטים שנשלחו.'),
+  redo_last_action: d('Redo', 'ביצוע חוזר', 'Re-applies the action the assistant last undid.', 'מבצע מחדש את הפעולה שהעוזר ביטל לאחרונה.'),
   accept_meeting: d('Accept meeting', 'אישור פגישה', 'Accepts a meeting invitation.', 'מאשר הזמנה לפגישה.'),
   decline_meeting: d('Decline meeting', 'דחיית פגישה', 'Declines a meeting invitation.', 'דוחה הזמנה לפגישה.'),
   set_event_categories: d('Color event', 'צביעת אירוע', 'Applies or clears color tags on a calendar event.', 'מחיל או מנקה תגיות צבע על אירוע יומן.'),
   set_category_color: d('Set tag color', 'הגדרת צבע תגית', 'Creates or recolors a color tag.', 'יוצר או משנה צבע של תגית.'),
+  set_event_availability: d('Set availability', 'הגדרת זמינות', 'Sets an event\'s Free/Busy/Tentative/Out of Office status.', 'מגדיר את סטטוס הזמינות של אירוע (פנוי / עסוק / בעבודה במקום אחר / מחוץ למשרד).'),
   create_task: d('Create task', 'יצירת משימה', 'Creates a task with an optional due date and reminder.', 'יוצר משימה עם תאריך יעד ותזכורת אופציונליים.'),
   update_task: d('Update task', 'עדכון משימה', 'Updates or completes an existing task.', 'מעדכן או משלים משימה קיימת.'),
   set_reminder: d('Set reminder', 'הגדרת תזכורת', 'Sets a reminder on an appointment or task.', 'מגדיר תזכורת לפגישה או משימה.'),
@@ -478,7 +510,7 @@ startAddIn({
   toolDisplay: OUTLOOK_TOOL_DISPLAY,
   systemPrompt:
     'You are an AI assistant embedded in Microsoft Outlook via the OpenDocs add-in. You work from the main Outlook window (Explorer). ' +
-    'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations, reschedule events, color events with tags via list_color_categories/set_event_categories/set_category_color), ' +
+    'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations, reschedule events, color events with tags via list_color_categories/set_event_categories/set_category_color, set an event\'s Free/Busy/Tentative/Out of Office/Working Elsewhere status via set_event_availability), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
     'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event, draft_reschedule_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. ' +
     'send_email/send_reply/send_reply_all/send_forward/create_event/reschedule_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
@@ -486,6 +518,7 @@ startAddIn({
     'message_id / event_id / task_id values are Outlook EntryIDs. When the user has one or more messages selected, that selection (with its message_id) is in your context - prefer it over searching. ' +
     'Prefer list_emails / search_emails / list_tasks (fast, server-side) over reading items one by one. ' +
     "Once you've found the relevant messages, apply_search can show the same results in the user's own Outlook window instead of only listing them in chat. " +
+    "undo_last_action/redo_last_action step back and forward through your own actions in this chat (not the user's manual Outlook actions). Anything that sent something (emails, invites, meeting responses) or a permanent delete can't be undone and blocks undo past it - say so rather than claim it was reversed. " +
     "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events/reschedules) -> Automate approvals (also auto-accept/decline meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/send_reply/send_reply_all/send_forward/create_event/reschedule_event, which send/create immediately).",
   starters: [
     { en: 'Summarize my unread emails', he: 'סכם את ההודעות שלא קראתי' },
@@ -531,7 +564,10 @@ startAddIn({
     'draft_reschedule_event',
     'set_event_categories',
     'set_category_color',
+    'set_event_availability',
     'apply_search',
+    'undo_last_action',
+    'redo_last_action',
   ],
   // Tier 3 ("Automate approvals"), on top of tier 2 - accept/decline
   // already auto-notify the organizer via resp.Send(), so they get their
