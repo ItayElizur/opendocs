@@ -477,9 +477,14 @@ namespace OutlookAiAddIn
         private static ToolResult DraftCancelEvent(JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            Outlook.AppointmentItem appt = ItemById(id, null) as Outlook.AppointmentItem;
-            if (appt == null)
+            string occDate = Str(input, "occurrence_date", null);
+            Outlook.AppointmentItem master = ItemById(id, null) as Outlook.AppointmentItem;
+            if (master == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "draft_cancel_event" };
+
+            Outlook.AppointmentItem appt;
+            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_cancel_event", out appt);
+            if (occurrenceError != null) return occurrenceError.Value;
 
             if (IsCanceledMeeting(appt))
                 return new ToolResult { Output = AlreadyCanceledError(appt), IsError = true, Summary = "draft_cancel_event" };
@@ -487,10 +492,11 @@ namespace OutlookAiAddIn
                 return new ToolResult { Output = ReceivedMeetingCancelError(appt), IsError = true, Summary = "draft_cancel_event" };
 
             bool isMeeting = appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
+            string scopeNote = occDate != null ? " (just this occurrence)" : "";
             appt.Display(false);
             return new ToolResult
             {
-                Output = "Opened \"" + (appt.Subject ?? "") + "\" in Outlook for the user to review and " +
+                Output = "Opened \"" + (appt.Subject ?? "") + "\"" + scopeNote + " in Outlook for the user to review and " +
                          (isMeeting ? "cancel it themselves (Cancel Meeting, then Send Cancellation) if they want to proceed."
                                     : "delete from the calendar."),
                 Summary = "draft_cancel_event",
@@ -516,40 +522,73 @@ namespace OutlookAiAddIn
         private static ToolResult CancelEvent(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            Outlook.AppointmentItem appt = ItemById(id, null) as Outlook.AppointmentItem;
-            if (appt == null)
+            string occDate = Str(input, "occurrence_date", null);
+            Outlook.AppointmentItem master = ItemById(id, null) as Outlook.AppointmentItem;
+            if (master == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "cancel_event" };
 
-            bool alreadyCanceled = IsCanceledMeeting(appt);
+            Outlook.AppointmentItem appt;
+            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "cancel_event", out appt);
+            if (occurrenceError != null) return occurrenceError.Value;
+
+            bool isOccurrence = occDate != null;
+            // An occurrence has no "already canceled" state to clean up - a
+            // deleted occurrence simply won't resolve via GetOccurrence()
+            // again, surfacing as ResolveOccurrenceTarget's "no occurrence on
+            // that date" error above instead of reaching this point.
+            bool alreadyCanceled = !isOccurrence && IsCanceledMeeting(appt);
             if (!alreadyCanceled && IsReceivedMeeting(appt))
                 return new ToolResult { Output = ReceivedMeetingCancelError(appt), IsError = true, Summary = "cancel_event" };
 
             string subject = appt.Subject ?? "";
             bool isMeeting = !alreadyCanceled && appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
-            Outlook.Folder sourceFolder = (Outlook.Folder)appt.Parent;
-            Outlook.Folder deletedFolder = (Outlook.Folder)sourceFolder.Store.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems);
+            string scopeNote = isOccurrence ? " (this occurrence only)" : "";
 
             if (isMeeting)
             {
                 appt.MeetingStatus = Outlook.OlMeetingStatus.olMeetingCanceled;
                 appt.Send();
                 // Barrier, not a move snapshot: the cancellation notice already
-                // went out to attendees, so restoring this copy to the calendar
-                // would only half-undo the action and misleadingly imply it was
-                // fully reversed.
-                RecordIrreversible(mbxKey, "cancel_event invite cancellation for \"" + subject + "\"");
+                // went out to attendees, so restoring this copy would only
+                // half-undo the action and misleadingly imply it was fully
+                // reversed.
+                RecordIrreversible(mbxKey, "cancel_event invite cancellation for \"" + subject + "\"" + scopeNote);
+
+                if (isOccurrence)
+                {
+                    // No COM API to un-delete a single occurrence
+                    // (RecurrencePattern.Exceptions is entirely read-only -
+                    // confirmed via reflection) - always a barrier above,
+                    // regardless of plain-appointment vs. meeting, unlike
+                    // whole-event cancellation below which stays undo-able
+                    // for the plain-appointment case.
+                    bool removedLocally = true;
+                    try { appt.Delete(); }
+                    catch (Exception ex) { DebugLog.WriteException("CancelEvent occurrence delete", ex); removedLocally = false; }
+                    return new ToolResult
+                    {
+                        Output = "Canceled and notified attendees" + scopeNote + ": \"" + subject + "\"." +
+                                 (removedLocally ? "" : " Outlook would not remove this occurrence - delete it manually.") +
+                                 " This occurrence cannot be undone.",
+                        Mutated = true,
+                        Summary = "cancel_event",
+                    };
+                }
+
+                Outlook.Folder sourceFolder = (Outlook.Folder)appt.Parent;
+                Outlook.Folder deletedFolder = (Outlook.Folder)sourceFolder.Store.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems);
                 // Unverified whether Outlook still allows moving the item after
                 // Send() on a now-canceled meeting - reflection confirms both
                 // members exist, but chaining them hasn't been exercised
                 // against a live client. Fails soft: the notice is the
                 // irreversible part and already went out either way.
-                bool removedLocally = true;
+                bool removedFromCalendar = true;
                 try { appt.Move(deletedFolder); }
-                catch (Exception ex) { DebugLog.WriteException("CancelEvent post-send move", ex); removedLocally = false; }
+                catch (Exception ex) { DebugLog.WriteException("CancelEvent post-send move", ex); removedFromCalendar = false; }
                 return new ToolResult
                 {
                     Output = "Canceled and notified attendees: \"" + subject + "\"" +
-                             (removedLocally
+                             (removedFromCalendar
                                  ? " removed from your calendar."
                                  : " (Outlook would not remove it from your calendar after sending - delete it manually)."),
                     Mutated = true,
@@ -557,21 +596,34 @@ namespace OutlookAiAddIn
                 };
             }
 
-            // Plain appointment, or an already-canceled event either way - no
-            // one to notify, just remove it.
-            string oldId = appt.EntryID;
-            dynamic moved = appt.Move(deletedFolder);
-            string newId = moved.EntryID;
-            RecordMove(mbxKey, "cancel_event", "event_id", subject, oldId, newId, sourceFolder, deletedFolder);
-            return new ToolResult
+            if (isOccurrence)
             {
-                Output = (alreadyCanceled
-                             ? "Removed already-canceled event \"" + subject + "\""
-                             : "Canceled: \"" + subject + "\" moved") +
-                         " to Deleted Items.\nevent_id: " + newId,
-                Mutated = true,
-                Summary = "cancel_event",
-            };
+                // Plain-appointment occurrence: still a barrier, not a move -
+                // deleting one occurrence has no folder-move equivalent to
+                // record (it's dropped from the pattern's read-only Exceptions
+                // list, not relocated to a recoverable folder).
+                appt.Delete();
+                RecordIrreversible(mbxKey, "cancel_event of \"" + subject + "\" occurrence");
+                return new ToolResult { Output = "Canceled" + scopeNote + ": \"" + subject + "\". This occurrence cannot be undone.", Mutated = true, Summary = "cancel_event" };
+            }
+
+            {
+                Outlook.Folder sourceFolder = (Outlook.Folder)appt.Parent;
+                Outlook.Folder deletedFolder = (Outlook.Folder)sourceFolder.Store.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems);
+                string oldId = appt.EntryID;
+                dynamic moved = appt.Move(deletedFolder);
+                string newId = moved.EntryID;
+                RecordMove(mbxKey, "cancel_event", "event_id", subject, oldId, newId, sourceFolder, deletedFolder);
+                return new ToolResult
+                {
+                    Output = (alreadyCanceled
+                                 ? "Removed already-canceled event \"" + subject + "\""
+                                 : "Canceled: \"" + subject + "\" moved") +
+                             " to Deleted Items.\nevent_id: " + newId,
+                    Mutated = true,
+                    Summary = "cancel_event",
+                };
+            }
         }
     }
 }
