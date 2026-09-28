@@ -210,7 +210,7 @@ const ALL_OUTLOOK_TOOLS = [
     description:
       "Reverses YOUR most recent action in this chat (call repeatedly to step further back). Covers mark_email_read/unread, flag_email_important, move_email, " +
       'delete_email (non-permanent - moves it back out of Deleted Items), create_task, update_task, set_reminder, set_email_reminder, set_event_categories, ' +
-      'set_category_color, and create_event without attendees (moved to Deleted Items). Sends, meeting invites, accept/decline_meeting and permanent deletes ' +
+      'set_category_color, set_event_availability, and create_event without attendees (moved to Deleted Items). Sends, meeting invites, accept/decline_meeting and permanent deletes ' +
       "can't be reversed and block undo past them. Never touches changes the user made directly in Outlook, and refuses if the item was changed since. " +
       'A move changes message_id - use the one in the result.',
     inputSchema: { type: 'object', properties: {} },
@@ -257,6 +257,19 @@ const ALL_OUTLOOK_TOOLS = [
         },
       },
       required: ['name', 'color'],
+    },
+  },
+  {
+    name: 'set_event_availability',
+    description:
+      'Sets a calendar event\'s "Show As" availability (Free/Tentative/Busy/Out of Office/Working Elsewhere) - the same dropdown Outlook\'s appointment form shows. Nothing to do with color tags/categories.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        availability: { type: 'string', enum: ['free', 'tentative', 'busy', 'outOfOffice', 'workingElsewhere'] },
+      },
+      required: ['event_id', 'availability'],
     },
   },
   {
@@ -444,6 +457,7 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   decline_meeting: d('Decline meeting', 'דחיית פגישה', 'Declines a meeting invitation.', 'דוחה הזמנה לפגישה.'),
   set_event_categories: d('Color event', 'צביעת אירוע', 'Applies or clears color tags on a calendar event.', 'מחיל או מנקה תגיות צבע על אירוע יומן.'),
   set_category_color: d('Set tag color', 'הגדרת צבע תגית', 'Creates or recolors a color tag.', 'יוצר או משנה צבע של תגית.'),
+  set_event_availability: d('Set availability', 'הגדרת זמינות', 'Sets an event\'s Free/Busy/Tentative/Out of Office status.', 'מגדיר את סטטוס הזמינות של אירוע (פנוי / עסוק / בעבודה במקום אחר / מחוץ למשרד).'),
   create_task: d('Create task', 'יצירת משימה', 'Creates a task with an optional due date and reminder.', 'יוצר משימה עם תאריך יעד ותזכורת אופציונליים.'),
   update_task: d('Update task', 'עדכון משימה', 'Updates or completes an existing task.', 'מעדכן או משלים משימה קיימת.'),
   set_reminder: d('Set reminder', 'הגדרת תזכורת', 'Sets a reminder on an appointment or task.', 'מגדיר תזכורת לפגישה או משימה.'),
@@ -466,7 +480,7 @@ startAddIn({
   toolDisplay: OUTLOOK_TOOL_DISPLAY,
   systemPrompt:
     'You are an AI assistant embedded in Microsoft Outlook via the OpenDocs add-in. You work from the main Outlook window (Explorer). ' +
-    'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations, color events with tags via list_color_categories/set_event_categories/set_category_color), ' +
+    'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations, color events with tags via list_color_categories/set_event_categories/set_category_color, set an event\'s Free/Busy/Tentative/Out of Office/Working Elsewhere status via set_event_availability), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
     'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. ' +
     'send_email/send_reply/send_reply_all/send_forward/create_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
@@ -518,6 +532,7 @@ startAddIn({
     'draft_event',
     'set_event_categories',
     'set_category_color',
+    'set_event_availability',
     'apply_search',
     'undo_last_action',
     'redo_last_action',

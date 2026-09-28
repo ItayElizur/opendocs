@@ -244,6 +244,36 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > wiring into the tool switch; `dotnet test` unaffected (no new pure logic —
 > the color-name map is a small dictionary, not extracted for unit testing).
 
+> **Update 2026-09-27 (Outlook gains `set_event_availability`):** one new
+> tool, added to `OutlookAiAddIn/OutlookTools.Categories.cs` right beside
+> `set_event_categories`/`set_category_color` since it's the same shape (a
+> single-property `AppointmentItem` mutation with a friendly-name map for an
+> Outlook-PIA-only enum). Sets `AppointmentItem.BusyStatus` — the calendar's
+> "Show As" dropdown — to one of the 5 `OlBusyStatus` values (`olFree`,
+> `olTentative`, `olBusy`, `olOutOfOffice`, `olWorkingElsewhere`; names
+> confirmed via .NET reflection against the referenced
+> `Microsoft.Office.Interop.Outlook` 15.0.0.0 PIA, not assumed) via a
+> case-insensitive friendly-name lookup (`free`/`tentative`/`busy`/`out of
+> office`/`working elsewhere`); an unrecognized string returns a clean
+> `IsError` result listing the valid names rather than throwing, unlike
+> `set_category_color`'s `ParseColor` (which throws and relies on the outer
+> `ExecuteAsync` catch). Unrelated to `Categories`/color tags — a distinct
+> `AppointmentItem` property entirely. Placed in **Draft tier**
+> (`DraftTierTools` + `entry.ts`'s `commentOnlyExtraTools`), not Full
+> autonomy: it's purely local (`.BusyStatus` + `.Save()`, no `.Send()`),
+> the same risk profile that put `set_event_categories`/`set_category_color`
+> in Draft tier despite the "Mutating tools" table heading below still
+> reading "Full autonomy only" (that heading predates the 2026-09-19
+> four-tier gate for those two tools and was already stale before this
+> change — not fixed here to keep this update focused). **Update
+> 2026-09-28: verified against a live Outlook client** — all 5
+> `OlBusyStatus` values round-trip correctly via `.BusyStatus` + `.Save()`,
+> case/spacing-tolerant parsing confirmed, invalid values return a clean
+> `IsError` instead of throwing, and saving a `BusyStatus` change on a
+> meeting the user organizes (has attendees) does not prompt or notify
+> attendees. Also wired into the undo/redo stack the same day (see that
+> section below) after merging with PR #23.
+
 > **Update 2026-09-27 (delete_email's permanent path split to its own tier):**
 > another instance of the same class of gap closed by `aeae77c`/`b3fc5d2`
 > (category tools left one gate too low) — here `delete_email` as a whole sat
@@ -353,8 +383,8 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 >   - **Property snapshots** (before/after values, restored and `Save()`d):
 >     `mark_email_read/unread` (`UnRead`), `flag_email_important` (full
 >     `Importance`, so Low is preserved), `set_event_categories`,
->     `set_reminder`, and `update_task` (task fields as a group, or the
->     flagged-mail fields).
+>     `set_event_availability` (`BusyStatus`), `set_reminder`, and
+>     `update_task` (task fields as a group, or the flagged-mail fields).
 >   - **`set_email_reminder`**: if the message wasn't flagged before, undo
 >     calls `ClearTaskFlag()`, and redo calls `MarkAsTask` again.
 >   - **Moves**: `move_email` and non-permanent `delete_email`. The folder is
@@ -727,6 +757,7 @@ index otherwise.
 | `accept_meeting` / `decline_meeting` | Resolves to `AppointmentItem` (via `MeetingItem.GetAssociatedAppointment(false)` when the id is a meeting request), `appt.Respond(olMeetingAccepted/Declined, true, false)`, then `.Send()` on the response if non-null. |
 | `set_event_categories` | `AppointmentItem.Categories` (comma-separated tag names, the color shown on the event in the calendar grid) + `.Save()`; empty/omitted `categories` clears all tags. A name outside the master list is auto-added by Outlook on `Save` with an arbitrary color — call `set_category_color` first to control it. |
 | `set_category_color` | `Namespace.Categories[name]` — updates `.Color` if the tag exists, else `Categories.Add(name, color)` creates it. Same master list `list_color_categories` reads. |
+| `set_event_availability` | `AppointmentItem.BusyStatus` (the calendar's "Show As" dropdown — Free/Tentative/Busy/Out of Office/Working Elsewhere) + `.Save()`. Case-insensitive friendly-name lookup; an unrecognized value returns `IsError` listing the valid names instead of throwing. Draft tier, not Full autonomy — same rationale as `set_event_categories`/`set_category_color` above (purely local, never `.Send()`); the "Full autonomy only" in this table's own heading predates that tiering and is already stale for those two rows. Added 2026-09-27, **verified against a live Outlook client 2026-09-28** (including on an organized meeting with attendees — no notification triggered). |
 | `create_task` | `Application.CreateItem(olTaskItem)` + `.Save()` — no window (a task doesn't send anything, so it follows the mutate-directly pattern, not draft-and-display). Args: `subject` (req), `body`, `due_date`, `start_date`, `reminder_time`, `importance`. |
 | `update_task` | `(TaskItem)GetItemFromID`; only passed fields change; `mark_complete: true` → `Complete = true` + `PercentComplete = 100`. |
 | `set_reminder` | `ReminderSet` / `ReminderTime` on an appointment **or** task, addressed by its `item_id` (EntryID); `clear: true` turns it off. |
@@ -747,7 +778,7 @@ index otherwise.
 
 | Tool | Notes |
 |---|---|
-| `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Covers `mark_email_read/unread`, `flag_email_important`, `move_email`, non-permanent `delete_email`, `create_task`, `update_task`, `set_reminder`, `set_email_reminder`, `set_event_categories`, `set_category_color`, and `create_event` without attendees. Sends, invites, meeting responses and permanent deletes are barriers: undo reports it can't go past them. It refuses if the item was changed since the assistant's action, and never touches the user's own manual changes. **Not verified against a live Outlook client.** |
+| `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Covers `mark_email_read/unread`, `flag_email_important`, `move_email`, non-permanent `delete_email`, `create_task`, `update_task`, `set_reminder`, `set_email_reminder`, `set_event_categories`, `set_category_color`, `set_event_availability`, and `create_event` without attendees. Sends, invites, meeting responses and permanent deletes are barriers: undo reports it can't go past them. It refuses if the item was changed since the assistant's action, and never touches the user's own manual changes. **Not verified against a live Outlook client**, except `set_event_availability`'s undo/redo round trip (verified 2026-09-28). |
 | `redo_last_action` | Re-applies the most recently undone action, with the same "changed since" check. The redo list is cleared by any new recorded action or barrier. |
 
 ### Draft-and-display tools (5 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
