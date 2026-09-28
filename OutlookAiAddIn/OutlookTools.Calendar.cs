@@ -418,6 +418,31 @@ namespace OutlookAiAddIn
 
             bool isMeeting = master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
             string scopeNote = occDate != null ? " (just this occurrence, not the whole series)" : "";
+
+            if (occDate == null && master.IsRecurring)
+            {
+                // Same COM restriction as RescheduleEvent's whole-series fix
+                // (confirmed live 2026-09-28): Outlook does not allow setting
+                // AppointmentItem.Start/.End directly on a recurring master.
+                // Set the RecurrencePattern fields instead - unsaved, same as
+                // the non-recurring case below just sets Start/End unsaved -
+                // then Display(false) so the user reviews the pending change
+                // in Outlook's own window before saving/sending it themselves.
+                // Never calls .Save()/.Send() here, so there's no undo/barrier
+                // consideration - draft tools never persist anything.
+                Outlook.RecurrencePattern pattern = master.GetRecurrencePattern();
+                pattern.PatternStartDate = start.Value.Date;
+                pattern.StartTime = start.Value;
+                pattern.EndTime = end.Value;
+                appt.Display(false);
+                return new ToolResult
+                {
+                    Output = "Opened \"" + (appt.Subject ?? "") + "\" with the whole series' new time (" + Iso(start.Value) + " to " + Iso(end.Value) +
+                             ") in Outlook for the user to review and " + (isMeeting ? "save/send the update." : "save."),
+                    Summary = "draft_reschedule_event",
+                };
+            }
+
             appt.Start = start.Value;
             appt.End = end.Value;
             appt.Display(false);
