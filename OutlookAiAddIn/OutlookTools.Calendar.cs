@@ -441,7 +441,30 @@ namespace OutlookAiAddIn
                 Outlook.AppointmentItem moved;
                 ToolResult? notFound = ResolveOccurrenceTarget(master, Iso(start.Value), "reschedule_event", out moved);
                 if (notFound != null)
-                    return new ToolResult { Output = "Could not reschedule \"" + (appt.Subject ?? "") + "\": " + ex.Message, IsError = true, Summary = "reschedule_event" };
+                {
+                    // Outlook's COM automation collapses a specific, useful
+                    // validation message ("Cannot reschedule an occurrence...
+                    // if it skips over a later occurrence of the same
+                    // appointment") into this same generic "Cannot save this
+                    // item." (HRESULT 0x80020009) regardless of cause -
+                    // confirmed live 2026-09-28 by reproducing the same
+                    // failure through Outlook's own UI and seeing the
+                    // specific message there, while the automation
+                    // exception's .Message/.InnerException never carry it.
+                    // Since the specific cause can't be detected from the
+                    // exception itself, proactively suggest the most common
+                    // one instead of returning the unhelpful generic text
+                    // alone.
+                    return new ToolResult
+                    {
+                        Output = "Could not reschedule \"" + (appt.Subject ?? "") + "\" to " + Iso(start.Value) + ": " + ex.Message +
+                                 " This usually means the new date would move this occurrence past another occurrence in the same series - " +
+                                 "Outlook doesn't allow reordering occurrences relative to each other. Try a date before the next occurrence " +
+                                 "or after the previous one (check list_events for the series' other occurrence dates), or reschedule the whole series instead.",
+                        IsError = true,
+                        Summary = "reschedule_event",
+                    };
+                }
                 appt = moved; // use the freshly-resolved item for undo recording - the original `appt` reference may be stale
             }
             // RecordSnapshot reads appt.EntryID via ItemEntryIdOf(appt) - for an
