@@ -323,6 +323,28 @@ namespace OutlookAiAddIn
             return dflt;
         }
 
+        internal static int? OptInt(JsonElement o, string name)
+        {
+            JsonElement v;
+            if (o.ValueKind == JsonValueKind.Object && o.TryGetProperty(name, out v) && v.ValueKind == JsonValueKind.Number)
+            {
+                int n;
+                if (v.TryGetInt32(out n)) return n;
+            }
+            return null;
+        }
+
+        internal static string[] StrArray(JsonElement o, string name)
+        {
+            JsonElement v;
+            if (o.ValueKind != JsonValueKind.Object || !o.TryGetProperty(name, out v) || v.ValueKind != JsonValueKind.Array)
+                return null;
+            var list = new List<string>();
+            foreach (JsonElement item in v.EnumerateArray())
+                if (item.ValueKind == JsonValueKind.String) list.Add(item.GetString());
+            return list.ToArray();
+        }
+
         // Like Int, but the default itself can be fractional - for
         // find_meeting_slots' start_hour/end_hour, whose default comes from a
         // mailbox's real (possibly non-hour-aligned, e.g. 08:30) EWS working
