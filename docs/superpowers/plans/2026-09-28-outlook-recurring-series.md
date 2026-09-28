@@ -526,7 +526,7 @@ git commit -m "feat(outlook): add StrArray/OptInt JSON argument helpers"
 
 **Interfaces:**
 - Consumes: `RecurrenceSpec`/`RecurrenceValidator` not needed here (this task is occurrence *targeting*, not creation). Uses existing `ItemById`, `Str`, `IsCanceledMeeting`, `IsReceivedMeeting`, `RecordSnapshot`, `RecordIrreversible`, `ReadProps` unchanged.
-- Produces: `private static ToolResult ResolveOccurrenceTarget(Outlook.AppointmentItem master, string occurrenceDate, string toolName, out Outlook.AppointmentItem target)` — returns `null` and sets `target` on success (to `master` if `occurrenceDate` is null, to the resolved occurrence otherwise); returns a populated `ToolResult` (caller must `return` it immediately) on any failure. Consumed by Task 4.
+- Produces: `private static ToolResult? ResolveOccurrenceTarget(Outlook.AppointmentItem master, string occurrenceDate, string toolName, out Outlook.AppointmentItem target)` — note the return type is `ToolResult?` (nullable), not `ToolResult`, because `ToolResult` is a struct (`OfficeAi.Shared/ToolProtocol.cs`) and cannot itself be null. Returns `null` and sets `target` on success (to `master` if `occurrenceDate` is null, to the resolved occurrence otherwise); returns a populated `ToolResult?` on any failure — the caller must `return occurrenceError.Value;` (not bare `occurrenceError`) to convert back to `ToolResult`. Consumed by Task 4.
 
 - [ ] **Step 1: Add `ResolveOccurrenceTarget`**
 
@@ -540,7 +540,7 @@ In `OutlookAiAddIn/OutlookTools.Calendar.cs`, immediately after `CanceledMeeting
         // .NET reflection against the referenced PIA (not assumed) - this
         // had been undocumented capability until this addition, even though
         // every occurrence list_events returns shares the master's EntryID.
-        private static ToolResult ResolveOccurrenceTarget(Outlook.AppointmentItem master, string occurrenceDate, string toolName, out Outlook.AppointmentItem target)
+        private static ToolResult? ResolveOccurrenceTarget(Outlook.AppointmentItem master, string occurrenceDate, string toolName, out Outlook.AppointmentItem target)
         {
             target = master;
             if (occurrenceDate == null) return null;
@@ -578,8 +578,8 @@ Replace the existing `DraftRescheduleEvent` method (lines 305-332) with:
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "draft_reschedule_event" };
 
             Outlook.AppointmentItem appt;
-            ToolResult occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_reschedule_event", out appt);
-            if (occurrenceError != null) return occurrenceError;
+            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_reschedule_event", out appt);
+            if (occurrenceError != null) return occurrenceError.Value;
 
             if (IsCanceledMeeting(appt))
                 return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "draft_reschedule_event" };
@@ -619,8 +619,8 @@ Replace the existing `RescheduleEvent` method (lines 343-393) with:
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "reschedule_event" };
 
             Outlook.AppointmentItem appt;
-            ToolResult occurrenceError = ResolveOccurrenceTarget(master, occDate, "reschedule_event", out appt);
-            if (occurrenceError != null) return occurrenceError;
+            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "reschedule_event", out appt);
+            if (occurrenceError != null) return occurrenceError.Value;
 
             if (IsCanceledMeeting(appt))
                 return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "reschedule_event" };
@@ -748,7 +748,7 @@ git commit -m "feat(outlook): add occurrence_date targeting to reschedule_event/
 - Modify: `OutlookAiAddIn/web-src/entry.ts` (add `occurrence_date` to both tools' schemas; update `undo_last_action`'s description)
 
 **Interfaces:**
-- Consumes: `ResolveOccurrenceTarget` from Task 3.
+- Consumes: `ResolveOccurrenceTarget` from Task 3 — returns `ToolResult?` (nullable, since `ToolResult` is a struct), not `ToolResult`. Unwrap with `.Value` when returning it: `if (occurrenceError != null) return occurrenceError.Value;`.
 - Produces: nothing new consumed by later tasks.
 
 - [ ] **Step 1: Rewrite `DraftCancelEvent`**
@@ -765,8 +765,8 @@ Replace the existing `DraftCancelEvent` method with:
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "draft_cancel_event" };
 
             Outlook.AppointmentItem appt;
-            ToolResult occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_cancel_event", out appt);
-            if (occurrenceError != null) return occurrenceError;
+            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_cancel_event", out appt);
+            if (occurrenceError != null) return occurrenceError.Value;
 
             if (IsCanceledMeeting(appt))
                 return new ToolResult { Output = AlreadyCanceledError(appt), IsError = true, Summary = "draft_cancel_event" };
@@ -800,8 +800,8 @@ Replace the existing `CancelEvent` method with:
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "cancel_event" };
 
             Outlook.AppointmentItem appt;
-            ToolResult occurrenceError = ResolveOccurrenceTarget(master, occDate, "cancel_event", out appt);
-            if (occurrenceError != null) return occurrenceError;
+            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "cancel_event", out appt);
+            if (occurrenceError != null) return occurrenceError.Value;
 
             bool isOccurrence = occDate != null;
             // An occurrence has no "already canceled" state to clean up - a
@@ -935,6 +935,18 @@ Find `cancel_event`'s tool definition and update:
       required: ['event_id'],
     },
   },
+```
+
+Find the system prompt's sentence (in the `systemPrompt` string passed to `startAddIn`) that currently reads:
+
+```typescript
+    'reschedule_event/draft_reschedule_event only work on events the user organizes (or a plain appointment with no attendees) - on a meeting the user only attends, they return an error instead of an unauthoritative change; point the user at Outlook\'s own "Propose New Time" for those. Recurring events share one event_id for the whole series, so rescheduling or canceling acts on the master series, not a single occurrence. ' +
+```
+
+This is now stale — after Task 3 and this task, `occurrence_date` lets both reschedule and cancel target a single occurrence. Replace the whole line with:
+
+```typescript
+    'reschedule_event/draft_reschedule_event only work on events the user organizes (or a plain appointment with no attendees) - on a meeting the user only attends, they return an error instead of an unauthoritative change; point the user at Outlook\'s own "Propose New Time" for those. Recurring events share one event_id for the whole series - omit occurrence_date to act on the whole series, or pass one (a date from list_events\' start value) to target a single occurrence instead, for reschedule_event/draft_reschedule_event/cancel_event/draft_cancel_event. ' +
 ```
 
 Find `undo_last_action`'s tool description (the one listing covered tools). It currently has a line reading (approximately):
