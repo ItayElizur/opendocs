@@ -19,31 +19,64 @@ namespace OutlookAiAddIn
             DateTime start = (DateArg(input, "start_date") ?? DateTime.Today).Date;
             DateTime end = (DateArg(input, "end_date") ?? DateTime.Today.AddDays(7)).Date.AddDays(1);
             int limit = Math.Max(1, Int(input, "limit", 50));
+            // An LLM tool caller omitting an optional string parameter often
+            // sends "" rather than leaving it out entirely - treat that the
+            // same as not having provided a mailbox at all, so it doesn't get
+            // routed into the shared-calendar path (and ultimately into
+            // Ns.CreateRecipient("") below) as if it were a real address.
             string mailbox = Str(input, "mailbox", null);
+            if (string.IsNullOrWhiteSpace(mailbox)) mailbox = null;
+            else mailbox = mailbox.Trim();
 
-            Outlook.Folder cal;
-            if (mailbox != null)
+            if (mailbox == null)
             {
-                Outlook.Recipient recipient = Ns.CreateRecipient(mailbox);
-                bool resolved;
-                try { resolved = recipient.Resolve(); } catch { resolved = false; }
-                if (!resolved)
-                    return new ToolResult { Output = "Could not resolve \"" + mailbox + "\" - check the email address.", IsError = true, Summary = "list_events" };
-                try
-                {
-                    cal = (Outlook.Folder)Ns.GetSharedDefaultFolder(recipient, Outlook.OlDefaultFolders.olFolderCalendar);
-                }
-                catch (Exception ex)
-                {
-                    DebugLog.WriteException("ListEvents GetSharedDefaultFolder", ex);
-                    return new ToolResult { Output = "Could not open " + mailbox + "'s calendar - you may not have been granted access to view it, or need to add it via Outlook's own \"Open Calendar\" first. (" + ex.Message + ")", IsError = true, Summary = "list_events" };
-                }
-            }
-            else
-            {
-                cal = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderCalendar);
+                Outlook.Folder ownCal = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderCalendar);
+                StringBuilder ownSb;
+                int ownN;
+                QueryCalendarItems(ownCal, start, end, limit, null, out ownSb, out ownN);
+                return BuildListEventsResult(ownSb, ownN, start, end, null);
             }
 
+            Outlook.Recipient recipient = Ns.CreateRecipient(mailbox);
+            bool resolved;
+            try { resolved = recipient.Resolve(); } catch { resolved = false; }
+            if (!resolved)
+                return new ToolResult { Output = "Could not resolve \"" + mailbox + "\" - check the email address.", IsError = true, Summary = "list_events" };
+
+            Outlook.Folder sharedCal;
+            try
+            {
+                sharedCal = (Outlook.Folder)Ns.GetSharedDefaultFolder(recipient, Outlook.OlDefaultFolders.olFolderCalendar);
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException("ListEvents GetSharedDefaultFolder", ex);
+                return new ToolResult { Output = "Could not open " + mailbox + "'s calendar - you may not have been granted access to view it, or need to add it via Outlook's own \"Open Calendar\" first. (" + ex.Message + ")", IsError = true, Summary = "list_events" };
+            }
+
+            // Unlike the own-calendar path above, a restricted sharing tier
+            // can make the folder open fine (GetSharedDefaultFolder succeeds)
+            // but fail lazily only once items are actually enumerated -
+            // Items/Sort/IncludeRecurrences/Restrict/foreach are all lazy
+            // COM operations here. Only the shared path is wrapped: the
+            // own-calendar path's behavior must stay exactly as it was
+            // pre-feature, generic exception and all.
+            StringBuilder sharedSb;
+            int sharedN;
+            try
+            {
+                QueryCalendarItems(sharedCal, start, end, limit, mailbox, out sharedSb, out sharedN);
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException("ListEvents shared calendar read", ex);
+                return new ToolResult { Output = "Could not read " + mailbox + "'s calendar - you may not have been granted full access to it. (" + ex.Message + ")", IsError = true, Summary = "list_events" };
+            }
+            return BuildListEventsResult(sharedSb, sharedN, start, end, mailbox);
+        }
+
+        private static void QueryCalendarItems(Outlook.Folder cal, DateTime start, DateTime end, int limit, string mailbox, out StringBuilder sb, out int n)
+        {
             Outlook.Items items = cal.Items;
             items.Sort("[Start]");
             items.IncludeRecurrences = true;
@@ -51,8 +84,8 @@ namespace OutlookAiAddIn
                             "' AND [End] >= '" + start.ToString("g", CultureInfo.CurrentCulture) + "'";
             Outlook.Items restricted = items.Restrict(filter);
 
-            var sb = new StringBuilder();
-            int n = 0;
+            sb = new StringBuilder();
+            n = 0;
             foreach (object o in restricted)
             {
                 if (n >= limit) break;
@@ -67,10 +100,17 @@ namespace OutlookAiAddIn
                 sb.AppendLine("  response: " + appt.ResponseStatus + "  meeting_status: " + appt.MeetingStatus);
                 if (mailbox != null) sb.AppendLine("  calendar_owner: " + mailbox);
             }
+        }
 
-            string whoseCalendar = mailbox != null ? mailbox + "'s calendar " : "";
+        private static ToolResult BuildListEventsResult(StringBuilder sb, int n, DateTime start, DateTime end, string mailbox)
+        {
+            // mailbox == null must produce the exact pre-feature message
+            // ("No events between X and Y.") with zero format change - see
+            // the mailbox != null case for the only place "on <mailbox>'s
+            // calendar" is introduced.
+            string whoseCalendar = mailbox != null ? " on " + mailbox + "'s calendar" : "";
             if (n == 0)
-                return new ToolResult { Output = "No events on " + whoseCalendar + "between " + start.ToShortDateString() + " and " + end.AddDays(-1).ToShortDateString() + ".", Summary = "list_events" };
+                return new ToolResult { Output = "No events" + whoseCalendar + " between " + start.ToShortDateString() + " and " + end.AddDays(-1).ToShortDateString() + ".", Summary = "list_events" };
             return new ToolResult { Output = sb + "\n(Recurring instances share the master event_id.)", Summary = "list_events" };
         }
 
