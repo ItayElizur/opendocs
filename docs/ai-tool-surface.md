@@ -494,8 +494,11 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 >     `mark_email_read/unread` (`UnRead`), `flag_email_important` (full
 >     `Importance`, so Low is preserved), `set_event_categories`,
 >     `set_event_availability` (`BusyStatus`), `reschedule_event` without
->     attendees (`Start`/`End`), `set_reminder`, and `update_task` (task
->     fields as a group, or the flagged-mail fields).
+>     attendees (`Start`/`End`) — including an occurrence-level reschedule via
+>     `occurrence_date` (added 2026-09-28): `RecurrencePattern.GetOccurrence()`
+>     returns a real item with its own `EntryID` once saved, so this same
+>     mechanism covers it with no new entry type — `set_reminder`, and
+>     `update_task` (task fields as a group, or the flagged-mail fields).
 >   - **`set_email_reminder`**: if the message wasn't flagged before, undo
 >     calls `ClearTaskFlag()`, and redo calls `MarkAsTask` again.
 >   - **Moves**: `move_email`, non-permanent `delete_email`, and `cancel_event`
@@ -511,8 +514,13 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 >     the assistant created.
 >   - **Barriers**: `send_*`, `create_event` with attendees, `reschedule_event`
 >     and `cancel_event` on a still-active meeting the user organizes (both
->     send a notice to attendees), `accept/decline_meeting` and `delete_email
->     permanent:true`. Undo stops at a barrier instead of reaching past it.
+>     send a notice to attendees), `accept/decline_meeting`, `delete_email
+>     permanent:true`, and — regardless of plain-appointment vs. meeting —
+>     any occurrence-level cancellation via `cancel_event`'s `occurrence_date`
+>     (added 2026-09-28: `RecurrencePattern.Exceptions`/`Exception` are
+>     read-only via COM, confirmed by reflection, so a deleted occurrence has
+>     no API to reverse it). Undo stops at a barrier instead of reaching past
+>     it.
 >   - **Known gap — `set_event_categories`**: the snapshot only covers the
 >     appointment's own `Categories` string. If the assigned name wasn't
 >     already in the mailbox's master category list, Outlook auto-adds it
@@ -527,6 +535,110 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 >   is dropped, never retried. `redo_last_action` re-applies undone entries
 >   until the next new action. Both tools are gated at Draft tier. **Not
 >   verified against a live Outlook client.**
+
+> **Update 2026-09-28 (Outlook gains recurring-series support: occurrence
+> targeting, recurrence creation):** two additions to
+> `OutlookAiAddIn/OutlookTools.Calendar.cs` and one to
+> `OutlookAiAddIn/OutlookTools.Compose.cs`, closing the "recurring occurrences
+> share one EntryID" gap flagged in "Structural fragility" below (see that
+> section's own correction, same date) and the "no way to create a repeating
+> series" gap.
+>
+> **1 — Occurrence targeting.** `reschedule_event`/`draft_reschedule_event`/
+> `cancel_event`/`draft_cancel_event` all gained an optional `occurrence_date`
+> string param. A new `ResolveOccurrenceTarget` helper resolves it via
+> `RecurrencePattern.GetOccurrence(DateTime)` — confirmed present and callable
+> via .NET reflection against the referenced PIA, the same evidence standard
+> this document uses elsewhere — into one specific occurrence, instead of
+> always acting on the recurring master. Omitting `occurrence_date` still acts
+> on the whole series (or a non-recurring event), unchanged from before this
+> feature.
+>
+> **2 — Recurrence creation.** `create_event`/`draft_event` gained an optional
+> `recurrence` object supporting all 6 `OlRecurrenceType` values (`daily`/
+> `weekly`/`monthly`/`monthlyNth`/`yearly`/`yearlyNth`), validated by a new
+> pure, unit-tested `OfficeAi.Shared.RecurrenceValidator` (23 tests) before any
+> COM call — every validation failure names the specific field and the fix
+> (e.g. `"recurrence.days_of_week is required for type \"weekly\"..."`, not a
+> generic "invalid recurrence"). Applied via `AppointmentItem.GetRecurrencePattern()`
+> before `.Save()`/`.Send()`, after attendee/`MeetingStatus` setup — **that
+> ordering is a design choice, not yet verified against live Outlook** (see
+> "Unproven at runtime" below). Series creation's own undo/redo is unchanged
+> from `create_event`'s existing non-recurring behavior (a `RecordCreated`
+> move-to-Deleted-Items entry on the master) — deleting a recurring master
+> deletes the whole series, so no new undo mechanism was needed here either.
+>
+> **3 — Undo/redo asymmetry (the most important nuance of this feature).**
+> Occurrence-level **reschedule** stays undo-able, and needed no new
+> undo-entry type: `RecurrencePattern.GetOccurrence()`'s returned item becomes
+> a real, independently-resolvable item with its own `EntryID` once saved, so
+> the existing generic `SnapshotEntry`/`RecordSnapshot`/`ItemEntryIdOf`
+> mechanism already works on it exactly like any other item. Occurrence-level
+> **cancellation is always a barrier, never undo-able** — plain appointment or
+> meeting occurrence, no exception either way. This is a deliberate asymmetry
+> from whole-event cancellation (`cancel_event` without `occurrence_date` on a
+> plain appointment stays undo-able, per the existing "Undo/redo tools"
+> section). The reason: `RecurrencePattern.Exceptions`/`Exception` — the COM
+> objects Outlook uses to track per-occurrence deletions — are entirely
+> read-only. Confirmed via .NET reflection against the referenced PIA:
+> `Exception` exposes only getters (`AppointmentItem`, `Deleted`,
+> `OriginalDate`, `ItemProperties`) and no `Delete`/`Remove`/`Add` method
+> anywhere, so there is no API to reverse a deleted occurrence once it's gone.
+>
+> **4 — A real bug found and fixed during live testing (organizer-authority
+> checks against the wrong item).** The four occurrence-aware methods
+> originally checked `appt.MeetingStatus`/`IsCanceledMeeting(appt)`/
+> `IsReceivedMeeting(appt)`, where `appt` is the resolved occurrence or
+> master. Live testing found `GetOccurrence()`'s returned occurrence item does
+> **not** reliably report `MeetingStatus == olMeeting` even when it genuinely
+> belongs to a recurring meeting with attendees. This caused
+> `reschedule_event` on a meeting occurrence to wrongly take the `.Save()`
+> branch — crashing with `COMException "Cannot save this item."` — instead of
+> `.Send()`, and caused `cancel_event` on a meeting occurrence to silently
+> delete it without ever notifying attendees. Fixed by checking
+> `master.MeetingStatus`/`IsCanceledMeeting(master)`/`IsReceivedMeeting(master)`
+> instead (the master is always reliable) — the actual mutation still targets
+> `appt` (the occurrence or master, whichever `ResolveOccurrenceTarget`
+> resolved). **Caveat: this fix has never actually been exercised against a
+> genuine meeting occurrence with attendees** — every live test run against
+> this feature used a plain (non-meeting) recurring series. The code and its
+> review are sound, but the specific scenario it was written to fix is
+> unverified.
+>
+> **5 — A second real bug found and fixed (false-negative `.Save()`/
+> `.Delete()` failures).** Outlook can throw `COMException "Cannot save this
+> item."` from an occurrence's `.Save()` (in `RescheduleEvent`) or `.Delete()`
+> (in `CancelEvent`, both the plain-appointment and meeting-occurrence
+> branches) **even when the mutation already persisted** — confirmed live: a
+> reschedule call that reported this exception had, per a follow-up
+> `list_events` call, actually moved the occurrence. Property setters on
+> `AppointmentItem` write immediately via RPC, independent of `.Save()`/
+> `.Delete()`'s own finalize step, which can fail on its own. Fixed by
+> wrapping these calls in try/catch and re-verifying the real outcome (via
+> `ResolveOccurrenceTarget`) before deciding what to report, instead of
+> trusting the exception at face value.
+>
+> **6 — A third real, confirmed-live constraint: Outlook rejects reordering
+> occurrences relative to each other.** Confirmed by reproducing the exact
+> error manually in Outlook's own UI: *"Cannot reschedule an occurrence of the
+> recurring appointment ... if it skips over a later occurrence of the same
+> appointment"* — and separately confirmed that two occurrences of the same
+> series also can't share the same calendar day. Both surface from automation
+> only as the same generic `COMException "Cannot save this item."` — confirmed
+> no `InnerException` carries the specific reason, checked via debug log
+> across every occurrence of the failure. A new proactive check,
+> `CheckOccurrenceReorderCollision`, now runs before `.Save()` is ever
+> attempted (in both `RescheduleEvent` and `DraftRescheduleEvent`,
+> occurrence-level only): it queries the Calendar folder for other occurrences
+> of the same series between the occurrence's original date and the target
+> date, and if any exist, returns an exact error naming the valid range
+> instead of relying on Outlook's generic exception. This is Outlook-level
+> behavior, not a limitation of this add-in's own code.
+>
+> **Tier placement unchanged.** `create_event`/`reschedule_event`/
+> `cancel_event` stay Full-autonomy-only (`SendTierTools`); `draft_*` stay
+> Draft-tier. `occurrence_date`/`recurrence` are additional scope on existing
+> tools, not new risk categories — no edits to `DraftTierTools`/`SendTierTools`.
 
 ## Architecture
 
@@ -892,7 +1004,7 @@ index otherwise.
 
 | Tool | Notes |
 |---|---|
-| `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Covers `mark_email_read/unread`, `flag_email_important`, `move_email`, non-permanent `delete_email`, `create_task`, `update_task`, `set_reminder`, `set_email_reminder`, `set_event_categories`, `set_category_color`, `set_event_availability`, `reschedule_event` without attendees, `cancel_event` on a plain or already-canceled appointment, and `create_event` without attendees. Sends, invites, meeting responses, `reschedule_event`/`cancel_event` on a still-active organized meeting (attendees notified), and permanent deletes are barriers: undo reports it can't go past them. It refuses if the item was changed since the assistant's action, and never touches the user's own manual changes. **Not verified against a live Outlook client**, except `set_event_availability`'s undo/redo round trip (verified 2026-09-28). |
+| `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Covers `mark_email_read/unread`, `flag_email_important`, `move_email`, non-permanent `delete_email`, `create_task`, `update_task`, `set_reminder`, `set_email_reminder`, `set_event_categories`, `set_category_color`, `set_event_availability`, `reschedule_event` without attendees (**including an occurrence-level reschedule via `occurrence_date`, added 2026-09-28** — same `SnapshotEntry` mechanism, since a saved occurrence has its own real `EntryID`), `cancel_event` on a plain or already-canceled appointment, and `create_event` without attendees. Sends, invites, meeting responses, `reschedule_event`/`cancel_event` on a still-active organized meeting (attendees notified), permanent deletes, and **any occurrence-level cancellation via `cancel_event`'s `occurrence_date` (added 2026-09-28, plain appointment or meeting alike — `RecurrencePattern.Exceptions`/`Exception` are read-only via COM, so a deleted occurrence can't be reversed)** are barriers: undo reports it can't go past them. It refuses if the item was changed since the assistant's action, and never touches the user's own manual changes. **Not verified against a live Outlook client**, except `set_event_availability`'s undo/redo round trip (verified 2026-09-28) and, for the recurring-series feature, occurrence-level reschedule/cancellation against a plain (non-meeting) recurring series (verified 2026-09-28 — see the dated update near the top of this document; the meeting-occurrence case is unverified). |
 | `redo_last_action` | Re-applies the most recently undone action, with the same "changed since" check. The redo list is cleared by any new recorded action or barrier. |
 
 ### Draft-and-display tools (7 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
@@ -903,9 +1015,9 @@ index otherwise.
 | `reply_email` | `orig.Reply()` (sender only); `body` HTML-encoded and prepended above the quoted original; `Display(false)`. |
 | `reply_all_email` | `orig.ReplyAll()`. A **distinct tool**, not a `reply_all` boolean on `reply_email` — clearer for the model, and the user sees the full recipient list before sending. |
 | `forward_email` | `orig.Forward()`, optional `To`, `body` prepended; `Display(false)`. |
-| `draft_event` | `CreateItem(olAppointmentItem)`; with `required_attendees`/`optional_attendees` → `MeetingStatus = olMeeting`, `Recipients.Add(...).Type`, `Recipients.ResolveAll()`; `Display(false)`. Same `"— Created with OpenDocs"` signature appended to a non-empty body. |
-| `draft_reschedule_event` (added 2026-09-27) | Resolves `event_id` via `ItemById`, sets `Start`/`End` from required `start`/`end`, `Display(false)`s unsaved — never touches attendees. Refuses (`IsError`) up front on `MeetingStatus == olMeetingReceived` (the user is only an attendee, not the organizer) — see the "Update 2026-09-27" note above and "Excluded / deferred" below. |
-| `draft_cancel_event` (added 2026-09-28) | Resolves `event_id`, `Display(false)`s it **unchanged** either way — never touches `MeetingStatus` or anything else (an earlier version set `MeetingStatus = olMeetingCanceled` unsaved first; removed same day after live testing showed the change persists on window-close without an explicit Send, silently canceling with attendees never notified). The user cancels it themselves via Outlook's own UI from the opened window. Refuses (`IsError`) on an already-canceled event (points at `cancel_event` for that) or a still-active meeting the user only attends (points at `decline_meeting`) — see the "Update 2026-09-28" note above. |
+| `draft_event` | `CreateItem(olAppointmentItem)`; with `required_attendees`/`optional_attendees` → `MeetingStatus = olMeeting`, `Recipients.Add(...).Type`, `Recipients.ResolveAll()`; `Display(false)`. Same `"— Created with OpenDocs"` signature appended to a non-empty body. Optional `recurrence` object (added 2026-09-28), same `RecurrenceValidator`-validated shape and `GetRecurrencePattern()` application as `create_event` — see the dated update above. |
+| `draft_reschedule_event` (added 2026-09-27) | Resolves `event_id` via `ItemById`, sets `Start`/`End` from required `start`/`end`, `Display(false)`s unsaved — never touches attendees. Refuses (`IsError`) up front on `MeetingStatus == olMeetingReceived` (the user is only an attendee, not the organizer) — see the "Update 2026-09-27" note above and "Excluded / deferred" below. Optional `occurrence_date` (added 2026-09-28) targets one specific occurrence via `ResolveOccurrenceTarget`, with the same proactive `CheckOccurrenceReorderCollision` check `reschedule_event` runs — see the dated update above. |
+| `draft_cancel_event` (added 2026-09-28) | Resolves `event_id`, `Display(false)`s it **unchanged** either way — never touches `MeetingStatus` or anything else (an earlier version set `MeetingStatus = olMeetingCanceled` unsaved first; removed same day after live testing showed the change persists on window-close without an explicit Send, silently canceling with attendees never notified). The user cancels it themselves via Outlook's own UI from the opened window. Refuses (`IsError`) on an already-canceled event (points at `cancel_event` for that) or a still-active meeting the user only attends (points at `decline_meeting`) — see the "Update 2026-09-28" note above. Optional `occurrence_date` (same day) targets one specific occurrence via `ResolveOccurrenceTarget` before displaying it. |
 
 **These never call `.Send()` (mail) or save a calendar event.** The user sends from the
 opened Outlook window. Available from Draft only mode upward (tier 2 — see "Editing
@@ -923,9 +1035,9 @@ modes" above), not gated behind Full autonomy.
 | `send_reply` | Same as `reply_email`, but `.Send()`. |
 | `send_reply_all` | Same as `reply_all_email`, but `.Send()`. |
 | `send_forward` | Same as `forward_email`, but `.Send()`; `to` is required (unlike `forward_email`, where it's optional). |
-| `create_event` | Same construction as `draft_event`. No attendees → `a.Save()` (a plain calendar entry, nobody to notify). Attendees present → `MeetingStatus = olMeeting` then `a.Send()`, dispatching the invite. Both `AppointmentItem.Send()`/`.Save()` confirmed present via .NET reflection against the referenced PIA before writing this — not assumed from `draft_event`'s non-sending shape. |
-| `reschedule_event` (added 2026-09-27) | Resolves `event_id`, sets `Start`/`End` from required `start`/`end`, then `.Save()` (`olNonMeeting`) or `.Send()` (`olMeeting` — dispatches the reschedule notice to attendees) — mirrors `create_event`'s attendee-present branch. Refuses (`IsError`) on `olMeetingReceived`, same as `draft_reschedule_event` — the user isn't the organizer, and reflection against the referenced PIA found no "Propose New Time" member to fall back to (see "Excluded / deferred"). Returns old and new start/end (via `Iso(...)`) and says explicitly when a reschedule notice was sent. |
-| `cancel_event` (added 2026-09-28) | Resolves `event_id`. Still-active organized meeting → `MeetingStatus = olMeetingCanceled` then `.Send()` (dispatches the cancellation notice), then moves the item to Deleted Items (best-effort — see the "Update 2026-09-28" note above for the unverified `.Send()`-then-`.Move()` sequence). Plain appointment, or an **already-canceled event** (`olMeetingCanceled`/`olMeetingReceivedAndCanceled` — the only way to dismiss one) → moves straight to Deleted Items, nobody to notify. Refuses (`IsError`) only on a still-active `olMeetingReceived` (points at `decline_meeting`, not "Propose New Time" — canceling isn't something an attendee can request at all). |
+| `create_event` | Same construction as `draft_event`. No attendees → `a.Save()` (a plain calendar entry, nobody to notify). Attendees present → `MeetingStatus = olMeeting` then `a.Send()`, dispatching the invite. Both `AppointmentItem.Send()`/`.Save()` confirmed present via .NET reflection against the referenced PIA before writing this — not assumed from `draft_event`'s non-sending shape. Optional `recurrence` object (added 2026-09-28) builds a repeating series via `GetRecurrencePattern()`, applied after attendee/`MeetingStatus` setup and validated first by the pure `OfficeAi.Shared.RecurrenceValidator` — see the dated update above. |
+| `reschedule_event` (added 2026-09-27) | Resolves `event_id`, sets `Start`/`End` from required `start`/`end`, then `.Save()` (`olNonMeeting`) or `.Send()` (`olMeeting` — dispatches the reschedule notice to attendees) — mirrors `create_event`'s attendee-present branch. Refuses (`IsError`) on `olMeetingReceived`, same as `draft_reschedule_event` — the user isn't the organizer, and reflection against the referenced PIA found no "Propose New Time" member to fall back to (see "Excluded / deferred"). Returns old and new start/end (via `Iso(...)`) and says explicitly when a reschedule notice was sent. Optional `occurrence_date` (added 2026-09-28) targets one specific occurrence via `ResolveOccurrenceTarget`/`RecurrencePattern.GetOccurrence` instead of the whole series; a proactive `CheckOccurrenceReorderCollision` check runs first and refuses with an exact valid-date-range error if the target date would reorder past another occurrence of the same series (Outlook itself rejects that with only a generic COM error — see the dated update above). |
+| `cancel_event` (added 2026-09-28) | Resolves `event_id`. Still-active organized meeting → `MeetingStatus = olMeetingCanceled` then `.Send()` (dispatches the cancellation notice), then moves the item to Deleted Items (best-effort — see the "Update 2026-09-28" note above for the unverified `.Send()`-then-`.Move()` sequence). Plain appointment, or an **already-canceled event** (`olMeetingCanceled`/`olMeetingReceivedAndCanceled` — the only way to dismiss one) → moves straight to Deleted Items, nobody to notify. Refuses (`IsError`) only on a still-active `olMeetingReceived` (points at `decline_meeting`, not "Propose New Time" — canceling isn't something an attendee can request at all). Optional `occurrence_date` (added 2026-09-28) targets one specific occurrence the same way as `reschedule_event`; occurrence-level cancellation is **always** an undo barrier, never undo-able, regardless of plain-appointment vs. meeting — see the dated update above and "Undo/redo tools" below. |
 
 Gated by `OutlookTools.cs`'s `SendTierTools` set, requiring `EditingMode.FullAutonomy`
 exactly (the ordinal check's top tier) — not reachable from Draft only or Automate
@@ -974,10 +1086,23 @@ Everything is addressed by `EntryID`. It is stable while an item stays put but c
 on `Move` and is store-specific; the mutating tools that move items return the new id,
 and every other tool re-resolves via `GetItemFromID` each call. All recurring
 occurrences of a calendar series **share one `EntryID`**, so `get_event` /
-`accept_meeting` / `decline_meeting` / `reschedule_event` / `draft_reschedule_event` /
-`cancel_event` / `draft_cancel_event` cannot target a single occurrence unambiguously
-— they necessarily act on the master series. `list_events` carries each occurrence's
-`start` as the disambiguator.
+`accept_meeting` / `decline_meeting` still cannot target a single occurrence
+unambiguously — they necessarily act on the master series. `list_events` carries each
+occurrence's `start` as the disambiguator.
+
+**Corrected 2026-09-28:** this section previously claimed `reschedule_event` /
+`draft_reschedule_event` / `cancel_event` / `draft_cancel_event` were bound by the same
+limitation, documenting it as though it were a fundamental COM constraint. That was
+wrong: those four tools now take an optional `occurrence_date`, resolved via a new
+`ResolveOccurrenceTarget` helper against `RecurrencePattern.GetOccurrence(DateTime)` — a
+real, callable member, confirmed via .NET reflection against the referenced PIA rather
+than assumed absent — so they can target one specific occurrence precisely. The
+shared-`EntryID` limitation still applies to them only when `occurrence_date` is
+omitted (they then act on the whole series, exactly as before this feature). See the
+"Update 2026-09-28 (Outlook gains recurring-series support...)" block near the top of
+this document for full detail, including a since-discovered undo/redo asymmetry between
+occurrence-level reschedule (undo-able) and occurrence-level cancellation (always a
+barrier).
 
 **Known limitation, confirmed live 2026-09-28 (Gmail-connected calendar):** on a
 mailbox connected via Google's Gmail/Google Workspace sync, moving a calendar item
@@ -1055,6 +1180,37 @@ appointment is unconfirmed; the code catches a failure there and reports the
 (genuinely-sent) cancellation succeeded regardless, telling the user to delete the
 stray calendar entry manually if the move didn't take — see the "Update 2026-09-28"
 note above.
+
+The recurring-series feature (occurrence targeting + recurrence creation, added
+2026-09-28 — see the dated update near the top of this document) is only **partly**
+live-verified. What live testing did confirm, against a plain (non-meeting) recurring
+series: occurrence resolution via `ResolveOccurrenceTarget`/`RecurrencePattern.GetOccurrence`,
+occurrence-level reschedule (including its `SnapshotEntry`-based undo), occurrence-level
+cancellation (as an always-barrier action), the false-negative `.Save()`/`.Delete()`
+exception-vs-actual-outcome fix, and the two specific occurrence-reordering rejections
+`CheckOccurrenceReorderCollision` guards against (reordering past a later occurrence;
+two occurrences sharing a calendar day — both first reproduced manually in Outlook's
+own UI). What remains unconfirmed:
+
+- **The master-vs-occurrence organizer-authority fix (point 4 in the dated update) has
+  never been exercised against a genuine recurring *meeting* occurrence with
+  attendees** — every live test run used a plain, non-meeting series. Checking
+  `master.MeetingStatus`/`IsCanceledMeeting(master)`/`IsReceivedMeeting(master)` instead
+  of the occurrence's own value is a reasoned fix for the bug that live testing did
+  surface, but the fix itself is unverified against the scenario it targets.
+- **`CheckOccurrenceReorderCollision` may not cover every reason Outlook can reject an
+  occurrence reorder.** It's confirmed live for the two specific rejection reasons
+  reproduced by hand in Outlook's own UI (see above), but every such rejection surfaces
+  from automation as the same generic `COMException "Cannot save this item."` with no
+  `InnerException` detail — so a rejection reason this check doesn't anticipate would
+  still reach the model as that same unhelpful message rather than the check's
+  exact-range error.
+- **`create_event`/`draft_event`'s `recurrence` param**: `RecurrenceValidator`'s 23 unit
+  tests cover only the pure validation logic. The COM application path —
+  `AppointmentItem.GetRecurrencePattern()` called after attendee/`MeetingStatus` setup,
+  before `.Save()`/`.Send()` — is unverified against live Outlook; whether that ordering
+  (rather than calling `GetRecurrencePattern()` before attendee/`MeetingStatus` setup)
+  actually matters is unconfirmed either way.
 
 ---
 
