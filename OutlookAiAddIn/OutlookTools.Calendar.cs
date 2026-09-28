@@ -421,14 +421,37 @@ namespace OutlookAiAddIn
                 };
             }
 
-            appt.Save();
+            try
+            {
+                appt.Save();
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException("RescheduleEvent occurrence Save", ex);
+                // Outlook can throw "Cannot save this item" on an occurrence's
+                // Save() even when the Start/End write already persisted -
+                // confirmed live 2026-09-28: a reschedule that reported this
+                // exception had actually moved the occurrence, per a
+                // subsequent list_events call. Property setters on
+                // AppointmentItem write immediately via RPC, independent of
+                // Save()'s own finalize step, which can fail separately.
+                // Re-check whether an occurrence now exists at the target
+                // date before reporting failure, reusing ResolveOccurrenceTarget
+                // rather than re-implementing the lookup.
+                Outlook.AppointmentItem moved;
+                ToolResult? notFound = ResolveOccurrenceTarget(master, Iso(start.Value), "reschedule_event", out moved);
+                if (notFound != null)
+                    return new ToolResult { Output = "Could not reschedule \"" + (appt.Subject ?? "") + "\": " + ex.Message, IsError = true, Summary = "reschedule_event" };
+                appt = moved; // use the freshly-resolved item for undo recording - the original `appt` reference may be stale
+            }
             // RecordSnapshot reads appt.EntryID via ItemEntryIdOf(appt) - for an
             // occurrence, that's the real, resolvable EntryID GetOccurrence's
             // returned item gets once saved (an occurrence becomes a distinct,
             // independently-addressable "exception" item, not a phantom only
             // reachable through the pattern), so undo/redo works via the exact
             // same SnapshotEntry mechanism as every other reschedule - no new
-            // undo-entry type needed. Verify this holds live in Task 6.
+            // undo-entry type needed. Verified live 2026-09-28 (see the
+            // false-negative Save() handling above).
             RecordSnapshot(mbxKey, "reschedule_event", appt, appt.Subject ?? "", RescheduleProps, before);
             return new ToolResult
             {
@@ -564,7 +587,16 @@ namespace OutlookAiAddIn
                     // for the plain-appointment case.
                     bool removedLocally = true;
                     try { appt.Delete(); }
-                    catch (Exception ex) { DebugLog.WriteException("CancelEvent occurrence delete", ex); removedLocally = false; }
+                    catch (Exception ex)
+                    {
+                        DebugLog.WriteException("CancelEvent occurrence delete", ex);
+                        // Same false-negative risk confirmed for RescheduleEvent's
+                        // occurrence Save() - re-check via ResolveOccurrenceTarget
+                        // rather than assume the exception means the delete failed.
+                        Outlook.AppointmentItem recheck;
+                        ToolResult? stillGone = ResolveOccurrenceTarget(master, occDate, "cancel_event", out recheck);
+                        removedLocally = stillGone != null; // non-null = "no occurrence found" = it's gone = delete succeeded despite the exception
+                    }
                     return new ToolResult
                     {
                         Output = "Canceled and notified attendees" + scopeNote + ": \"" + subject + "\"." +
@@ -602,7 +634,17 @@ namespace OutlookAiAddIn
                 // deleting one occurrence has no folder-move equivalent to
                 // record (it's dropped from the pattern's read-only Exceptions
                 // list, not relocated to a recoverable folder).
-                appt.Delete();
+                try { appt.Delete(); }
+                catch (Exception ex)
+                {
+                    DebugLog.WriteException("CancelEvent occurrence delete", ex);
+                    // Same false-negative risk confirmed for RescheduleEvent's
+                    // occurrence Save() - re-check before reporting failure.
+                    Outlook.AppointmentItem recheck;
+                    ToolResult? stillGone = ResolveOccurrenceTarget(master, occDate, "cancel_event", out recheck);
+                    if (stillGone == null)
+                        return new ToolResult { Output = "Could not cancel \"" + subject + "\": " + ex.Message, IsError = true, Summary = "cancel_event" };
+                }
                 RecordIrreversible(mbxKey, "cancel_event of \"" + subject + "\" occurrence");
                 return new ToolResult { Output = "Canceled" + scopeNote + ": \"" + subject + "\". This occurrence cannot be undone.", Mutated = true, Summary = "cancel_event" };
             }
