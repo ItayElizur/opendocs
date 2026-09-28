@@ -240,16 +240,16 @@ namespace OutlookAiAddIn
             Outlook.MeetingItem resp = respObj as Outlook.MeetingItem;
             if (resp != null)
             {
-                if (message != null) resp.Body = message;
+                if (!string.IsNullOrEmpty(message)) resp.Body = message;
                 try { resp.Send(); } catch (Exception ex) { DebugLog.WriteException(toolName + " Send", ex); }
             }
-            RecordIrreversible(mbxKey, toolName + " for \"" + (appt.Subject ?? "") + "\"" + (message != null ? " with a comment" : ""));
+            RecordIrreversible(mbxKey, toolName + " for \"" + (appt.Subject ?? "") + "\"" + (!string.IsNullOrEmpty(message) ? " with a comment" : ""));
             string verb = response == Outlook.OlMeetingResponse.olMeetingAccepted ? "Accepted"
                         : response == Outlook.OlMeetingResponse.olMeetingTentative ? "Responded tentatively to"
                         : "Declined";
             return new ToolResult
             {
-                Output = verb + ": " + (appt.Subject ?? "") + (message != null ? " (comment sent)" : ""),
+                Output = verb + ": " + (appt.Subject ?? "") + (!string.IsNullOrEmpty(message) ? " (comment sent)" : ""),
                 Mutated = true,
                 Summary = toolName,
             };
