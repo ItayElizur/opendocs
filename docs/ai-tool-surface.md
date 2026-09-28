@@ -1060,11 +1060,33 @@ index otherwise.
 | `get_attachment` | `Attachment.SaveAsFile` into `%LOCALAPPDATA%\OutlookAiAddIn\Attachments\`; returns the path. `extracted_text` (≤ 40k) is populated **only** for text-family extensions (`.txt .csv .tsv .md .json .xml .log`, `.html` tag-stripped) and OpenXML (`.docx .xlsx .pptx`), via the swappable `OfficeAi.Shared/AttachmentText/` module (`DocumentFormat.OpenXml` 2.20.0). **No PDF, no images, no vision** — those return the path + type only. `olOLE` throws (rejected); `olByReference` has no data (rejected); `olEmbeddedItem` saves as `.msg`. |
 | `list_folders` | Recursive walk of every store's `Folders`, mail folders only (`DefaultItemType == olMailItem`), with item + unread counts; capped ~800 / depth 8. |
 | `search_contacts` | **EWS `ResolveName` over Contacts then GAL** (server-side ANR), run off the UI thread via EWS Managed API 2.2 with `UseDefaultCredentials`. Endpoint discovery: `Account.AutoDiscoverXml` → `AutodiscoverUrl` → process-static `Uri` cache. Each `NameResolution` mapped to `(name, email)` — GAL X500/`EX` addresses fall back to the resolved contact's own `EmailAddress1..3`; entries with no `@` address are dropped (mirrors `mcp-outlook`). Deduped by lowercased address (name fallback), capped at `limit` (default 10). Pure helpers `EwsAutodiscoverXml.ParseEwsUrl` + `ContactSearchFormat.Format` are unit-tested. **No `folder`/scope arg.** On-prem Exchange only; unreachable / auth failure / no endpoint / 15 s timeout → a specific `IsError` message, no COM fallback. (The pre-2026-09 recursive multi-store contact-folder crawl froze then crashed Outlook — removed.) |
-| `list_events` | `Items.Sort("[Start]")` → `Items.IncludeRecurrences = true` → `Items.Restrict("[Start] <= end AND [End] >= start")` — **this order is load-bearing** and rules out `GetTable`. Recurring instances share the master `event_id`; each row carries its own `start` to disambiguate. Args: `start_date` (today), `end_date` (+7d), `limit` (50). |
+| `list_events` | `Items.Sort("[Start]")` → `Items.IncludeRecurrences = true` → `Items.Restrict("[Start] <= end AND [End] >= start")` — **this order is load-bearing** and rules out `GetTable`. Recurring instances share the master `event_id`; each row carries its own `start` to disambiguate. Args: `start_date` (today), `end_date` (+7d), `mailbox` (optional — email address for a shared calendar; if given, resolves via `Ns.CreateRecipient(mailbox).Resolve()` and opens via `Ns.GetSharedDefaultFolder(recipient, olFolderCalendar)`; returns `IsError` if resolution or folder access fails), `limit` (50). When `mailbox` is given, each event's output gains a `calendar_owner: <mailbox>` line, and the zero-results message becomes "No events on <mailbox>'s calendar between X and Y." (vs. "No events between X and Y." when omitted). |
 | `get_event` | `Body` (≤ 40k), `RequiredAttendees`/`OptionalAttendees`, organizer, response status, recurring flag. |
 | `find_meeting_slots` | `Recipient.FreeBusy(anchor, 30, true)` — a per-30-min status string — for `Namespace.CurrentUser` + each resolved attendee; then `OfficeAi.Shared.MeetingSlots.Rank` (pure, unit-tested) slides a `duration_minutes` window in 30-min steps across each work day's `[start_hour, end_hour)` and scores each candidate by how many people are free (so a best partial match still comes back). **Work week/hours are read from the mailbox's own EWS `GetUserAvailability` → `AttendeeAvailability.WorkingHours` (added 2026-09-19; see `OutlookEws.GetWorkingHoursAsync`), not hardcoded** — falls back to Sun–Thu 09:00–18:00 only if that call fails (non-Exchange profile, EWS unreachable, etc.), cached per process like `OutlookEws.CachedUrl`. Default range is today through the end of the current contiguous work-day run (generalizes the old "today→Thursday, or next week if Fri/Sat" to any work-days shape), max 28 days. Times past the returned free/busy window are assumed free. Async (like `search_contacts`) only because of the EWS work-week lookup; the FreeBusy/ranking work itself is still synchronous COM. Args: `attendees` (req), `duration_minutes` (req), `start_date`, `end_date`, `start_hour`, `end_hour` (both default to the resolved work hours, or 9/18 as a last resort), `limit` (5). |
 | `list_tasks` | `Folder.GetTable` over the default Tasks folder; open tasks only unless `include_completed`. Columns EntryID/Subject/Due/Start/Status/PercentComplete/Complete/ReminderTime. |
 | `list_color_categories` | `Namespace.Categories` — the profile's master color-tag ("Category") list shared by mail/calendar/tasks, same list Outlook's Categorize picker shows. Each entry: `{name, color}`; color is one of the 26 `OlCategoryColor` values (None/Red/Orange/…/Dark Maroon), mapped to a friendly display name in `OutlookTools.Categories.cs` (not in `OfficeAi.Shared` — that project doesn't reference the Outlook PIA, same split as `ColorUtil`). |
+
+> **Update 2026-09-29 (Outlook `list_events` gains `mailbox` parameter for shared calendars):**
+> `list_events` now accepts an optional `mailbox` parameter (email address) to list
+> events on a shared calendar instead of the default user's own calendar. When
+> provided, `mailbox` is resolved via `Ns.CreateRecipient(mailbox).Resolve()` and
+> the calendar folder is opened via `Ns.GetSharedDefaultFolder(recipient,
+> olFolderCalendar)`. Resolution failures or folder access errors return an `IsError`
+> naming the mailbox and the likely cause (not shared with the user, or needs
+> adding via Outlook's own "Open Calendar" first). The identical `Sort`/
+> `IncludeRecurrences`/`Restrict` query is reused unchanged for both the default
+> calendar and shared calendars. When `mailbox` is given, each event's output gains
+> a `calendar_owner: <mailbox>` line. The zero-results message becomes "No events on
+> <mailbox>'s calendar between X and Y." when `mailbox` is given (vs. "No events
+> between X and Y." when omitted).
+>
+> **Verification status: Exchange calendar-sharing permission tiers untested.** The
+> code path `GetSharedDefaultFolder` should work identically across all permission
+> levels (Full Access / Editor / Reviewer / etc.), but behavior has not yet been
+> exercised live against a real second mailbox with different permission tiers
+> configured. First live use against a shared calendar with limited permissions
+> (free-busy only, titles+locations only, or no-access) should verify the exact
+> error messages and whether partial-read tiers degrade gracefully or fail outright.
 
 ### Mutating tools (13 — Full autonomy only; `Mutated = true`)
 
