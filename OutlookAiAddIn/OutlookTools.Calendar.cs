@@ -469,6 +469,47 @@ namespace OutlookAiAddIn
             string scopeNote = occDate != null ? " (this occurrence only)" : "";
             string oldStart = Iso(appt.Start);
             string oldEnd = Iso(appt.End);
+
+            if (occDate == null && master.IsRecurring)
+            {
+                // Outlook does not allow setting AppointmentItem.Start/.End
+                // directly on a recurring master - confirmed live 2026-09-28
+                // (COMException 0xAF620009 "The object does not support this
+                // method" from set_Start), closing PR #21's previously-
+                // "unverified" Finding #2 as genuinely broken, not just
+                // unconfirmed. The correct mechanism is RecurrencePattern's
+                // own fields - the same ones create_event's recurrence
+                // support already writes to for a brand-new series (see
+                // ApplyRecurrence in OutlookTools.Compose.cs). This is
+                // Outlook's own native mechanism for rescheduling an entire
+                // series, not a workaround.
+                Outlook.RecurrencePattern pattern = master.GetRecurrencePattern();
+                pattern.PatternStartDate = start.Value.Date;
+                pattern.StartTime = start.Value;
+                pattern.EndTime = end.Value;
+
+                bool isMeetingWhole = master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
+                if (isMeetingWhole) appt.Send(); else appt.Save();
+
+                // Barrier, not a snapshot, for BOTH the meeting and
+                // non-meeting case - unlike every other branch in this
+                // method. Undoing this would need to write back to
+                // PatternStartDate/StartTime/EndTime, not Start/End - the
+                // existing SnapshotEntry mechanism only knows how to
+                // read/write plain item properties (exactly what just
+                // failed above for a recurring master), so there is no
+                // undo path for this yet. Deliberate, approved asymmetry.
+                RecordIrreversible(mbxKey, "reschedule_event of the whole series \"" + (appt.Subject ?? "") + "\"" +
+                                            (isMeetingWhole ? " (update notice sent)" : ""));
+                return new ToolResult
+                {
+                    Output = "Rescheduled the whole series" + (isMeetingWhole ? " and sent update notice" : "") + ": \"" + (appt.Subject ?? "") + "\" from " +
+                             oldStart + " - " + oldEnd + " to " + Iso(start.Value) + " - " + Iso(end.Value) + ".",
+                    Mutated = true,
+                    Summary = "reschedule_event",
+                };
+            }
+
             object[] before = ReadProps(appt, RescheduleProps);
             appt.Start = start.Value;
             appt.End = end.Value;
