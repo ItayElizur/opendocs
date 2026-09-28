@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Text.Json;
 using OfficeAi.Shared;
@@ -23,6 +24,82 @@ namespace OutlookAiAddIn
             if (string.IsNullOrEmpty(body)) return existingHtml;
             string html = WebUtility.HtmlEncode(body).Replace("\n", "<br>");
             return html + "<br><br>" + (existingHtml ?? "");
+        }
+
+        private static readonly Dictionary<string, Outlook.OlRecurrenceType> RecurrenceTypeMap = new Dictionary<string, Outlook.OlRecurrenceType>
+        {
+            { "daily", Outlook.OlRecurrenceType.olRecursDaily },
+            { "weekly", Outlook.OlRecurrenceType.olRecursWeekly },
+            { "monthly", Outlook.OlRecurrenceType.olRecursMonthly },
+            { "monthlyNth", Outlook.OlRecurrenceType.olRecursMonthNth },
+            { "yearly", Outlook.OlRecurrenceType.olRecursYearly },
+            { "yearlyNth", Outlook.OlRecurrenceType.olRecursYearNth },
+        };
+
+        private static readonly Dictionary<string, Outlook.OlDaysOfWeek> DayFlagMap = new Dictionary<string, Outlook.OlDaysOfWeek>
+        {
+            { "sunday", Outlook.OlDaysOfWeek.olSunday },
+            { "monday", Outlook.OlDaysOfWeek.olMonday },
+            { "tuesday", Outlook.OlDaysOfWeek.olTuesday },
+            { "wednesday", Outlook.OlDaysOfWeek.olWednesday },
+            { "thursday", Outlook.OlDaysOfWeek.olThursday },
+            { "friday", Outlook.OlDaysOfWeek.olFriday },
+            { "saturday", Outlook.OlDaysOfWeek.olSaturday },
+        };
+
+        // Applies a validated RecurrenceSpec (OfficeAi.Shared - pure, unit
+        // tested in RecurrenceValidatorTests) to an AppointmentItem, converting
+        // to the actual Outlook enums/flags OfficeAi.Shared can't reference
+        // directly (it has no Outlook PIA reference, same split as
+        // ColorUtil/BusyStatus in OutlookTools.Categories.cs). Called after
+        // attendees are set but before .Save()/.Send() in both create_event
+        // and draft_event - unverified whether GetRecurrencePattern() before
+        // vs. after setting MeetingStatus/attendees matters; this ordering
+        // (identity first, schedule second) matches natural Outlook UI flow
+        // and is the one to verify live in Task 8.
+        private static void ApplyRecurrence(Outlook.AppointmentItem a, RecurrenceSpec spec)
+        {
+            Outlook.RecurrencePattern pattern = a.GetRecurrencePattern();
+            pattern.RecurrenceType = RecurrenceTypeMap[spec.Type];
+            pattern.Interval = spec.Interval;
+
+            if (spec.DaysOfWeek != null)
+            {
+                Outlook.OlDaysOfWeek mask = 0;
+                foreach (string d in spec.DaysOfWeek) mask |= DayFlagMap[d];
+                pattern.DayOfWeekMask = mask;
+            }
+            if (spec.DayOfMonth.HasValue) pattern.DayOfMonth = spec.DayOfMonth.Value;
+            if (spec.Instance.HasValue) pattern.Instance = spec.Instance.Value;
+            if (spec.MonthOfYear.HasValue) pattern.MonthOfYear = spec.MonthOfYear.Value;
+
+            if (spec.Count.HasValue) pattern.Occurrences = spec.Count.Value;
+            else if (spec.Until.HasValue) pattern.PatternEndDate = spec.Until.Value;
+            else pattern.NoEndDate = true;
+        }
+
+        // Reads and validates the optional "recurrence" object from
+        // create_event/draft_event's input. Returns null (with error left
+        // null) when the field is omitted entirely; returns a populated
+        // RecurrenceSpec on success; returns null with error set to a
+        // model-facing IsError message on any validation failure.
+        private static RecurrenceSpec ReadRecurrence(JsonElement input, out string error)
+        {
+            error = null;
+            JsonElement rec;
+            if (input.ValueKind != JsonValueKind.Object || !input.TryGetProperty("recurrence", out rec) || rec.ValueKind != JsonValueKind.Object)
+                return null;
+
+            string type = Str(rec, "type", null);
+            int interval = Int(rec, "interval", 1);
+            string[] days = StrArray(rec, "days_of_week");
+            int? dayOfMonth = OptInt(rec, "day_of_month");
+            int? instance = OptInt(rec, "instance");
+            int? monthOfYear = OptInt(rec, "month_of_year");
+            int? count = OptInt(rec, "count");
+            DateTime? until = DateArg(rec, "until");
+
+            return RecurrenceValidator.Parse(type, interval, days, dayOfMonth, instance, monthOfYear, count, until, out error);
         }
 
         private static ToolResult DraftEmail(JsonElement input)
@@ -72,6 +149,10 @@ namespace OutlookAiAddIn
 
         private static ToolResult DraftEvent(JsonElement input)
         {
+            string recurrenceError;
+            RecurrenceSpec recurrence = ReadRecurrence(input, out recurrenceError);
+            if (recurrenceError != null) return new ToolResult { Output = recurrenceError, IsError = true, Summary = "draft_event" };
+
             Outlook.AppointmentItem a = (Outlook.AppointmentItem)App.CreateItem(Outlook.OlItemType.olAppointmentItem);
             a.Subject = Str(input, "subject", "");
             a.Location = Str(input, "location", "");
@@ -91,8 +172,13 @@ namespace OutlookAiAddIn
                 AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional);
                 try { a.Recipients.ResolveAll(); } catch { }
             }
+            if (recurrence != null) ApplyRecurrence(a, recurrence);
             a.Display(false);
-            return new ToolResult { Output = "Opened an appointment draft in Outlook for the user to review and send.", Summary = "draft_event" };
+            return new ToolResult
+            {
+                Output = "Opened an appointment draft in Outlook for the user to review and send." + (recurrence != null ? " Set to repeat " + recurrence.Type + "." : ""),
+                Summary = "draft_event",
+            };
         }
 
         private static void AddAttendees(Outlook.AppointmentItem a, string csv, Outlook.OlMeetingRecipientType type)
@@ -189,6 +275,10 @@ namespace OutlookAiAddIn
             if (!start.HasValue) return new ToolResult { Output = "start is required.", IsError = true, Summary = "create_event" };
             if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = "create_event" };
 
+            string recurrenceError;
+            RecurrenceSpec recurrence = ReadRecurrence(input, out recurrenceError);
+            if (recurrenceError != null) return new ToolResult { Output = recurrenceError, IsError = true, Summary = "create_event" };
+
             Outlook.AppointmentItem a = (Outlook.AppointmentItem)App.CreateItem(Outlook.OlItemType.olAppointmentItem);
             a.Subject = Str(input, "subject", "");
             a.Location = Str(input, "location", "");
@@ -205,6 +295,11 @@ namespace OutlookAiAddIn
                 AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired);
                 AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional);
                 try { a.Recipients.ResolveAll(); } catch { }
+            }
+            if (recurrence != null) ApplyRecurrence(a, recurrence);
+
+            if (isMeeting)
+            {
                 a.Send();
                 RecordIrreversible(mbxKey, "create_event invite for \"" + (a.Subject ?? "") + "\"");
                 // This confirmation line is the only place the user sees who
@@ -212,12 +307,22 @@ namespace OutlookAiAddIn
                 // empty req (optional_attendees-only) produce a malformed
                 // "to ; alice@example.com." leading separator.
                 string attendeeList = string.IsNullOrEmpty(req) ? opt : string.IsNullOrEmpty(opt) ? req : req + "; " + opt;
-                return new ToolResult { Output = "Created and sent invite: \"" + (a.Subject ?? "") + "\" to " + attendeeList + ".", Mutated = true, Summary = "create_event" };
+                return new ToolResult
+                {
+                    Output = "Created and sent invite: \"" + (a.Subject ?? "") + "\" to " + attendeeList + "." + (recurrence != null ? " Repeats " + recurrence.Type + "." : ""),
+                    Mutated = true,
+                    Summary = "create_event",
+                };
             }
 
             a.Save();
             RecordCreated(mbxKey, "create_event", "event_id", a, a.Subject ?? "");
-            return new ToolResult { Output = "Created event: \"" + (a.Subject ?? "") + "\".", Mutated = true, Summary = "create_event" };
+            return new ToolResult
+            {
+                Output = "Created event: \"" + (a.Subject ?? "") + "\"." + (recurrence != null ? " Repeats " + recurrence.Type + "." : ""),
+                Mutated = true,
+                Summary = "create_event",
+            };
         }
     }
 }
