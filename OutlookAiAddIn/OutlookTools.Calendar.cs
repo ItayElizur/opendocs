@@ -214,7 +214,7 @@ namespace OutlookAiAddIn
             return t.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
         }
 
-        private static ToolResult RespondMeeting(JsonElement input, bool accept)
+        private static ToolResult RespondMeeting(string mbxKey, JsonElement input, bool accept)
         {
             string id = ReqStr(input, "event_id");
             object item = ItemById(id, null);
@@ -237,6 +237,7 @@ namespace OutlookAiAddIn
             {
                 try { resp.Send(); } catch (Exception ex) { DebugLog.WriteException("RespondMeeting Send", ex); }
             }
+            RecordIrreversible(mbxKey, (accept ? "accept_meeting" : "decline_meeting") + " for \"" + (appt.Subject ?? "") + "\"");
             return new ToolResult
             {
                 Output = (accept ? "Accepted: " : "Declined: ") + (appt.Subject ?? ""),

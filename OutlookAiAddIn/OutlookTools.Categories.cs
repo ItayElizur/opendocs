@@ -112,7 +112,7 @@ namespace OutlookAiAddIn
         // calendar grid. A name outside the master list (list_color_categories)
         // is auto-added by Outlook on Save with an arbitrary color - pass an
         // existing name, or call set_category_color first to control the color.
-        private static ToolResult SetEventCategories(JsonElement input)
+        private static ToolResult SetEventCategories(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
             string categories = (Str(input, "categories", "") ?? "").Trim();
@@ -121,8 +121,11 @@ namespace OutlookAiAddIn
             if (appt == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "set_event_categories" };
 
+            string[] props = { "Categories" };
+            object[] before = ReadProps(appt, props);
             appt.Categories = categories;
             appt.Save();
+            RecordSnapshot(mbxKey, "set_event_categories", appt, appt.Subject ?? "", props, before);
 
             string result = categories.Length == 0
                 ? "Cleared color tags on: " + (appt.Subject ?? "")
@@ -132,7 +135,7 @@ namespace OutlookAiAddIn
 
         // Creates a new color tag, or recolors an existing one, in the master
         // category list - the same list Categorize/list_color_categories use.
-        private static ToolResult SetCategoryColor(JsonElement input)
+        private static ToolResult SetCategoryColor(string mbxKey, JsonElement input)
         {
             string name = ReqStr(input, "name").Trim();
             Outlook.OlCategoryColor color = ParseColor(ReqStr(input, "color"));
@@ -141,11 +144,14 @@ namespace OutlookAiAddIn
             Outlook.Category existing = cats[name];
             if (existing != null)
             {
+                Outlook.OlCategoryColor prior = existing.Color;
                 existing.Color = color;
+                RecordCategoryColor(mbxKey, existing.Name, true, prior, color);
                 return new ToolResult { Output = "Updated \"" + existing.Name + "\" to " + ColorName(color) + ".", Mutated = true, Summary = "set_category_color" };
             }
 
             Outlook.Category created = cats.Add(name, color);
+            RecordCategoryColor(mbxKey, created.Name, false, color, created.Color);
             return new ToolResult { Output = "Created color tag \"" + created.Name + "\" (" + ColorName(created.Color) + ").", Mutated = true, Summary = "set_category_color" };
         }
     }

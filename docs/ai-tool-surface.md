@@ -244,6 +244,119 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 > wiring into the tool switch; `dotnet test` unaffected (no new pure logic —
 > the color-name map is a small dictionary, not extracted for unit testing).
 
+> **Update 2026-09-27 (undo/redo tooling — Word, PowerPoint; a custom
+> undo/redo stack for Outlook; Excel's removed 2026-09-28):** added
+> `undo_last_action`/`redo_last_action` to Word and (reversing this
+> document's own earlier "no undo/redo tool" conclusion for it) PowerPoint,
+> plus a custom stack of the assistant's own actions for Outlook. **None of this is runtime-verified
+> against a live Office/Outlook client** — no live instance was reachable;
+> every mechanism below was instead confirmed by .NET reflection directly
+> against the exact PIA versions these projects reference (15.0.0.0), the
+> same standard of evidence this document already applies elsewhere (e.g.
+> the chart-type-map and SmartArt-parity updates above), and by a clean
+> Debug build of all four touched projects plus their esbuild bundles.
+>
+> - **Word** (`WordAiAddIn/WordTools.History.cs`): the initial plan for this
+>   feature assumed `Application.Undo()`/`Application.Redo()` exist — they do
+>   **not** (reflection against the referenced PIA finds no such method on
+>   `_Application`/`ApplicationClass` at all, only an unrelated `UndoRecord`
+>   property for grouping automation edits into one user-visible undo entry).
+>   The real, callable methods are one level down, on `Document`:
+>   `Document.Undo(ref object Times)` / `Document.Redo(ref object Times)`,
+>   both returning `bool`. The `Times` parameter is COM-optional (confirmed
+>   via `ParameterInfo.IsOptional`), so C# calls them with no arguments -
+>   `ActiveDoc.Undo()` / `ActiveDoc.Redo()` - exactly like real-world Word
+>   automation code. The `bool` return gives an honest "Undid the last
+>   action." vs. "Nothing to undo." (same for redo) instead of always
+>   claiming success. Gated the same as every other Word mutating tool:
+>   blocked in Read Only/Comment Only, available from Track Changes upward.
+> - **Excel — removed (2026-09-28).** The first version dispatched
+>   `Application.CommandBars.ExecuteMso("Undo"/"Redo")` (Excel has no
+>   `Application.Redo()`, and `Application.Undo()` returns `void`). That
+>   can't work for the assistant's edits: every write this add-in makes goes
+>   through the object model (`propose_operations`, find/replace, and so on),
+>   and Excel clears its whole undo stack on any object-model change. So
+>   right after an AI edit there is nothing to undo, and later the tool would
+>   undo the *user's* next manual edit instead. `Application.OnUndo` only
+>   takes a VBA macro name, so it isn't usable from a C# add-in. A snapshot-
+>   based custom undo was considered and not pursued; the tools were removed.
+> - **PowerPoint** (`PowerPointAiAddIn/PowerPointTools.History.cs`) —
+>   **reversing this document's earlier conclusion that PowerPoint should be
+>   excluded entirely.** That conclusion was correct that no
+>   `Application.Undo()`/`Redo()` method exists anywhere in the PowerPoint
+>   interop surface (still true, reconfirmed here), but missed a distinct
+>   mechanism: `Application.CommandBars.ExecuteMso(string)` /
+>   `GetEnabledMso(string)` — the generic Office 2007+ ribbon-command
+>   dispatch API, exposed via `Microsoft.Office.Core.CommandBars` (the
+>   "Office" PIA reference already in every one of these four projects),
+>   which every main Office host's `Application.CommandBars` returns,
+>   PowerPoint included. Confirmed real and callable by reflection: the
+>   `CommandBars` property on PowerPoint's `_Application` returns
+>   `Microsoft.Office.Core.CommandBars`, and that type's `_CommandBars`
+>   interface declares both `Void ExecuteMso(String)` and `Boolean
+>   GetEnabledMso(String)`. `ExecuteMso("Undo"/"Redo")` dispatches by the
+>   same ribbon-command ID the real Undo/Redo buttons and Ctrl+Z/Ctrl+Y use
+>   internally, so it works despite there being no direct method to call.
+>   `GetEnabledMso` is checked first (mirroring Excel above) since
+>   `ExecuteMso` itself returns nothing, so without that check every call
+>   would have to claim success unconditionally. See
+>   `PowerPointTools.Master.cs`'s `RemoveMasterElement` (2026-09-22 incident,
+>   in the PowerPoint section below) for why this repo cares: a Slide Master
+>   placeholder deletion had no code path at all to undo at the time, one
+>   direct consequence of `Application.Undo()` genuinely not existing —
+>   `ExecuteMso` is the mechanism that generally closes that "no way back"
+>   gap going forward (it does not retroactively change that method's own
+>   still-valid placeholder refusal, which stands for an unrelated reason —
+>   see that method's comment). Gated the same as every other PowerPoint
+>   mutating tool (Track Changes upward).
+> - **Outlook** (`OutlookAiAddIn/OutlookTools.Undo.cs`, stack logic in
+>   `OfficeAi.Shared/ActionHistory.cs`) — a **custom** undo/redo stack of
+>   the assistant's own actions, not a native-undo wrapper. Native Undo via
+>   `Explorer.CommandBars.ExecuteMso("Undo")` was tried and tested by hand
+>   on 2026-09-28. It's a single slot tied to the window that toggles
+>   undo/redo, it doesn't see object-model changes (a `move_email` followed by
+>   the ribbon Undo did nothing), and after one use both our tool and the
+>   ribbon button failed with "The operation cannot be performed because the
+>   message has changed." Outlook has no API to put an object-model change
+>   onto that slot.
+>
+>   How it works: an in-memory stack per mailbox chat (keyed like
+>   `ModeByMailbox`, capped at 50, lost on restart). Each mutating handler
+>   records one entry after its change succeeds:
+>   - **Property snapshots** (before/after values, restored and `Save()`d):
+>     `mark_email_read/unread` (`UnRead`), `flag_email_important` (full
+>     `Importance`, so Low is preserved), `set_event_categories`,
+>     `set_reminder`, and `update_task` (task fields as a group, or the
+>     flagged-mail fields).
+>   - **`set_email_reminder`**: if the message wasn't flagged before, undo
+>     calls `ClearTaskFlag()`, and redo calls `MarkAsTask` again.
+>   - **Moves**: `move_email` and non-permanent `delete_email`. The folder is
+>     resolved by its own EntryID/StoreID via `Namespace.GetFolderFromID`,
+>     and the new EntryID after each move is rewritten into every entry
+>     for that item.
+>   - **Created items**: `create_task` and `create_event` without
+>     attendees. Undo moves the item to Deleted Items (recoverable); redo
+>     moves it back.
+>   - **`set_category_color`**: undo restores the old color, or removes a tag
+>     the assistant created.
+>   - **Barriers**: `send_*`, `create_event` with attendees,
+>     `accept/decline_meeting` and `delete_email permanent:true`. Undo
+>     stops at a barrier instead of reaching past it.
+>   - **Known gap — `set_event_categories`**: the snapshot only covers the
+>     appointment's own `Categories` string. If the assigned name wasn't
+>     already in the mailbox's master category list, Outlook auto-adds it
+>     on `Save()` with an arbitrary color (see the mutating-tools table
+>     below); undo restores the appointment but does not remove that
+>     auto-created master category entry, which is a permanent side effect
+>     undo can't see or reverse.
+>
+>   Before reversing, each entry checks that the item still holds what the
+>   assistant left there. If it was changed since (by the user or anything
+>   else), undo refuses rather than overwrite it. A failed or refused entry
+>   is dropped, never retried. `redo_last_action` re-applies undone entries
+>   until the next new action. Both tools are gated at Draft tier. **Not
+>   verified against a live Outlook client.**
+
 ## Architecture
 
 officeoffice drives the **real desktop Office applications** via VSTO + COM interop
@@ -291,7 +404,18 @@ Read Only / Comment Only mode, regardless of what the model requests).
 
 ## Word (`WordAiAddIn/WordTools.cs`)
 
-### Top-level tools (7)
+### Top-level tools (7, pre-2026-08-26 snapshot — see notes below)
+
+> **Stale count, not rewritten in place** (same convention as the PowerPoint
+> section below): this table predates `find_text`/`get_headings` (2026-08-26)
+> and `add_image` (2026-08-27ish, contradicting the "No image-insertion tool"
+> line right after the table), plus now **`undo_last_action`/
+> `redo_last_action`** (2026-09-27 — see the dated Update block near the top
+> of this document for what they do and how they're implemented). Actual
+> current top-level tool count is 9 (7 below + `undo_last_action` +
+> `redo_last_action`); `find_text`/`get_headings`/`add_image` bring the real
+> total higher still — see each app's own "Update" block above for detail
+> rather than this table.
 
 | Tool | Implemented | Notes vs. genoffice |
 |---|---|---|
@@ -302,8 +426,9 @@ Read Only / Comment Only mode, regardless of what the model requests).
 | `apply_commands` | Yes — gateway, see below | |
 | `edit_chart` | Yes, but narrow | Combines genoffice's separate `insert_chart`+`edit_chart` into one create-or-edit call, but only sets a title and a **single series'** numeric values — no categories, no chart-type selection, no multi-series support. |
 | `add_comment` | Yes | **Not in genoffice's docs surface at all.** Anchors a real Word comment to the first match of given text. Available in every editing mode, including Comment Only. |
+| `undo_last_action` / `redo_last_action` | Yes (2026-09-27) | `Document.Undo()`/`Document.Redo()` (not `Application` — see the dated Update block above), returning `bool` for an honest result message. Available from Track Changes mode upward, same gate as every other content-mutating Word tool. |
 
-No image-insertion tool exists for Word at all (genoffice's docs has `insert_image`).
+No image-insertion tool exists for Word at all (genoffice's docs has `insert_image`) — **stale, see the note above the table: `add_image` exists.**
 
 ### `apply_commands` command kinds (12 of 12 genoffice kinds + 4 officeoffice-only aliases — all genuinely implemented)
 
@@ -337,6 +462,10 @@ functional — full 1:1 parity with genoffice's naming and shape (`get_workbook_
 `find_cells`, `trace_precedents`, `trace_dependents`). `load_guide` has no equivalent
 (deliberately out of scope — genoffice's is an internal prompt-budget mechanism for
 managing its larger op count in context, not needed at officeoffice's current scale).
+
+No `undo_last_action`/`redo_last_action` for Excel: they were added on 2026-09-27 and
+removed on 2026-09-28, because Excel clears its undo stack on any object-model write
+(see the dated Update block near the top of this document).
 
 Notable native-COM advantage: `find_cells`'s `errors_only` mode uses
 `Range.SpecialCells(xlCellTypeFormulas, xlErrors)` — a genuinely native error-cell
@@ -375,6 +504,29 @@ or PowerPoint chart tools).
 
 > **Stale as of PP-24 (2026-08-24):** this section predates PP-19 through PP-24 and undercounts the tool list (now 35: the table below plus `delete_slide`/`move_slide`/`duplicate_slide` from PP-19, `set_slide_layout`/`set_slide_transition`/`add_animation`/`read_animations`/`edit_animation` from PP-24, and `duplicate_element`/`copy_element`/`move_element`/`copy_element_style` — same-slide shape duplication, cross-slide shape copy/move via PowerPoint's own native Copy/Paste (uses the real Windows clipboard, an explicit exception to this codebase's usual rule against it - every shape kind is supported, since it reproduces the exact underlying OOXML the same way Ctrl+C/Ctrl+V does), and a shape-level format painter). Not rewritten line-by-line here; see `docs/superpowers/plans/2026-08-24-pp24-powerpoint-layout-transitions-animations.md`, this plan's own doc, and `docs/superpowers/plans/STATUS.md` for the current, accurate state.
 
+> **Update 2026-09-27 (`undo_last_action`/`redo_last_action` added — 35 → 37):**
+> this document previously concluded PowerPoint should be excluded from the
+> Word/Excel/Outlook undo/redo tooling pass, on the grounds that no
+> `Application.Undo()`/`Redo()` method exists anywhere in the PowerPoint
+> interop surface. That premise is still correct (reconfirmed here by
+> reflection, not just re-assumed), but it missed a distinct mechanism:
+> `Application.CommandBars.ExecuteMso("Undo"/"Redo")` — the generic Office
+> 2007+ ribbon-command dispatch API, confirmed real and callable on this
+> project's referenced PIA (`PowerPointAiAddIn/PowerPointTools.History.cs`;
+> full detail in the dated Update block near the top of this document).
+> `RemoveMasterElement` right below (2026-09-22 incident) is the reason this
+> mechanism matters here specifically: at the time of that incident there was
+> no `Application`-level Undo at all, so a bad Slide Master placeholder
+> deletion had no code path back — that method now refuses the deletion
+> outright for its own, separate reason (see its comment), and
+> `undo_last_action`/`redo_last_action` are what generally close the "no way
+> back" gap for whatever the model does elsewhere in a session, via ribbon
+> dispatch rather than a direct method call. Gated the same as every other
+> PowerPoint mutating tool (Track Changes upward). Not runtime-verified — no
+> live PowerPoint instance was reachable; both tools build clean and their
+> mechanism is confirmed by reflection, not by an actual Ctrl+Z/Ctrl+Y round
+> trip.
+
 ### Tools (23 total, all genuinely implemented) — pre-PP-19/PP-24 snapshot, see note above
 
 | Tool | Implemented | Notes vs. genoffice |
@@ -398,6 +550,7 @@ or PowerPoint chart tools).
 | `crop_image` | Yes | Fractional crop against current on-slide size (documented imprecision under repeated crops — no reliable "natural size" once already resized in classic Interop). |
 | `replace_image` | Yes, narrow | **Local file path only** (same air-gapped constraint as Excel's `add_image`) — no AI-generation pairing since `generate_image` doesn't exist here. |
 | `set_picture_opacity` | Yes | Via `Fill.Transparency`. |
+| `undo_last_action` / `redo_last_action` | Yes (2026-09-27, not in the "35" count above) | Via `Application.CommandBars.ExecuteMso("Undo"/"Redo")` + `GetEnabledMso` pre-check — no direct `Undo`/`Redo` method exists on this object model at all. See the Update block right above this table. |
 
 ### Missing entirely (confirmed absent from both the C# switch and the advertised tool list)
 
@@ -551,6 +704,24 @@ index otherwise.
 | `update_task` | `(TaskItem)GetItemFromID`; only passed fields change; `mark_complete: true` → `Complete = true` + `PercentComplete = 100`. |
 | `set_reminder` | `ReminderSet` / `ReminderTime` on an appointment **or** task, addressed by its `item_id` (EntryID); `clear: true` turns it off. |
 | `set_email_reminder` | `MailItem.MarkAsTask(mapped interval)` + `TaskStartDate`/`TaskDueDate` + `ReminderSet`/`ReminderTime` + `.Save()` — the confirmed COM path for "flag an email for follow-up with a reminder". `MailItem` does expose `ReminderSet`/`ReminderTime`. |
+
+> This table's "Full autonomy only" heading predates the four-tier rework
+> below ("Editing modes — four tiers") — every row above is actually
+> reachable from Draft only upward (`DraftTierTools`), not gated to Full
+> autonomy. Not rewritten here; see that section for the real gate.
+
+### Undo/redo tools (2 — Draft tier or higher; `Mutated` on success)
+
+> **Added 2026-09-27, reworked 2026-09-28** into a custom undo/redo stack of
+> the assistant's own actions (`OutlookTools.Undo.cs` +
+> `OfficeAi.Shared/ActionHistory.cs`). Outlook's native Undo can't be used —
+> see the dated Update block near the top of this document for what was
+> tested and the full list of what each tool records.
+
+| Tool | Notes |
+|---|---|
+| `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Covers `mark_email_read/unread`, `flag_email_important`, `move_email`, non-permanent `delete_email`, `create_task`, `update_task`, `set_reminder`, `set_email_reminder`, `set_event_categories`, `set_category_color`, and `create_event` without attendees. Sends, invites, meeting responses and permanent deletes are barriers: undo reports it can't go past them. It refuses if the item was changed since the assistant's action, and never touches the user's own manual changes. **Not verified against a live Outlook client.** |
+| `redo_last_action` | Re-applies the most recently undone action, with the same "changed since" check. The redo list is cleared by any new recorded action or barrier. |
 
 ### Draft-and-display tools (5 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
 

@@ -206,6 +206,22 @@ const ALL_OUTLOOK_TOOLS = [
     },
   },
   {
+    name: 'undo_last_action',
+    description:
+      "Reverses YOUR most recent action in this chat (call repeatedly to step further back). Covers mark_email_read/unread, flag_email_important, move_email, " +
+      'delete_email (non-permanent - moves it back out of Deleted Items), create_task, update_task, set_reminder, set_email_reminder, set_event_categories, ' +
+      'set_category_color, and create_event without attendees (moved to Deleted Items). Sends, meeting invites, accept/decline_meeting and permanent deletes ' +
+      "can't be reversed and block undo past them. Never touches changes the user made directly in Outlook, and refuses if the item was changed since. " +
+      'A move changes message_id - use the one in the result.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'redo_last_action',
+    description:
+      'Re-applies the action most recently reversed by undo_last_action. Only available until you make a new change.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'accept_meeting',
     description: 'Accepts a meeting invitation and notifies the organizer.',
     inputSchema: { type: 'object', properties: { event_id: { type: 'string' } }, required: ['event_id'] },
@@ -422,6 +438,8 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   flag_email_important: d('Flag importance', 'סימון חשיבות', 'Sets a message to High or Normal importance.', 'מגדיר חשיבות גבוהה או רגילה להודעה.'),
   move_email: d('Move email', 'העברת הודעה', 'Moves a message to another folder.', 'מעביר הודעה לתיקייה אחרת.'),
   delete_email: d('Delete email', 'מחיקת הודעה', 'Moves a message to Deleted Items.', 'מעביר הודעה לפריטים שנמחקו.'),
+  undo_last_action: d('Undo', 'ביטול', "Reverses the assistant's most recent action. Sent items can't be undone.", 'מבטל את הפעולה האחרונה של העוזר. לא ניתן לבטל פריטים שנשלחו.'),
+  redo_last_action: d('Redo', 'ביצוע חוזר', 'Re-applies the action the assistant last undid.', 'מבצע מחדש את הפעולה שהעוזר ביטל לאחרונה.'),
   accept_meeting: d('Accept meeting', 'אישור פגישה', 'Accepts a meeting invitation.', 'מאשר הזמנה לפגישה.'),
   decline_meeting: d('Decline meeting', 'דחיית פגישה', 'Declines a meeting invitation.', 'דוחה הזמנה לפגישה.'),
   set_event_categories: d('Color event', 'צביעת אירוע', 'Applies or clears color tags on a calendar event.', 'מחיל או מנקה תגיות צבע על אירוע יומן.'),
@@ -455,6 +473,7 @@ startAddIn({
     'message_id / event_id / task_id values are Outlook EntryIDs. When the user has one or more messages selected, that selection (with its message_id) is in your context - prefer it over searching. ' +
     'Prefer list_emails / search_emails / list_tasks (fast, server-side) over reading items one by one. ' +
     "Once you've found the relevant messages, apply_search can show the same results in the user's own Outlook window instead of only listing them in chat. " +
+    "undo_last_action/redo_last_action step back and forward through your own actions in this chat (not the user's manual Outlook actions). Anything that sent something (emails, invites, meeting responses) or a permanent delete can't be undone and blocks undo past it - say so rather than claim it was reversed. " +
     "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events) -> Automate approvals (also auto-accept/decline meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/send_reply/send_reply_all/send_forward/create_event, which send/create immediately).",
   starters: [
     { en: 'Summarize my unread emails', he: 'סכם את ההודעות שלא קראתי' },
@@ -500,6 +519,8 @@ startAddIn({
     'set_event_categories',
     'set_category_color',
     'apply_search',
+    'undo_last_action',
+    'redo_last_action',
   ],
   // Tier 3 ("Automate approvals"), on top of tier 2 - accept/decline
   // already auto-notify the organizer via resp.Send(), so they get their
