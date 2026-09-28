@@ -344,9 +344,9 @@ namespace OutlookAiAddIn
             ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_reschedule_event", out appt);
             if (occurrenceError != null) return occurrenceError.Value;
 
-            if (IsCanceledMeeting(appt))
+            if (IsCanceledMeeting(master))
                 return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "draft_reschedule_event" };
-            if (IsReceivedMeeting(appt))
+            if (IsReceivedMeeting(master))
                 return new ToolResult { Output = ReceivedMeetingError(appt), IsError = true, Summary = "draft_reschedule_event" };
 
             DateTime? start = DateArg(input, "start");
@@ -354,7 +354,7 @@ namespace OutlookAiAddIn
             if (!start.HasValue) return new ToolResult { Output = "start is required.", IsError = true, Summary = "draft_reschedule_event" };
             if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = "draft_reschedule_event" };
 
-            bool isMeeting = appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
+            bool isMeeting = master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
             string scopeNote = occDate != null ? " (just this occurrence, not the whole series)" : "";
             appt.Start = start.Value;
             appt.End = end.Value;
@@ -388,9 +388,9 @@ namespace OutlookAiAddIn
             ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "reschedule_event", out appt);
             if (occurrenceError != null) return occurrenceError.Value;
 
-            if (IsCanceledMeeting(appt))
+            if (IsCanceledMeeting(master))
                 return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "reschedule_event" };
-            if (IsReceivedMeeting(appt))
+            if (IsReceivedMeeting(master))
                 return new ToolResult { Output = ReceivedMeetingError(appt), IsError = true, Summary = "reschedule_event" };
 
             DateTime? start = DateArg(input, "start");
@@ -405,7 +405,7 @@ namespace OutlookAiAddIn
             appt.Start = start.Value;
             appt.End = end.Value;
 
-            if (appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting)
+            if (master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting)
             {
                 appt.Send();
                 // Barrier, not a snapshot: like create_event's invite branch, this
@@ -486,12 +486,12 @@ namespace OutlookAiAddIn
             ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_cancel_event", out appt);
             if (occurrenceError != null) return occurrenceError.Value;
 
-            if (IsCanceledMeeting(appt))
+            if (IsCanceledMeeting(master))
                 return new ToolResult { Output = AlreadyCanceledError(appt), IsError = true, Summary = "draft_cancel_event" };
-            if (IsReceivedMeeting(appt))
+            if (IsReceivedMeeting(master))
                 return new ToolResult { Output = ReceivedMeetingCancelError(appt), IsError = true, Summary = "draft_cancel_event" };
 
-            bool isMeeting = appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
+            bool isMeeting = master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
             string scopeNote = occDate != null ? " (just this occurrence)" : "";
             appt.Display(false);
             return new ToolResult
@@ -537,11 +537,11 @@ namespace OutlookAiAddIn
             // again, surfacing as ResolveOccurrenceTarget's "no occurrence on
             // that date" error above instead of reaching this point.
             bool alreadyCanceled = !isOccurrence && IsCanceledMeeting(appt);
-            if (!alreadyCanceled && IsReceivedMeeting(appt))
+            if (!alreadyCanceled && IsReceivedMeeting(master))
                 return new ToolResult { Output = ReceivedMeetingCancelError(appt), IsError = true, Summary = "cancel_event" };
 
             string subject = appt.Subject ?? "";
-            bool isMeeting = !alreadyCanceled && appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
+            bool isMeeting = !alreadyCanceled && master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
             string scopeNote = isOccurrence ? " (this occurrence only)" : "";
 
             if (isMeeting)
