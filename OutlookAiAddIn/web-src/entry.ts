@@ -210,7 +210,7 @@ const ALL_OUTLOOK_TOOLS = [
     description:
       "Reverses YOUR most recent action in this chat (call repeatedly to step further back). Covers mark_email_read/unread, flag_email_important, move_email, " +
       'delete_email (non-permanent - moves it back out of Deleted Items), create_task, update_task, set_reminder, set_email_reminder, set_event_categories, ' +
-      'set_category_color, set_event_availability, and create_event without attendees (moved to Deleted Items). Sends, meeting invites, accept/decline_meeting and permanent deletes ' +
+      'set_category_color, set_event_availability, reschedule_event without attendees, and create_event without attendees (moved to Deleted Items). Sends, meeting invites, accept/decline_meeting and permanent deletes ' +
       "can't be reversed and block undo past them. Never touches changes the user made directly in Outlook, and refuses if the item was changed since. " +
       'A move changes message_id - use the one in the result.',
     inputSchema: { type: 'object', properties: {} },
@@ -382,6 +382,20 @@ const ALL_OUTLOOK_TOOLS = [
     },
   },
   {
+    name: 'draft_reschedule_event',
+    description:
+      'Opens an existing calendar event with a new start/end already filled in, unsaved, for the user to review and save/send. Never touches attendees. Recurring events only have one EntryID for the whole series (like get_event/accept_meeting/decline_meeting), so this moves the master series, not a single occurrence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        start: { type: 'string', description: 'New start date-time, e.g. "2026-09-01T14:00".' },
+        end: { type: 'string', description: 'New end date-time.' },
+      },
+      required: ['event_id', 'start', 'end'],
+    },
+  },
+  {
     name: 'send_email',
     description:
       'Sends an email immediately - NO review window, no draft. Only available in Full autonomy. Prefer draft_email unless the user clearly wants this sent right now, with no chance to review it first.',
@@ -428,6 +442,20 @@ const ALL_OUTLOOK_TOOLS = [
       required: ['start', 'end'],
     },
   },
+  {
+    name: 'reschedule_event',
+    description:
+      'Moves an existing calendar event to a new start/end immediately - NO review window. If the user organizes it (has attendees), sends the reschedule notice to them right away. Only available in Full autonomy. Prefer draft_reschedule_event unless the user clearly wants this moved right now, with no chance to review it first. Only works on events the user organizes or a plain appointment - if it\'s a meeting the user only attends (not the organizer), this returns an error instead of attempting an unauthoritative change; use Outlook\'s own "Propose New Time" for those. Recurring events only have one EntryID for the whole series (like get_event/accept_meeting/decline_meeting), so this moves the master series, not a single occurrence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        start: { type: 'string', description: 'New start date-time, e.g. "2026-09-01T14:00".' },
+        end: { type: 'string', description: 'New end date-time.' },
+      },
+      required: ['event_id', 'start', 'end'],
+    },
+  },
 ]
 
 const d = (en: string, he: string, den: string, dhe: string) => ({ label: { en, he }, description: { en: den, he: dhe } })
@@ -467,11 +495,13 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   reply_all_email: d('Draft reply all', 'טיוטת תשובה לכולם', 'Opens a pre-filled reply-to-all to review and send.', 'פותח תשובה-לכולם מלאה מראש לבדיקה ושליחה.'),
   forward_email: d('Draft forward', 'טיוטת העברה', 'Opens a pre-filled forward to review and send.', 'פותח העברה מלאה מראש לבדיקה ושליחה.'),
   draft_event: d('Draft event', 'טיוטת אירוע', 'Opens a pre-filled appointment/meeting to review and send.', 'פותח פגישה/אירוע מלא מראש לבדיקה ושליחה.'),
+  draft_reschedule_event: d('Draft new time', 'טיוטת שינוי מועד', 'Opens an event with a new time to review and save/send.', 'פותח אירוע עם מועד חדש לבדיקה ולשמירה/שליחה.'),
   send_email: d('Send email (auto-send)', 'שליחת הודעה (שליחה אוטומטית)', 'Sends an email immediately, no review window.', 'שולח הודעה מיידית, ללא חלון בדיקה.'),
   send_reply: d('Send reply (auto-send)', 'שליחת תשובה (שליחה אוטומטית)', 'Sends a reply immediately, no review window.', 'שולח תשובה מיידית, ללא חלון בדיקה.'),
   send_reply_all: d('Send reply all (auto-send)', 'שליחת תשובה לכולם (שליחה אוטומטית)', 'Sends a reply-to-all immediately, no review window.', 'שולח תשובה-לכולם מיידית, ללא חלון בדיקה.'),
   send_forward: d('Send forward (auto-send)', 'שליחת העברה (שליחה אוטומטית)', 'Forwards a message immediately, no review window.', 'מעביר הודעה מיידית, ללא חלון בדיקה.'),
   create_event: d('Create event (auto-send)', 'יצירת אירוע (שליחה אוטומטית)', 'Creates/sends a calendar event immediately, no review window.', 'יוצר/שולח אירוע יומן מיידית, ללא חלון בדיקה.'),
+  reschedule_event: d('Reschedule event (auto-send)', 'שינוי מועד אירוע (שליחה אוטומטית)', 'Moves an event and sends the update immediately, no review window.', 'מזיז אירוע ושולח עדכון מיידית, ללא חלון בדיקה.'),
 }
 
 startAddIn({
@@ -480,15 +510,16 @@ startAddIn({
   toolDisplay: OUTLOOK_TOOL_DISPLAY,
   systemPrompt:
     'You are an AI assistant embedded in Microsoft Outlook via the OpenDocs add-in. You work from the main Outlook window (Explorer). ' +
-    'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations, color events with tags via list_color_categories/set_event_categories/set_category_color, set an event\'s Free/Busy/Tentative/Out of Office/Working Elsewhere status via set_event_availability), ' +
+    'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations, reschedule events, color events with tags via list_color_categories/set_event_categories/set_category_color, set an event\'s Free/Busy/Tentative/Out of Office/Working Elsewhere status via set_event_availability), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
-    'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. ' +
-    'send_email/send_reply/send_reply_all/send_forward/create_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
+    'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event, draft_reschedule_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. ' +
+    'send_email/send_reply/send_reply_all/send_forward/create_event/reschedule_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
+    'reschedule_event/draft_reschedule_event only work on events the user organizes (or a plain appointment with no attendees) - on a meeting the user only attends, they return an error instead of an unauthoritative change; point the user at Outlook\'s own "Propose New Time" for those. Recurring events share one event_id for the whole series, so rescheduling moves the master series, not a single occurrence. ' +
     'message_id / event_id / task_id values are Outlook EntryIDs. When the user has one or more messages selected, that selection (with its message_id) is in your context - prefer it over searching. ' +
     'Prefer list_emails / search_emails / list_tasks (fast, server-side) over reading items one by one. ' +
     "Once you've found the relevant messages, apply_search can show the same results in the user's own Outlook window instead of only listing them in chat. " +
     "undo_last_action/redo_last_action step back and forward through your own actions in this chat (not the user's manual Outlook actions). Anything that sent something (emails, invites, meeting responses) or a permanent delete can't be undone and blocks undo past it - say so rather than claim it was reversed. " +
-    "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events) -> Automate approvals (also auto-accept/decline meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/send_reply/send_reply_all/send_forward/create_event, which send/create immediately).",
+    "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events/reschedules) -> Automate approvals (also auto-accept/decline meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/send_reply/send_reply_all/send_forward/create_event/reschedule_event, which send/create immediately).",
   starters: [
     { en: 'Summarize my unread emails', he: 'סכם את ההודעות שלא קראתי' },
     { en: 'Draft a reply to the selected email', he: 'נסח תשובה להודעה שנבחרה' },
@@ -530,6 +561,7 @@ startAddIn({
     'reply_all_email',
     'forward_email',
     'draft_event',
+    'draft_reschedule_event',
     'set_event_categories',
     'set_category_color',
     'set_event_availability',
@@ -542,9 +574,9 @@ startAddIn({
   // own tier rather than hiding in Draft only or Full autonomy. Must stay
   // in sync with OutlookTools.cs's ApprovalTierTools.
   trackChangesExtraTools: ['accept_meeting', 'decline_meeting'],
-  // send_email/send_reply/send_reply_all/send_forward/create_event are
-  // deliberately in neither list above - that omission alone confines them
-  // to tier 4 (Full autonomy), which shows every tool.
+  // send_email/send_reply/send_reply_all/send_forward/create_event/
+  // reschedule_event are deliberately in neither list above - that omission
+  // alone confines them to tier 4 (Full autonomy), which shows every tool.
   useSelectionContext: true,
   scopeUnit: 'mailbox',
   availableModes: ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'],
@@ -560,8 +592,8 @@ startAddIn({
     },
     fullAutonomy: {
       label: { en: 'Full autonomy', he: 'אוטונומיה מלאה' },
-      description: { en: 'Everything above, plus sending emails and creating/sending calendar invites in your name.', he: 'כל מה שלמעלה, בתוספת שליחת הודעות ויצירה/שליחה של הזמנות יומן בשמך.' },
+      description: { en: 'Everything above, plus sending emails and creating/sending/rescheduling calendar invites in your name.', he: 'כל מה שלמעלה, בתוספת שליחת הודעות ויצירה/שליחה/שינוי מועד של הזמנות יומן בשמך.' },
     },
   },
-  autoSendTools: ['send_email', 'send_reply', 'send_reply_all', 'send_forward', 'create_event'],
+  autoSendTools: ['send_email', 'send_reply', 'send_reply_all', 'send_forward', 'create_event', 'reschedule_event'],
 })
