@@ -240,9 +240,11 @@ namespace OutlookAiAddIn
             if (!string.IsNullOrEmpty(req) || !string.IsNullOrEmpty(opt))
             {
                 a.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
+                // AddAttendees resolves each recipient individually now -
+                // the collection-level ResolveAll() that used to run here
+                // never reliably resolved anything (confirmed live via COM).
                 AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired);
                 AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional);
-                try { a.Recipients.ResolveAll(); } catch { }
             }
             if (recurrence != null) ApplyRecurrence(a, recurrence);
             a.Display(false);
@@ -264,6 +266,19 @@ namespace OutlookAiAddIn
                 if (addr.Length == 0) continue;
                 Outlook.Recipient r = a.Recipients.Add(addr);
                 r.Type = (int)type;
+                // Recipients.ResolveAll() (called by every caller of this
+                // method, previously) does NOT reliably resolve these -
+                // confirmed live via COM: Resolved stayed False and Address
+                // stayed empty for every address tested (including ones
+                // already known-real), with no exception thrown, and a real
+                // Send() using an unresolved recipient this way never
+                // actually arrived at a real external mailbox. Resolving
+                // each Recipient individually right after adding it does
+                // work reliably (confirmed live: Resolved=True, Address
+                // populated, and delivery confirmed to a real external
+                // account) - do it here so every caller gets a genuinely
+                // resolved recipient without needing its own resolve step.
+                try { r.Resolve(); } catch { }
             }
         }
 
@@ -364,9 +379,11 @@ namespace OutlookAiAddIn
             if (isMeeting)
             {
                 a.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
+                // AddAttendees resolves each recipient individually now -
+                // the collection-level ResolveAll() that used to run here
+                // never reliably resolved anything (confirmed live via COM).
                 AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired);
                 AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional);
-                try { a.Recipients.ResolveAll(); } catch { }
             }
             if (recurrence != null) ApplyRecurrence(a, recurrence);
 

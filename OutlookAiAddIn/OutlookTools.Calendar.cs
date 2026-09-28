@@ -404,9 +404,11 @@ namespace OutlookAiAddIn
                 if (requiredCsv != null && type == (int)Outlook.OlMeetingRecipientType.olRequired) { appt.Recipients.Remove(i); continue; }
                 if (optionalCsv != null && type == (int)Outlook.OlMeetingRecipientType.olOptional) { appt.Recipients.Remove(i); continue; }
             }
+            // AddAttendees resolves each recipient individually now - the
+            // collection-level ResolveAll() that used to run here never
+            // reliably resolved anything (confirmed live via COM).
             if (requiredCsv != null) AddAttendees(appt, requiredCsv, Outlook.OlMeetingRecipientType.olRequired);
             if (optionalCsv != null) AddAttendees(appt, optionalCsv, Outlook.OlMeetingRecipientType.olOptional);
-            try { appt.Recipients.ResolveAll(); } catch { }
         }
 
         // Counts real attendees only, excluding the organizer - used by
