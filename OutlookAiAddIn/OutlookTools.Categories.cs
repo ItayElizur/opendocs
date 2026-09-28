@@ -201,7 +201,9 @@ namespace OutlookAiAddIn
         // Sets an event's "Show As" availability - purely local
         // (AppointmentItem.BusyStatus + .Save()), never .Send(), same risk
         // profile as set_event_categories/set_category_color above.
-        private static ToolResult SetEventAvailability(JsonElement input)
+        private static readonly string[] BusyStatusProps = { "BusyStatus" };
+
+        private static ToolResult SetEventAvailability(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
             string raw = ReqStr(input, "availability");
@@ -222,8 +224,10 @@ namespace OutlookAiAddIn
             }
 
             string oldName = BusyStatusName(appt.BusyStatus);
+            object[] before = ReadProps(appt, BusyStatusProps);
             appt.BusyStatus = status;
             appt.Save();
+            RecordSnapshot(mbxKey, "set_event_availability", appt, appt.Subject ?? "", BusyStatusProps, before);
 
             return new ToolResult
             {

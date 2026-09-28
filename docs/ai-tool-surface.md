@@ -381,8 +381,8 @@ section (added 2026-08-27) has no genoffice counterpart and mirrors
 >   - **Property snapshots** (before/after values, restored and `Save()`d):
 >     `mark_email_read/unread` (`UnRead`), `flag_email_important` (full
 >     `Importance`, so Low is preserved), `set_event_categories`,
->     `set_reminder`, and `update_task` (task fields as a group, or the
->     flagged-mail fields).
+>     `set_event_availability` (`BusyStatus`), `set_reminder`, and
+>     `update_task` (task fields as a group, or the flagged-mail fields).
 >   - **`set_email_reminder`**: if the message wasn't flagged before, undo
 >     calls `ClearTaskFlag()`, and redo calls `MarkAsTask` again.
 >   - **Moves**: `move_email` and non-permanent `delete_email`. The folder is

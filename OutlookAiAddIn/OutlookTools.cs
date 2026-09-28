@@ -178,7 +178,7 @@ namespace OutlookAiAddIn
                     case "decline_meeting": return RespondMeeting(mbxKey, input, false);
                     case "set_event_categories": return SetEventCategories(mbxKey, input);
                     case "set_category_color": return SetCategoryColor(mbxKey, input);
-                    case "set_event_availability": return SetEventAvailability(input);
+                    case "set_event_availability": return SetEventAvailability(mbxKey, input);
                     case "create_task": return CreateTask(mbxKey, input);
                     case "update_task": return UpdateTask(mbxKey, input);
                     case "set_reminder": return SetReminder(mbxKey, input);
