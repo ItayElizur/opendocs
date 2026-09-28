@@ -151,29 +151,39 @@ namespace OutlookAiAddIn
             }
         }
 
-        private static ToolResult MarkEmail(JsonElement input, bool unread)
+        private static ToolResult MarkEmail(string mbxKey, JsonElement input, bool unread)
         {
             string id = ReqStr(input, "message_id");
             Outlook.MailItem mail = ItemById(id, StoreOf(input)) as Outlook.MailItem;
             if (mail == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "mark_email" };
+            bool priorUnread = mail.UnRead;
             mail.UnRead = unread;
             mail.Save();
             string toolName = unread ? "mark_email_unread" : "mark_email_read";
+            RecordMarkOrFlag(mbxKey, toolName, mail.EntryID, StoreOf(input), mail.Subject ?? "", priorUnread);
             return new ToolResult { Output = (unread ? "Marked unread: " : "Marked read: ") + (mail.Subject ?? ""), Mutated = true, Summary = toolName };
         }
 
-        private static ToolResult FlagEmailImportant(JsonElement input)
+        private static ToolResult FlagEmailImportant(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "message_id");
             bool important = Bool(input, "important", true);
             Outlook.MailItem mail = ItemById(id, StoreOf(input)) as Outlook.MailItem;
             if (mail == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "flag_email_important" };
+            // Prior state is captured as a bool (was it already High importance),
+            // matching every other reversible-action record here - restoring it
+            // maps back to High/Normal only, same as this tool's own two-value
+            // range. If the original value was actually olImportanceLow, undo
+            // restores Normal, not Low - a documented, deliberate simplification
+            // (see docs/ai-tool-surface.md's Outlook update).
+            bool priorImportant = mail.Importance == Outlook.OlImportance.olImportanceHigh;
             mail.Importance = important ? Outlook.OlImportance.olImportanceHigh : Outlook.OlImportance.olImportanceNormal;
             mail.Save();
+            RecordMarkOrFlag(mbxKey, "flag_email_important", mail.EntryID, StoreOf(input), mail.Subject ?? "", priorImportant);
             return new ToolResult { Output = (important ? "High importance: " : "Normal importance: ") + (mail.Subject ?? ""), Mutated = true, Summary = "flag_email_important" };
         }
 
-        private static ToolResult MoveEmail(JsonElement input)
+        private static ToolResult MoveEmail(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "message_id");
             string dest = ReqStr(input, "destination");
@@ -184,9 +194,35 @@ namespace OutlookAiAddIn
             string oldSubject = "";
             try { oldSubject = d.Subject; } catch { }
 
+            // Captured BEFORE the move - this is the folder to move back to on
+            // undo. EntryID/StoreID (the FOLDER's own, not the item's) let
+            // undo_last_action re-resolve it precisely via
+            // Namespace.GetFolderFromID, unlike a name-based lookup which
+            // can't tell apart two same-named folders in different parents.
+            string sourceFolderEntryId = "";
+            string sourceFolderStoreId = "";
+            string sourceFolderName = "";
+            try
+            {
+                Outlook.Folder sourceFolder = (Outlook.Folder)d.Parent;
+                sourceFolderEntryId = sourceFolder.EntryID;
+                sourceFolderStoreId = sourceFolder.StoreID;
+                sourceFolderName = sourceFolder.Name;
+            }
+            catch { }
+
             dynamic moved = d.Move(target);
             string newId = "";
             try { newId = moved.EntryID; } catch { }
+
+            if (!string.IsNullOrEmpty(sourceFolderEntryId))
+            {
+                // The moved item now lives in target's store, not whatever
+                // "folder" the caller passed as a lookup hint for the
+                // ORIGINAL item - use target.StoreID so undo_last_action
+                // re-resolves the item from where it actually is now.
+                RecordMove(mbxKey, newId, target.StoreID, oldSubject, sourceFolderEntryId, sourceFolderStoreId, sourceFolderName);
+            }
 
             return new ToolResult
             {
