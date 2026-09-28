@@ -297,6 +297,36 @@ namespace OutlookAiAddIn
             return "\"" + (appt.Subject ?? "") + "\" has been canceled, so there's nothing to reschedule.";
         }
 
+        // Shared by all four occurrence-aware tools (reschedule/cancel, draft
+        // and immediate). occurrence_date lets a caller target one instance
+        // of a recurring series instead of the whole master.
+        // RecurrencePattern.GetOccurrence(DateTime) confirmed present via
+        // .NET reflection against the referenced PIA (not assumed) - this
+        // had been undocumented capability until this addition, even though
+        // every occurrence list_events returns shares the master's EntryID.
+        private static ToolResult? ResolveOccurrenceTarget(Outlook.AppointmentItem master, string occurrenceDate, string toolName, out Outlook.AppointmentItem target)
+        {
+            target = master;
+            if (occurrenceDate == null) return null;
+
+            if (!master.IsRecurring)
+                return new ToolResult { Output = "\"" + (master.Subject ?? "") + "\" is not a recurring event, so occurrence_date doesn't apply. Omit it to act on the event itself.", IsError = true, Summary = toolName };
+
+            DateTime date;
+            if (!DateTime.TryParse(occurrenceDate, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out date) &&
+                !DateTime.TryParse(occurrenceDate, CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out date))
+                return new ToolResult { Output = "occurrence_date \"" + occurrenceDate + "\" is not a valid date/time.", IsError = true, Summary = toolName };
+
+            Outlook.RecurrencePattern pattern = master.GetRecurrencePattern();
+            try { target = pattern.GetOccurrence(date); }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException(toolName + " GetOccurrence", ex);
+                return new ToolResult { Output = "No occurrence of \"" + (master.Subject ?? "") + "\" on " + occurrenceDate + ". Check list_events for this series' actual occurrence dates.", IsError = true, Summary = toolName };
+            }
+            return null;
+        }
+
         // Draft-tier: opens the appointment with the new Start/End already set but
         // NOT saved, exactly like draft_event - the user reviews the moved time in
         // the native window and decides whether to save it (and, if it's a
@@ -305,9 +335,14 @@ namespace OutlookAiAddIn
         private static ToolResult DraftRescheduleEvent(JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            Outlook.AppointmentItem appt = ItemById(id, null) as Outlook.AppointmentItem;
-            if (appt == null)
+            string occDate = Str(input, "occurrence_date", null);
+            Outlook.AppointmentItem master = ItemById(id, null) as Outlook.AppointmentItem;
+            if (master == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "draft_reschedule_event" };
+
+            Outlook.AppointmentItem appt;
+            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_reschedule_event", out appt);
+            if (occurrenceError != null) return occurrenceError.Value;
 
             if (IsCanceledMeeting(appt))
                 return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "draft_reschedule_event" };
@@ -320,12 +355,13 @@ namespace OutlookAiAddIn
             if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = "draft_reschedule_event" };
 
             bool isMeeting = appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
+            string scopeNote = occDate != null ? " (just this occurrence, not the whole series)" : "";
             appt.Start = start.Value;
             appt.End = end.Value;
             appt.Display(false);
             return new ToolResult
             {
-                Output = "Opened \"" + (appt.Subject ?? "") + "\" with the new time (" + Iso(start.Value) + " to " + Iso(end.Value) +
+                Output = "Opened \"" + (appt.Subject ?? "") + "\"" + scopeNote + " with the new time (" + Iso(start.Value) + " to " + Iso(end.Value) +
                          ") in Outlook for the user to review and " + (isMeeting ? "save/send the update." : "save."),
                 Summary = "draft_reschedule_event",
             };
@@ -343,9 +379,14 @@ namespace OutlookAiAddIn
         private static ToolResult RescheduleEvent(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            Outlook.AppointmentItem appt = ItemById(id, null) as Outlook.AppointmentItem;
-            if (appt == null)
+            string occDate = Str(input, "occurrence_date", null);
+            Outlook.AppointmentItem master = ItemById(id, null) as Outlook.AppointmentItem;
+            if (master == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "reschedule_event" };
+
+            Outlook.AppointmentItem appt;
+            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "reschedule_event", out appt);
+            if (occurrenceError != null) return occurrenceError.Value;
 
             if (IsCanceledMeeting(appt))
                 return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "reschedule_event" };
@@ -357,6 +398,7 @@ namespace OutlookAiAddIn
             if (!start.HasValue) return new ToolResult { Output = "start is required.", IsError = true, Summary = "reschedule_event" };
             if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = "reschedule_event" };
 
+            string scopeNote = occDate != null ? " (this occurrence only)" : "";
             string oldStart = Iso(appt.Start);
             string oldEnd = Iso(appt.End);
             object[] before = ReadProps(appt, RescheduleProps);
@@ -369,12 +411,10 @@ namespace OutlookAiAddIn
                 // Barrier, not a snapshot: like create_event's invite branch, this
                 // is an irreversible, unreviewed send - undo must stop here rather
                 // than silently move the meeting back without telling attendees.
-                RecordIrreversible(mbxKey, "reschedule_event invite update for \"" + (appt.Subject ?? "") + "\"");
-                // This confirmation line is the only place the user sees that an
-                // irreversible, unreviewed reschedule notice went out to attendees.
+                RecordIrreversible(mbxKey, "reschedule_event invite update for \"" + (appt.Subject ?? "") + "\"" + scopeNote);
                 return new ToolResult
                 {
-                    Output = "Rescheduled and sent update notice: \"" + (appt.Subject ?? "") + "\" from " + oldStart + " - " + oldEnd +
+                    Output = "Rescheduled and sent update notice" + scopeNote + ": \"" + (appt.Subject ?? "") + "\" from " + oldStart + " - " + oldEnd +
                              " to " + Iso(start.Value) + " - " + Iso(end.Value) + ".",
                     Mutated = true,
                     Summary = "reschedule_event",
@@ -382,10 +422,17 @@ namespace OutlookAiAddIn
             }
 
             appt.Save();
+            // RecordSnapshot reads appt.EntryID via ItemEntryIdOf(appt) - for an
+            // occurrence, that's the real, resolvable EntryID GetOccurrence's
+            // returned item gets once saved (an occurrence becomes a distinct,
+            // independently-addressable "exception" item, not a phantom only
+            // reachable through the pattern), so undo/redo works via the exact
+            // same SnapshotEntry mechanism as every other reschedule - no new
+            // undo-entry type needed. Verify this holds live in Task 6.
             RecordSnapshot(mbxKey, "reschedule_event", appt, appt.Subject ?? "", RescheduleProps, before);
             return new ToolResult
             {
-                Output = "Rescheduled: \"" + (appt.Subject ?? "") + "\" from " + oldStart + " - " + oldEnd +
+                Output = "Rescheduled" + scopeNote + ": \"" + (appt.Subject ?? "") + "\" from " + oldStart + " - " + oldEnd +
                          " to " + Iso(start.Value) + " - " + Iso(end.Value) + ".",
                 Mutated = true,
                 Summary = "reschedule_event",

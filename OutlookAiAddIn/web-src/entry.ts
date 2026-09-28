@@ -384,13 +384,14 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'draft_reschedule_event',
     description:
-      'Opens an existing calendar event with a new start/end already filled in, unsaved, for the user to review and save/send. Never touches attendees. Recurring events only have one EntryID for the whole series (like get_event/accept_meeting/decline_meeting), so this moves the master series, not a single occurrence.',
+      'Opens an existing calendar event with a new start/end already filled in, unsaved, for the user to review and save/send. Never touches attendees. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value for this series) to move just that one occurrence instead. Recurring events share one EntryID for the whole series - occurrence_date is the only way to target a single instance.',
     inputSchema: {
       type: 'object',
       properties: {
         event_id: { type: 'string' },
         start: { type: 'string', description: 'New start date-time, e.g. "2026-09-01T14:00".' },
         end: { type: 'string', description: 'New end date-time.' },
+        occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to move (from list_events\' start value). Omit to move the whole series.' },
       },
       required: ['event_id', 'start', 'end'],
     },
@@ -455,13 +456,14 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'reschedule_event',
     description:
-      'Moves an existing calendar event to a new start/end immediately - NO review window. If the user organizes it (has attendees), sends the reschedule notice to them right away. Only available in Full autonomy. Prefer draft_reschedule_event unless the user clearly wants this moved right now, with no chance to review it first. Only works on events the user organizes or a plain appointment - if it\'s a meeting the user only attends (not the organizer), this returns an error instead of attempting an unauthoritative change; use Outlook\'s own "Propose New Time" for those. Recurring events only have one EntryID for the whole series (like get_event/accept_meeting/decline_meeting), so this moves the master series, not a single occurrence.',
+      'Moves an existing calendar event to a new start/end immediately - NO review window. If the user organizes it (has attendees), sends the reschedule notice to them right away. Only available in Full autonomy. Prefer draft_reschedule_event unless the user clearly wants this moved right now, with no chance to review it first. Only works on events the user organizes or a plain appointment - if it\'s a meeting the user only attends (not the organizer), this returns an error instead of attempting an unauthoritative change; use Outlook\'s own "Propose New Time" for those. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value for this series) to move just that one occurrence instead.',
     inputSchema: {
       type: 'object',
       properties: {
         event_id: { type: 'string' },
         start: { type: 'string', description: 'New start date-time, e.g. "2026-09-01T14:00".' },
         end: { type: 'string', description: 'New end date-time.' },
+        occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to move (from list_events\' start value). Omit to move the whole series.' },
       },
       required: ['event_id', 'start', 'end'],
     },
