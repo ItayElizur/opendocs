@@ -114,7 +114,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'list_events',
     description:
-      'Lists calendar events in a date range (expands recurring meetings). Returns event_id, subject, start/end, location, organizer, and your response status. Recurring instances share the master event_id. Pass mailbox to view someone else\'s calendar instead of your own, if they\'ve granted you access to it in Exchange - visibility depends on what sharing level they set (full details, free/busy only, or none), and Outlook enforces that automatically.',
+      'Lists calendar events in a date range (expands recurring meetings). Returns event_id, subject, start/end, location, organizer, and your response status. Recurring instances share the master event_id. Pass mailbox to view someone else\'s calendar instead of your own, if they\'ve granted you access to it in Exchange - visibility depends on what sharing level they set (full details, free/busy only, or none); Outlook applies that automatically, but the exact behavior at each level hasn\'t been independently verified by this add-in. Shared-calendar results include a store_id field - pass it to get_event to read full details, but note that edit_event/cancel_event/accept_meeting/decline_meeting/tentative_meeting (and their draft counterparts) all refuse to act on events outside your own calendar, regardless of what sharing permissions you have.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -128,8 +128,12 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'get_event',
-    description: 'Full calendar event: body, required/optional attendees, location, organizer, response status.',
-    inputSchema: { type: 'object', properties: { event_id: { type: 'string' } }, required: ['event_id'] },
+    description: 'Full calendar event: body, required/optional attendees, location, organizer, response status. Pass store_id (from list_events\' calendar_owner results) when event_id came from someone else\'s shared calendar - omit it for your own events.',
+    inputSchema: {
+      type: 'object',
+      properties: { event_id: { type: 'string' }, store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field).' } },
+      required: ['event_id'],
+    },
   },
   {
     name: 'find_meeting_slots',
