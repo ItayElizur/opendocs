@@ -209,6 +209,128 @@ describe('mountChatUI', () => {
     expect(root.querySelector('.ai-history-faded')).toBeNull()
   })
 
+  // ---- reopened-conversation chip dock (replaces the crushable trailing
+  // emptyStateHtml() that used to be appended after the history divider) ----
+
+  it('a fresh, never-reopened chat shows no chip dock', () => {
+    const { root } = setup()
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
+  })
+
+  it('showHistoric shows the chip dock and does not append a trailing .ai-chat-empty inside .ai-chat', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(false)
+    expect(root.querySelector('.ai-chat .ai-chat-empty')).toBeNull()
+  })
+
+  it('clicking a starter chip in the dock fills the composer, same as an inline starter click', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chip = root.querySelector<HTMLElement>('#chipDock .ai-chip:not(.chip-newconvo)')!
+    expect(chip.textContent).toBe('Summarize this document')
+    chip.click()
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    expect(textarea.value).toBe('Summarize this document')
+    expect(document.activeElement).toBe(textarea)
+  })
+
+  it('clicking the "New conversation" chip fires the same callback as the header\'s newChat button', () => {
+    const { root, handle, onNewChat } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    root.querySelector<HTMLElement>('#chipDock .chip-newconvo')!.click()
+    expect(onNewChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('resetToEmpty hides the chip dock again', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(false)
+    handle.resetToEmpty()
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
+  })
+
+  it('the "New conversation" chip leads the dock, ahead of the starter chips', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const first = root.querySelector<HTMLElement>('#chipDock')!.firstElementChild
+    expect(first?.classList.contains('chip-newconvo')).toBe(true)
+  })
+
+  it('sending a new message in a reopened conversation hides the chip dock', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(false)
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    textarea.value = 'continue the conversation'
+    root.querySelector<HTMLButtonElement>('.ai-send-btn')!.click()
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
+  })
+
+  it('switching language preserves the chat scroll position instead of resetting it', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chat = root.querySelector<HTMLElement>('.ai-chat')!
+    chat.scrollTop = 123
+
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-lang="he"]')!.click()
+    root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
+
+    expect(chat.scrollTop).toBe(123)
+  })
+
+  it('switching language relocalizes an already-shown "Earlier conversation" divider', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    expect(root.querySelector('.ai-history-sep')!.textContent).toBe('Earlier conversation')
+
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-lang="he"]')!.click()
+    root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
+
+    expect(root.querySelector('.ai-history-sep')!.textContent).toBe('שיחה קודמת')
+  })
+
+  it('showHistoric appends a spacer after the divider for breathing room above the dock', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chat = root.querySelector('.ai-chat')!
+    expect(chat.lastElementChild?.classList.contains('ai-history-spacer')).toBe(true)
+  })
+
+  it('showHistoric([]) is a no-op - no divider, no dock, empty state untouched', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([])
+    expect(root.querySelector('.ai-history-sep')).toBeNull()
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
+    expect(root.querySelector('.ai-chat .ai-chat-empty')).not.toBeNull()
+  })
+
+  it('dock chips are keyboard-activatable (tabindex + Enter/Space)', () => {
+    const { root, handle, onNewChat } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chip = root.querySelector<HTMLElement>('#chipDock .ai-chip:not(.chip-newconvo)')!
+    expect(chip.getAttribute('tabindex')).toBe('0')
+    expect(chip.getAttribute('role')).toBe('button')
+    chip.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    expect(textarea.value).toBe('Summarize this document')
+
+    const newConvo = root.querySelector<HTMLElement>('#chipDock .chip-newconvo')!
+    newConvo.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))
+    expect(onNewChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('inline empty-state starters are keyboard-activatable too', () => {
+    const { root } = setup()
+    const starter = root.querySelector<HTMLElement>('.ai-starter')!
+    expect(starter.getAttribute('tabindex')).toBe('0')
+    starter.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    expect(textarea.value).toBe(starter.textContent)
+  })
+
   it('setSelectionScope updates the hint label text for a live selection, and reverts to Whole document', () => {
     const { root, handle } = setup()
     handle.setSelectionScope({ hasSelection: true, preview: 'Q3 revenue grew' })
