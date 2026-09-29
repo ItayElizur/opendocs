@@ -249,29 +249,11 @@ const ALL_OUTLOOK_TOOLS = [
     },
   },
   {
-    name: 'draft_accept_meeting',
-    description: 'Opens an acceptance of a meeting invitation for the user to review and send themselves. Pass message to pre-fill a comment.',
+    name: 'draft_respond_meeting',
+    description: 'Opens a meeting invitation in Outlook for the user to accept/decline/respond-tentatively themselves using Outlook\'s own buttons - never sends or changes anything itself. Pass message for a suggested comment the tool includes in its own reply text (Outlook\'s object model has no way to pre-fill this into the response the way the auto-send tools can).',
     inputSchema: {
       type: 'object',
-      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional comment pre-filled in the response.' } },
-      required: ['event_id'],
-    },
-  },
-  {
-    name: 'draft_decline_meeting',
-    description: 'Opens a decline of a meeting invitation for the user to review and send themselves. Pass message to pre-fill a comment.',
-    inputSchema: {
-      type: 'object',
-      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional comment pre-filled in the response.' } },
-      required: ['event_id'],
-    },
-  },
-  {
-    name: 'draft_tentative_meeting',
-    description: 'Opens a tentative response to a meeting invitation for the user to review and send themselves. Pass message to pre-fill a comment.',
-    inputSchema: {
-      type: 'object',
-      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional comment pre-filled in the response.' } },
+      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional suggested comment, returned in the tool result for the user to paste in themselves.' } },
       required: ['event_id'],
     },
   },
@@ -464,7 +446,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'draft_cancel_event',
     description:
-      'Opens an existing calendar event for the user to review before canceling it themselves - for a meeting the user organizes, via Outlook\'s own Cancel Meeting/Send Cancellation buttons; for a plain appointment, via Delete. Never sends, deletes, or changes anything itself. Only works on events the user organizes or a plain appointment - on a meeting the user only attends, use decline_meeting instead. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to preview canceling just that one occurrence instead.',
+      'Opens an existing calendar event for the user to review before canceling it themselves - for a meeting the user organizes, via Outlook\'s own Cancel Meeting/Send Cancellation buttons; for a plain appointment, via Delete. Never sends, deletes, or changes anything itself. Only works on events the user organizes or a plain appointment - on a meeting the user only attends, use draft_respond_meeting (or decline_meeting, in Automate approvals or above) instead. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to preview canceling just that one occurrence instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -598,9 +580,7 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   accept_meeting: d('Accept meeting', 'אישור פגישה', 'Accepts a meeting invitation.', 'מאשר הזמנה לפגישה.'),
   decline_meeting: d('Decline meeting', 'דחיית פגישה', 'Declines a meeting invitation.', 'דוחה הזמנה לפגישה.'),
   tentative_meeting: d('Tentative response', 'תגובה זמנית', 'Responds tentatively to a meeting invitation.', 'משיב תשובה זמנית להזמנה לפגישה.'),
-  draft_accept_meeting: d('Draft acceptance', 'טיוטת אישור', 'Opens a meeting acceptance to review and send.', 'פותח אישור פגישה לבדיקה ולשליחה.'),
-  draft_decline_meeting: d('Draft decline', 'טיוטת דחייה', 'Opens a meeting decline to review and send.', 'פותח דחיית פגישה לבדיקה ולשליחה.'),
-  draft_tentative_meeting: d('Draft tentative response', 'טיוטת תגובה זמנית', 'Opens a tentative response to review and send.', 'פותח תגובה זמנית לבדיקה ולשליחה.'),
+  draft_respond_meeting: d('Open to respond', 'פתיחה למענה', 'Opens a meeting invitation for the user to accept/decline/respond tentatively themselves.', 'פותח הזמנה לפגישה כדי שהמשתמש יאשר/ידחה/ישיב זמנית בעצמו.'),
   set_event_categories: d('Color event', 'צביעת אירוע', 'Applies or clears color tags on a calendar event.', 'מחיל או מנקה תגיות צבע על אירוע יומן.'),
   set_category_color: d('Set tag color', 'הגדרת צבע תגית', 'Creates or recolors a color tag.', 'יוצר או משנה צבע של תגית.'),
   set_event_availability: d('Set availability', 'הגדרת זמינות', 'Sets an event\'s Free/Busy/Tentative/Out of Office status.', 'מגדיר את סטטוס הזמינות של אירוע (פנוי / עסוק / בעבודה במקום אחר / מחוץ למשרד).'),
@@ -632,10 +612,10 @@ startAddIn({
     'You are an AI assistant embedded in Microsoft Outlook via the OpenDocs add-in. You work from the main Outlook window (Explorer). ' +
     'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline/tentatively-respond to invitations, edit or cancel events, color events with tags via list_color_categories/set_event_categories/set_category_color, set an event\'s Free/Busy/Tentative/Out of Office/Working Elsewhere status via set_event_availability), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
-    'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event, draft_edit_event, draft_cancel_event, draft_accept_meeting, draft_decline_meeting, draft_tentative_meeting) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. ' +
+    'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event, draft_edit_event, draft_cancel_event, draft_respond_meeting) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. draft_respond_meeting is slightly different from the others: it opens the meeting unchanged and the user picks Accept/Tentative/Decline themselves from Outlook\'s own buttons, since Outlook has no way to pre-select a response type in a review window without already committing it. ' +
     'send_email/send_reply/send_reply_all/send_forward/create_event/edit_event/cancel_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
     'edit_event/draft_edit_event can change start/end, subject, body, location, and/or attendees in one call (at least one field required) - only work on events the user organizes (or a plain appointment with no attendees); on a meeting the user only attends, they return an error instead of an unauthoritative change, point the user at Outlook\'s own "Propose New Time" for those. Recurring events share one event_id for the whole series - omit occurrence_date to act on the whole series, or pass one (a date from list_events\' start value) to target a single occurrence instead, for edit_event/draft_edit_event/cancel_event/draft_cancel_event; attendee changes only apply to the whole series, never a single occurrence. To add/remove specific attendees while keeping the rest, read the current list with get_event first and pass the full new list to edit_event/draft_edit_event. ' +
-    'cancel_event/draft_cancel_event have the same organizer-only restriction on a still-active meeting the user only attends - use decline_meeting instead. Canceling a meeting the user organizes sends a cancellation notice to attendees (Full autonomy for cancel_event, or reviewed first via draft_cancel_event); canceling a plain appointment, or any already-canceled event, just removes it from the calendar (moved to Deleted Items, recoverable), nobody to notify - cancel_event is the only way to dismiss an already-canceled event. ' +
+    'cancel_event/draft_cancel_event have the same organizer-only restriction on a still-active meeting the user only attends - use draft_respond_meeting (Draft only) or decline_meeting (Automate approvals or above) instead. Canceling a meeting the user organizes sends a cancellation notice to attendees (Full autonomy for cancel_event, or reviewed first via draft_cancel_event); canceling a plain appointment, or any already-canceled event, just removes it from the calendar (moved to Deleted Items, recoverable), nobody to notify - cancel_event is the only way to dismiss an already-canceled event. ' +
     'message_id / event_id / task_id values are Outlook EntryIDs. When the user has one or more messages selected, that selection (with its message_id) is in your context - prefer it over searching. ' +
     'Prefer list_emails / search_emails / list_tasks (fast, server-side) over reading items one by one. ' +
     "Once you've found the relevant messages, apply_search can show the same results in the user's own Outlook window instead of only listing them in chat. " +
@@ -684,9 +664,7 @@ startAddIn({
     'draft_event',
     'draft_cancel_event',
     'draft_edit_event',
-    'draft_accept_meeting',
-    'draft_decline_meeting',
-    'draft_tentative_meeting',
+    'draft_respond_meeting',
     'set_event_categories',
     'set_category_color',
     'set_event_availability',
@@ -694,7 +672,7 @@ startAddIn({
     'undo_last_action',
     'redo_last_action',
   ],
-  // Tier 3 ("Automate approvals"), on top of tier 2 - accept/decline
+  // Tier 3 ("Automate approvals"), on top of tier 2 - accept/decline/tentatively-respond
   // already auto-notify the organizer via resp.Send(), so they get their
   // own tier rather than hiding in Draft only or Full autonomy. Must stay
   // in sync with OutlookTools.cs's ApprovalTierTools.
