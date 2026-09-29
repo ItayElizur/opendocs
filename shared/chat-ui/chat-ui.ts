@@ -901,6 +901,12 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     // it persists for the rest of a reopened conversation's session), so it
     // must be refreshed here even while hidden (a fresh, never-reopened chat).
     chipDockEl.innerHTML = chipDockHtml(options, currentLang)
+    // The "Earlier conversation" divider's text is plain textContent set
+    // once in showHistoric() (no data-t, so applyStrings() never touches
+    // it) - without this it stays in whatever language it was reopened in
+    // until the whole panel remounts.
+    const historySep = chatEl.querySelector('.ai-history-sep')
+    if (historySep) historySep.textContent = t('historySep')
   }
 
   // Scoped to .ai-dock, never document.documentElement - same rule as

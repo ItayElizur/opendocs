@@ -267,6 +267,18 @@ describe('mountChatUI', () => {
     expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
   })
 
+  it('switching language relocalizes an already-shown "Earlier conversation" divider', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    expect(root.querySelector('.ai-history-sep')!.textContent).toBe('Earlier conversation')
+
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-lang="he"]')!.click()
+    root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
+
+    expect(root.querySelector('.ai-history-sep')!.textContent).toBe('שיחה קודמת')
+  })
+
   it('showHistoric appends a spacer after the divider for breathing room above the dock', () => {
     const { root, handle } = setup()
     handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
