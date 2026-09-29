@@ -566,7 +566,13 @@ namespace OutlookAiAddIn
             DateTime rangeStart = (original < target ? original : target).Date;
             DateTime rangeEnd = (original < target ? target : original).Date.AddDays(1);
 
-            Outlook.Folder cal = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderCalendar);
+            // master's own Parent folder, not the caller's default calendar -
+            // for an event resolved via store_id from someone else's shared
+            // calendar, those are different folders entirely. Using the
+            // caller's own default calendar here meant this check silently
+            // never found a collision for a shared-calendar event (found via
+            // PR review, 2026-09-29).
+            Outlook.Folder cal = (Outlook.Folder)master.Parent;
             Outlook.Items items = cal.Items;
             items.Sort("[Start]");
             items.IncludeRecurrences = true;
