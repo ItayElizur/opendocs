@@ -115,9 +115,18 @@ namespace OutlookAiAddIn
         private static ToolResult SetEventCategories(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
+            // Only needed for an event_id from someone else's shared
+            // calendar (returned by list_events' mailbox parameter) -
+            // ItemById/GetItemFromID can't find an item outside the
+            // caller's own default store without it. Omit for your own
+            // events, same as before this parameter existed. Whether the
+            // caller actually has permission to act on the resulting item
+            // is entirely up to Outlook/Exchange - this add-in doesn't add
+            // its own authorization check on top of that.
+            string storeId = Str(input, "store_id", null);
             string categories = (Str(input, "categories", "") ?? "").Trim();
 
-            Outlook.AppointmentItem appt = ItemById(id, null) as Outlook.AppointmentItem;
+            Outlook.AppointmentItem appt = ItemById(id, storeId) as Outlook.AppointmentItem;
             if (appt == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "set_event_categories" };
 
@@ -206,9 +215,18 @@ namespace OutlookAiAddIn
         private static ToolResult SetEventAvailability(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
+            // Only needed for an event_id from someone else's shared
+            // calendar (returned by list_events' mailbox parameter) -
+            // ItemById/GetItemFromID can't find an item outside the
+            // caller's own default store without it. Omit for your own
+            // events, same as before this parameter existed. Whether the
+            // caller actually has permission to act on the resulting item
+            // is entirely up to Outlook/Exchange - this add-in doesn't add
+            // its own authorization check on top of that.
+            string storeId = Str(input, "store_id", null);
             string raw = ReqStr(input, "availability");
 
-            Outlook.AppointmentItem appt = ItemById(id, null) as Outlook.AppointmentItem;
+            Outlook.AppointmentItem appt = ItemById(id, storeId) as Outlook.AppointmentItem;
             if (appt == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "set_event_availability" };
 
