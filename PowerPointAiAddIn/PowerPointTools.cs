@@ -100,6 +100,8 @@ namespace PowerPointAiAddIn
                     case "remove_master_element": return RemoveMasterElement(input);
                     case "read_master_elements": return ReadMasterElements(input);
                     case "list_layouts": return ListLayouts(input);
+                    case "undo_last_action": return UndoLastAction();
+                    case "redo_last_action": return RedoLastAction();
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
             }

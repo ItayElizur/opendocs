@@ -460,6 +460,87 @@ function truncateForDisplay(s: string, max: number): string {
 /** Inline cap for a tool's rendered output; longer outputs get a "show all" toggle. */
 const TOOL_OUTPUT_PREVIEW_CHARS = 2_000
 
+// ---- Caret visual-line measurement, for the ArrowUp/ArrowDown history-recall
+// gate (caretCollapsedAtFirstLine/caretCollapsedAtLastLine in mountChatUI
+// below). A message with no literal '\n' can still word-wrap into several
+// *visual* lines inside the textarea (.ai-textarea has no white-space:
+// nowrap) - checking only for '\n' (the old implementation) can't tell those
+// visual lines apart, so it always reported "on the first/last line", and
+// the very first ArrowUp/ArrowDown always recalled history instead of first
+// moving the caret up/down within the wrapped draft. This mirrors the
+// standard "textarea-caret-position" technique: clone the textarea's box
+// model into a hidden same-width div, insert the value up to a given
+// position plus a marker span, and read where that marker actually rendered.
+const MIRROR_CSS_PROPS = [
+  'boxSizing', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+  'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+  'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontVariant', 'letterSpacing',
+  'lineHeight', 'textIndent', 'textTransform', 'wordSpacing', 'tabSize',
+  'direction', 'textAlign',
+] as const
+
+let caretMirrorDiv: HTMLDivElement | null = null
+
+// Created lazily on first use and reused for the panel's lifetime (a plain
+// module-level singleton - never recreated per keystroke, and there's only
+// ever one composer textarea per pane).
+function getCaretMirrorDiv(): HTMLDivElement {
+  if (!caretMirrorDiv) {
+    const div = document.createElement('div')
+    div.style.position = 'absolute'
+    div.style.visibility = 'hidden'
+    div.style.top = '0'
+    div.style.left = '0'
+    div.style.overflow = 'hidden'
+    div.style.whiteSpace = 'pre-wrap'
+    div.style.wordWrap = 'break-word'
+    div.style.wordBreak = 'break-word'
+    document.body.appendChild(div)
+    caretMirrorDiv = div
+  }
+  return caretMirrorDiv
+}
+
+// Returns the pixel offsetTop of the visual line that position `pos` in
+// `textarea.value` renders on. Two positions on the same visual line always
+// return the same number, two positions on different visual lines never do -
+// regardless of whether the line break between them is a hard '\n' or a soft
+// word-wrap - so callers compare this against the offset of position 0 (or
+// value.length) rather than needing to separately count lines. Copies
+// direction/textAlign from the textarea's *computed* style, which already
+// reflects dir="auto" resolution (see updateTextareaDir) - so RTL messages
+// measure correctly too.
+function measureCaretLineTop(textarea: HTMLTextAreaElement, pos: number): number {
+  const div = getCaretMirrorDiv()
+  const style = window.getComputedStyle(textarea)
+  for (const prop of MIRROR_CSS_PROPS) {
+    div.style[prop as any] = style[prop as any]
+  }
+  // clientWidth (not the computed CSS width) so a visible vertical
+  // scrollbar - which narrows the textarea's actual text-wrapping column -
+  // is accounted for too.
+  div.style.width = `${textarea.clientWidth}px`
+
+  div.textContent = ''
+  div.appendChild(document.createTextNode(textarea.value.slice(0, pos)))
+  const marker = document.createElement('span')
+  marker.textContent = '​' // zero-width space: gives the span real geometry even at a line boundary
+  div.appendChild(marker)
+  div.appendChild(document.createTextNode(textarea.value.slice(pos) || '.'))
+  return marker.offsetTop
+}
+
+// Exposed purely so tests can stub the measurement: jsdom (used by
+// chat-ui.test.ts) does not perform real text layout, so offsetTop on a
+// jsdom-rendered element is always 0 - measureCaretLineTop's *output* can't
+// be asserted against real pixel positions in that environment. Production
+// code always goes through this object's `measure`, calling the real
+// mirror-div implementation above; tests instead reassign `.measure` to a
+// fake per-position line map so the surrounding gating logic
+// (caretCollapsedAtFirstLine/caretCollapsedAtLastLine) - the actual bug fix -
+// can still be exercised deterministically.
+export const caretLineMeasurement = { measure: measureCaretLineTop }
+
 function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
   const pills = options.starters
     .map((s) => `<div class="ai-starter">${escapeHtml(s[currentLang])}</div>`)
@@ -896,13 +977,18 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     historyDraft = ''
   }
 
+  // See measureCaretLineTop/caretLineMeasurement above: comparing the
+  // caret's own visual-line offset against position 0's (or the text's
+  // end's) correctly accounts for soft word-wrap, not just hard '\n' -
+  // that's the fix for "ArrowUp recalls history from the middle of a
+  // wrapped, single-line draft" instead of first moving the caret up.
   function caretCollapsedAtFirstLine(): boolean {
     return textarea.selectionStart === textarea.selectionEnd &&
-      textarea.value.lastIndexOf('\n', textarea.selectionStart - 1) === -1
+      caretLineMeasurement.measure(textarea, textarea.selectionStart) === caretLineMeasurement.measure(textarea, 0)
   }
   function caretCollapsedAtLastLine(): boolean {
     return textarea.selectionStart === textarea.selectionEnd &&
-      textarea.value.indexOf('\n', textarea.selectionEnd) === -1
+      caretLineMeasurement.measure(textarea, textarea.selectionEnd) === caretLineMeasurement.measure(textarea, textarea.value.length)
   }
   function applyRecalledValue(v: string): void {
     textarea.value = v
