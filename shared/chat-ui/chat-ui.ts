@@ -486,7 +486,7 @@ function getCaretMirrorDiv(): HTMLDivElement {
     div.style.position = 'absolute'
     div.style.visibility = 'hidden'
     div.style.top = '0'
-    div.style.left = '-99999px'
+    div.style.left = '0'
     div.style.overflow = 'hidden'
     div.style.whiteSpace = 'pre-wrap'
     div.style.wordWrap = 'break-word'
