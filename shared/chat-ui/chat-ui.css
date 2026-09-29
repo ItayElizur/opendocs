@@ -110,6 +110,12 @@
     color: var(--color-text-tertiary); font-size: 12px;
   }
   .ai-history-sep::before, .ai-history-sep::after { content: ''; flex: 1; height: 1px; background: var(--color-border-default); }
+  /* Breathing room below the divider so it doesn't sit glued to the chip
+     dock right underneath it - see showHistoric()'s comment for why this is
+     safe from the flexbox crush bug the old trailing emptyStateHtml() had
+     (no `overflow: hidden` + `flex: 1` combo). Shrinks like any other
+     .ai-chat child once a long transcript needs the room back. */
+  .ai-history-spacer { min-height: 45vh; }
   /* No fade: verified genoffice applies an .ai-msg-historic class to old
      messages but there is NO CSS rule for it anywhere in the codebase - the
      restored transcript renders at full, identical opacity to live messages,

@@ -267,6 +267,13 @@ describe('mountChatUI', () => {
     expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
   })
 
+  it('showHistoric appends a spacer after the divider for breathing room above the dock', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chat = root.querySelector('.ai-chat')!
+    expect(chat.lastElementChild?.classList.contains('ai-history-spacer')).toBe(true)
+  })
+
   it('showHistoric([]) is a no-op - no divider, no dock, empty state untouched', () => {
     const { root, handle } = setup()
     handle.showHistoric([])

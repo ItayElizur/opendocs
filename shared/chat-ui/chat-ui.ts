@@ -1674,6 +1674,19 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       // The chip dock (a sibling outside .ai-chat entirely) replaces it as
       // this reopened conversation's way back to both actions, and stays
       // visible for the rest of the session (only resetToEmpty hides it).
+      //
+      // scrollToBottom() lands on whatever the last child of .ai-chat is -
+      // without this spacer that's the divider itself, gluing it to the
+      // pane's bottom edge right against the dock with no breathing room.
+      // Unlike .ai-chat-empty, this has no `overflow: hidden` (so it keeps
+      // the default automatic-minimum-size behavior, not the zero-size one
+      // that caused the original bug) and no `flex: 1` (so it never fights
+      // real content for extra space) - just a plain block that shrinks
+      // like any other .ai-chat child once a long transcript above it
+      // actually needs the room back.
+      const spacer = document.createElement('div')
+      spacer.className = 'ai-history-spacer'
+      chatEl.appendChild(spacer)
       chipDockEl.hidden = false
       scrollToBottom()
     },
