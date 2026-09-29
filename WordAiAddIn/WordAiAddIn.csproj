@@ -165,6 +165,10 @@
       <SubType>Code</SubType>
       <DependentUpon>WordTools.cs</DependentUpon>
     </Compile>
+    <Compile Include="WordTools.History.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>WordTools.cs</DependentUpon>
+    </Compile>
     <Compile Include="Ribbon.cs">
       <SubType>Code</SubType>
     </Compile>

@@ -112,17 +112,29 @@ namespace OutlookAiAddIn
         // calendar grid. A name outside the master list (list_color_categories)
         // is auto-added by Outlook on Save with an arbitrary color - pass an
         // existing name, or call set_category_color first to control the color.
-        private static ToolResult SetEventCategories(JsonElement input)
+        private static ToolResult SetEventCategories(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
+            // Only needed for an event_id from someone else's shared
+            // calendar (returned by list_events' mailbox parameter) -
+            // ItemById/GetItemFromID can't find an item outside the
+            // caller's own default store without it. Omit for your own
+            // events, same as before this parameter existed. Whether the
+            // caller actually has permission to act on the resulting item
+            // is entirely up to Outlook/Exchange - this add-in doesn't add
+            // its own authorization check on top of that.
+            string storeId = Str(input, "store_id", null);
             string categories = (Str(input, "categories", "") ?? "").Trim();
 
-            Outlook.AppointmentItem appt = ItemById(id, null) as Outlook.AppointmentItem;
+            Outlook.AppointmentItem appt = ItemById(id, storeId) as Outlook.AppointmentItem;
             if (appt == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "set_event_categories" };
 
+            string[] props = { "Categories" };
+            object[] before = ReadProps(appt, props);
             appt.Categories = categories;
             appt.Save();
+            RecordSnapshot(mbxKey, "set_event_categories", appt, appt.Subject ?? "", props, before);
 
             string result = categories.Length == 0
                 ? "Cleared color tags on: " + (appt.Subject ?? "")
@@ -132,7 +144,7 @@ namespace OutlookAiAddIn
 
         // Creates a new color tag, or recolors an existing one, in the master
         // category list - the same list Categorize/list_color_categories use.
-        private static ToolResult SetCategoryColor(JsonElement input)
+        private static ToolResult SetCategoryColor(string mbxKey, JsonElement input)
         {
             string name = ReqStr(input, "name").Trim();
             Outlook.OlCategoryColor color = ParseColor(ReqStr(input, "color"));
@@ -141,12 +153,106 @@ namespace OutlookAiAddIn
             Outlook.Category existing = cats[name];
             if (existing != null)
             {
+                Outlook.OlCategoryColor prior = existing.Color;
                 existing.Color = color;
+                RecordCategoryColor(mbxKey, existing.Name, true, prior, color);
                 return new ToolResult { Output = "Updated \"" + existing.Name + "\" to " + ColorName(color) + ".", Mutated = true, Summary = "set_category_color" };
             }
 
             Outlook.Category created = cats.Add(name, color);
+            RecordCategoryColor(mbxKey, created.Name, false, color, created.Color);
             return new ToolResult { Output = "Created color tag \"" + created.Name + "\" (" + ColorName(created.Color) + ").", Mutated = true, Summary = "set_category_color" };
+        }
+
+        // Friendly names <-> OlBusyStatus - exactly what the calendar's "Show
+        // As" dropdown controls (Free/Tentative/Busy/Out of Office/Working
+        // Elsewhere). Nothing to do with Categories/color tags above; kept
+        // here for the same reason ColorByName is - a small friendly-name
+        // map for an Outlook-PIA-only enum that OfficeAi.Shared can't see.
+        // Member names confirmed via .NET reflection against the referenced
+        // Microsoft.Office.Interop.Outlook 15.0.0.0 PIA.
+        private static readonly Dictionary<string, Outlook.OlBusyStatus> BusyStatusByName =
+            new Dictionary<string, Outlook.OlBusyStatus>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "free", Outlook.OlBusyStatus.olFree },
+                { "tentative", Outlook.OlBusyStatus.olTentative },
+                { "busy", Outlook.OlBusyStatus.olBusy },
+                { "outofoffice", Outlook.OlBusyStatus.olOutOfOffice },
+                { "workingelsewhere", Outlook.OlBusyStatus.olWorkingElsewhere },
+            };
+
+        private static readonly Dictionary<Outlook.OlBusyStatus, string> BusyStatusDisplayName =
+            new Dictionary<Outlook.OlBusyStatus, string>
+            {
+                { Outlook.OlBusyStatus.olFree, "Free" },
+                { Outlook.OlBusyStatus.olTentative, "Tentative" },
+                { Outlook.OlBusyStatus.olBusy, "Busy" },
+                { Outlook.OlBusyStatus.olOutOfOffice, "Out of Office" },
+                { Outlook.OlBusyStatus.olWorkingElsewhere, "Working Elsewhere" },
+            };
+
+        private static string BusyStatusName(Outlook.OlBusyStatus s)
+        {
+            string name;
+            return BusyStatusDisplayName.TryGetValue(s, out name) ? name : s.ToString();
+        }
+
+        // Unlike ParseColor, returns bool rather than throwing - an
+        // unrecognized availability string should come back as a clean
+        // IsError result (with the valid list), not a raw cast/parse
+        // exception surfaced through the outer ExecuteAsync catch.
+        private static bool TryParseBusyStatus(string s, out Outlook.OlBusyStatus status)
+        {
+            string key = (s ?? "").Trim().Replace(" ", "").Replace("_", "").Replace("-", "");
+            return BusyStatusByName.TryGetValue(key, out status);
+        }
+
+        // Sets an event's "Show As" availability - purely local
+        // (AppointmentItem.BusyStatus + .Save()), never .Send(), same risk
+        // profile as set_event_categories/set_category_color above.
+        private static readonly string[] BusyStatusProps = { "BusyStatus" };
+
+        private static ToolResult SetEventAvailability(string mbxKey, JsonElement input)
+        {
+            string id = ReqStr(input, "event_id");
+            // Only needed for an event_id from someone else's shared
+            // calendar (returned by list_events' mailbox parameter) -
+            // ItemById/GetItemFromID can't find an item outside the
+            // caller's own default store without it. Omit for your own
+            // events, same as before this parameter existed. Whether the
+            // caller actually has permission to act on the resulting item
+            // is entirely up to Outlook/Exchange - this add-in doesn't add
+            // its own authorization check on top of that.
+            string storeId = Str(input, "store_id", null);
+            string raw = ReqStr(input, "availability");
+
+            Outlook.AppointmentItem appt = ItemById(id, storeId) as Outlook.AppointmentItem;
+            if (appt == null)
+                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "set_event_availability" };
+
+            Outlook.OlBusyStatus status;
+            if (!TryParseBusyStatus(raw, out status))
+            {
+                return new ToolResult
+                {
+                    Output = "Unknown availability \"" + raw + "\". Valid values: " + string.Join(", ", BusyStatusDisplayName.Values) + ".",
+                    IsError = true,
+                    Summary = "set_event_availability",
+                };
+            }
+
+            string oldName = BusyStatusName(appt.BusyStatus);
+            object[] before = ReadProps(appt, BusyStatusProps);
+            appt.BusyStatus = status;
+            appt.Save();
+            RecordSnapshot(mbxKey, "set_event_availability", appt, appt.Subject ?? "", BusyStatusProps, before);
+
+            return new ToolResult
+            {
+                Output = "Set \"" + (appt.Subject ?? "") + "\" to " + BusyStatusName(status) + " (was " + oldName + ").",
+                Mutated = true,
+                Summary = "set_event_availability",
+            };
         }
     }
 }

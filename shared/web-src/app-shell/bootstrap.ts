@@ -333,8 +333,8 @@ export interface AddInConfig {
    * Track changes' original meaning: every tool, since Word/Excel/
    * PowerPoint's real edit tools are legitimately usable under native
    * track-changes recording. Outlook sets this to unlock
-   * accept_meeting/decline_meeting on top of its own "Draft only"
-   * (commentOnly) tier - see availableForMode() below.
+   * accept_meeting/decline_meeting/tentative_meeting on top of its own
+   * "Draft only" (commentOnly) tier - see availableForMode() below.
    */
   trackChangesExtraTools?: string[]
   /** inject the user's current selection into per-turn context (Word, Excel, PowerPoint - FT-2) */
