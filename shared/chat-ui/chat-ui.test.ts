@@ -267,6 +267,19 @@ describe('mountChatUI', () => {
     expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
   })
 
+  it('switching language preserves the chat scroll position instead of resetting it', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chat = root.querySelector<HTMLElement>('.ai-chat')!
+    chat.scrollTop = 123
+
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-lang="he"]')!.click()
+    root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
+
+    expect(chat.scrollTop).toBe(123)
+  })
+
   it('switching language relocalizes an already-shown "Earlier conversation" divider', () => {
     const { root, handle } = setup()
     handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])

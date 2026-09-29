@@ -882,6 +882,12 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // preference, set independently below/on click - same split as theme's
   // applyTheme/#themeToggle).
   function setLang(l: Lang): void {
+    // Flipping `dir` forces a full bidi/layout reflow of the whole subtree,
+    // which resets .ai-chat's scroll position in some browsers (observed in
+    // WebView2) even though nothing about the conversation itself moved -
+    // measured as distance from the bottom so it's unaffected by any of the
+    // content-height changes below (the divider's text, the empty state).
+    const chatScrollFromBottom = chatEl.scrollHeight - chatEl.scrollTop
     dockEl.setAttribute('lang', l)
     dockEl.setAttribute('dir', l === 'he' ? 'rtl' : 'ltr')
     currentLang = l
@@ -907,6 +913,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     // until the whole panel remounts.
     const historySep = chatEl.querySelector('.ai-history-sep')
     if (historySep) historySep.textContent = t('historySep')
+    chatEl.scrollTop = chatEl.scrollHeight - chatScrollFromBottom
   }
 
   // Scoped to .ai-dock, never document.documentElement - same rule as
