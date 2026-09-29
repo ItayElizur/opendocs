@@ -1165,8 +1165,8 @@ index otherwise.
 | `get_attachment` | `Attachment.SaveAsFile` into `%LOCALAPPDATA%\OutlookAiAddIn\Attachments\`; returns the path. `extracted_text` (≤ 40k) is populated **only** for text-family extensions (`.txt .csv .tsv .md .json .xml .log`, `.html` tag-stripped) and OpenXML (`.docx .xlsx .pptx`), via the swappable `OfficeAi.Shared/AttachmentText/` module (`DocumentFormat.OpenXml` 2.20.0). **No PDF, no images, no vision** — those return the path + type only. `olOLE` throws (rejected); `olByReference` has no data (rejected); `olEmbeddedItem` saves as `.msg`. |
 | `list_folders` | Recursive walk of every store's `Folders`, mail folders only (`DefaultItemType == olMailItem`), with item + unread counts; capped ~800 / depth 8. |
 | `search_contacts` | **EWS `ResolveName` over Contacts then GAL** (server-side ANR), run off the UI thread via EWS Managed API 2.2 with `UseDefaultCredentials`. Endpoint discovery: `Account.AutoDiscoverXml` → `AutodiscoverUrl` → process-static `Uri` cache. Each `NameResolution` mapped to `(name, email)` — GAL X500/`EX` addresses fall back to the resolved contact's own `EmailAddress1..3`; entries with no `@` address are dropped (mirrors `mcp-outlook`). Deduped by lowercased address (name fallback), capped at `limit` (default 10). Pure helpers `EwsAutodiscoverXml.ParseEwsUrl` + `ContactSearchFormat.Format` are unit-tested. **No `folder`/scope arg.** On-prem Exchange only; unreachable / auth failure / no endpoint / 15 s timeout → a specific `IsError` message, no COM fallback. (The pre-2026-09 recursive multi-store contact-folder crawl froze then crashed Outlook — removed.) |
-| `list_events` | `Items.Sort("[Start]")` → `Items.IncludeRecurrences = true` → `Items.Restrict("[Start] <= end AND [End] >= start")` — **this order is load-bearing** and rules out `GetTable`. Recurring instances share the master `event_id`; each row carries its own `start` to disambiguate. Args: `start_date` (today), `end_date` (+7d), `mailbox` (optional — email address for a shared calendar; if given, resolves via `Ns.CreateRecipient(mailbox).Resolve()` and opens via `Ns.GetSharedDefaultFolder(recipient, olFolderCalendar)`; returns `IsError` if resolution or folder access fails), `limit` (50). When `mailbox` is given, each event's output gains a `calendar_owner: <name>` line (the **resolved recipient's own display name**, not the raw `mailbox` input string — fixed 2026-09-29 per PR #28 review, see dated update below) and a `store_id: <StoreID>` line (feed to `get_event`'s `store_id` param to resolve the event outside the caller's own default store), and the zero-results message becomes "No events on <name>'s calendar between X and Y." (vs. "No events between X and Y." when omitted). On the shared path only, an item with `Sensitivity == olPrivate` has its `subject`/`location` redacted to `"(private)"` — Outlook's "Private" flag is UI-enforced, not object-model-enforced, so without this a Reviewer+ caller could read a private item's real subject/location (fixed 2026-09-29 per PR #28 review). |
-| `get_event` | `Body` (≤ 40k), `RequiredAttendees`/`OptionalAttendees`, organizer, response status, recurring flag. Optional `store_id` (added 2026-09-29 per PR #28 review) is passed through to `ItemById`/`GetItemFromID` so an `event_id` from someone else's shared calendar (via `list_events`' `mailbox` param) can actually be resolved — `ItemById` only searches the caller's own default store when no store hint is given, so without this a shared-calendar `event_id` from `list_events` likely couldn't be read back at all. Omit for the caller's own events, unchanged from before this parameter existed. |
+| `list_events` | `Items.Sort("[Start]")` → `Items.IncludeRecurrences = true` → `Items.Restrict("[Start] <= end AND [End] >= start")` — **this order is load-bearing** and rules out `GetTable`. Recurring instances share the master `event_id`; each row carries its own `start` to disambiguate. Args: `start_date` (today), `end_date` (+7d), `mailbox` (optional — email address for a shared calendar; if given, resolves via `Ns.CreateRecipient(mailbox).Resolve()` and opens via `Ns.GetSharedDefaultFolder(recipient, olFolderCalendar)`; returns `IsError` if resolution or folder access fails), `limit` (50). When `mailbox` is given, each event's output gains a `calendar_owner: <name>` line (the **resolved recipient's own display name**, not the raw `mailbox` input string — fixed 2026-09-29 per PR #28 review, see dated update below) and a `store_id: <StoreID>` line — feed it to `get_event` or any of the calendar-editing tools' own `store_id` param (see dated update below) to act on that specific event on the shared calendar. Subject/location are always whatever Outlook itself resolves, private items included — this add-in does not redact or otherwise restrict shared-calendar content beyond what the caller's real Exchange permissions already govern (see dated update below for why an earlier private-item redaction was reverted). |
+| `get_event` | `Body` (≤ 40k), `RequiredAttendees`/`OptionalAttendees`, organizer, response status, recurring flag. Optional `store_id` (added 2026-09-29 per PR #28 review) is passed through to `ItemById`/`GetItemFromID` so an `event_id` from someone else's shared calendar (via `list_events`' `mailbox` param) can actually be resolved — `ItemById` only searches the caller's own default store when no store hint is given, so without this a shared-calendar `event_id` from `list_events` likely couldn't be read back at all. Omit for the caller's own events, unchanged from before this parameter existed. Whether the resolved item can actually be read is governed entirely by the caller's real Outlook/Exchange permissions on that calendar — see dated update below. |
 | `find_meeting_slots` | `Recipient.FreeBusy(anchor, 30, true)` — a per-30-min status string — for `Namespace.CurrentUser` + each resolved attendee; then `OfficeAi.Shared.MeetingSlots.Rank` (pure, unit-tested) slides a `duration_minutes` window in 30-min steps across each work day's `[start_hour, end_hour)` and scores each candidate by how many people are free (so a best partial match still comes back). **Work week/hours are read from the mailbox's own EWS `GetUserAvailability` → `AttendeeAvailability.WorkingHours` (added 2026-09-19; see `OutlookEws.GetWorkingHoursAsync`), not hardcoded** — falls back to Sun–Thu 09:00–18:00 only if that call fails (non-Exchange profile, EWS unreachable, etc.), cached per process like `OutlookEws.CachedUrl`. Default range is today through the end of the current contiguous work-day run (generalizes the old "today→Thursday, or next week if Fri/Sat" to any work-days shape), max 28 days. Times past the returned free/busy window are assumed free. Async (like `search_contacts`) only because of the EWS work-week lookup; the FreeBusy/ranking work itself is still synchronous COM. Args: `attendees` (req), `duration_minutes` (req), `start_date`, `end_date`, `start_hour`, `end_hour` (both default to the resolved work hours, or 9/18 as a last resort), `limit` (5). |
 | `list_tasks` | `Folder.GetTable` over the default Tasks folder; open tasks only unless `include_completed`. Columns EntryID/Subject/Due/Start/Status/PercentComplete/Complete/ReminderTime. |
 | `list_color_categories` | `Namespace.Categories` — the profile's master color-tag ("Category") list shared by mail/calendar/tasks, same list Outlook's Categorize picker shows. Each entry: `{name, color}`; color is one of the 26 `OlCategoryColor` values (None/Red/Orange/…/Dark Maroon), mapped to a friendly display name in `OutlookTools.Categories.cs` (not in `OfficeAi.Shared` — that project doesn't reference the Outlook PIA, same split as `ColorUtil`). |
@@ -1194,60 +1194,67 @@ index otherwise.
 > error messages and whether partial-read tiers degrade gracefully or fail outright.
 
 > **Update 2026-09-29 (PR #28 code review: cross-mailbox write refusal, `get_event`
-> `store_id`, private-item redaction, resolved display name):**
+> `store_id`, private-item redaction, resolved display name) — since reversed, see
+> the next dated update below:**
 > A review of the `list_events` `mailbox` feature above (PR #28) found that nothing
 > stopped an `event_id` obtained from someone else's shared calendar from being fed
 > into a write tool — `edit_event`, `draft_edit_event`, `cancel_event`,
 > `draft_cancel_event`, and `accept_meeting`/`decline_meeting`/`tentative_meeting`'s
 > shared `RespondMeeting`/`draft_respond_meeting` all resolved `event_id` via
 > `ItemById` with no check on which mailbox store the resolved item actually lived
-> in. The original design's own "out of scope" call on acting on someone else's
-> calendar was only ever documented, never enforced in code — if the caller had
-> Editor/delegate rights on the shared calendar, this could let them reschedule or
-> cancel someone else's meeting, or accept/decline/tentative-respond on their
-> behalf, on the strength of the caller's own editing-mode tier alone (Exchange
-> sharing permissions say nothing about whether this add-in's write tools should
-> act on another person's calendar — there's no way for this code to know the
-> calendar owner actually authorized that). Fixed with one new shared helper,
-> `RefuseIfNotOwnStore(AppointmentItem, toolName)` in
-> `OutlookAiAddIn/OutlookTools.Calendar.cs`, called immediately after each of the
-> six tools resolves its `AppointmentItem` and before anything else runs: it
-> compares the resolved item's `((Folder)appt.Parent).Store.StoreID` against
-> `Ns.DefaultStore.StoreID` and returns an `IsError` ("...is on another mailbox's
-> calendar - this tool only works on events in your own calendar.") on a mismatch.
-> Fails closed — any exception reading `Parent`/`Store` is treated as "not verified
-> as the caller's own item" and refused, logged via `DebugLog.WriteException` rather
-> than silently allowed through.
+> in. This was fixed with a new shared helper, `RefuseIfNotOwnStore`, that refused
+> any of those six tools on an item outside the caller's own default store, plus a
+> redaction of `subject`/`location` to `"(private)"` for `Sensitivity == olPrivate`
+> items on the shared-calendar path in `list_events`. **Both of these were reverted
+> the same day — see the dated update immediately below for the project owner's
+> explicit reasoning and the resulting design.** `get_event`'s `store_id` parameter
+> (described in the `get_event` row above) was the one piece of this review kept
+> as-is, and is now extended to the calendar-editing tools too.
 >
-> The same review also found `get_event` likely couldn't resolve a shared-calendar
-> `event_id` at all, since `ItemById`/`GetItemFromID` only search the caller's own
-> default store when no store hint is given. `get_event` now accepts an optional
-> `store_id` parameter, passed straight through to `ItemById`; `list_events`'
-> shared-calendar output rows now carry a `store_id: <StoreID>` line (the shared
-> folder's own `Store.StoreID`) alongside `calendar_owner` for this purpose. Omit
-> `store_id` for the caller's own events — behavior there is unchanged.
+> Separately, same review: `calendar_owner` and the zero-results message now use the
+> resolved `Recipient`'s own `.Name` (falling back to the raw `mailbox` string only
+> if that's empty) instead of echoing back the raw `mailbox` input verbatim — so
+> `mailbox: "dana"` reports back who it actually resolved to, not the ambiguous
+> string the caller typed. This part is unaffected by the reversal below.
 >
-> Also fixed, same review: private/sensitive appointments on a shared calendar could
-> leak their real `subject`/`location`, since Outlook's "Private" flag
-> (`Sensitivity == olPrivate`) is enforced by Outlook's own UI, not by the object
-> model — nothing in the COM layer stopped a Reviewer+ (or higher) caller from
-> reading it via `list_events`. `QueryCalendarItems` now redacts `subject`/
-> `location` to `"(private)"` for a private item, but **only** on the shared-calendar
-> path (`mailbox != null`) — a user's own private items are never hidden from
-> themselves, matching how Outlook's own UI treats the calendar's owner. Separately,
-> `calendar_owner` and the zero-results message now use the resolved `Recipient`'s
-> own `.Name` (falling back to the raw `mailbox` string only if that's empty)
-> instead of echoing back the raw `mailbox` input verbatim — so `mailbox: "dana"`
-> reports back who it actually resolved to, not the ambiguous string the caller
-> typed.
+> **Update 2026-09-29 (explicit project-owner reversal: `RefuseIfNotOwnStore` and
+> private-item redaction removed; `store_id` added to all calendar-editing tools
+> instead):** The project owner explicitly overrode the `RefuseIfNotOwnStore` check
+> and the private-item redaction added by the PR #28 review immediately above, on
+> this principle: this add-in should not layer its own authorization or
+> content-redaction logic on top of Outlook/Exchange's own permission model.
+> Whatever a caller's real Exchange sharing permissions would let them do through
+> Outlook's own UI on a calendar they've been given access to — view an event
+> (including a private one, if their access level exposes it), edit it, cancel it,
+> or respond to it — these tools should allow too, with Outlook/Exchange itself
+> (not this code) the only thing that can refuse. `RefuseIfNotOwnStore` and its six
+> call sites (`EditEvent`, `DraftEditEvent`, `CancelEvent`, `DraftCancelEvent`,
+> `RespondMeeting`, `DraftRespondMeeting`) were deleted outright from
+> `OutlookAiAddIn/OutlookTools.Calendar.cs`; `QueryCalendarItems`' `isPrivate`
+> redaction of `subject`/`location` was deleted too, so shared-calendar rows from
+> `list_events` now show whatever Outlook itself resolves for a private item, same
+> as any other.
 >
-> **Verification status: unverified beyond the fixes above.** Exchange
-> calendar-sharing permission-tier behavior remains untested against a real second
-> mailbox (same caveat as the block above). Additionally, whether `get_event`'s new
-> `store_id` parameter actually succeeds in resolving a shared-calendar item in
-> practice has **not** been exercised live — this fix follows `ItemById`'s
-> documented store-hint behavior but has no real second-mailbox test to confirm it
-> against.
+> In their place, `edit_event`, `cancel_event`, `accept_meeting`, `decline_meeting`,
+> `tentative_meeting`, `set_event_categories`, `set_event_availability`, and their
+> `draft_` counterparts (8 tools total) all gained the same optional `store_id`
+> parameter `get_event` already had, passed straight through to `ItemById`/
+> `GetItemFromID` — purely a lookup aid for resolving an `event_id` outside the
+> caller's own default store (as returned by `list_events`' `store_id` field for a
+> shared-calendar event), with zero authorization logic attached. If the caller
+> lacks real Exchange permission for the action, that now surfaces as whatever
+> COMException `.Save()`/`.Send()`/etc. naturally throws, caught by each tool's
+> existing generic exception handling (or the outer `ExecuteAsync` catch, for a
+> path with no local try/catch) — not as a custom pre-check message.
+>
+> **Verification status: unverified.** This reversal has not been exercised live
+> against a real second mailbox with restricted permissions — it is not yet known
+> what error (if any) actually surfaces from Outlook when a caller genuinely lacks
+> permission for a cross-mailbox write (e.g. attempting `edit_event` with a
+> `store_id` from a calendar where the caller only has Reviewer access). It's
+> assumed to come back as a COMException from `.Save()`/`.Send()`, per this design's
+> own reasoning, but that assumption itself is untested, same as the underlying
+> calendar-sharing permission-tier behavior called out in the block above.
 
 ### Mutating tools (13 — Full autonomy only; `Mutated = true`)
 

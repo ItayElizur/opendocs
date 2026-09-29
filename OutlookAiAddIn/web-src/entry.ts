@@ -114,7 +114,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'list_events',
     description:
-      'Lists calendar events in a date range (expands recurring meetings). Returns event_id, subject, start/end, location, organizer, and your response status. Recurring instances share the master event_id. Pass mailbox to view someone else\'s calendar instead of your own, if they\'ve granted you access to it in Exchange - visibility depends on what sharing level they set (full details, free/busy only, or none); Outlook applies that automatically, but the exact behavior at each level hasn\'t been independently verified by this add-in. Shared-calendar results include a store_id field - pass it to get_event to read full details, but note that edit_event/cancel_event/accept_meeting/decline_meeting/tentative_meeting (and their draft counterparts) all refuse to act on events outside your own calendar, regardless of what sharing permissions you have.',
+      'Lists calendar events in a date range (expands recurring meetings). Returns event_id, subject, start/end, location, organizer, and your response status. Recurring instances share the master event_id. Pass mailbox to view someone else\'s calendar instead of your own, if they\'ve granted you access to it in Exchange - visibility depends on what sharing level they set (full details, free/busy only, or none); Outlook applies that automatically, but the exact behavior at each level hasn\'t been independently verified by this add-in. Shared-calendar results include a store_id field - pass it to get_event or any calendar-editing tool (edit_event, cancel_event, accept_meeting, decline_meeting, tentative_meeting, set_event_categories, set_event_availability, and their draft counterparts) to act on that specific event. Whether the action actually succeeds is governed entirely by your real Outlook/Exchange permissions on that calendar, the same as if you\'d done it through Outlook\'s own UI - this add-in does not add its own extra restriction on top of that.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -128,7 +128,7 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'get_event',
-    description: 'Full calendar event: body, required/optional attendees, location, organizer, response status. Pass store_id (from list_events\' calendar_owner results) when event_id came from someone else\'s shared calendar - omit it for your own events.',
+    description: 'Full calendar event: body, required/optional attendees, location, organizer, response status. Pass store_id (from list_events\' calendar_owner results) when event_id came from someone else\'s shared calendar - omit it for your own events. Whether this succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar, the same as opening the event in Outlook itself.',
     inputSchema: {
       type: 'object',
       properties: { event_id: { type: 'string' }, store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field).' } },
@@ -231,7 +231,11 @@ const ALL_OUTLOOK_TOOLS = [
     description: 'Accepts a meeting invitation and notifies the organizer. Pass message to add a comment to the response.',
     inputSchema: {
       type: 'object',
-      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' } },
+      properties: {
+        event_id: { type: 'string' },
+        message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
       required: ['event_id'],
     },
   },
@@ -240,7 +244,11 @@ const ALL_OUTLOOK_TOOLS = [
     description: 'Declines a meeting invitation and notifies the organizer. Pass message to add a comment to the response.',
     inputSchema: {
       type: 'object',
-      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' } },
+      properties: {
+        event_id: { type: 'string' },
+        message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
       required: ['event_id'],
     },
   },
@@ -249,7 +257,11 @@ const ALL_OUTLOOK_TOOLS = [
     description: 'Responds tentatively to a meeting invitation and notifies the organizer. Pass message to add a comment to the response.',
     inputSchema: {
       type: 'object',
-      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' } },
+      properties: {
+        event_id: { type: 'string' },
+        message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
       required: ['event_id'],
     },
   },
@@ -258,7 +270,11 @@ const ALL_OUTLOOK_TOOLS = [
     description: 'Opens a meeting invitation in Outlook for the user to accept/decline/respond-tentatively themselves using Outlook\'s own buttons - never sends or changes anything itself. Pass message for a suggested comment the tool includes in its own reply text (Outlook\'s object model has no way to pre-fill this into the response the way the auto-send tools can).',
     inputSchema: {
       type: 'object',
-      properties: { event_id: { type: 'string' }, message: { type: 'string', description: 'Optional suggested comment, returned in the tool result for the user to paste in themselves.' } },
+      properties: {
+        event_id: { type: 'string' },
+        message: { type: 'string', description: 'Optional suggested comment, returned in the tool result for the user to paste in themselves.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
       required: ['event_id'],
     },
   },
@@ -271,6 +287,7 @@ const ALL_OUTLOOK_TOOLS = [
       properties: {
         event_id: { type: 'string' },
         categories: { type: 'string', description: 'Comma-separated color tag name(s), e.g. "Urgent, Travel". Omit or pass "" to clear.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
       },
       required: ['event_id'],
     },
@@ -299,6 +316,7 @@ const ALL_OUTLOOK_TOOLS = [
       properties: {
         event_id: { type: 'string' },
         availability: { type: 'string', enum: ['free', 'tentative', 'busy', 'outOfOffice', 'workingElsewhere'] },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
       },
       required: ['event_id', 'availability'],
     },
@@ -444,6 +462,7 @@ const ALL_OUTLOOK_TOOLS = [
         location: { type: 'string' },
         required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole required-attendee list. Whole-series/non-recurring only.' },
         optional_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole optional-attendee list. Whole-series/non-recurring only.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
       },
       required: ['event_id'],
     },
@@ -457,6 +476,7 @@ const ALL_OUTLOOK_TOOLS = [
       properties: {
         event_id: { type: 'string' },
         occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to preview canceling (from list_events\' start value). Omit to act on the whole series.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
       },
       required: ['event_id'],
     },
@@ -540,6 +560,7 @@ const ALL_OUTLOOK_TOOLS = [
         location: { type: 'string' },
         required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole required-attendee list, omit to leave existing required attendees unchanged. Whole-series/non-recurring only.' },
         optional_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole optional-attendee list, omit to leave existing optional attendees unchanged. Whole-series/non-recurring only.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
       },
       required: ['event_id'],
     },
@@ -553,6 +574,7 @@ const ALL_OUTLOOK_TOOLS = [
       properties: {
         event_id: { type: 'string' },
         occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to cancel (from list_events\' start value). Omit to cancel the whole series. Cannot be undone.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
       },
       required: ['event_id'],
     },

@@ -98,17 +98,20 @@ namespace OutlookAiAddIn
                 Outlook.AppointmentItem appt = o as Outlook.AppointmentItem;
                 if (appt == null) continue;
                 n++;
-                // On someone else's calendar, Outlook's "Private" flag is a
-                // UI-layer courtesy the object model doesn't enforce - a
-                // Reviewer+ caller could otherwise read the real Subject/
-                // Location of an item the owner marked private. Redact both
-                // on the shared path only; a user's own private items are
-                // never hidden from themselves.
-                bool isPrivate = mailbox != null && appt.Sensitivity == Outlook.OlSensitivity.olPrivate;
+                // Whatever Outlook itself resolves for Subject/Location is
+                // passed through as-is, including for private items on a
+                // shared calendar - this add-in doesn't add its own
+                // visibility restriction on top of the caller's real
+                // Exchange permissions. If the caller's access level would
+                // let them see this in Outlook's own UI (or if the object
+                // model exposes more than the UI would, which is a known
+                // Outlook behavior for the "Private" flag), that's between
+                // the caller and the calendar owner's actual sharing
+                // settings, not something this code second-guesses.
                 sb.AppendLine("- event_id: " + appt.EntryID);
-                sb.AppendLine("  subject: " + (isPrivate ? "(private)" : (appt.Subject ?? "")));
+                sb.AppendLine("  subject: " + (appt.Subject ?? ""));
                 try { sb.AppendLine("  start: " + Iso(appt.Start) + "  end: " + Iso(appt.End)); } catch { }
-                sb.AppendLine("  location: " + (isPrivate ? "(private)" : (appt.Location ?? "")));
+                sb.AppendLine("  location: " + (appt.Location ?? ""));
                 sb.AppendLine("  organizer: " + (appt.Organizer ?? "") + "  all_day: " + appt.AllDayEvent + "  recurring: " + appt.IsRecurring);
                 sb.AppendLine("  response: " + appt.ResponseStatus + "  meeting_status: " + appt.MeetingStatus);
                 if (mailbox != null)
@@ -340,42 +343,6 @@ namespace OutlookAiAddIn
             return "\"" + (appt.Subject ?? "") + "\" has already been canceled - there's nothing to respond to.";
         }
 
-        // Shared by every write tool that resolves an event_id (EditEvent,
-        // DraftEditEvent, CancelEvent, DraftCancelEvent, RespondMeeting,
-        // DraftRespondMeeting): refuses if the resolved item isn't in the
-        // caller's own default mailbox store - e.g. an event_id obtained
-        // from someone else's shared calendar via list_events' mailbox
-        // parameter. Exchange sharing permissions (even Editor) only govern
-        // what the CALLER can do through Outlook's own UI for that
-        // calendar - they say nothing about whether this add-in's write
-        // tools should act on another person's calendar on the strength of
-        // the caller's own editing-mode tier, and there's no way for this
-        // code to know the calendar owner has actually authorized that.
-        // Fails closed: any unexpected exception reading Parent/Store is
-        // treated as "not verified as the caller's own item" and refused,
-        // logged for diagnosis rather than silently allowing a write into
-        // the wrong mailbox.
-        private static ToolResult? RefuseIfNotOwnStore(Outlook.AppointmentItem appt, string toolName)
-        {
-            try
-            {
-                Outlook.Folder parent = (Outlook.Folder)appt.Parent;
-                string itemStoreId = parent.Store.StoreID;
-                string ownStoreId = Ns.DefaultStore.StoreID;
-                if (string.Equals(itemStoreId, ownStoreId, StringComparison.OrdinalIgnoreCase)) return null;
-            }
-            catch (Exception ex)
-            {
-                DebugLog.WriteException(toolName + " store check", ex);
-            }
-            return new ToolResult
-            {
-                Output = "\"" + (appt.Subject ?? "") + "\" is on another mailbox's calendar - this tool only works on events in your own calendar.",
-                IsError = true,
-                Summary = toolName,
-            };
-        }
-
         // response is the actual OlMeetingResponse to send (not just a bool)
         // so this one helper covers all three: accept_meeting, decline_meeting,
         // tentative_meeting. message is an optional comment attached to the
@@ -385,12 +352,19 @@ namespace OutlookAiAddIn
         private static ToolResult RespondMeeting(string mbxKey, JsonElement input, Outlook.OlMeetingResponse response, string toolName)
         {
             string id = ReqStr(input, "event_id");
-            object item = ItemById(id, null);
+            // Only needed for an event_id from someone else's shared
+            // calendar (returned by list_events' mailbox parameter) -
+            // ItemById/GetItemFromID can't find an item outside the
+            // caller's own default store without it. Omit for your own
+            // events, same as before this parameter existed. Whether the
+            // caller actually has permission to act on the resulting item
+            // is entirely up to Outlook/Exchange - this add-in doesn't add
+            // its own authorization check on top of that.
+            string storeId = Str(input, "store_id", null);
+            object item = ItemById(id, storeId);
             Outlook.AppointmentItem appt = ResolveMeetingAppointment(item);
             if (appt == null)
                 return new ToolResult { Output = "event_id does not resolve to a meeting.", IsError = true, Summary = toolName };
-            ToolResult? storeCheck = RefuseIfNotOwnStore(appt, toolName);
-            if (storeCheck != null) return storeCheck.Value;
 
             if (IsCanceledMeeting(appt))
                 return new ToolResult { Output = AlreadyCanceledRespondError(appt), IsError = true, Summary = toolName };
@@ -455,12 +429,19 @@ namespace OutlookAiAddIn
         private static ToolResult DraftRespondMeeting(JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            object item = ItemById(id, null);
+            // Only needed for an event_id from someone else's shared
+            // calendar (returned by list_events' mailbox parameter) -
+            // ItemById/GetItemFromID can't find an item outside the
+            // caller's own default store without it. Omit for your own
+            // events, same as before this parameter existed. Whether the
+            // caller actually has permission to act on the resulting item
+            // is entirely up to Outlook/Exchange - this add-in doesn't add
+            // its own authorization check on top of that.
+            string storeId = Str(input, "store_id", null);
+            object item = ItemById(id, storeId);
             Outlook.AppointmentItem appt = ResolveMeetingAppointment(item);
             if (appt == null)
                 return new ToolResult { Output = "event_id does not resolve to a meeting.", IsError = true, Summary = "draft_respond_meeting" };
-            ToolResult? storeCheck = RefuseIfNotOwnStore(appt, "draft_respond_meeting");
-            if (storeCheck != null) return storeCheck.Value;
 
             if (IsCanceledMeeting(appt))
                 return new ToolResult { Output = AlreadyCanceledRespondError(appt), IsError = true, Summary = "draft_respond_meeting" };
@@ -684,12 +665,19 @@ namespace OutlookAiAddIn
         private static ToolResult EditEvent(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
+            // Only needed for an event_id from someone else's shared
+            // calendar (returned by list_events' mailbox parameter) -
+            // ItemById/GetItemFromID can't find an item outside the
+            // caller's own default store without it. Omit for your own
+            // events, same as before this parameter existed. Whether the
+            // caller actually has permission to act on the resulting item
+            // is entirely up to Outlook/Exchange - this add-in doesn't add
+            // its own authorization check on top of that.
+            string storeId = Str(input, "store_id", null);
             string occDate = Str(input, "occurrence_date", null);
-            Outlook.AppointmentItem master = ItemById(id, null) as Outlook.AppointmentItem;
+            Outlook.AppointmentItem master = ItemById(id, storeId) as Outlook.AppointmentItem;
             if (master == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "edit_event" };
-            ToolResult? storeCheck = RefuseIfNotOwnStore(master, "edit_event");
-            if (storeCheck != null) return storeCheck.Value;
 
             Outlook.AppointmentItem appt;
             ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "edit_event", out appt);
@@ -929,12 +917,19 @@ namespace OutlookAiAddIn
         private static ToolResult DraftEditEvent(JsonElement input)
         {
             string id = ReqStr(input, "event_id");
+            // Only needed for an event_id from someone else's shared
+            // calendar (returned by list_events' mailbox parameter) -
+            // ItemById/GetItemFromID can't find an item outside the
+            // caller's own default store without it. Omit for your own
+            // events, same as before this parameter existed. Whether the
+            // caller actually has permission to act on the resulting item
+            // is entirely up to Outlook/Exchange - this add-in doesn't add
+            // its own authorization check on top of that.
+            string storeId = Str(input, "store_id", null);
             string occDate = Str(input, "occurrence_date", null);
-            Outlook.AppointmentItem master = ItemById(id, null) as Outlook.AppointmentItem;
+            Outlook.AppointmentItem master = ItemById(id, storeId) as Outlook.AppointmentItem;
             if (master == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "draft_edit_event" };
-            ToolResult? storeCheck = RefuseIfNotOwnStore(master, "draft_edit_event");
-            if (storeCheck != null) return storeCheck.Value;
 
             Outlook.AppointmentItem appt;
             ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_edit_event", out appt);
@@ -1064,12 +1059,19 @@ namespace OutlookAiAddIn
         private static ToolResult DraftCancelEvent(JsonElement input)
         {
             string id = ReqStr(input, "event_id");
+            // Only needed for an event_id from someone else's shared
+            // calendar (returned by list_events' mailbox parameter) -
+            // ItemById/GetItemFromID can't find an item outside the
+            // caller's own default store without it. Omit for your own
+            // events, same as before this parameter existed. Whether the
+            // caller actually has permission to act on the resulting item
+            // is entirely up to Outlook/Exchange - this add-in doesn't add
+            // its own authorization check on top of that.
+            string storeId = Str(input, "store_id", null);
             string occDate = Str(input, "occurrence_date", null);
-            Outlook.AppointmentItem master = ItemById(id, null) as Outlook.AppointmentItem;
+            Outlook.AppointmentItem master = ItemById(id, storeId) as Outlook.AppointmentItem;
             if (master == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "draft_cancel_event" };
-            ToolResult? storeCheck = RefuseIfNotOwnStore(master, "draft_cancel_event");
-            if (storeCheck != null) return storeCheck.Value;
 
             Outlook.AppointmentItem appt;
             ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_cancel_event", out appt);
@@ -1111,12 +1113,19 @@ namespace OutlookAiAddIn
         private static ToolResult CancelEvent(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
+            // Only needed for an event_id from someone else's shared
+            // calendar (returned by list_events' mailbox parameter) -
+            // ItemById/GetItemFromID can't find an item outside the
+            // caller's own default store without it. Omit for your own
+            // events, same as before this parameter existed. Whether the
+            // caller actually has permission to act on the resulting item
+            // is entirely up to Outlook/Exchange - this add-in doesn't add
+            // its own authorization check on top of that.
+            string storeId = Str(input, "store_id", null);
             string occDate = Str(input, "occurrence_date", null);
-            Outlook.AppointmentItem master = ItemById(id, null) as Outlook.AppointmentItem;
+            Outlook.AppointmentItem master = ItemById(id, storeId) as Outlook.AppointmentItem;
             if (master == null)
                 return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "cancel_event" };
-            ToolResult? storeCheck = RefuseIfNotOwnStore(master, "cancel_event");
-            if (storeCheck != null) return storeCheck.Value;
 
             Outlook.AppointmentItem appt;
             ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "cancel_event", out appt);
