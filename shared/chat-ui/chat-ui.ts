@@ -541,10 +541,19 @@ function measureCaretLineTop(textarea: HTMLTextAreaElement, pos: number): number
 // can still be exercised deterministically.
 export const caretLineMeasurement = { measure: measureCaretLineTop }
 
-function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
-  const pills = options.starters
-    .map((s) => `<div class="ai-starter">${escapeHtml(s[currentLang])}</div>`)
+// Shared by emptyStateHtml and chipDockHtml below so the two starter lists
+// (inline pills, dock chips) can't drift apart from independently-edited
+// copies of the same map/escape logic. Both are keyboard-activatable
+// (tabindex + role="button"): see the keydown delegation next to their click
+// handlers further down.
+function starterItemsHtml(options: ChatUIOptions, currentLang: Lang, className: string): string {
+  return options.starters
+    .map((s) => `<div class="${className}" tabindex="0" role="button">${escapeHtml(s[currentLang])}</div>`)
     .join('')
+}
+
+function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
+  const pills = starterItemsHtml(options, currentLang, 'ai-starter')
   const title = escapeHtml(STRINGS.emptyTitle[currentLang])
   return `<div class="ai-chat-empty"><img class="ai-chat-empty-bg" src="chat-empty-bg.svg" alt="" /><div class="ai-chat-empty-title" data-t="emptyTitle">${title}</div><div class="ai-starters">${pills}</div></div>`
 }
@@ -559,14 +568,12 @@ function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
 // same options.starters data as emptyStateHtml, not a second copy of it,
 // plus one extra "New conversation" chip.
 function chipDockHtml(options: ChatUIOptions, currentLang: Lang): string {
-  const chips = options.starters
-    .map((s) => `<div class="ai-chip">${escapeHtml(s[currentLang])}</div>`)
-    .join('')
+  const chips = starterItemsHtml(options, currentLang, 'ai-chip')
   const newConvoLabel = escapeHtml(STRINGS.newConversationChip[currentLang])
   // "New conversation" leads the dock - it's the action most people reopening
   // an old conversation actually want, and with overflow-x scrolling a
   // trailing chip could need a scroll to even reach.
-  return `<div class="ai-chip chip-newconvo">${newConvoLabel}</div>${chips}`
+  return `<div class="ai-chip chip-newconvo" tabindex="0" role="button">${newConvoLabel}</div>${chips}`
 }
 
 export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHandle {
@@ -1054,19 +1061,38 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     const target = (e.target as HTMLElement).closest('.ai-starter')
     if (target) fillFromStarterText(target.textContent || '')
   })
+  // Chips are tabindex="0" role="button" (see starterItemsHtml) - a <div>
+  // gets no native Enter/Space activation from the browser, so it has to be
+  // wired up by hand for keyboard-only users to reach them at all.
+  chatEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    const target = (e.target as HTMLElement).closest('.ai-starter')
+    if (!target) return
+    e.preventDefault()
+    fillFromStarterText(target.textContent || '')
+  })
 
   // The chip dock lives outside .ai-chat (see showHistoric()), so it needs
   // its own delegated listener - the "New conversation" chip calls the exact
   // same options.onNewChat() as newChatBtn below, and a starter chip reuses
   // fillFromStarterText, same as an inline .ai-starter click.
-  chipDockEl.addEventListener('click', (e) => {
-    const newConvo = (e.target as HTMLElement).closest('.chip-newconvo')
-    if (newConvo) {
+  function activateChipDockChip(chip: HTMLElement): void {
+    if (chip.classList.contains('chip-newconvo')) {
       options.onNewChat()
       return
     }
-    const chip = (e.target as HTMLElement).closest('.ai-chip')
-    if (chip) fillFromStarterText(chip.textContent || '')
+    fillFromStarterText(chip.textContent || '')
+  }
+  chipDockEl.addEventListener('click', (e) => {
+    const chip = (e.target as HTMLElement).closest<HTMLElement>('.ai-chip')
+    if (chip) activateChipDockChip(chip)
+  })
+  chipDockEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    const chip = (e.target as HTMLElement).closest<HTMLElement>('.ai-chip')
+    if (!chip) return
+    e.preventDefault()
+    activateChipDockChip(chip)
   })
 
   // Post-hoc addition (2026-08-24, user-requested): a separate stop button
@@ -1626,6 +1652,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       historyDraft = ''
     },
     showHistoric(messages) {
+      // No history to replay - leave the fresh-empty-chat state (and its
+      // inline emptyStateHtml() starters) exactly as mount left it, instead
+      // of appending an empty divider and showing a dock with nothing above
+      // it to distinguish from a brand-new chat.
+      if (messages.length === 0) return
       for (const m of messages) {
         renderMessage(m.role, m.text)
         if (m.role === 'user') pushSentHistory(m.text)

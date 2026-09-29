@@ -267,6 +267,38 @@ describe('mountChatUI', () => {
     expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
   })
 
+  it('showHistoric([]) is a no-op - no divider, no dock, empty state untouched', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([])
+    expect(root.querySelector('.ai-history-sep')).toBeNull()
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
+    expect(root.querySelector('.ai-chat .ai-chat-empty')).not.toBeNull()
+  })
+
+  it('dock chips are keyboard-activatable (tabindex + Enter/Space)', () => {
+    const { root, handle, onNewChat } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chip = root.querySelector<HTMLElement>('#chipDock .ai-chip:not(.chip-newconvo)')!
+    expect(chip.getAttribute('tabindex')).toBe('0')
+    expect(chip.getAttribute('role')).toBe('button')
+    chip.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    expect(textarea.value).toBe('Summarize this document')
+
+    const newConvo = root.querySelector<HTMLElement>('#chipDock .chip-newconvo')!
+    newConvo.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))
+    expect(onNewChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('inline empty-state starters are keyboard-activatable too', () => {
+    const { root } = setup()
+    const starter = root.querySelector<HTMLElement>('.ai-starter')!
+    expect(starter.getAttribute('tabindex')).toBe('0')
+    starter.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    expect(textarea.value).toBe(starter.textContent)
+  })
+
   it('setSelectionScope updates the hint label text for a live selection, and reverts to Whole document', () => {
     const { root, handle } = setup()
     handle.setSelectionScope({ hasSelection: true, preview: 'Q3 revenue grew' })
