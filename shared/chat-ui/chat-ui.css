@@ -264,7 +264,11 @@
   .ai-chip-dock {
     display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; flex-shrink: 0;
     overflow-x: auto; padding: 10px 16px; border-top: 1px solid var(--color-border-default);
+    /* Scrolls, but the native scrollbar is unwanted chrome in a single-row
+       chip strip - Firefox and WebView2/Chromium hide it separately. */
+    scrollbar-width: none;
   }
+  .ai-chip-dock::-webkit-scrollbar { display: none; }
   /* Same specificity pitfall as .ai-more-settings-btn above: this class's own
      `display: flex` matches the plain [hidden] rule's specificity, so the
      `hidden` IDL property alone would not hide it without this override. */

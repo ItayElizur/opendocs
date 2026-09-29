@@ -250,6 +250,23 @@ describe('mountChatUI', () => {
     expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
   })
 
+  it('the "New conversation" chip leads the dock, ahead of the starter chips', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const first = root.querySelector<HTMLElement>('#chipDock')!.firstElementChild
+    expect(first?.classList.contains('chip-newconvo')).toBe(true)
+  })
+
+  it('sending a new message in a reopened conversation hides the chip dock', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(false)
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    textarea.value = 'continue the conversation'
+    root.querySelector<HTMLButtonElement>('.ai-send-btn')!.click()
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
+  })
+
   it('setSelectionScope updates the hint label text for a live selection, and reverts to Whole document', () => {
     const { root, handle } = setup()
     handle.setSelectionScope({ hasSelection: true, preview: 'Q3 revenue grew' })

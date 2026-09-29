@@ -563,7 +563,10 @@ function chipDockHtml(options: ChatUIOptions, currentLang: Lang): string {
     .map((s) => `<div class="ai-chip">${escapeHtml(s[currentLang])}</div>`)
     .join('')
   const newConvoLabel = escapeHtml(STRINGS.newConversationChip[currentLang])
-  return `${chips}<div class="ai-chip chip-newconvo">${newConvoLabel}</div>`
+  // "New conversation" leads the dock - it's the action most people reopening
+  // an old conversation actually want, and with overflow-x scrolling a
+  // trailing chip could need a scroll to even reach.
+  return `<div class="ai-chip chip-newconvo">${newConvoLabel}</div>${chips}`
 }
 
 export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHandle {
@@ -1028,6 +1031,10 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     textarea.value = ''
     updateTextareaDir()
     pushSentHistory(text)
+    // Continuing a reopened conversation with a real message means the user
+    // has moved on from "pick a starter or start over" - same reasoning as
+    // renderMessage() dropping .ai-chat-empty on a live chat's first message.
+    chipDockEl.hidden = true
     options.onSend(text)
   }
 
