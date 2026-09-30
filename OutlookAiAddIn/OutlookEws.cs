@@ -162,21 +162,37 @@ namespace OutlookAiAddIn
             return null;
         }
 
+        // Queries Contacts and the Directory (GAL) separately and merges both,
+        // rather than the single-call ResolveNameSearchLocation.ContactsThenDirectory
+        // this used to use. ContactsThenDirectory short-circuits: Exchange's ANR
+        // match against a personal Contacts folder only checks DisplayName (not
+        // GivenName/Surname/company/etc.), and if that phase returns anything at
+        // all, the fuller GAL ANR (which does cover first/last name) never runs -
+        // confirmed as the cause of search_contacts matching display name only.
+        // ContactSearchFormat.Format (the caller) already dedupes by email/name
+        // and applies the limit, so merging both lists here is safe.
         private static IReadOnlyList<KeyValuePair<string, string>> ResolveNames(Uri url, string query)
         {
             var results = new List<KeyValuePair<string, string>>();
-
             Ews.ExchangeService svc = NewService(url);
+            AppendResolutions(svc, query, Ews.ResolveNameSearchLocation.ContactsOnly, results);
+            AppendResolutions(svc, query, Ews.ResolveNameSearchLocation.DirectoryOnly, results);
+            return results;
+        }
+
+        private static void AppendResolutions(Ews.ExchangeService svc, string query, Ews.ResolveNameSearchLocation location, List<KeyValuePair<string, string>> results)
+        {
             Ews.NameResolutionCollection col;
             try
             {
-                col = svc.ResolveName(query, Ews.ResolveNameSearchLocation.ContactsThenDirectory, true);
+                col = svc.ResolveName(query, location, true);
             }
             catch (Ews.ServiceResponseException)
             {
                 // ErrorNameResolutionNoResults / NoMailbox surface here on some
-                // servers rather than as an empty collection - treat as "no matches".
-                return results;
+                // servers rather than as an empty collection - treat as "no matches"
+                // at this search location (the other location may still match).
+                return;
             }
 
             foreach (Ews.NameResolution nr in col)
@@ -187,8 +203,6 @@ namespace OutlookAiAddIn
                 string name = DisplayNameFrom(nr, email);
                 results.Add(new KeyValuePair<string, string>(name, email));
             }
-
-            return results;
         }
 
         private static string SmtpFrom(Ews.NameResolution nr)

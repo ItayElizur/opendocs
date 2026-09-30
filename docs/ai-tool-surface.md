@@ -1134,8 +1134,15 @@ index otherwise.
   split out of the file this section used to describe — the tool-facing orchestration on
   top: `SearchContactsAsync`, `ResolveWorkWeekAsync`, and the shared endpoint/account
   resolution both call, `ResolveEwsUrlAsync`/`FindExchangeAccountInfo`). Contact resolution
-  calls **EWS `ResolveName(query, ContactsThenDirectory, returnContactDetails: true)`**
-  (EWS Managed API 2.2, `Microsoft.Exchange.WebServices` 2.2.0) with
+  calls **EWS `ResolveName` twice, `ContactsOnly` then `DirectoryOnly` (both
+  `returnContactDetails: true`), merging both result sets** (EWS Managed API 2.2,
+  `Microsoft.Exchange.WebServices` 2.2.0) — **fixed 2026-09-30**: the original single-call
+  `ContactsThenDirectory` short-circuited on any Contacts-folder hit (whose ANR only matches
+  `DisplayName`) and never reached the Directory/GAL phase (whose ANR does cover
+  given name/surname), so a query could resolve only against display names. Querying both
+  locations unconditionally and merging (`ContactSearchFormat.Format` already dedupes by
+  email/name) fixes that at the cost of one extra EWS round trip. Contact resolution
+  runs with
   `ExchangeService.UseDefaultCredentials` (Windows Integrated Auth as the signed-in user —
   the .NET equivalent of `mcp-outlook`'s `auth_type=sspi`; no stored credentials). Endpoint
   is parsed from the cached `Outlook.Account.AutoDiscoverXml` (`<EwsUrl>`/`<ASUrl>`, `EXCH`
