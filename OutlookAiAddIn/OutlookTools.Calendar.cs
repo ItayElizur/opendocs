@@ -12,9 +12,6 @@ namespace OutlookAiAddIn
 {
     public static partial class OutlookTools
     {
-        // Ordering is load-bearing: Sort("[Start]") -> IncludeRecurrences = true
-        // -> Restrict. Any other order silently drops recurring instances, and
-        // IncludeRecurrences rules out the faster GetTable path.
         private static async Task<ToolResult> ListEventsAsync(JsonElement input)
         {
             DateTime start = (DateArg(input, "start_date") ?? DateTime.Today).Date;
@@ -61,17 +58,27 @@ namespace OutlookAiAddIn
             // "Open question" section: if Outlook still freezes after this change,
             // this GetSharedDefaultFolder call itself - not the enumeration it used
             // to do - is the next thing to investigate.
-            string storeId;
+            Outlook.Folder sharedCal;
             try
             {
-                Outlook.Folder sharedCal = (Outlook.Folder)Ns.GetSharedDefaultFolder(recipient, Outlook.OlDefaultFolders.olFolderCalendar);
-                storeId = sharedCal.Store == null ? null : sharedCal.Store.StoreID;
+                sharedCal = (Outlook.Folder)Ns.GetSharedDefaultFolder(recipient, Outlook.OlDefaultFolders.olFolderCalendar);
             }
             catch (Exception ex)
             {
                 DebugLog.WriteException("ListEvents GetSharedDefaultFolder", ex);
                 return new ToolResult { Output = "Could not open " + mailbox + "'s calendar - you may not have been granted access to view it, or need to add it via Outlook's own \"Open Calendar\" first. (" + ex.Message + ")", IsError = true, Summary = "list_events" };
             }
+
+            // Split from the GetSharedDefaultFolder try/catch above on purpose
+            // (restores the shape from commit ec53129, predating this branch): a
+            // StoreID read failure here means the folder itself opened fine, so it
+            // should degrade to a missing store_id (costing only get_event
+            // usability for these specific events) rather than being misreported
+            // as "you may not have been granted access" - see ec53129 for the
+            // original bug this shape fixes.
+            string storeId;
+            try { storeId = sharedCal.Store == null ? null : sharedCal.Store.StoreID; }
+            catch (Exception ex) { DebugLog.WriteException("ListEvents shared calendar StoreID", ex); storeId = null; }
 
             string sharedSmtp = SmtpOf(recipient.AddressEntry);
             if (string.IsNullOrEmpty(sharedSmtp)) sharedSmtp = mailbox;
@@ -124,6 +131,9 @@ namespace OutlookAiAddIn
             return BuildListEventsResult(new StringBuilder(text), n, start, end, displayName);
         }
 
+        // Ordering is load-bearing: Sort("[Start]") -> IncludeRecurrences = true
+        // -> Restrict. Any other order silently drops recurring instances, and
+        // IncludeRecurrences rules out the faster GetTable path.
         private static void QueryCalendarItems(Outlook.Folder cal, DateTime start, DateTime end, int limit, string mailbox, string storeId, out StringBuilder sb, out int n)
         {
             Outlook.Items items = cal.Items;

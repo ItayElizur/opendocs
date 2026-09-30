@@ -1283,7 +1283,11 @@ index otherwise.
 > `docs/superpowers/specs/2026-09-30-outlook-shared-calendar-ews-design.md` for the
 > full design, including the one assumption this fix rests on that still needs live
 > confirmation (whether `GetSharedDefaultFolder` alone, independent of enumeration, was
-> ever part of the freeze).
+> ever part of the freeze). One accepted, deliberate difference: the EWS path's
+> `response`/`meeting_status` values are EWS's own label names (e.g. `Accept`,
+> `Meeting`, `Cancelled`) rather than the COM path's `Ol*` enum names (e.g.
+> `olResponseAccepted`, `olMeeting`) — both are just human/LLM-readable text that
+> nothing parses, so this is not a bug.
 
 ### Mutating tools (13 — Full autonomy only; `Mutated = true`)
 

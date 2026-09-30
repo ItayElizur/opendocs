@@ -82,4 +82,20 @@ public class SharedCalendarEventFormatTests
         Assert.Contains("  location: \r\n", outp);
         Assert.Contains("organizer:   all_day:", outp);
     }
+
+    [Fact]
+    public void NullEntryId_ConvertIdFailurePath_FormatsAsEmptyNotThrow()
+    {
+        var row = Row(entryId: null);
+        string outp = SharedCalendarEventFormat.Format(new List<SharedCalendarEventRow> { row }, 50, null, null);
+        Assert.Contains("- event_id: \r\n", outp);
+    }
+
+    [Fact]
+    public void CalendarOwnerSet_NullStoreId_FormatsAsEmptyNotThrow()
+    {
+        var row = Row();
+        string outp = SharedCalendarEventFormat.Format(new List<SharedCalendarEventRow> { row }, 50, "Dana Cohen", null);
+        Assert.Contains("  store_id: \r\n", outp);
+    }
 }
