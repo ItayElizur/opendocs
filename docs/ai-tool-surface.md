@@ -1263,6 +1263,26 @@ index otherwise.
 > own reasoning, but that assumption itself is untested, same as the underlying
 > calendar-sharing permission-tier behavior called out in the block above.
 
+> **Update 2026-09-30 (shared-calendar path rewritten onto EWS - was freezing Outlook):**
+> The `GetSharedDefaultFolder` + `Items.Sort/IncludeRecurrences/Restrict/foreach` COM
+> enumeration above froze Outlook - confirmed live by the project owner, even for a
+> single-day range. Root cause: that folder is normally not cached offline the way the
+> caller's own default calendar is, so per-property reads during enumeration could mean
+> a live, blocking round trip to Exchange for every property of every event, all on
+> Outlook's own UI thread (Outlook COM objects are STA-bound, unlike this add-in's EWS
+> calls). `list_events`' shared-calendar path now queries EWS's `FindAppointments` +
+> `CalendarView` instead (server-side date-range filtering and recurrence expansion,
+> off the UI thread via `Task.Run` - the same pattern `search_contacts` already uses for
+> the same reason). `GetSharedDefaultFolder` is still called exactly once per
+> `list_events` call, but only to read `.Store.StoreID` for `get_event`'s `store_id`
+> parameter - it never touches `.Items`. Output format is unchanged (same
+> `SharedCalendarEventFormat.Format`-produced text for both the own-calendar and
+> shared-calendar paths). See
+> `docs/superpowers/specs/2026-09-30-outlook-shared-calendar-ews-design.md` for the
+> full design, including the one assumption this fix rests on that still needs live
+> confirmation (whether `GetSharedDefaultFolder` alone, independent of enumeration, was
+> ever part of the freeze).
+
 ### Mutating tools (13 — Full autonomy only; `Mutated = true`)
 
 | Tool | Notes |
