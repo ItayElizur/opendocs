@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -14,7 +15,7 @@ namespace OutlookAiAddIn
         // Ordering is load-bearing: Sort("[Start]") -> IncludeRecurrences = true
         // -> Restrict. Any other order silently drops recurring instances, and
         // IncludeRecurrences rules out the faster GetTable path.
-        private static ToolResult ListEvents(JsonElement input)
+        private static async Task<ToolResult> ListEventsAsync(JsonElement input)
         {
             DateTime start = (DateArg(input, "start_date") ?? DateTime.Today).Date;
             DateTime end = (DateArg(input, "end_date") ?? DateTime.Today.AddDays(7)).Date.AddDays(1);
@@ -49,10 +50,22 @@ namespace OutlookAiAddIn
             // the caller typed.
             string displayName = !string.IsNullOrEmpty(recipient.Name) ? recipient.Name : mailbox;
 
-            Outlook.Folder sharedCal;
+            // 2026-09-30: this used to also enumerate the folder's Items (Sort ->
+            // IncludeRecurrences -> Restrict -> foreach), which froze Outlook - that
+            // COM enumeration against a shared, normally-not-cached-offline mailbox
+            // could mean a live round trip to Exchange per property per event. Now
+            // this call is ONLY used to read .Store.StoreID (get_event's own
+            // store_id parameter needs it - see its comment); the actual event data
+            // comes from EWS below, off the UI thread. See
+            // docs/superpowers/specs/2026-09-30-outlook-shared-calendar-ews-design.md's
+            // "Open question" section: if Outlook still freezes after this change,
+            // this GetSharedDefaultFolder call itself - not the enumeration it used
+            // to do - is the next thing to investigate.
+            string storeId;
             try
             {
-                sharedCal = (Outlook.Folder)Ns.GetSharedDefaultFolder(recipient, Outlook.OlDefaultFolders.olFolderCalendar);
+                Outlook.Folder sharedCal = (Outlook.Folder)Ns.GetSharedDefaultFolder(recipient, Outlook.OlDefaultFolders.olFolderCalendar);
+                storeId = sharedCal.Store == null ? null : sharedCal.Store.StoreID;
             }
             catch (Exception ex)
             {
@@ -60,39 +73,55 @@ namespace OutlookAiAddIn
                 return new ToolResult { Output = "Could not open " + mailbox + "'s calendar - you may not have been granted access to view it, or need to add it via Outlook's own \"Open Calendar\" first. (" + ex.Message + ")", IsError = true, Summary = "list_events" };
             }
 
-            // Unlike the own-calendar path above, a restricted sharing tier
-            // can make the folder open fine (GetSharedDefaultFolder succeeds)
-            // but fail lazily only once items are actually enumerated -
-            // Items/Sort/IncludeRecurrences/Restrict/foreach are all lazy
-            // COM operations here. Only the shared path is wrapped: the
-            // own-calendar path's behavior must stay exactly as it was
-            // pre-feature, generic exception and all.
-            // Folder.Store has been observed to return null for a folder opened
-            // via GetSharedDefaultFolder even though the folder itself opened
-            // fine and the caller has full access to it - confirmed live
-            // 2026-09-30 via a real cross-mailbox repro (NullReferenceException
-            // reading .Store.StoreID here, previously misreported to the user
-            // as a permissions failure by the catch below). store_id is only
-            // needed later for get_event to resolve an event outside the
-            // caller's own default store - losing it just means get_event
-            // can't be used on these events, which is a much smaller problem
-            // than list_events failing outright.
-            string storeId;
-            try { storeId = sharedCal.Store == null ? null : sharedCal.Store.StoreID; }
-            catch (Exception ex) { DebugLog.WriteException("ListEvents shared calendar StoreID", ex); storeId = null; }
+            string sharedSmtp = SmtpOf(recipient.AddressEntry);
+            if (string.IsNullOrEmpty(sharedSmtp)) sharedSmtp = mailbox;
 
-            StringBuilder sharedSb;
-            int sharedN;
+            Uri url;
             try
             {
-                QueryCalendarItems(sharedCal, start, end, limit, displayName, storeId, out sharedSb, out sharedN);
+                url = await ResolveEwsUrlAsync();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return new ToolResult { Output = ex.Message, IsError = true, Summary = "list_events" };
+            }
+
+            IReadOnlyList<SharedCalendarEventRow> rows;
+            try
+            {
+                rows = await OutlookEws.GetSharedCalendarEventsAsync(url, sharedSmtp, start, end, limit);
+            }
+            catch (Exception ex) when (OutlookEws.IsTimeout(ex))
+            {
+                DebugLog.WriteException("list_events shared calendar timeout", ex);
+                return new ToolResult { Output = "The Exchange calendar lookup for " + mailbox + " timed out after 15s. Try again, or check your network / VPN connection.", IsError = true, Summary = "list_events" };
+            }
+            catch (Microsoft.Exchange.WebServices.Data.ServiceRequestException ex)
+            {
+                DebugLog.WriteException("list_events shared calendar ServiceRequestException", ex);
+                return new ToolResult { Output = "Exchange rejected the calendar lookup for " + mailbox + ": " + ex.Message + " (Windows authentication to Exchange may have failed - are you on the domain network?)", IsError = true, Summary = "list_events" };
+            }
+            catch (WebException ex)
+            {
+                DebugLog.WriteException("list_events shared calendar WebException", ex);
+                return new ToolResult
+                {
+                    Output = ex.Status == WebExceptionStatus.ProtocolError
+                        ? "Windows authentication to Exchange failed (are you connected to the domain network / VPN?)."
+                        : "Could not reach the Exchange server (" + ex.Status + ").",
+                    IsError = true,
+                    Summary = "list_events",
+                };
             }
             catch (Exception ex)
             {
-                DebugLog.WriteException("ListEvents shared calendar read", ex);
-                return new ToolResult { Output = "Could not read " + mailbox + "'s calendar - you may not have been granted full access to it. (" + ex.Message + ")", IsError = true, Summary = "list_events" };
+                DebugLog.WriteException("list_events shared calendar (unexpected)", ex);
+                return new ToolResult { Output = "Could not read " + mailbox + "'s calendar: " + ex.Message, IsError = true, Summary = "list_events" };
             }
-            return BuildListEventsResult(sharedSb, sharedN, start, end, displayName);
+
+            string text = SharedCalendarEventFormat.Format(rows, limit, displayName, storeId);
+            int n = Math.Min(rows.Count, limit);
+            return BuildListEventsResult(new StringBuilder(text), n, start, end, displayName);
         }
 
         private static void QueryCalendarItems(Outlook.Folder cal, DateTime start, DateTime end, int limit, string mailbox, string storeId, out StringBuilder sb, out int n)
