@@ -67,11 +67,25 @@ namespace OutlookAiAddIn
             // COM operations here. Only the shared path is wrapped: the
             // own-calendar path's behavior must stay exactly as it was
             // pre-feature, generic exception and all.
+            // Folder.Store has been observed to return null for a folder opened
+            // via GetSharedDefaultFolder even though the folder itself opened
+            // fine and the caller has full access to it - confirmed live
+            // 2026-09-30 via a real cross-mailbox repro (NullReferenceException
+            // reading .Store.StoreID here, previously misreported to the user
+            // as a permissions failure by the catch below). store_id is only
+            // needed later for get_event to resolve an event outside the
+            // caller's own default store - losing it just means get_event
+            // can't be used on these events, which is a much smaller problem
+            // than list_events failing outright.
+            string storeId;
+            try { storeId = sharedCal.Store == null ? null : sharedCal.Store.StoreID; }
+            catch (Exception ex) { DebugLog.WriteException("ListEvents shared calendar StoreID", ex); storeId = null; }
+
             StringBuilder sharedSb;
             int sharedN;
             try
             {
-                QueryCalendarItems(sharedCal, start, end, limit, displayName, sharedCal.Store.StoreID, out sharedSb, out sharedN);
+                QueryCalendarItems(sharedCal, start, end, limit, displayName, storeId, out sharedSb, out sharedN);
             }
             catch (Exception ex)
             {

@@ -59,6 +59,8 @@ Add one addition to the per-event output when `mailbox` was given: a `calendar_o
 
 **Explicitly unverified, flagged for the user's own live test once built** (per their offer to test elsewhere): the exact behavior at each Exchange sharing tier — whether an event property comes back blank, a placeholder, or the field is simply omitted; whether `GetSharedDefaultFolder` throws immediately on zero access or only fails lazily when `.Items` is enumerated; whether a *self*-shared calendar (viewing your own address via `mailbox`) behaves identically to the existing no-`mailbox` path (expected to, since it'd resolve to the same underlying folder, but not explicitly tested).
 
+**Confirmed live 2026-09-30 (real cross-machine repro, full-access sharing tier):** `GetSharedDefaultFolder` itself succeeded (no exception), but the returned folder's `.Store` property came back `null` — something neither this design nor `GetEvent`'s later `store_id` addition anticipated. The `sharedCal.Store.StoreID` expression added for `store_id` then threw a `NullReferenceException`, which the surrounding catch mis-reported as "you may not have been granted full access to it," even though full access existed and the folder itself opened correctly. Fixed in `OutlookTools.Calendar.cs` by guarding the `Store`/`StoreID` read and degrading to a missing `store_id` (only needed for `get_event` on a cross-mailbox event) instead of failing the whole `list_events` call.
+
 ## Out of scope
 
 - Writing to another user's calendar (creating/editing/canceling events on their behalf) — a distinct, much larger authority question.
