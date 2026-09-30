@@ -110,12 +110,26 @@
     color: var(--color-text-tertiary); font-size: 12px;
   }
   .ai-history-sep::before, .ai-history-sep::after { content: ''; flex: 1; height: 1px; background: var(--color-border-default); }
-  /* Breathing room below the divider so it doesn't sit glued to the chip
-     dock right underneath it - see showHistoric()'s comment for why this is
-     safe from the flexbox crush bug the old trailing emptyStateHtml() had
-     (no `overflow: hidden` + `flex: 1` combo). Shrinks like any other
-     .ai-chat child once a long transcript needs the room back. */
-  .ai-history-spacer { min-height: 28vh; }
+  /* Permanent trailing element in every conversation (not just a reopened
+     one), created once at mount and kept as .ai-chat's last child by
+     appendToChat() - see updateEndBufferActive() (2026-09-30, user-requested):
+     once a conversation is long enough to scroll, this latches to a fixed
+     height and stays there for the rest of the session (whether that
+     conversation was just reopened or is being freely continued), so a
+     reply that starts filling it doesn't visibly shift the transcript, and
+     the divider isn't glued to the chip dock right underneath it either.
+     Inactive (height: 0) for any conversation that still fits on one
+     screen - .ai-chat's own `gap`/padding already give that case normal
+     breathing room without this.
+     Deliberately NOT transitioned: updateEndBufferActive() toggles .active
+     then immediately reads chatEl.scrollHeight to land scrollTop - with a
+     CSS transition, that synchronous read happens on the very first (0px-
+     grown) animation frame, landing scroll short by however much the buffer
+     still had left to grow and leaving a leftover gap at the bottom
+     (confirmed live 2026-09-30). Instant height change keeps the read
+     accurate. */
+  .ai-chat-end-buffer { height: 0; flex-shrink: 0; }
+  .ai-chat-end-buffer.active { height: 64px; }
   /* No fade: verified genoffice applies an .ai-msg-historic class to old
      messages but there is NO CSS rule for it anywhere in the codebase - the
      restored transcript renders at full, identical opacity to live messages,

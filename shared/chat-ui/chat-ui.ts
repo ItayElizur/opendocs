@@ -778,6 +778,15 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   chatEl.innerHTML = emptyStateHtml(options, currentLang)
   chipDockEl.innerHTML = chipDockHtml(options, currentLang)
 
+  // Permanent trailing element, present for every conversation (not just a
+  // reopened one) - see updateEndBufferActive()/appendToChat() below. Created
+  // once here and only ever moved (never recreated), so its 'active' state
+  // (and the CSS transition riding on it) survives every chatEl.innerHTML
+  // rewrite below (resetToEmpty, the language-switch empty-state refresh).
+  const endBufferEl = document.createElement('div')
+  endBufferEl.className = 'ai-chat-end-buffer'
+  chatEl.appendChild(endBufferEl)
+
   // Built once at mount from options.modeOverrides (modeCommentOnly/
   // modeCommentOnlyDesc/etc. keys, same shape as STRINGS) - t() checks this
   // before the shared STRINGS table, so an app's per-mode relabeling (e.g.
@@ -901,6 +910,10 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     if (existingEmpty) {
       existingEmpty.remove()
       chatEl.insertAdjacentHTML('beforeend', emptyStateHtml(options, currentLang))
+      // insertAdjacentHTML always lands after endBufferEl (the true last
+      // child) - re-append to move it (not clone it - it's already in the
+      // DOM) back to the end.
+      chatEl.appendChild(endBufferEl)
     }
     // Relocalize the chip dock's chips too - it's not removed/rebuilt by
     // anything else across a language switch (unlike .ai-chat-empty above,
@@ -974,15 +987,39 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           `<span class="ai-typing-label" data-t="thinking">${escapeHtml(t('thinking'))}</span>` +
           `<span class="ai-typing-dots"><span></span><span></span><span></span></span>`
       }
-      chatEl.appendChild(thinkingEl) // re-append keeps it as the last child
+      appendToChat(thinkingEl) // re-append keeps it right before any spacer
       scrollToBottom()
     } else if (thinkingEl) {
       thinkingEl.remove()
     }
   }
 
+  // One-way latch (user-requested behavior, 2026-09-30): once a conversation
+  // is long enough to need scrolling, permanently reserve endBufferEl's fixed
+  // height so the reply that starts filling it doesn't visibly shift/"jump"
+  // the transcript - and it never turns back off, so the buffer's size stays
+  // constant for the rest of the session regardless of what's sent next.
+  // Checked here (rather than a ResizeObserver) because scrollToBottom()
+  // already runs after every content change that could newly overflow the
+  // pane. Measures BEFORE the potential activation below, while the buffer
+  // is still height:0, so its own box never counts toward "is this
+  // overflowing" - only real conversation content does.
+  function updateEndBufferActive(): void {
+    if (endBufferEl.classList.contains('active')) return
+    if (chatEl.scrollHeight > chatEl.clientHeight) endBufferEl.classList.add('active')
+  }
+
   function scrollToBottom(): void {
+    updateEndBufferActive()
     chatEl.scrollTop = chatEl.scrollHeight
+  }
+
+  // Every message/notice/thinking-indicator element renders through this
+  // instead of a bare chatEl.appendChild, so endBufferEl - created once at
+  // mount, never recreated - stays the LAST child of .ai-chat no matter what
+  // gets added.
+  function appendToChat(el: HTMLElement): void {
+    chatEl.insertBefore(el, endBufferEl)
   }
 
   // Up/Down-arrow recall of previously sent messages, shell-style. Seeded from
@@ -1432,7 +1469,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     } else {
       div.textContent = text
     }
-    chatEl.appendChild(div)
+    appendToChat(div)
     return div
   }
 
@@ -1507,7 +1544,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       const groupEl = document.createElement('div')
       groupEl.className = 'ai-work-group running'
       groupEl.innerHTML = `<div class="ai-work-group-summary"><span class="caret">&#9656;</span><span class="label">Running tools...</span></div><div class="ai-work-group-body"><div class="steps"></div></div>`
-      chatEl.appendChild(groupEl)
+      appendToChat(groupEl)
       groupEl.querySelector('.ai-work-group-summary')!.addEventListener('click', () => groupEl.classList.toggle('open'))
       const summaryEl = groupEl.querySelector<HTMLElement>('.label')!
       const stepsEl = groupEl.querySelector<HTMLElement>('.steps')!
@@ -1619,7 +1656,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       const div = document.createElement('div')
       div.className = 'ai-msg-error'
       div.textContent = message
-      chatEl.appendChild(div)
+      appendToChat(div)
       scrollToBottom()
     },
     showNotice(kind, onContinue) {
@@ -1643,7 +1680,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         })
         div.appendChild(btn)
       }
-      chatEl.appendChild(div)
+      appendToChat(div)
       scrollToBottom()
     },
     translate(key) {
@@ -1651,6 +1688,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     },
     resetToEmpty() {
       chatEl.innerHTML = emptyStateHtml(options, currentLang)
+      // chatEl.innerHTML wiped endBufferEl along with everything else - it's
+      // the same element (never recreated), just detached; re-attach it and
+      // drop its 'active' state, since a genuine New Chat isn't scrollable yet.
+      endBufferEl.classList.remove('active')
+      chatEl.appendChild(endBufferEl)
       // A genuine New Chat reset returns to the plain fresh-empty-chat state
       // (emptyStateHtml's own inline starters are showing again), so the
       // chip dock - the reopened-conversation's way back to those actions -
@@ -1677,7 +1719,6 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       const sep = document.createElement('div')
       sep.className = 'ai-history-sep'
       sep.textContent = t('historySep')
-      chatEl.appendChild(sep)
       // No trailing emptyStateHtml() append here (that used to be the bug):
       // .ai-chat-empty sets `flex: 1` + `overflow: hidden`, which per the
       // flexbox spec gives it a zero automatic minimum size - once the
@@ -1687,19 +1728,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       // The chip dock (a sibling outside .ai-chat entirely) replaces it as
       // this reopened conversation's way back to both actions, and stays
       // visible for the rest of the session (only resetToEmpty hides it).
-      //
-      // scrollToBottom() lands on whatever the last child of .ai-chat is -
-      // without this spacer that's the divider itself, gluing it to the
-      // pane's bottom edge right against the dock with no breathing room.
-      // Unlike .ai-chat-empty, this has no `overflow: hidden` (so it keeps
-      // the default automatic-minimum-size behavior, not the zero-size one
-      // that caused the original bug) and no `flex: 1` (so it never fights
-      // real content for extra space) - just a plain block that shrinks
-      // like any other .ai-chat child once a long transcript above it
-      // actually needs the room back.
-      const spacer = document.createElement('div')
-      spacer.className = 'ai-history-spacer'
-      chatEl.appendChild(spacer)
+      appendToChat(sep)
       chipDockEl.hidden = false
       scrollToBottom()
     },

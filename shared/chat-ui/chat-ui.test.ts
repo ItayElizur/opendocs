@@ -267,6 +267,63 @@ describe('mountChatUI', () => {
     expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
   })
 
+  it('the end buffer exists (inactive) from mount, even before any history is shown', () => {
+    const { root } = setup()
+    const buffer = root.querySelector<HTMLElement>('.ai-chat-end-buffer')
+    expect(buffer).not.toBeNull()
+    expect(buffer!.classList.contains('active')).toBe(false)
+  })
+
+  it('the end buffer activates once the conversation overflows the visible pane, and never turns back off', () => {
+    const { root, handle } = setup()
+    const chat = root.querySelector<HTMLElement>('.ai-chat')!
+    const buffer = root.querySelector<HTMLElement>('.ai-chat-end-buffer')!
+    Object.defineProperty(chat, 'clientHeight', { value: 400, configurable: true })
+    Object.defineProperty(chat, 'scrollHeight', { value: 400, configurable: true })
+    handle.addUserMessage('short message')
+    expect(buffer.classList.contains('active')).toBe(false)
+
+    Object.defineProperty(chat, 'scrollHeight', { value: 900, configurable: true })
+    handle.addUserMessage('this pushes the transcript past one screen')
+    expect(buffer.classList.contains('active')).toBe(true)
+
+    // One-way latch, per user request: even if content were to report as
+    // short again, the buffer must not shrink back to inactive.
+    Object.defineProperty(chat, 'scrollHeight', { value: 200, configurable: true })
+    handle.addUserMessage('short again')
+    expect(buffer.classList.contains('active')).toBe(true)
+  })
+
+  it('resetToEmpty deactivates the end buffer for the new conversation', () => {
+    const { root, handle } = setup()
+    const chat = root.querySelector<HTMLElement>('.ai-chat')!
+    Object.defineProperty(chat, 'clientHeight', { value: 100, configurable: true })
+    Object.defineProperty(chat, 'scrollHeight', { value: 900, configurable: true })
+    handle.addUserMessage('long enough to overflow')
+    expect(root.querySelector('.ai-chat-end-buffer')!.classList.contains('active')).toBe(true)
+    handle.resetToEmpty()
+    expect(root.querySelector('.ai-chat-end-buffer')!.classList.contains('active')).toBe(false)
+  })
+
+  it('a message sent after reopening a conversation renders above the end buffer, which stays the last child', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chat = root.querySelector<HTMLElement>('.ai-chat')!
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    textarea.value = 'continue the conversation'
+    root.querySelector<HTMLButtonElement>('.ai-send-btn')!.click()
+    // doSend() only clears the textarea and calls onSend() - rendering the
+    // user's own bubble is the host's job (addUserMessage), same as real usage.
+    handle.addUserMessage('continue the conversation')
+    expect(chat.lastElementChild?.classList.contains('ai-chat-end-buffer')).toBe(true)
+    // :last-of-type matches the last <div> sibling regardless of class (the
+    // buffer, now trailing) - pull the last .ai-msg-user match instead.
+    const userMsgs = chat.querySelectorAll('.ai-msg-user')
+    const newMsg = userMsgs[userMsgs.length - 1]!
+    expect(newMsg.textContent).toBe('continue the conversation')
+    expect(newMsg.compareDocumentPosition(chat.lastElementChild!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('switching language preserves the chat scroll position instead of resetting it', () => {
     const { root, handle } = setup()
     handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
@@ -292,11 +349,11 @@ describe('mountChatUI', () => {
     expect(root.querySelector('.ai-history-sep')!.textContent).toBe('שיחה קודמת')
   })
 
-  it('showHistoric appends a spacer after the divider for breathing room above the dock', () => {
+  it('showHistoric keeps the end buffer as the last child, after the divider', () => {
     const { root, handle } = setup()
     handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
     const chat = root.querySelector('.ai-chat')!
-    expect(chat.lastElementChild?.classList.contains('ai-history-spacer')).toBe(true)
+    expect(chat.lastElementChild?.classList.contains('ai-chat-end-buffer')).toBe(true)
   })
 
   it('showHistoric([]) is a no-op - no divider, no dock, empty state untouched', () => {
