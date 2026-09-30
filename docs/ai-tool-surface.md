@@ -1275,9 +1275,11 @@ index otherwise.
 > off the UI thread via `Task.Run` - the same pattern `search_contacts` already uses for
 > the same reason). `GetSharedDefaultFolder` is still called exactly once per
 > `list_events` call, but only to read `.Store.StoreID` for `get_event`'s `store_id`
-> parameter - it never touches `.Items`. Output format is unchanged (same
-> `SharedCalendarEventFormat.Format`-produced text for both the own-calendar and
-> shared-calendar paths). See
+> parameter - it never touches `.Items`. Output format is unchanged (`list_events`'
+> shared-calendar path now produces the same per-event text shape via the new
+> `SharedCalendarEventFormat.Format` that `QueryCalendarItems` already produces
+> inline for the own-calendar path — the two paths intentionally use separate code,
+> not a shared call, per the design doc's rationale). See
 > `docs/superpowers/specs/2026-09-30-outlook-shared-calendar-ews-design.md` for the
 > full design, including the one assumption this fix rests on that still needs live
 > confirmation (whether `GetSharedDefaultFolder` alone, independent of enumeration, was
