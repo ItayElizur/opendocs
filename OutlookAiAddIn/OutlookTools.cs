@@ -161,7 +161,7 @@ namespace OutlookAiAddIn
                     case "open_email": return OpenEmail(input);
                     case "list_folders": return ListFolders(input);
                     case "search_contacts": return await SearchContactsAsync(input);
-                    case "list_events": return ListEvents(input);
+                    case "list_events": return await ListEventsAsync(input);
                     case "get_event": return GetEvent(input);
                     case "find_meeting_slots": return await FindMeetingSlotsAsync(input);
                     case "list_tasks": return ListTasks(input);
