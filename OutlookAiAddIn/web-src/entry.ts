@@ -101,7 +101,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'search_contacts',
     description:
-      'Resolves a name or email fragment against Exchange via server-side ambiguous-name resolution (EWS ResolveName): your personal Contacts first, then the Global Address List. Returns {name, email} entries. On-prem Exchange only; returns a clear error if Exchange cannot be reached.',
+      'Resolves a name or email fragment against Exchange via server-side ambiguous-name resolution (EWS ResolveName): your personal Contacts first, then the Global Address List. Each result line is "- Name <email>", or "- Name (Directory Label) <email>" when the directory\'s own display name differs from the person\'s actual name (e.g. an org-formatted label like "Department/Unit/Title") - the leading name is always the one to match against your query; the parenthesized label is just extra context, not a second candidate. A result with no parenthesized label and only a label-like name (e.g. a shared/role mailbox like "IT Helpdesk") has no separate person name available. On-prem Exchange only; returns a clear error if Exchange cannot be reached.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -114,21 +114,26 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'list_events',
     description:
-      'Lists calendar events in a date range (expands recurring meetings). Returns event_id, subject, start/end, location, organizer, and your response status. Recurring instances share the master event_id.',
+      'Lists calendar events in a date range (expands recurring meetings). Returns event_id, subject, start/end, location, organizer, and your response status. Recurring instances share the master event_id. Pass mailbox to view someone else\'s calendar instead of your own, if they\'ve granted you access to it in Exchange - visibility depends on what sharing level they set (full details, free/busy only, or none); Outlook applies that automatically, but the exact behavior at each level hasn\'t been independently verified by this add-in. Shared-calendar results include a store_id field - pass it to get_event or any calendar-editing tool (edit_event, cancel_event, accept_meeting, decline_meeting, tentative_meeting, set_event_categories, set_event_availability, and their draft counterparts) to act on that specific event. Whether the action actually succeeds is governed entirely by your real Outlook/Exchange permissions on that calendar, the same as if you\'d done it through Outlook\'s own UI - this add-in does not add its own extra restriction on top of that.',
     inputSchema: {
       type: 'object',
       properties: {
         start_date: { type: 'string', description: 'Range start, inclusive (YYYY-MM-DD). Default today.' },
         end_date: { type: 'string', description: 'Range end, inclusive (YYYY-MM-DD). Default +7 days.' },
         limit: { type: 'number', description: 'Default 50.' },
+        mailbox: { type: 'string', description: 'Email address of the calendar owner to view. Omit to view your own calendar.' },
       },
       required: [],
     },
   },
   {
     name: 'get_event',
-    description: 'Full calendar event: body, required/optional attendees, location, organizer, response status.',
-    inputSchema: { type: 'object', properties: { event_id: { type: 'string' } }, required: ['event_id'] },
+    description: 'Full calendar event: body, required/optional attendees, location, organizer, response status. Pass store_id (from list_events\' calendar_owner results) when event_id came from someone else\'s shared calendar - omit it for your own events. Whether this succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar, the same as opening the event in Outlook itself.',
+    inputSchema: {
+      type: 'object',
+      properties: { event_id: { type: 'string' }, store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field).' } },
+      required: ['event_id'],
+    },
   },
   {
     name: 'find_meeting_slots',
@@ -198,7 +203,7 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'delete_email',
-    description: 'Moves a message to Deleted Items (permanent:true also removes it from there).',
+    description: 'Moves a message to Deleted Items. permanent:true also removes it from there, which is irreversible and requires Full autonomy mode - otherwise omit permanent or set it to false.',
     inputSchema: {
       type: 'object',
       properties: { message_id: MESSAGE_ID, permanent: { type: 'boolean' }, folder: FOLDER },
@@ -206,14 +211,72 @@ const ALL_OUTLOOK_TOOLS = [
     },
   },
   {
+    name: 'undo_last_action',
+    description:
+      "Reverses YOUR most recent action in this chat (call repeatedly to step further back). Covers mark_email_read/unread, flag_email_important, move_email, " +
+      'delete_email (non-permanent - moves it back out of Deleted Items), create_task, update_task, set_reminder, set_email_reminder, set_event_categories, ' +
+      'set_category_color, set_event_availability, edit_event on a plain (non-meeting) event that is not becoming a meeting in that call - a non-recurring event, a single occurrence, or a whole recurring series\' subject/body/location only (not a time change), cancel_event on a plain or already-canceled whole event (moved back out of Deleted Items), and create_event without attendees (moved to Deleted Items). Sends, meeting invites, accept/decline/tentative_meeting, cancel_event on a still-active organized meeting, cancel_event on any single occurrence (always, whether plain or meeting - Outlook has no API to restore a deleted occurrence), edit_event whenever it sends an update or changes a whole recurring series\' time, and permanent deletes ' +
+      "can't be reversed and block undo past them. Never touches changes the user made directly in Outlook, and refuses if the item was changed since. " +
+      'A move changes message_id - use the one in the result.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'redo_last_action',
+    description:
+      'Re-applies the action most recently reversed by undo_last_action. Only available until you make a new change.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'accept_meeting',
-    description: 'Accepts a meeting invitation and notifies the organizer.',
-    inputSchema: { type: 'object', properties: { event_id: { type: 'string' } }, required: ['event_id'] },
+    description: 'Accepts a meeting invitation and notifies the organizer. Pass message to add a comment to the response.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
+      required: ['event_id'],
+    },
   },
   {
     name: 'decline_meeting',
-    description: 'Declines a meeting invitation and notifies the organizer.',
-    inputSchema: { type: 'object', properties: { event_id: { type: 'string' } }, required: ['event_id'] },
+    description: 'Declines a meeting invitation and notifies the organizer. Pass message to add a comment to the response.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
+      required: ['event_id'],
+    },
+  },
+  {
+    name: 'tentative_meeting',
+    description: 'Responds tentatively to a meeting invitation and notifies the organizer. Pass message to add a comment to the response.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
+      required: ['event_id'],
+    },
+  },
+  {
+    name: 'draft_respond_meeting',
+    description: 'Opens a meeting invitation in Outlook for the user to accept/decline/respond-tentatively themselves using Outlook\'s own buttons - never sends or changes anything itself. Pass message for a suggested comment the tool includes in its own reply text (Outlook\'s object model has no way to pre-fill this into the response the way the auto-send tools can).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        message: { type: 'string', description: 'Optional suggested comment, returned in the tool result for the user to paste in themselves.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
+      required: ['event_id'],
+    },
   },
   {
     name: 'set_event_categories',
@@ -224,6 +287,7 @@ const ALL_OUTLOOK_TOOLS = [
       properties: {
         event_id: { type: 'string' },
         categories: { type: 'string', description: 'Comma-separated color tag name(s), e.g. "Urgent, Travel". Omit or pass "" to clear.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
       },
       required: ['event_id'],
     },
@@ -241,6 +305,20 @@ const ALL_OUTLOOK_TOOLS = [
         },
       },
       required: ['name', 'color'],
+    },
+  },
+  {
+    name: 'set_event_availability',
+    description:
+      'Sets a calendar event\'s "Show As" availability (Free/Tentative/Busy/Out of Office/Working Elsewhere) - the same dropdown Outlook\'s appointment form shows. Nothing to do with color tags/categories.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        availability: { type: 'string', enum: ['free', 'tentative', 'busy', 'outOfOffice', 'workingElsewhere'] },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
+      required: ['event_id', 'availability'],
     },
   },
   {
@@ -337,7 +415,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'draft_event',
     description:
-      'Opens a new appointment/meeting window in Outlook, pre-filled. With attendees it becomes a meeting request. The user reviews and sends/saves it.',
+      'Opens a new appointment/meeting window in Outlook, pre-filled. With attendees it becomes a meeting request. The user reviews and sends/saves it. Pass recurrence to make it a repeating series.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -348,8 +426,59 @@ const ALL_OUTLOOK_TOOLS = [
         body: { type: 'string' },
         required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>".' },
         optional_attendees: { type: 'string' },
+        recurrence: {
+          type: 'object',
+          description:
+            'Makes this a recurring series. type is required: "daily", "weekly", "monthly", "monthlyNth"/"yearlyNth", or "yearly". If you omit days_of_week/day_of_month/instance/month_of_year for the type you chose, they default from start\'s own date - e.g. weekly defaults to start\'s day of week, monthly to start\'s day of month, monthlyNth/yearlyNth to start\'s day of week and which occurrence of it in the month start falls on. Pass them explicitly to override. interval defaults to 1 (every N days/weeks/months/years). At most one of count (end after N occurrences) or until (end by date) - omit both for no end date.',
+          properties: {
+            type: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'monthlyNth', 'yearly', 'yearlyNth'] },
+            interval: { type: 'number', description: 'Every N days/weeks/months/years. Default 1.' },
+            days_of_week: { type: 'array', items: { type: 'string' }, description: 'e.g. ["monday","wednesday"] for weekly; exactly one day for monthlyNth/yearlyNth.' },
+            day_of_month: { type: 'number', description: '1-31. Required for monthly and yearly.' },
+            instance: { type: 'number', description: '1-4 for 1st-4th, 5 for "last". Required for monthlyNth/yearlyNth.' },
+            month_of_year: { type: 'number', description: '1-12. Required for yearly and yearlyNth.' },
+            count: { type: 'number', description: 'End after N occurrences. Mutually exclusive with until.' },
+            until: { type: 'string', description: 'End by this date. Mutually exclusive with count.' },
+          },
+          required: ['type'],
+        },
       },
       required: [],
+    },
+  },
+  {
+    name: 'draft_edit_event',
+    description:
+      'Opens an existing calendar event with requested changes already applied, unsaved, for the user to review and save/send. Any combination of start+end (together), subject, body, location, required_attendees, optional_attendees - at least one must be given. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to target one occurrence instead - occurrence-level edits can only change start/end/subject/body/location, not attendees. To add/remove specific attendees while keeping others, read the current list with get_event first and pass the full new list here.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to edit (from list_events\' start value). Omit to act on the whole series. Cannot be combined with required_attendees/optional_attendees.' },
+        start: { type: 'string', description: 'New start date-time, e.g. "2026-09-01T14:00". Must be given together with end.' },
+        end: { type: 'string', description: 'New end date-time. Must be given together with start.' },
+        subject: { type: 'string' },
+        body: { type: 'string' },
+        location: { type: 'string' },
+        required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole required-attendee list. Whole-series/non-recurring only.' },
+        optional_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole optional-attendee list. Whole-series/non-recurring only.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
+      required: ['event_id'],
+    },
+  },
+  {
+    name: 'draft_cancel_event',
+    description:
+      'Opens an existing calendar event for the user to review before canceling it themselves - for a meeting the user organizes, via Outlook\'s own Cancel Meeting/Send Cancellation buttons; for a plain appointment, via Delete. Never sends, deletes, or changes anything itself. Only works on events the user organizes or a plain appointment - on a meeting the user only attends, use draft_respond_meeting (or decline_meeting, in Automate approvals or above) instead. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to preview canceling just that one occurrence instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to preview canceling (from list_events\' start value). Omit to act on the whole series.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
+      required: ['event_id'],
     },
   },
   {
@@ -384,7 +513,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'create_event',
     description:
-      'Creates a calendar event immediately - NO review window. With attendees, sends the meeting invite right away (notifies them). Only available in Full autonomy. Prefer draft_event unless the user clearly wants this created/sent right now.',
+      'Creates a calendar event immediately - NO review window, including for a recurring series. With attendees, sends the meeting invite right away (notifies them). Only available in Full autonomy. Prefer draft_event unless the user clearly wants this created/sent right now. Pass recurrence to make it a repeating series.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -395,8 +524,59 @@ const ALL_OUTLOOK_TOOLS = [
         body: { type: 'string' },
         required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Presence of attendees sends the invite instead of just saving the event.' },
         optional_attendees: { type: 'string' },
+        recurrence: {
+          type: 'object',
+          description:
+            'Makes this a recurring series. type is required: "daily", "weekly", "monthly", "monthlyNth"/"yearlyNth", or "yearly". If you omit days_of_week/day_of_month/instance/month_of_year for the type you chose, they default from start\'s own date - e.g. weekly defaults to start\'s day of week, monthly to start\'s day of month, monthlyNth/yearlyNth to start\'s day of week and which occurrence of it in the month start falls on. Pass them explicitly to override. interval defaults to 1 (every N days/weeks/months/years). At most one of count (end after N occurrences) or until (end by date) - omit both for no end date.',
+          properties: {
+            type: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'monthlyNth', 'yearly', 'yearlyNth'] },
+            interval: { type: 'number', description: 'Every N days/weeks/months/years. Default 1.' },
+            days_of_week: { type: 'array', items: { type: 'string' }, description: 'e.g. ["monday","wednesday"] for weekly; exactly one day for monthlyNth/yearlyNth.' },
+            day_of_month: { type: 'number', description: '1-31. Required for monthly and yearly.' },
+            instance: { type: 'number', description: '1-4 for 1st-4th, 5 for "last". Required for monthlyNth/yearlyNth.' },
+            month_of_year: { type: 'number', description: '1-12. Required for yearly and yearlyNth.' },
+            count: { type: 'number', description: 'End after N occurrences. Mutually exclusive with until.' },
+            until: { type: 'string', description: 'End by this date. Mutually exclusive with count.' },
+          },
+          required: ['type'],
+        },
       },
       required: ['start', 'end'],
+    },
+  },
+  {
+    name: 'edit_event',
+    description:
+      'Edits an existing calendar event immediately - NO review window. Any combination of start+end (together), subject, body, location, required_attendees, optional_attendees - at least one must be given. If the result is (or becomes) a meeting, sends the update notice right away. Only available in Full autonomy. Prefer draft_edit_event unless the user clearly wants this applied right now, with no chance to review it first. Only works on events the user organizes or a plain appointment - if it\'s a meeting the user only attends (not the organizer), this returns an error instead of attempting an unauthoritative change; use Outlook\'s own "Propose New Time" for those. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to target one occurrence instead - occurrence-level edits can only change start/end/subject/body/location, not attendees (attendee changes only apply to the whole series). To add/remove specific attendees while keeping others, read the current list with get_event first and pass the full new list here.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to edit (from list_events\' start value). Omit to act on the whole series. Cannot be combined with required_attendees/optional_attendees.' },
+        start: { type: 'string', description: 'New start date-time, e.g. "2026-09-01T14:00". Must be given together with end.' },
+        end: { type: 'string', description: 'New end date-time. Must be given together with start.' },
+        subject: { type: 'string' },
+        body: { type: 'string' },
+        location: { type: 'string' },
+        required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole required-attendee list, omit to leave existing required attendees unchanged. Whole-series/non-recurring only.' },
+        optional_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole optional-attendee list, omit to leave existing optional attendees unchanged. Whole-series/non-recurring only.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
+      required: ['event_id'],
+    },
+  },
+  {
+    name: 'cancel_event',
+    description:
+      'Cancels an existing calendar event immediately - NO review window. If the user organizes it (has attendees), sends the cancellation notice to them right away, then removes it from the calendar; a plain appointment is just removed. An event that\'s already canceled is also just removed - nothing new to notify, this is the only way to dismiss one. Only available in Full autonomy. Prefer draft_cancel_event unless the user clearly wants this canceled right now, with no chance to review it first. Only refuses on a still-active meeting the user only attends (not the organizer) - use decline_meeting for those. Omit occurrence_date to cancel the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to cancel just that one occurrence instead - occurrence cancellation can NEVER be undone (unlike whole-series cancellation of a plain appointment), since Outlook has no API to restore a deleted occurrence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to cancel (from list_events\' start value). Omit to cancel the whole series. Cannot be undone.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+      },
+      required: ['event_id'],
     },
   },
 ]
@@ -421,11 +601,16 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   mark_email_unread: d('Mark unread', 'סימון כלא נקרא', 'Marks a message as unread.', 'מסמן הודעה כלא נקראה.'),
   flag_email_important: d('Flag importance', 'סימון חשיבות', 'Sets a message to High or Normal importance.', 'מגדיר חשיבות גבוהה או רגילה להודעה.'),
   move_email: d('Move email', 'העברת הודעה', 'Moves a message to another folder.', 'מעביר הודעה לתיקייה אחרת.'),
-  delete_email: d('Delete email', 'מחיקת הודעה', 'Moves a message to Deleted Items.', 'מעביר הודעה לפריטים שנמחקו.'),
+  delete_email: d('Delete email', 'מחיקת הודעה', 'Moves a message to Deleted Items, or permanently deletes it (Full autonomy only).', 'מעביר הודעה לפריטים שנמחקו, או מוחק אותה לצמיתות (רק במצב אוטונומיה מלאה).'),
+  undo_last_action: d('Undo', 'ביטול', "Reverses the assistant's most recent action. Sent items can't be undone.", 'מבטל את הפעולה האחרונה של העוזר. לא ניתן לבטל פריטים שנשלחו.'),
+  redo_last_action: d('Redo', 'ביצוע חוזר', 'Re-applies the action the assistant last undid.', 'מבצע מחדש את הפעולה שהעוזר ביטל לאחרונה.'),
   accept_meeting: d('Accept meeting', 'אישור פגישה', 'Accepts a meeting invitation.', 'מאשר הזמנה לפגישה.'),
   decline_meeting: d('Decline meeting', 'דחיית פגישה', 'Declines a meeting invitation.', 'דוחה הזמנה לפגישה.'),
+  tentative_meeting: d('Tentative response', 'תגובה זמנית', 'Responds tentatively to a meeting invitation.', 'משיב תשובה זמנית להזמנה לפגישה.'),
+  draft_respond_meeting: d('Open to respond', 'פתיחה למענה', 'Opens a meeting invitation for the user to accept/decline/respond tentatively themselves.', 'פותח הזמנה לפגישה כדי שהמשתמש יאשר/ידחה/ישיב זמנית בעצמו.'),
   set_event_categories: d('Color event', 'צביעת אירוע', 'Applies or clears color tags on a calendar event.', 'מחיל או מנקה תגיות צבע על אירוע יומן.'),
   set_category_color: d('Set tag color', 'הגדרת צבע תגית', 'Creates or recolors a color tag.', 'יוצר או משנה צבע של תגית.'),
+  set_event_availability: d('Set availability', 'הגדרת זמינות', 'Sets an event\'s Free/Busy/Tentative/Out of Office status.', 'מגדיר את סטטוס הזמינות של אירוע (פנוי / עסוק / בעבודה במקום אחר / מחוץ למשרד).'),
   create_task: d('Create task', 'יצירת משימה', 'Creates a task with an optional due date and reminder.', 'יוצר משימה עם תאריך יעד ותזכורת אופציונליים.'),
   update_task: d('Update task', 'עדכון משימה', 'Updates or completes an existing task.', 'מעדכן או משלים משימה קיימת.'),
   set_reminder: d('Set reminder', 'הגדרת תזכורת', 'Sets a reminder on an appointment or task.', 'מגדיר תזכורת לפגישה או משימה.'),
@@ -435,11 +620,15 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   reply_all_email: d('Draft reply all', 'טיוטת תשובה לכולם', 'Opens a pre-filled reply-to-all to review and send.', 'פותח תשובה-לכולם מלאה מראש לבדיקה ושליחה.'),
   forward_email: d('Draft forward', 'טיוטת העברה', 'Opens a pre-filled forward to review and send.', 'פותח העברה מלאה מראש לבדיקה ושליחה.'),
   draft_event: d('Draft event', 'טיוטת אירוע', 'Opens a pre-filled appointment/meeting to review and send.', 'פותח פגישה/אירוע מלא מראש לבדיקה ושליחה.'),
+  draft_cancel_event: d('Draft cancellation', 'טיוטת ביטול', 'Opens an event to review before canceling it.', 'פותח אירוע לבדיקה לפני ביטולו.'),
+  draft_edit_event: d('Draft event edit', 'טיוטת עריכת אירוע', 'Opens an event with the requested changes to review and save/send.', 'פותח אירוע עם השינויים המבוקשים לבדיקה ולשמירה/שליחה.'),
   send_email: d('Send email (auto-send)', 'שליחת הודעה (שליחה אוטומטית)', 'Sends an email immediately, no review window.', 'שולח הודעה מיידית, ללא חלון בדיקה.'),
   send_reply: d('Send reply (auto-send)', 'שליחת תשובה (שליחה אוטומטית)', 'Sends a reply immediately, no review window.', 'שולח תשובה מיידית, ללא חלון בדיקה.'),
   send_reply_all: d('Send reply all (auto-send)', 'שליחת תשובה לכולם (שליחה אוטומטית)', 'Sends a reply-to-all immediately, no review window.', 'שולח תשובה-לכולם מיידית, ללא חלון בדיקה.'),
   send_forward: d('Send forward (auto-send)', 'שליחת העברה (שליחה אוטומטית)', 'Forwards a message immediately, no review window.', 'מעביר הודעה מיידית, ללא חלון בדיקה.'),
   create_event: d('Create event (auto-send)', 'יצירת אירוע (שליחה אוטומטית)', 'Creates/sends a calendar event immediately, no review window.', 'יוצר/שולח אירוע יומן מיידית, ללא חלון בדיקה.'),
+  cancel_event: d('Cancel event (auto-send)', 'ביטול אירוע (שליחה אוטומטית)', 'Cancels an event and notifies attendees immediately, no review window.', 'מבטל אירוע ומודיע למוזמנים מיידית, ללא חלון בדיקה.'),
+  edit_event: d('Edit event (auto-send)', 'עריכת אירוע (שליחה אוטומטית)', 'Edits an event and sends the update immediately, no review window.', 'עורך אירוע ושולח עדכון מיידית, ללא חלון בדיקה.'),
 }
 
 startAddIn({
@@ -448,14 +637,17 @@ startAddIn({
   toolDisplay: OUTLOOK_TOOL_DISPLAY,
   systemPrompt:
     'You are an AI assistant embedded in Microsoft Outlook via the OpenDocs add-in. You work from the main Outlook window (Explorer). ' +
-    'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline invitations, color events with tags via list_color_categories/set_event_categories/set_category_color), ' +
+    'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline/tentatively-respond to invitations, edit or cancel events, color events with tags via list_color_categories/set_event_categories/set_category_color, set an event\'s Free/Busy/Tentative/Out of Office/Working Elsewhere status via set_event_availability), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
-    'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. ' +
-    'send_email/send_reply/send_reply_all/send_forward/create_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
+    'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event, draft_edit_event, draft_cancel_event, draft_respond_meeting) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. draft_respond_meeting is slightly different from the others: it opens the meeting unchanged and the user picks Accept/Tentative/Decline themselves from Outlook\'s own buttons, since Outlook has no way to pre-select a response type in a review window without already committing it. ' +
+    'send_email/send_reply/send_reply_all/send_forward/create_event/edit_event/cancel_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
+    'edit_event/draft_edit_event can change start/end, subject, body, location, and/or attendees in one call (at least one field required) - only work on events the user organizes (or a plain appointment with no attendees); on a meeting the user only attends, they return an error instead of an unauthoritative change, point the user at Outlook\'s own "Propose New Time" for those. Recurring events share one event_id for the whole series - omit occurrence_date to act on the whole series, or pass one (a date from list_events\' start value) to target a single occurrence instead, for edit_event/draft_edit_event/cancel_event/draft_cancel_event; attendee changes only apply to the whole series, never a single occurrence. To add/remove specific attendees while keeping the rest, read the current list with get_event first and pass the full new list to edit_event/draft_edit_event. ' +
+    'cancel_event/draft_cancel_event have the same organizer-only restriction on a still-active meeting the user only attends - use draft_respond_meeting (Draft only) or decline_meeting (Automate approvals or above) instead. Canceling a meeting the user organizes sends a cancellation notice to attendees (Full autonomy for cancel_event, or reviewed first via draft_cancel_event); canceling a plain appointment, or any already-canceled event, just removes it from the calendar (moved to Deleted Items, recoverable), nobody to notify - cancel_event is the only way to dismiss an already-canceled event. ' +
     'message_id / event_id / task_id values are Outlook EntryIDs. When the user has one or more messages selected, that selection (with its message_id) is in your context - prefer it over searching. ' +
     'Prefer list_emails / search_emails / list_tasks (fast, server-side) over reading items one by one. ' +
     "Once you've found the relevant messages, apply_search can show the same results in the user's own Outlook window instead of only listing them in chat. " +
-    "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events) -> Automate approvals (also auto-accept/decline meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/send_reply/send_reply_all/send_forward/create_event, which send/create immediately).",
+    "undo_last_action/redo_last_action step back and forward through your own actions in this chat (not the user's manual Outlook actions). Anything that sent something (emails, invites, meeting responses, cancellation notices) or a permanent delete can't be undone and blocks undo past it - say so rather than claim it was reversed. " +
+    "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events/edits/cancellations) -> Automate approvals (also auto-accept/decline/tentatively-respond to meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/send_reply/send_reply_all/send_forward/create_event/edit_event/cancel_event, which send/create immediately).",
   starters: [
     { en: 'Summarize my unread emails', he: 'סכם את ההודעות שלא קראתי' },
     { en: 'Draft a reply to the selected email', he: 'נסח תשובה להודעה שנבחרה' },
@@ -497,18 +689,25 @@ startAddIn({
     'reply_all_email',
     'forward_email',
     'draft_event',
+    'draft_cancel_event',
+    'draft_edit_event',
+    'draft_respond_meeting',
     'set_event_categories',
     'set_category_color',
+    'set_event_availability',
     'apply_search',
+    'undo_last_action',
+    'redo_last_action',
   ],
-  // Tier 3 ("Automate approvals"), on top of tier 2 - accept/decline
+  // Tier 3 ("Automate approvals"), on top of tier 2 - accept/decline/tentatively-respond
   // already auto-notify the organizer via resp.Send(), so they get their
   // own tier rather than hiding in Draft only or Full autonomy. Must stay
   // in sync with OutlookTools.cs's ApprovalTierTools.
-  trackChangesExtraTools: ['accept_meeting', 'decline_meeting'],
-  // send_email/send_reply/send_reply_all/send_forward/create_event are
-  // deliberately in neither list above - that omission alone confines them
-  // to tier 4 (Full autonomy), which shows every tool.
+  trackChangesExtraTools: ['accept_meeting', 'decline_meeting', 'tentative_meeting'],
+  // send_email/send_reply/send_reply_all/send_forward/create_event/
+  // edit_event/cancel_event are deliberately in neither list above -
+  // that omission alone confines them to tier 4 (Full autonomy), which shows
+  // every tool.
   useSelectionContext: true,
   scopeUnit: 'mailbox',
   availableModes: ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'],
@@ -520,12 +719,12 @@ startAddIn({
     },
     trackChanges: {
       label: { en: 'Automate approvals', he: 'אוטומציית אישורים' },
-      description: { en: 'Everything in Draft only, plus auto-accepting/declining meeting invites (notifies the organizer).', he: 'כל מה שיש בטיוטות בלבד, בתוספת אישור/דחייה אוטומטיים של הזמנות לפגישה (מודיע למארגן).' },
+      description: { en: 'Everything in Draft only, plus auto-accepting/declining/tentatively-responding to meeting invites (notifies the organizer).', he: 'כל מה שיש בטיוטות בלבד, בתוספת אישור/דחייה/תגובה זמנית אוטומטיים של הזמנות לפגישה (מודיע למארגן).' },
     },
     fullAutonomy: {
       label: { en: 'Full autonomy', he: 'אוטונומיה מלאה' },
-      description: { en: 'Everything above, plus sending emails and creating/sending calendar invites in your name.', he: 'כל מה שלמעלה, בתוספת שליחת הודעות ויצירה/שליחה של הזמנות יומן בשמך.' },
+      description: { en: 'Everything above, plus sending emails and creating/sending/rescheduling calendar invites in your name.', he: 'כל מה שלמעלה, בתוספת שליחת הודעות ויצירה/שליחה/שינוי מועד של הזמנות יומן בשמך.' },
     },
   },
-  autoSendTools: ['send_email', 'send_reply', 'send_reply_all', 'send_forward', 'create_event'],
+  autoSendTools: ['send_email', 'send_reply', 'send_reply_all', 'send_forward', 'create_event', 'cancel_event', 'edit_event'],
 })

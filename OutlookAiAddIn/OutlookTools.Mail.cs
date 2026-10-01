@@ -151,28 +151,35 @@ namespace OutlookAiAddIn
             }
         }
 
-        private static ToolResult MarkEmail(JsonElement input, bool unread)
+        private static ToolResult MarkEmail(string mbxKey, JsonElement input, bool unread)
         {
             string id = ReqStr(input, "message_id");
             Outlook.MailItem mail = ItemById(id, StoreOf(input)) as Outlook.MailItem;
             if (mail == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "mark_email" };
+            string[] props = { "UnRead" };
+            object[] before = ReadProps(mail, props);
             mail.UnRead = unread;
             mail.Save();
-            return new ToolResult { Output = (unread ? "Marked unread: " : "Marked read: ") + (mail.Subject ?? ""), Mutated = true, Summary = unread ? "mark_email_unread" : "mark_email_read" };
+            string toolName = unread ? "mark_email_unread" : "mark_email_read";
+            RecordSnapshot(mbxKey, toolName, mail, mail.Subject ?? "", props, before);
+            return new ToolResult { Output = (unread ? "Marked unread: " : "Marked read: ") + (mail.Subject ?? ""), Mutated = true, Summary = toolName };
         }
 
-        private static ToolResult FlagEmailImportant(JsonElement input)
+        private static ToolResult FlagEmailImportant(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "message_id");
             bool important = Bool(input, "important", true);
             Outlook.MailItem mail = ItemById(id, StoreOf(input)) as Outlook.MailItem;
             if (mail == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "flag_email_important" };
+            string[] props = { "Importance" };
+            object[] before = ReadProps(mail, props);
             mail.Importance = important ? Outlook.OlImportance.olImportanceHigh : Outlook.OlImportance.olImportanceNormal;
             mail.Save();
+            RecordSnapshot(mbxKey, "flag_email_important", mail, mail.Subject ?? "", props, before);
             return new ToolResult { Output = (important ? "High importance: " : "Normal importance: ") + (mail.Subject ?? ""), Mutated = true, Summary = "flag_email_important" };
         }
 
-        private static ToolResult MoveEmail(JsonElement input)
+        private static ToolResult MoveEmail(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "message_id");
             string dest = ReqStr(input, "destination");
@@ -182,9 +189,22 @@ namespace OutlookAiAddIn
             dynamic d = item;
             string oldSubject = "";
             try { oldSubject = d.Subject; } catch { }
+
+            // Captured BEFORE the move - the folder undo moves it back to, and
+            // the id earlier undo entries know this item by.
+            Outlook.Folder sourceFolder = null;
+            try { sourceFolder = (Outlook.Folder)d.Parent; } catch { }
+            string oldId = id;
+            try { oldId = d.EntryID; } catch { }
+
             dynamic moved = d.Move(target);
             string newId = "";
             try { newId = moved.EntryID; } catch { }
+
+            if (sourceFolder != null && newId.Length > 0)
+                RecordMove(mbxKey, "move_email", "message_id", oldSubject, oldId, newId, sourceFolder, target);
+            else
+                RecordIrreversible(mbxKey, "move_email of \"" + oldSubject + "\", original folder unknown");
 
             return new ToolResult
             {
@@ -194,7 +214,7 @@ namespace OutlookAiAddIn
             };
         }
 
-        private static ToolResult DeleteEmail(JsonElement input)
+        private static ToolResult DeleteEmail(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "message_id");
             bool permanent = Bool(input, "permanent", false);
@@ -203,17 +223,39 @@ namespace OutlookAiAddIn
             dynamic d = item;
             string subject = "";
             try { subject = d.Subject; } catch { }
+            Outlook.Folder sourceFolder = null;
+            try { sourceFolder = (Outlook.Folder)d.Parent; } catch { }
+            string oldId = id;
+            try { oldId = d.EntryID; } catch { }
 
-            Outlook.Folder deleted = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems);
+            Outlook.Folder deleted = sourceFolder != null
+                ? (Outlook.Folder)sourceFolder.Store.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems)
+                : (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems);
             dynamic moved = d.Move(deleted);
             if (permanent)
             {
+                bool hardDeleted = true;
                 try { moved.Delete(); }
-                catch (Exception ex) { DebugLog.WriteException("DeleteEmail permanent", ex); }
+                catch (Exception ex) { DebugLog.WriteException("DeleteEmail permanent", ex); hardDeleted = false; }
+                if (!hardDeleted)
+                {
+                    string failedNewId = "";
+                    try { failedNewId = moved.EntryID; } catch { }
+                    if (sourceFolder != null && failedNewId.Length > 0)
+                        RecordMove(mbxKey, "delete_email", "message_id", subject, oldId, failedNewId, sourceFolder, deleted);
+                    else
+                        RecordIrreversible(mbxKey, "delete_email of \"" + subject + "\", original folder unknown");
+                    return new ToolResult { Output = "Could not permanently delete \"" + subject + "\" - it was moved to Deleted Items but the hard delete failed, so it is still recoverable there.", IsError = true, Mutated = true, Summary = "delete_email" };
+                }
+                RecordIrreversible(mbxKey, "permanent delete_email of \"" + subject + "\"");
                 return new ToolResult { Output = "Permanently deleted \"" + subject + "\" (removed from Deleted Items; may still be server-recoverable).", Mutated = true, Summary = "delete_email" };
             }
             string newId = "";
             try { newId = moved.EntryID; } catch { }
+            if (sourceFolder != null && newId.Length > 0)
+                RecordMove(mbxKey, "delete_email", "message_id", subject, oldId, newId, sourceFolder, deleted);
+            else
+                RecordIrreversible(mbxKey, "delete_email of \"" + subject + "\", original folder unknown");
             return new ToolResult { Output = "Moved \"" + subject + "\" to Deleted Items.\nmessage_id: " + newId, Mutated = true, Summary = "delete_email" };
         }
 

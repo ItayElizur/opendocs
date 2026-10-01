@@ -3,8 +3,30 @@ import { randomId } from '@genoffice/agent-core'
 import { aiFetch } from './fetch'
 import { httpBodyDetail } from './http-error'
 import { GENSPARK_LLM_BASE_URLS, gensparkAttributionHeaders } from './providers'
-import type { AiProviderConfig, AiProviderId } from './types'
+import type { AiProviderConfig, AiProviderId, ReasoningEffort } from './types'
 import { createStreamWatchdog, type StreamWatchdog } from './watchdog'
+
+// ---- reasoning effort (shared tier->budget tables; per-protocol wiring lives in each turn fn) ----
+
+/**
+ * Anthropic's budget_tokens counts against the same max_tokens cap as the
+ * visible reply, so xhigh is kept well under MAX_TOKENS (8192 in practice)
+ * to leave room for an actual answer after the thinking block.
+ */
+const ANTHROPIC_THINKING_BUDGETS: Record<'low' | 'medium' | 'high' | 'xhigh', number> = {
+  low: 1024,
+  medium: 3072,
+  high: 5120,
+  xhigh: 7168,
+}
+
+/** Gemini's thinkingBudget is a separate allowance from maxOutputTokens, so it can run higher than Anthropic's. */
+const GEMINI_THINKING_BUDGETS: Record<'low' | 'medium' | 'high' | 'xhigh', number> = {
+  low: 1024,
+  medium: 4096,
+  high: 8192,
+  xhigh: 16384,
+}
 
 // ---- streaming (SSE line splitting shared by all providers) ----
 
@@ -301,6 +323,16 @@ async function anthropicTurn(
               })),
             }
           : {}),
+        // 'off' and 'default' both send no `thinking` field - Claude never
+        // reasons unless asked, so there's no separate "force off" state.
+        ...(config.reasoningEffort && config.reasoningEffort in ANTHROPIC_THINKING_BUDGETS
+          ? {
+              thinking: {
+                type: 'enabled',
+                budget_tokens: ANTHROPIC_THINKING_BUDGETS[config.reasoningEffort as keyof typeof ANTHROPIC_THINKING_BUDGETS],
+              },
+            }
+          : {}),
         stream: true,
       }),
     })
@@ -532,7 +564,19 @@ async function geminiTurn(
             ],
           }
         : {}),
-      generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens },
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: maxTokens,
+        ...(config.reasoningEffort === 'off'
+          ? { thinkingConfig: { thinkingBudget: 0 } }
+          : config.reasoningEffort && config.reasoningEffort in GEMINI_THINKING_BUDGETS
+            ? {
+                thinkingConfig: {
+                  thinkingBudget: GEMINI_THINKING_BUDGETS[config.reasoningEffort as keyof typeof GEMINI_THINKING_BUDGETS],
+                },
+              }
+            : {}),
+      },
     }),
   })
   // headers arrived: ping the renderer watchdog too, or a slow first chunk could trip it
@@ -692,6 +736,39 @@ function emitOpenAiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
   if (choice?.finish_reason === 'length') cb.onStopReason?.('max_tokens')
 }
 
+/**
+ * `reasoning_effort` is OpenAI's own field name, tried against any
+ * OpenAI-compatible surface. `chat_template_kwargs` is vLLM-specific (it
+ * forwards into the model's Jinja chat template, e.g. to toggle a
+ * Qwen3-style `enable_thinking` switch) - only worth sending to a
+ * self-hosted `custom` endpoint, never to the real OpenAI/DeepSeek APIs,
+ * which don't use it.
+ */
+function openAiReasoningFields(
+  effort: ReasoningEffort | undefined,
+  includeThinkingKwargs: boolean,
+): Record<string, unknown> {
+  if (!effort || effort === 'default') return {}
+  if (effort === 'off') {
+    return includeThinkingKwargs
+      ? { chat_template_kwargs: { enable_thinking: false, preserve_thinking: false } }
+      // No universal "off" in the plain OpenAI API - 'minimal' is the
+      // closest a reasoning model can get to disabled.
+      : { reasoning_effort: 'minimal' }
+  }
+  return {
+    // 'xhigh' is a real tier for vLLM-served models like Qwen3 (sent as-is
+    // when includeThinkingKwargs is set), but the plain OpenAI API's
+    // reasoning_effort enum only goes up to 'high' - sending 'xhigh' there
+    // verbatim is a hard 400, not a silent no-op, unlike every other
+    // unsupported-tier case this function handles (PR review, 2026-10-02).
+    reasoning_effort: !includeThinkingKwargs && effort === 'xhigh' ? 'high' : effort,
+    ...(includeThinkingKwargs
+      ? { chat_template_kwargs: { enable_thinking: true, preserve_thinking: true } }
+      : {}),
+  }
+}
+
 export async function streamOpenAiCompatible(
   baseUrl: string,
   config: AiProviderConfig,
@@ -700,10 +777,11 @@ export async function streamOpenAiCompatible(
   tools: AgentToolDef[],
   maxTokens: number,
   cb: StreamCallbacks,
+  includeThinkingKwargs = false,
 ): Promise<void> {
   const wd = createStreamWatchdog(cb.signal)
   return wd.guard(() =>
-    openAiCompatibleTurn(baseUrl, config, system, messages, tools, maxTokens, cb, wd),
+    openAiCompatibleTurn(baseUrl, config, system, messages, tools, maxTokens, cb, wd, includeThinkingKwargs),
   )
 }
 
@@ -716,6 +794,7 @@ async function openAiCompatibleTurn(
   maxTokens: number,
   cb: StreamCallbacks,
   wd: StreamWatchdog,
+  includeThinkingKwargs: boolean,
 ): Promise<void> {
   const onBytes = () => {
     wd.touch()
@@ -743,6 +822,7 @@ async function openAiCompatibleTurn(
         : {}),
       temperature: 0.3,
       stream: true,
+      ...openAiReasoningFields(config.reasoningEffort, includeThinkingKwargs),
     }),
   })
   // headers arrived: ping the renderer watchdog too, or a slow first chunk could trip it
@@ -906,7 +986,7 @@ export async function streamForProvider(
       )
     case 'custom':
       if (!config.baseUrl) throw new Error('A custom provider requires a Base URL')
-      return streamOpenAiCompatible(config.baseUrl, config, system, messages, tools, maxTokens, cb)
+      return streamOpenAiCompatible(config.baseUrl, config, system, messages, tools, maxTokens, cb, true)
     default:
       throw new Error(`Unknown provider: ${provider}`)
   }

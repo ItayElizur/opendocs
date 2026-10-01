@@ -396,6 +396,800 @@ Outlook client (category enumeration, tag creation, and event `Categories` round
 before wiring into the tool switch; `dotnet test` unaffected (no new pure logic — the
 color-name map is a small dictionary, not extracted for unit testing).
 
+### 2026-09-27 — Outlook reschedule tools, `set_event_availability`, `delete_email` permanent tier; undo/redo for Word, PowerPoint, Outlook (and briefly Excel)
+
+Moved verbatim out of `docs/ai-tool-surface.md` when `main` was merged into the current-state restructure on 2026-10-02; the facts that are still true now live in that file's tables. Cross-references inside the quoted blocks ("the dated Update block above", "see below") point at that file's old layout.
+
+> **Update 2026-09-27 (Outlook gains reschedule tools):** two new tools in
+> `OutlookAiAddIn/OutlookTools.Calendar.cs`, filling the "no way to move an
+> existing event" gap (previously only `draft_event`/`create_event` could
+> place a *new* event at a time). **Fully replaced 2026-09-28 by
+> `edit_event`/`draft_edit_event`** (see that dated update below) — everything
+> described in this block carried over unchanged onto the new tool names.
+> `draft_reschedule_event` (Draft tier) sets `Start`/`End` on the resolved
+> `AppointmentItem` and `Display(false)`s it unsaved, same shape as
+> `draft_event` — the user reviews the moved time and decides whether to
+> save/send. `reschedule_event` (Full autonomy only, `SendTierTools`) sets
+> `Start`/`End` then `.Save()` (no attendees) or `.Send()` (attendees present)
+> to dispatch the reschedule notice, mirroring `create_event`'s
+> attendee-present branch. Both required `event_id`, `start`, and `end`, with
+> a clean `IsError` naming whichever of `start`/`end` is missing rather than
+> defaulting or throwing a raw COM exception.
+>
+> **Organizer-only, by design.** Both tools first check
+> `AppointmentItem.MeetingStatus`. On `olMeetingReceived` (the user is only an
+> *attendee* on someone else's meeting, not the organizer) they refuse up
+> front with an `IsError` explaining the user has no authority to move it and
+> pointing at Outlook's own "Propose New Time" UI — see "Excluded / deferred"
+> below for why no tool attempts that path itself. `olNonMeeting`/`olMeeting`
+> (the user's own appointment or meeting) go through unchanged.
+>
+> **Verification status: unproven at runtime**, same caveat as the rest of
+> this section (see "Unproven at runtime" below) — no live Outlook was
+> available to exercise either tool's COM calls. One piece *was* checked
+> concretely rather than assumed: whether the interop PIA exposes a "Propose
+> New Time" member at all. .NET reflection against the actually-referenced
+> `Microsoft.Office.Interop.Outlook` 15.0.0.0 PIA (same verification
+> discipline `CreateEvent`'s comments use) confirmed neither
+> `AppointmentItem`/`_AppointmentItem` nor `MeetingItem`/`_MeetingItem` expose
+> anything with "Propose" (or "Counter"/"NewTime") in its name —
+> `_AppointmentItem.Respond` only takes an `OlMeetingResponse`
+> (Accept/Decline/Tentative), no counter-proposal overload. "Propose New
+> Time" is real Outlook-client functionality, but it isn't reachable through
+> the classic COM object model this add-in automates, which is why the
+> `olMeetingReceived` case is a hard refusal rather than a half-working
+> attempt.
+>
+> **Update 2026-09-28: fixed a gap in the organizer-authority check, wired
+> into undo/redo.** The original check only excluded the exact
+> `olMeetingReceived` value; `OlMeetingStatus` actually has 5 values
+> (`olNonMeeting`, `olMeeting`, `olMeetingReceived`, `olMeetingCanceled`,
+> `olMeetingReceivedAndCanceled`), so an attendee's copy of a meeting the
+> organizer has since canceled (`olMeetingReceivedAndCanceled`) — and the
+> organizer's own canceled copy (`olMeetingCanceled`) — both fell through to
+> the silent `.Save()` path, reporting a `Mutated: true` "Rescheduled" success
+> on a canceled or not-actually-yours meeting. Both tools now check for
+> either canceled status first (a clean `IsError`: "has been canceled, so
+> there's nothing to reschedule"), then the (now also two-valued)
+> received-meeting check. Also merged with PR #23 (undo/redo) and #20
+> (`set_event_availability`), which this branch predates: `reschedule_event`
+> now records a `Start`/`End` snapshot (undo-able) on its `.Save()` branch and
+> a barrier (not undo-able) on its `.Send()` branch, mirroring `create_event`'s
+> two branches. `draft_reschedule_event` needs no wiring — like `draft_event`,
+> it never saves/sends anything itself. (Carried over unchanged onto
+> `edit_event`/`draft_edit_event` later the same day — see the dated update
+> below.)
+
+> **Update 2026-09-27 (Outlook gains `set_event_availability`):** one new
+> tool, added to `OutlookAiAddIn/OutlookTools.Categories.cs` right beside
+> `set_event_categories`/`set_category_color` since it's the same shape (a
+> single-property `AppointmentItem` mutation with a friendly-name map for an
+> Outlook-PIA-only enum). Sets `AppointmentItem.BusyStatus` — the calendar's
+> "Show As" dropdown — to one of the 5 `OlBusyStatus` values (`olFree`,
+> `olTentative`, `olBusy`, `olOutOfOffice`, `olWorkingElsewhere`; names
+> confirmed via .NET reflection against the referenced
+> `Microsoft.Office.Interop.Outlook` 15.0.0.0 PIA, not assumed) via a
+> case-insensitive friendly-name lookup (`free`/`tentative`/`busy`/`out of
+> office`/`working elsewhere`); an unrecognized string returns a clean
+> `IsError` result listing the valid names rather than throwing, unlike
+> `set_category_color`'s `ParseColor` (which throws and relies on the outer
+> `ExecuteAsync` catch). Unrelated to `Categories`/color tags — a distinct
+> `AppointmentItem` property entirely. Placed in **Draft tier**
+> (`DraftTierTools` + `entry.ts`'s `commentOnlyExtraTools`), not Full
+> autonomy: it's purely local (`.BusyStatus` + `.Save()`, no `.Send()`),
+> the same risk profile that put `set_event_categories`/`set_category_color`
+> in Draft tier despite the "Mutating tools" table heading below still
+> reading "Full autonomy only" (that heading predates the 2026-09-19
+> four-tier gate for those two tools and was already stale before this
+> change — not fixed here to keep this update focused). **Update
+> 2026-09-28: verified against a live Outlook client** — all 5
+> `OlBusyStatus` values round-trip correctly via `.BusyStatus` + `.Save()`,
+> case/spacing-tolerant parsing confirmed, invalid values return a clean
+> `IsError` instead of throwing, and saving a `BusyStatus` change on a
+> meeting the user organizes (has attendees) does not prompt or notify
+> attendees. Also wired into the undo/redo stack the same day (see that
+> section below) after merging with PR #23.
+
+> **Update 2026-09-27 (delete_email's permanent path split to its own tier):**
+> another instance of the same class of gap closed by `aeae77c`/`b3fc5d2`
+> (category tools left one gate too low) — here `delete_email` as a whole sat
+> in `DraftTierTools`, but the tool bundles two risk classes under one name:
+> `permanent: false` (default) just moves the message to Deleted Items, fully
+> reversible, correctly Draft-tier; `permanent: true` additionally calls
+> `.Delete()` from there, irreversible from within Outlook ("may still be
+> server-recoverable" per its own result text — not a claim it can be undone
+> here), which belongs at Full autonomy alongside `send_email` and friends,
+> not one gate below it. `OutlookTools.cs`'s `ExecuteAsync` tier check is
+> otherwise purely name-based (`AlwaysAllowedTools`/`DraftTierTools`/
+> `ApprovalTierTools`/`SendTierTools`, checked before `input` is inspected at
+> all) — added one narrow, input-aware special case immediately after the
+> name-based check: if `name == "delete_email"` and `input.permanent == true`
+> and the caller's mode is below Full autonomy, block with a message naming
+> Full autonomy specifically (not delete_email in general — the tool is still
+> fine at Draft only for the non-permanent path). Deliberately not
+> generalized into a per-argument gating system for every tool; `delete_email`
+> stays in `DraftTierTools` and in `entry.ts`'s `commentOnlyExtraTools`
+> unchanged, since the tool overall is still reachable from Draft only.
+> `entry.ts`'s `delete_email` description now says plainly that
+> `permanent: true` requires Full autonomy, so the model doesn't attempt it
+> needlessly at a lower tier and get a confusing runtime block. No existing
+> automated test covers Outlook's tier-gate logic (it lives in the VSTO
+> project, not `OfficeAi.Shared`); verified by code review plus
+> `OutlookAiAddIn` MSBuild.
+
+> **Update 2026-09-27 (undo/redo tooling — Word, PowerPoint; a custom
+> undo/redo stack for Outlook; Excel's removed 2026-09-28):** added
+> `undo_last_action`/`redo_last_action` to Word and (reversing this
+> document's own earlier "no undo/redo tool" conclusion for it) PowerPoint,
+> plus a custom stack of the assistant's own actions for Outlook. **None of this is runtime-verified
+> against a live Office/Outlook client** — no live instance was reachable;
+> every mechanism below was instead confirmed by .NET reflection directly
+> against the exact PIA versions these projects reference (15.0.0.0), the
+> same standard of evidence this document already applies elsewhere (e.g.
+> the chart-type-map and SmartArt-parity updates above), and by a clean
+> Debug build of all four touched projects plus their esbuild bundles.
+>
+> - **Word** (`WordAiAddIn/WordTools.History.cs`): the initial plan for this
+>   feature assumed `Application.Undo()`/`Application.Redo()` exist — they do
+>   **not** (reflection against the referenced PIA finds no such method on
+>   `_Application`/`ApplicationClass` at all, only an unrelated `UndoRecord`
+>   property for grouping automation edits into one user-visible undo entry).
+>   The real, callable methods are one level down, on `Document`:
+>   `Document.Undo(ref object Times)` / `Document.Redo(ref object Times)`,
+>   both returning `bool`. The `Times` parameter is COM-optional (confirmed
+>   via `ParameterInfo.IsOptional`), so C# calls them with no arguments -
+>   `ActiveDoc.Undo()` / `ActiveDoc.Redo()` - exactly like real-world Word
+>   automation code. The `bool` return gives an honest "Undid the last
+>   action." vs. "Nothing to undo." (same for redo) instead of always
+>   claiming success. Gated the same as every other Word mutating tool:
+>   blocked in Read Only/Comment Only, available from Track Changes upward.
+> - **Excel — removed (2026-09-28).** The first version dispatched
+>   `Application.CommandBars.ExecuteMso("Undo"/"Redo")` (Excel has no
+>   `Application.Redo()`, and `Application.Undo()` returns `void`). That
+>   can't work for the assistant's edits: every write this add-in makes goes
+>   through the object model (`propose_operations`, find/replace, and so on),
+>   and Excel clears its whole undo stack on any object-model change. So
+>   right after an AI edit there is nothing to undo, and later the tool would
+>   undo the *user's* next manual edit instead. `Application.OnUndo` only
+>   takes a VBA macro name, so it isn't usable from a C# add-in. A snapshot-
+>   based custom undo was considered and not pursued; the tools were removed.
+> - **PowerPoint** (`PowerPointAiAddIn/PowerPointTools.History.cs`) —
+>   **reversing this document's earlier conclusion that PowerPoint should be
+>   excluded entirely.** That conclusion was correct that no
+>   `Application.Undo()`/`Redo()` method exists anywhere in the PowerPoint
+>   interop surface (still true, reconfirmed here), but missed a distinct
+>   mechanism: `Application.CommandBars.ExecuteMso(string)` /
+>   `GetEnabledMso(string)` — the generic Office 2007+ ribbon-command
+>   dispatch API, exposed via `Microsoft.Office.Core.CommandBars` (the
+>   "Office" PIA reference already in every one of these four projects),
+>   which every main Office host's `Application.CommandBars` returns,
+>   PowerPoint included. Confirmed real and callable by reflection: the
+>   `CommandBars` property on PowerPoint's `_Application` returns
+>   `Microsoft.Office.Core.CommandBars`, and that type's `_CommandBars`
+>   interface declares both `Void ExecuteMso(String)` and `Boolean
+>   GetEnabledMso(String)`. `ExecuteMso("Undo"/"Redo")` dispatches by the
+>   same ribbon-command ID the real Undo/Redo buttons and Ctrl+Z/Ctrl+Y use
+>   internally, so it works despite there being no direct method to call.
+>   `GetEnabledMso` is checked first (mirroring Excel above) since
+>   `ExecuteMso` itself returns nothing, so without that check every call
+>   would have to claim success unconditionally. See
+>   `PowerPointTools.Master.cs`'s `RemoveMasterElement` (2026-09-22 incident,
+>   in the PowerPoint section below) for why this repo cares: a Slide Master
+>   placeholder deletion had no code path at all to undo at the time, one
+>   direct consequence of `Application.Undo()` genuinely not existing —
+>   `ExecuteMso` is the mechanism that generally closes that "no way back"
+>   gap going forward (it does not retroactively change that method's own
+>   still-valid placeholder refusal, which stands for an unrelated reason —
+>   see that method's comment). Gated the same as every other PowerPoint
+>   mutating tool (Track Changes upward).
+> - **Outlook** (`OutlookAiAddIn/OutlookTools.Undo.cs`, stack logic in
+>   `OfficeAi.Shared/ActionHistory.cs`) — a **custom** undo/redo stack of
+>   the assistant's own actions, not a native-undo wrapper. Native Undo via
+>   `Explorer.CommandBars.ExecuteMso("Undo")` was tried and tested by hand
+>   on 2026-09-28. It's a single slot tied to the window that toggles
+>   undo/redo, it doesn't see object-model changes (a `move_email` followed by
+>   the ribbon Undo did nothing), and after one use both our tool and the
+>   ribbon button failed with "The operation cannot be performed because the
+>   message has changed." Outlook has no API to put an object-model change
+>   onto that slot.
+>
+>   How it works: an in-memory stack per mailbox chat (keyed like
+>   `ModeByMailbox`, capped at 50, lost on restart). Each mutating handler
+>   records one entry after its change succeeds:
+>   - **Property snapshots** (before/after values, restored and `Save()`d):
+>     `mark_email_read/unread` (`UnRead`), `flag_email_important` (full
+>     `Importance`, so Low is preserved), `set_event_categories`,
+>     `set_event_availability` (`BusyStatus`), `edit_event` (added 2026-09-28,
+>     replacing `reschedule_event`) whenever the call doesn't send/barrier
+>     (see below) — `Start`/`End`, `Subject`, `Body`, `Location`, whichever
+>     subset was actually touched that call, via a dynamically-built props
+>     list (replacing the old fixed `{Start,End}` `RescheduleProps` constant) —
+>     including an occurrence-level edit via `occurrence_date`:
+>     `RecurrencePattern.GetOccurrence()` returns a real item with its own
+>     `EntryID` once saved, so this same mechanism covers it with no new entry
+>     type — `set_reminder`, and `update_task` (task fields as a group, or the
+>     flagged-mail fields).
+>   - **`set_email_reminder`**: if the message wasn't flagged before, undo
+>     calls `ClearTaskFlag()`, and redo calls `MarkAsTask` again.
+>   - **Moves**: `move_email`, non-permanent `delete_email`, and `cancel_event`
+>     on a plain appointment or an already-canceled event (no one to notify
+>     either way, so canceling it is just a move to Deleted Items). The
+>     folder is resolved by its own EntryID/StoreID via
+>     `Namespace.GetFolderFromID`, and the new EntryID after each move is
+>     rewritten into every entry for that item.
+>   - **Created items**: `create_task` and `create_event` without
+>     attendees. Undo moves the item to Deleted Items (recoverable); redo
+>     moves it back.
+>   - **`set_category_color`**: undo restores the old color, or removes a tag
+>     the assistant created.
+>   - **Barriers**: `send_*`, `create_event` with attendees, `edit_event`
+>     and `cancel_event` on a still-active meeting the user organizes (both
+>     send a notice to attendees), `accept/decline/tentative_meeting`, `delete_email
+>     permanent:true`, — regardless of plain-appointment vs. meeting — any
+>     occurrence-level cancellation via `cancel_event`'s `occurrence_date`
+>     (added 2026-09-28: `RecurrencePattern.Exceptions`/`Exception` are
+>     read-only via COM, confirmed by reflection, so a deleted occurrence has
+>     no API to reverse it), and — again regardless of plain-appointment vs.
+>     meeting — `edit_event` on the **whole series** whenever it includes a
+>     time change and `event_id` resolves to a genuinely recurring master
+>     (confirmed live 2026-09-28: Outlook rejects setting `Start`/`End`
+>     directly on a recurring master at all, so this branch writes to
+>     `RecurrencePattern` fields instead, which the undo mechanism can't yet
+>     read/write). This is the one case where an otherwise-undo-able-looking
+>     `edit_event` call (no attendees, no `occurrence_date`) is still a
+>     barrier — only true non-recurring events, or a single occurrence, stay
+>     undo-able via the dynamically-built props snapshot. `edit_event` is also
+>     a barrier any time it results in a `.Send()` — including converting a
+>     plain event into a meeting by adding `required_attendees`/
+>     `optional_attendees` for the first time (added 2026-09-28, unverified at
+>     runtime — see the dated update below). Undo stops at a barrier instead
+>     of reaching past it.
+>   - **Known gap — `set_event_categories`**: the snapshot only covers the
+>     appointment's own `Categories` string. If the assigned name wasn't
+>     already in the mailbox's master category list, Outlook auto-adds it
+>     on `Save()` with an arbitrary color (see the mutating-tools table
+>     below); undo restores the appointment but does not remove that
+>     auto-created master category entry, which is a permanent side effect
+>     undo can't see or reverse.
+>
+>   Before reversing, each entry checks that the item still holds what the
+>   assistant left there. If it was changed since (by the user or anything
+>   else), undo refuses rather than overwrite it. A failed or refused entry
+>   is dropped, never retried. `redo_last_action` re-applies undone entries
+>   until the next new action. Both tools are gated at Draft tier. **Not
+>   verified against a live Outlook client.**
+
+### 2026-09-28 — Outlook cancel tools, recurring-series support; `reschedule_event` replaced by `edit_event`
+
+Moved verbatim out of `docs/ai-tool-surface.md` when `main` was merged into the current-state restructure on 2026-10-02; the facts that are still true now live in that file's tables. Cross-references inside the quoted blocks ("the dated Update block above", "see below") point at that file's old layout.
+
+> **Update 2026-09-28 (Outlook gains cancel tools):** two more tools in
+> `OutlookAiAddIn/OutlookTools.Calendar.cs`, right beside `edit_event`/
+> `draft_edit_event` and reusing their `IsCanceledMeeting`/
+> `IsReceivedMeeting` organizer-authority checks rather than duplicating them.
+> `draft_cancel_event` (Draft tier) opens the item unchanged either way — for
+> a meeting the user organizes, they cancel it themselves via Outlook's own
+> Cancel Meeting/Send Cancellation buttons; for a plain appointment, via
+> Delete. Refuses (clean `IsError`) on an already-canceled event (points at
+> `cancel_event` instead — see below) or a meeting the user only attends
+> (points at `decline_meeting`, not "Propose New Time" — canceling isn't
+> something an attendee can do to someone else's meeting at all, unlike
+> rescheduling where Outlook at least has a UI-level counter-proposal feature
+> this add-in can't reach). (Originally set `MeetingStatus = olMeetingCanceled`
+> unsaved before `Display(false)`, mirroring `draft_edit_event`'s (then
+> `draft_reschedule_event`'s) unsaved `Start`/`End` — **removed the same day** after live testing showed
+> Outlook persists that change when the Inspector closes even without the
+> user clicking "Send Cancellation," silently canceling the meeting locally
+> with attendees never notified. Confirmed live, fixed same-day by never
+> mutating the item in `draft_cancel_event` at all.)
+>
+> `cancel_event` (Full autonomy only, `SendTierTools`) does it immediately:
+> sets `olMeetingCanceled` and `.Send()`s the cancellation notice for an
+> organized meeting, or skips straight to removal for a plain appointment;
+> either way the item is then moved to Deleted Items (recoverable there),
+> same as `delete_email`'s non-permanent path, not permanently deleted.
+> Still refuses on a meeting the user only attends and isn't canceled yet
+> (points at `decline_meeting`) — but **an already-canceled event (either the
+> organizer's own `olMeetingCanceled` copy or an attendee's stale
+> `olMeetingReceivedAndCanceled` one) is treated as cleanup, not refused**:
+> there's nothing new to notify anyone of, so it just moves straight to
+> Deleted Items, same as a plain appointment. Added the same day as the
+> tools themselves, once live testing surfaced there was otherwise no way to
+> dismiss a canceled event at all (not even the one this branch's own
+> `draft_cancel_event` bug, above, could accidentally create).
+>
+> **Undo/redo:** `cancel_event` on a plain appointment, or on an
+> already-canceled event, records a move (undo moves it back out of Deleted
+> Items), matching `delete_email`'s pattern. `cancel_event` on a still-active
+> organized meeting is a barrier, not a move snapshot — the cancellation
+> notice already went out, so restoring the calendar entry would only
+> half-undo the action and misleadingly imply it was fully reversed.
+> `draft_cancel_event` needs no wiring — it never saves/sends.
+>
+> **Verification status: unproven at runtime**, same caveat as `edit_event`
+> above — no live Outlook was available. One specific sequence is new and
+> untested even relative to that PR: `cancel_event`'s organized-meeting branch
+> calls `.Move()` right after `.Send()` on the same item, which no existing
+> tool in this add-in does (every other `.Send()` call — `create_event`'s
+> invite branch, `edit_event`'s notify branch — only reads properties
+> off the item afterward, never mutates its folder). Whether Outlook still
+> allows relocating a just-canceled-and-sent appointment is unconfirmed; the
+> code fails soft (catches the exception, reports the notice went out
+> regardless and tells the user to delete manually if the move didn't take) —
+> see the manual test steps for this specifically.
+
+> **Update 2026-09-28 (Outlook gains recurring-series support: occurrence
+> targeting, recurrence creation):** two additions to
+> `OutlookAiAddIn/OutlookTools.Calendar.cs` and one to
+> `OutlookAiAddIn/OutlookTools.Compose.cs`, closing the "recurring occurrences
+> share one EntryID" gap flagged in "Structural fragility" below (see that
+> section's own correction, same date) and the "no way to create a repeating
+> series" gap.
+>
+> **1 — Occurrence targeting.** `edit_event`/`draft_edit_event`/
+> `cancel_event`/`draft_cancel_event` all gained an optional `occurrence_date`
+> string param. A new `ResolveOccurrenceTarget` helper resolves it via
+> `RecurrencePattern.GetOccurrence(DateTime)` — confirmed present and callable
+> via .NET reflection against the referenced PIA, the same evidence standard
+> this document uses elsewhere — into one specific occurrence, instead of
+> always acting on the recurring master. Omitting `occurrence_date` still acts
+> on the whole series (or a non-recurring event), unchanged from before this
+> feature.
+>
+> **2 — Recurrence creation.** `create_event`/`draft_event` gained an optional
+> `recurrence` object supporting all 6 `OlRecurrenceType` values (`daily`/
+> `weekly`/`monthly`/`monthlyNth`/`yearly`/`yearlyNth`), validated by a new
+> pure, unit-tested `OfficeAi.Shared.RecurrenceValidator` (23 tests) before any
+> COM call — every validation failure names the specific field and the fix
+> (e.g. `"recurrence.days_of_week is required for type \"weekly\"..."`, not a
+> generic "invalid recurrence"). Applied via `AppointmentItem.GetRecurrencePattern()`
+> before `.Save()`/`.Send()`, after attendee/`MeetingStatus` setup — **that
+> ordering is a design choice, not yet verified against live Outlook** (see
+> "Unproven at runtime" below). Series creation's own undo/redo is unchanged
+> from `create_event`'s existing non-recurring behavior (a `RecordCreated`
+> move-to-Deleted-Items entry on the master) — deleting a recurring master
+> deletes the whole series, so no new undo mechanism was needed here either.
+>
+> **3 — Undo/redo asymmetry (the most important nuance of this feature).**
+> Occurrence-level **reschedule** stays undo-able, and needed no new
+> undo-entry type: `RecurrencePattern.GetOccurrence()`'s returned item becomes
+> a real, independently-resolvable item with its own `EntryID` once saved, so
+> the existing generic `SnapshotEntry`/`RecordSnapshot`/`ItemEntryIdOf`
+> mechanism already works on it exactly like any other item. Occurrence-level
+> **cancellation is always a barrier, never undo-able** — plain appointment or
+> meeting occurrence, no exception either way. This is a deliberate asymmetry
+> from whole-event cancellation (`cancel_event` without `occurrence_date` on a
+> plain appointment stays undo-able, per the existing "Undo/redo tools"
+> section). The reason: `RecurrencePattern.Exceptions`/`Exception` — the COM
+> objects Outlook uses to track per-occurrence deletions — are entirely
+> read-only. Confirmed via .NET reflection against the referenced PIA:
+> `Exception` exposes only getters (`AppointmentItem`, `Deleted`,
+> `OriginalDate`, `ItemProperties`) and no `Delete`/`Remove`/`Add` method
+> anywhere, so there is no API to reverse a deleted occurrence once it's gone.
+>
+> **4 — A suspected bug fixed by reasoning, not by a live-confirmed observation
+> (organizer-authority checks against the wrong item).** The four
+> occurrence-aware methods originally checked `appt.MeetingStatus`/
+> `IsCanceledMeeting(appt)`/`IsReceivedMeeting(appt)`, where `appt` is the
+> resolved occurrence or master. A live reschedule attempt against what was
+> believed at the time to be a recurring meeting occurrence failed with
+> `COMException "Cannot save this item."` Reasoning about `GetOccurrence()`'s
+> known-unreliable behavior for this property — rather than a live-confirmed
+> observation on a verified meeting occurrence — identified a likely bug:
+> `GetOccurrence()`'s returned occurrence item does **not** reliably report
+> `MeetingStatus == olMeeting` even when it genuinely belongs to a recurring
+> meeting with attendees. If so, this would cause `edit_event` on a
+> meeting occurrence to wrongly take the `.Save()` branch — crashing with
+> that same `COMException` — instead of `.Send()`, and would cause
+> `cancel_event` on a meeting occurrence to silently delete it without ever
+> notifying attendees. Fixed by checking
+> `master.MeetingStatus`/`IsCanceledMeeting(master)`/`IsReceivedMeeting(master)`
+> instead (the master is always reliable) — the actual mutation still targets
+> `appt` (the occurrence or master, whichever `ResolveOccurrenceTarget`
+> resolved). After applying this fix and testing again, the user confirmed
+> the test event had actually been a plain (non-meeting) appointment all
+> along — so the original failure had a different, unrelated cause (see
+> point 5 below). **Caveat: this fix has never actually been exercised against
+> a genuine meeting occurrence with attendees** — every live test run against
+> this feature used a plain (non-meeting) recurring series. The code and its
+> review are sound, but the specific scenario it was written to fix is
+> unverified.
+>
+> **5 — A second real bug found and fixed (false-negative `.Save()`/
+> `.Delete()` failures).** Outlook can throw `COMException "Cannot save this
+> item."` from an occurrence's `.Save()` (in `EditEvent`, formerly `RescheduleEvent`) or `.Delete()`
+> (in `CancelEvent`, both the plain-appointment and meeting-occurrence
+> branches) **even when the mutation already persisted** — confirmed live: a
+> reschedule call that reported this exception had, per a follow-up
+> `list_events` call, actually moved the occurrence. Property setters on
+> `AppointmentItem` write immediately via RPC, independent of `.Save()`/
+> `.Delete()`'s own finalize step, which can fail on its own. Fixed by
+> wrapping these calls in try/catch and re-verifying the real outcome (via
+> `ResolveOccurrenceTarget`) before deciding what to report, instead of
+> trusting the exception at face value.
+>
+> **6 — A third real, confirmed-live constraint: Outlook rejects reordering
+> occurrences relative to each other.** Confirmed by reproducing the exact
+> error manually in Outlook's own UI: *"Cannot reschedule an occurrence of the
+> recurring appointment ... if it skips over a later occurrence of the same
+> appointment"* — and separately confirmed that two occurrences of the same
+> series also can't share the same calendar day. Both surface from automation
+> only as the same generic `COMException "Cannot save this item."` — confirmed
+> no `InnerException` carries the specific reason, checked via debug log
+> across every occurrence of the failure. A new proactive check,
+> `CheckOccurrenceReorderCollision`, now runs before `.Save()` is ever
+> attempted (in both `EditEvent` and `DraftEditEvent`, formerly `RescheduleEvent`/
+> `DraftRescheduleEvent`, occurrence-level only): it queries the Calendar folder for other occurrences
+> of the same series between the occurrence's original date and the target
+> date, and if any exist, returns an exact error naming the valid range
+> instead of relying on Outlook's generic exception. This is Outlook-level
+> behavior, not a limitation of this add-in's own code.
+>
+> **Tier placement unchanged.** `create_event`/`edit_event`/
+> `cancel_event` stay Full-autonomy-only (`SendTierTools`); `draft_*` stay
+> Draft-tier. `occurrence_date`/`recurrence` are additional scope on existing
+> tools, not new risk categories — no edits to `DraftTierTools`/`SendTierTools`.
+
+> **Update 2026-09-28 (`reschedule_event`/`draft_reschedule_event` fully
+> replaced by `edit_event`/`draft_edit_event`):** a **full replacement, not an
+> alias** — the retired tools are removed entirely from `entry.ts` and the C#
+> switch in `OutlookAiAddIn/OutlookTools.cs`; `edit_event`/`draft_edit_event`
+> are the only way to change an event's time (or anything else about it) going
+> forward. Same tier placement as before (`edit_event` in `SendTierTools`,
+> `draft_edit_event` in `DraftTierTools`/`entry.ts`'s `commentOnlyExtraTools`).
+> Generalizes reschedule into a full edit: beyond `start`/`end` (still required
+> together if either is given), a single call can now also change `subject`,
+> `body`, `location`, and/or replace `required_attendees`/`optional_attendees`
+> wholesale (not a diff/merge — the caller supplies the full new list each
+> time, reading the current one first via `get_event` if it needs to preserve
+> someone) — at least one of the seven optional fields must be given, else a
+> clean `IsError` naming all seven. Attendee edits are whole-series/
+> non-recurring only (`occurrence_date` + an attendee field together is a
+> clean `IsError`); `subject`/`body`/`location`/`start`/`end` remain editable
+> at the occurrence level, same as reschedule always was. Every mechanism
+> `reschedule_event`/`draft_reschedule_event` had — `ResolveOccurrenceTarget`
+> occurrence targeting, the whole-series `RecurrencePattern.PatternStartDate`/
+> `StartTime`/`EndTime` fix, the false-negative `.Save()` retry via
+> `ResolveOccurrenceTarget` re-verification, `CheckOccurrenceReorderCollision`,
+> and the `IsCanceledMeeting`/`IsReceivedMeeting` organizer-authority checks —
+> is reused unchanged by `edit_event`/`draft_edit_event`, not duplicated (see
+> the "Occurrence targeting" / "whole-series `RecurrencePattern`" / "false-
+> negative `.Save()`" / "reordering collision" points in the dated update
+> above, now describing `edit_event`). New pieces specific to this change:
+> a `ReplaceAttendees` helper — per-category, not a blanket clear: it removes
+> existing `olRequired`-type `Recipients` entries only if `required_attendees`
+> is given, and existing `olOptional`-type entries only if `optional_attendees`
+> is given (omitting one leaves that category's existing attendees untouched;
+> the organizer recipient is never touched either way), then re-adds via the
+> existing `AddAttendees` helper `create_event`/`draft_event` already use, then
+> `Recipients.ResolveAll()`; a call flips `MeetingStatus`
+> to `olMeeting` and takes the `.Send()` branch (instead of `.Save()`) whenever
+> the event is or becomes a meeting, setting `ForceUpdateToAllAttendees = false`
+> explicitly first — confirmed via .NET reflection to be Outlook's own default
+> for notifying only added/removed attendees, not everyone, but set explicitly
+> here so correctness doesn't depend on that default never changing; and the
+> fixed `RescheduleProps` (`{"Start","End"}`) undo/redo constant is gone,
+> replaced by a dynamically-built props list per call, snapshotting only the
+> fields the call actually touched (`DescribeEditEventChanges` builds the
+> matching human-readable summary). A whole-series time change stays a barrier
+> exactly as before (`RecurrencePattern` fields aren't reachable by
+> `SnapshotEntry`); if other fields are *also* changed in that same call, the
+> entire call stays a barrier too — no partial-undo of a mixed pattern-field +
+> item-property change.
+>
+> **Unverified at runtime, ranked by consequence of being wrong** (per the
+> design spec's risk-ordering, `docs/superpowers/specs/2026-09-28-outlook-edit-event-design.md`):
+> 1. **`ReplaceAttendees`'s recipient-clearing** — highest risk, since a wrong
+>    organizer-exclusion could drop the user's own organizer entry or fail to
+>    actually clear old attendees, feeding directly into a `.Send()` with real
+>    people.
+> 2. **Converting a plain event into a meeting via `edit_event`** — adding
+>    attendees to an *existing*, previously-saved item (unlike `create_event`,
+>    which only ever adds attendees to a brand-new one) is an untested
+>    combination.
+> 3. **`subject`/`body`/`location` edits on a recurring master** — likely fine
+>    (none of these are part of `RecurrencePattern`), but unverified.
+>
+> None of this has been exercised against a live Outlook client yet — same
+> caveat as every other addition in this document's "Unproven at runtime"
+> section below, which this update also folds into.
+
+### 2026-09-29 — Outlook `tentative_meeting` and draft meeting responses (PR #29 redesign); `list_events` `mailbox` for shared calendars (PR #28 review, partly reversed)
+
+Moved verbatim out of `docs/ai-tool-surface.md` when `main` was merged into the current-state restructure on 2026-10-02; the facts that are still true now live in that file's tables. Cross-references inside the quoted blocks ("the dated Update block above", "see below") point at that file's old layout.
+
+> **Update 2026-09-29 (Outlook gains `tentative_meeting` + draft meeting-response
+> tools, plus an optional comment on all three):** `OutlookAiAddIn/OutlookTools.Calendar.cs`'s
+> `RespondMeeting` — previously hardcoded to a `bool accept` — was generalized to take
+> the actual `OlMeetingResponse` value, so one shared helper now backs `accept_meeting`,
+> `decline_meeting`, and the new `tentative_meeting` (same "Automate approvals" tier as
+> the other two — it already calls `resp.Send()` to notify the organizer, same rationale
+> as the original two). All three also gained an optional `message` parameter: when
+> given, it's set as `resp.Body` before `.Send()`, a short comment attached to the
+> accept/decline/tentative response. **Unverified live** whether the organizer actually
+> sees this text on the delivered response — needs a real received invite to test
+> against, not a self-organized item (same category of gap as this document's other
+> "Unproven at runtime" entries below). A new `DraftRespondMeeting` helper mirrors
+> `RespondMeeting` for Draft tier: same `appt.Respond(response, true, false)` call, but
+> ends in `resp.Display(false)` for the user to review and send themselves instead of
+> `.Send()`-ing directly — `draft_accept_meeting`/`draft_decline_meeting`/
+> `draft_tentative_meeting`, added to `entry.ts`'s `commentOnlyExtraTools` alongside the
+> existing draft tools, never record undo/redo (same contract as `draft_event`/
+> `draft_edit_event`/`draft_cancel_event` — nothing is saved or sent until the user acts
+> on the opened window). `message` pre-fills the same `resp.Body` there, subject to the
+> same unverified-live caveat. A second, separate unverified-live risk applies to the
+> draft tools specifically: it is **unconfirmed whether `AppointmentItem.Respond()`
+> itself commits local calendar changes at call time** — independent of whether
+> `.Send()` or `.Display()` is subsequently called — such as replacing the appointment
+> with a new EntryID on accept/tentative, or removing/moving the original appointment
+> on decline. If Outlook's COM implementation does this, the draft tools' "nothing
+> persists until the user acts" contract would not actually hold, even though they
+> correctly never call `.Send()`/`RecordIrreversible`/`RecordSnapshot`. Needs a live
+> test: open each draft response, close the window without sending, then confirm the
+> appointment still exists under the same EntryID, `ResponseStatus` is unchanged, and
+> the item is still in the inbox/calendar as before — `draft_decline_meeting` most
+> carefully, since decline is the destructive direction.
+
+> **Update 2026-09-29 (PR #29 code review: `draft_respond_meeting` redesign,
+> plus smaller `RespondMeeting`/wording fixes):** a code review of the
+> tentative_meeting/draft-meeting-response work above (the immediately
+> preceding "Update 2026-09-29" block) raised the unverified `Respond()`
+> side-effect risk it flagged from a caveat to a Critical finding, and this
+> update is the response to it — not just a footnote on the same design, an
+> actual redesign.
+>
+> **The `Respond()` side-effect risk is now the reason a design changed, not
+> just a caveat.** The review treated `AppointmentItem.Respond()`'s
+> documented/known behavior — committing a real calendar change at call time
+> (a new EntryID on accept/tentative, a move to Deleted Items on decline),
+> independent of whether the resulting response is ever sent — as
+> confirmed-plausible enough that shipping the three draft tools
+> (`draft_accept_meeting`/`draft_decline_meeting`/`draft_tentative_meeting`)
+> unchanged would mean a "draft" tool could silently alter or destroy a real
+> calendar item the instant it's invoked, before the user takes any action at
+> all. That's the exact shape of bug `draft_cancel_event` itself hit and fixed
+> the same way months earlier (see the "Update 2026-09-28" `draft_cancel_event`
+> note above: an unsaved `MeetingStatus` change that Outlook still persisted on
+> window-close). The fix follows that same precedent: `draft_respond_meeting`
+> (replacing all three retired tools) never calls `Respond()` at all. It just
+> opens the original, completely unmodified item via `Display(false)` and lets
+> the user pick Accept/Tentative/Decline themselves from Outlook's own native
+> ribbon buttons. Since the redesigned tool no longer calls `Respond()` with a
+> specific response type, there is no longer a technical reason for three
+> separate draft tools — one unified `draft_respond_meeting` replaces them,
+> gated the same as they were (`DraftTierTools`/`entry.ts`'s
+> `commentOnlyExtraTools`). `message` can no longer be pre-filled into a
+> response body (that would require calling `Respond()` to get the
+> `MeetingItem`, the exact call this redesign avoids) — it's returned in the
+> tool's output text instead, for the user to paste in themselves via
+> Outlook's own "Edit response before sending" option. See the
+> `draft_respond_meeting` table row below for the mechanics.
+>
+> **Smaller fixes to `RespondMeeting`/`DraftRespondMeeting` from the same
+> review, all in `OutlookAiAddIn/OutlookTools.Calendar.cs`:** a new shared
+> `ResolveMeetingAppointment` helper replaces the duplicated
+> item-to-`AppointmentItem` resolution logic both methods had. Both methods
+> now refuse (`IsError`) up front on a meeting that's already been canceled by
+> the organizer, or on an item that isn't a meeting the user was actually
+> invited to (an organizer's own `olMeeting` copy, or a plain `olNonMeeting`
+> appointment) — via two new shared helpers, `AlreadyCanceledRespondError`/
+> `NotInvitedError` — instead of calling `Respond()` unconditionally and
+> letting Outlook's own behavior in those cases go unchecked.
+> `RespondMeeting`'s subject is now captured *before* `Respond()` runs, since
+> `Respond()` replacing the item on accept/tentative (per the risk described
+> above) could otherwise leave `appt.Subject` reading a stale reference
+> afterward. `RespondMeeting`'s result text now says explicitly when
+> `.Send()` fails ("...but the response could not be sent to the organizer")
+> instead of unconditionally reporting success — the local `Respond()` had
+> already gone through, but the organizer was never notified and any comment
+> was lost. Two stale "accept/decline" tool-capability descriptions predating
+> `tentative_meeting` (in `entry.ts`'s `trackChangesExtraTools` comment, and
+> `OutlookTools.cs`'s comment on the `CommentOnly`/`TrackChanges` tier meaning
+> just above `DraftTierTools`) now say "accept/decline/tentatively-respond".
+> `draft_cancel_event`'s description, the system prompt's cancel-tools
+> sentence, and `ReceivedMeetingCancelError`'s message all pointed an attendee
+> who can't cancel someone else's meeting at `decline_meeting` — one tier
+> above `draft_cancel_event` itself (Draft only vs. Automate approvals), so a
+> Draft-only caller couldn't actually reach that suggestion; all three now
+> also mention `draft_respond_meeting` as the Draft-tier-reachable
+> alternative.
+>
+> **Still unverified live, pending the project owner's own test:** whether
+> the organizer actually sees the `message`/comment text on the delivered
+> response for `accept_meeting`/`decline_meeting`/`tentative_meeting` — this
+> redesign didn't touch that mechanism (`resp.Body` set before `.Send()`) or
+> add any new evidence toward confirming it; it remains exactly as
+> unverified as the immediately preceding "Update 2026-09-29" block already
+> described it.
+
+> **Update 2026-09-29 (Outlook `list_events` gains `mailbox` parameter for shared calendars):**
+> `list_events` now accepts an optional `mailbox` parameter (email address) to list
+> events on a shared calendar instead of the default user's own calendar. When
+> provided, `mailbox` is resolved via `Ns.CreateRecipient(mailbox).Resolve()` and
+> the calendar folder is opened via `Ns.GetSharedDefaultFolder(recipient,
+> olFolderCalendar)`. Resolution failures or folder access errors return an `IsError`
+> naming the mailbox and the likely cause (not shared with the user, or needs
+> adding via Outlook's own "Open Calendar" first). The identical `Sort`/
+> `IncludeRecurrences`/`Restrict` query is reused unchanged for both the default
+> calendar and shared calendars. When `mailbox` is given, each event's output gains
+> a `calendar_owner: <mailbox>` line. The zero-results message becomes "No events on
+> <mailbox>'s calendar between X and Y." when `mailbox` is given (vs. "No events
+> between X and Y." when omitted).
+>
+> **Verification status: Exchange calendar-sharing permission tiers untested.** The
+> code path `GetSharedDefaultFolder` should work identically across all permission
+> levels (Full Access / Editor / Reviewer / etc.), but behavior has not yet been
+> exercised live against a real second mailbox with different permission tiers
+> configured. First live use against a shared calendar with limited permissions
+> (free-busy only, titles+locations only, or no-access) should verify the exact
+> error messages and whether partial-read tiers degrade gracefully or fail outright.
+
+> **Update 2026-09-29 (PR #28 code review: cross-mailbox write refusal, `get_event`
+> `store_id`, private-item redaction, resolved display name) — since reversed, see
+> the next dated update below:**
+> A review of the `list_events` `mailbox` feature above (PR #28) found that nothing
+> stopped an `event_id` obtained from someone else's shared calendar from being fed
+> into a write tool — `edit_event`, `draft_edit_event`, `cancel_event`,
+> `draft_cancel_event`, and `accept_meeting`/`decline_meeting`/`tentative_meeting`'s
+> shared `RespondMeeting`/`draft_respond_meeting` all resolved `event_id` via
+> `ItemById` with no check on which mailbox store the resolved item actually lived
+> in. This was fixed with a new shared helper, `RefuseIfNotOwnStore`, that refused
+> any of those six tools on an item outside the caller's own default store, plus a
+> redaction of `subject`/`location` to `"(private)"` for `Sensitivity == olPrivate`
+> items on the shared-calendar path in `list_events`. **Both of these were reverted
+> the same day — see the dated update immediately below for the project owner's
+> explicit reasoning and the resulting design.** `get_event`'s `store_id` parameter
+> (described in the `get_event` row above) was the one piece of this review kept
+> as-is, and is now extended to the calendar-editing tools too.
+>
+> Separately, same review: `calendar_owner` and the zero-results message now use the
+> resolved `Recipient`'s own `.Name` (falling back to the raw `mailbox` string only
+> if that's empty) instead of echoing back the raw `mailbox` input verbatim — so
+> `mailbox: "dana"` reports back who it actually resolved to, not the ambiguous
+> string the caller typed. This part is unaffected by the reversal below.
+>
+> **Update 2026-09-29 (explicit project-owner reversal: `RefuseIfNotOwnStore` and
+> private-item redaction removed; `store_id` added to all calendar-editing tools
+> instead):** The project owner explicitly overrode the `RefuseIfNotOwnStore` check
+> and the private-item redaction added by the PR #28 review immediately above, on
+> this principle: this add-in should not layer its own authorization or
+> content-redaction logic on top of Outlook/Exchange's own permission model.
+> Whatever a caller's real Exchange sharing permissions would let them do through
+> Outlook's own UI on a calendar they've been given access to — view an event
+> (including a private one, if their access level exposes it), edit it, cancel it,
+> or respond to it — these tools should allow too, with Outlook/Exchange itself
+> (not this code) the only thing that can refuse. `RefuseIfNotOwnStore` and its six
+> call sites (`EditEvent`, `DraftEditEvent`, `CancelEvent`, `DraftCancelEvent`,
+> `RespondMeeting`, `DraftRespondMeeting`) were deleted outright from
+> `OutlookAiAddIn/OutlookTools.Calendar.cs`; `QueryCalendarItems`' `isPrivate`
+> redaction of `subject`/`location` was deleted too, so shared-calendar rows from
+> `list_events` now show whatever Outlook itself resolves for a private item, same
+> as any other.
+>
+> In their place, `edit_event`, `cancel_event`, `accept_meeting`, `decline_meeting`,
+> `tentative_meeting`, `set_event_categories`, `set_event_availability`, and their
+> `draft_` counterparts (8 tools total) all gained the same optional `store_id`
+> parameter `get_event` already had, passed straight through to `ItemById`/
+> `GetItemFromID` — purely a lookup aid for resolving an `event_id` outside the
+> caller's own default store (as returned by `list_events`' `store_id` field for a
+> shared-calendar event), with zero authorization logic attached. If the caller
+> lacks real Exchange permission for the action, that now surfaces as whatever
+> COMException `.Save()`/`.Send()`/etc. naturally throws, caught by each tool's
+> existing generic exception handling (or the outer `ExecuteAsync` catch, for a
+> path with no local try/catch) — not as a custom pre-check message.
+>
+> **Verification status: unverified.** This reversal has not been exercised live
+> against a real second mailbox with restricted permissions — it is not yet known
+> what error (if any) actually surfaces from Outlook when a caller genuinely lacks
+> permission for a cross-mailbox write (e.g. attempting `edit_event` with a
+> `store_id` from a calendar where the caller only has Reviewer access). It's
+> assumed to come back as a COMException from `.Save()`/`.Send()`, per this design's
+> own reasoning, but that assumption itself is untested, same as the underlying
+> calendar-sharing permission-tier behavior called out in the block above.
+
+### 2026-09-30 — Shared-calendar `list_events` moved onto EWS; `search_contacts` queries Contacts and Directory separately
+
+Moved verbatim out of `docs/ai-tool-surface.md` when `main` was merged into the current-state restructure on 2026-10-02; the facts that are still true now live in that file's tables. Cross-references inside the quoted blocks ("the dated Update block above", "see below") point at that file's old layout.
+
+> **Update 2026-09-30 (shared-calendar path rewritten onto EWS - was freezing Outlook):**
+> The `GetSharedDefaultFolder` + `Items.Sort/IncludeRecurrences/Restrict/foreach` COM
+> enumeration above froze Outlook - confirmed live by the project owner, even for a
+> single-day range. Root cause: that folder is normally not cached offline the way the
+> caller's own default calendar is, so per-property reads during enumeration could mean
+> a live, blocking round trip to Exchange for every property of every event, all on
+> Outlook's own UI thread (Outlook COM objects are STA-bound, unlike this add-in's EWS
+> calls). `list_events`' shared-calendar path now queries EWS's `FindAppointments` +
+> `CalendarView` instead (server-side date-range filtering and recurrence expansion,
+> off the UI thread via `Task.Run` - the same pattern `search_contacts` already uses for
+> the same reason). `GetSharedDefaultFolder` is still called exactly once per
+> `list_events` call, but only to read `.Store.StoreID` for `get_event`'s `store_id`
+> parameter - it never touches `.Items`. Output format is unchanged (`list_events`'
+> shared-calendar path now produces the same per-event text shape via the new
+> `SharedCalendarEventFormat.Format` that `QueryCalendarItems` already produces
+> inline for the own-calendar path — the two paths intentionally use separate code,
+> not a shared call, per the design doc's rationale). See
+> `docs/superpowers/specs/2026-09-30-outlook-shared-calendar-ews-design.md` for the
+> full design, including the one assumption this fix rests on that still needs live
+> confirmation (whether `GetSharedDefaultFolder` alone, independent of enumeration, was
+> ever part of the freeze). One accepted, deliberate difference: the EWS path's
+> `response`/`meeting_status` values are EWS's own label names (e.g. `Accept`,
+> `Meeting`, `Cancelled`) rather than the COM path's `Ol*` enum names (e.g.
+> `olResponseAccepted`, `olMeeting`) — both are just human/LLM-readable text that
+> nothing parses, so this is not a bug.
+
+From the old Outlook section's EWS carve-out bullet:
+
+> Contact resolution calls **EWS `ResolveName` twice, `ContactsOnly` then `DirectoryOnly` (both `returnContactDetails: true`), merging both result sets** (EWS Managed API 2.2, `Microsoft.Exchange.WebServices` 2.2.0) — **fixed 2026-09-30**: the original single-call `ContactsThenDirectory` short-circuited on any Contacts-folder hit (whose ANR only matches `DisplayName`) and never reached the Directory/GAL phase (whose ANR does cover given name/surname), so a query could resolve only against display names. Querying both locations unconditionally and merging (`ContactSearchFormat.Format` already dedupes by email/name) fixes that at the cost of one extra EWS round trip.
+
+### 2026-10-02 — `main` merged into the current-state restructure; historical Outlook sentences moved here
+
+`docs/ai-tool-surface.md`'s Outlook section was rewritten against current source
+(`OutlookAiAddIn/web-src/entry.ts`, `OutlookTools*.cs`) instead of picking a merge side.
+Sentences that described past states rather than the current one were removed from it;
+they're kept here:
+
+- **Four tiers (2026-09-19).** Outlook began repurposing all four `EditingMode` slots
+  (Read only / Draft only / Automate approvals / Full autonomy). Before that it used only
+  `ReadOnly`/`FullAutonomy`, and the color-tag/category tools (see 2026-09-17) and the
+  other mutating tools were Full autonomy only. `OutlookTools.Ews.cs` was split out of
+  `OutlookEws.cs` the same day, and `find_meeting_slots` began reading the work week from
+  EWS `GetUserAvailability` (it previously defaulted to "today→Thursday, or next week if
+  Fri/Sat").
+- **`search_contacts` before EWS.** The pre-2026-09 COM implementation was a recursive
+  multi-store contact-folder crawl that froze and then crashed Outlook; it was removed.
+- **`draft_cancel_event`'s first version** set `MeetingStatus = olMeetingCanceled`
+  unsaved before displaying the item. It was removed the same day (2026-09-28) after live
+  testing showed the change persists on window-close without an explicit Send. Its
+  attendee-only refusal also pointed only at `decline_meeting` (unreachable from Draft
+  only) until the PR #29 review (2026-09-29) added `draft_respond_meeting`.
+- **Structural-fragility correction (2026-09-28).** Verbatim from the old section:
+
+> **Corrected 2026-09-28:** this section previously claimed `reschedule_event` /
+> `draft_reschedule_event` / `cancel_event` / `draft_cancel_event` were bound by the same
+> limitation, documenting it as though it were a fundamental COM constraint. That was
+> wrong: those four tools (the first two since fully replaced, same day, by `edit_event`/
+> `draft_edit_event` — see the dated update near the top of this document) took an
+> optional `occurrence_date`, resolved via a new `ResolveOccurrenceTarget` helper against
+> `RecurrencePattern.GetOccurrence(DateTime)` — a real, callable member, confirmed via
+> .NET reflection against the referenced PIA rather than assumed absent — so they can
+> target one specific occurrence precisely. The shared-`EntryID` limitation still applies
+> to `edit_event`/`cancel_event`/`draft_edit_event`/`draft_cancel_event` only when
+> `occurrence_date` is omitted (they then act on the whole series, exactly as before this
+> feature). See the "Update 2026-09-28 (Outlook gains recurring-series support...)" block
+> near the top of this document for full detail, including a since-discovered undo/redo
+> asymmetry between occurrence-level edit (undo-able) and occurrence-level cancellation
+> (always a barrier).
+
+- **Unproven-at-runtime item resolved (2026-09-29).** Verbatim from the old section:
+
+> - **RESOLVED 2026-09-29 (was: `draft_accept_meeting`/`draft_decline_meeting`/
+>   `draft_tentative_meeting`'s "nothing persists until the user acts" claim rested on
+>   an unverified assumption about `AppointmentItem.Respond()` itself).** A PR #29 code
+>   review treated this gap as confirmed-plausible enough to be a Critical finding
+>   rather than leave it as an open question — `Respond()` is documented/known to
+>   commit a real calendar change at call time (a new EntryID on accept/tentative, a
+>   move to Deleted Items on decline) independent of whether `.Send()`/`.Display()` is
+>   subsequently called, which would have silently violated the draft contract. Fixed
+>   by redesign, not by verification: the replacement `draft_respond_meeting` never
+>   calls `Respond()` at all, so this class of risk no longer applies to the draft
+>   tool — see the "Update 2026-09-29 (PR #29 code review...)" block above. The
+>   underlying question (does `Respond()` itself commit changes at call time) remains
+>   formally unconfirmed, but it's now moot for the draft path specifically, since
+>   nothing in `draft_respond_meeting` ever calls it.
+
+- **Brief-vs-source note.** The merge brief expected `draft_accept_meeting`/
+  `draft_decline_meeting`/`draft_tentative_meeting`. They don't exist in current source;
+  PR #29 replaced them with the single `draft_respond_meeting`.
+
+Also folded in during the merge, for Word and PowerPoint (PR #33 / commits `3a8835b`,
+`9461e40`): each mutating tool call is now exactly one undo step (Word wraps every
+non-read tool call except undo/redo in `UndoRecord.StartCustomRecord`/`EndCustomRecord`;
+PowerPoint calls `StartNewUndoEntry()` before every non-read call, undo/redo included,
+on purpose). Word's `edit_table` and PowerPoint's `edit_table_cell`/
+`edit_table_structure` now state that row/column index 0 is simply the first physical
+row/column, header row included. Both apps' tool tables gained the
+`undo_last_action`/`redo_last_action` rows (Word 17 → 19 tools, PowerPoint 49 → 51).
+
 ---
 
 ## See also

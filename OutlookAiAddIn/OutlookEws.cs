@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
 using Ews = Microsoft.Exchange.WebServices.Data;
+using OfficeAi.Shared;
 
 namespace OutlookAiAddIn
 {
@@ -83,7 +84,7 @@ namespace OutlookAiAddIn
             });
         }
 
-        public static Task<IReadOnlyList<KeyValuePair<string, string>>> ResolveNamesAsync(Uri url, string query)
+        public static Task<IReadOnlyList<ContactMatch>> ResolveNamesAsync(Uri url, string query)
         {
             return Task.Run(() => ResolveNames(url, query));
         }
@@ -162,21 +163,197 @@ namespace OutlookAiAddIn
             return null;
         }
 
-        private static IReadOnlyList<KeyValuePair<string, string>> ResolveNames(Uri url, string query)
+        // list_events' shared-calendar path (mailbox parameter): EWS CalendarView
+        // expands recurring appointments server-side within [start, end) - the EWS
+        // equivalent of the COM path's IncludeRecurrences=true, without that path's
+        // "expand everything, then filter" cost, and off the UI thread like every
+        // other EWS call in this file. See docs/superpowers/specs/
+        // 2026-09-30-outlook-shared-calendar-ews-design.md for why this exists (the
+        // COM path froze Outlook, confirmed live even for a one-day range).
+        public static Task<IReadOnlyList<SharedCalendarEventRow>> GetSharedCalendarEventsAsync(Uri url, string mailboxSmtp, DateTime start, DateTime end, int limit)
         {
-            var results = new List<KeyValuePair<string, string>>();
+            return Task.Run(() => GetSharedCalendarEvents(url, mailboxSmtp, start, end, limit));
+        }
 
+        private static IReadOnlyList<SharedCalendarEventRow> GetSharedCalendarEvents(Uri url, string mailboxSmtp, DateTime start, DateTime end, int limit)
+        {
             Ews.ExchangeService svc = NewService(url);
+            var folderId = new Ews.FolderId(Ews.WellKnownFolderName.Calendar, new Ews.Mailbox(mailboxSmtp));
+            var view = new Ews.CalendarView(start, end, Math.Max(1, limit));
+            view.PropertySet = new Ews.PropertySet(
+                Ews.BasePropertySet.IdOnly,
+                Ews.ItemSchema.Subject,
+                Ews.AppointmentSchema.Start,
+                Ews.AppointmentSchema.End,
+                Ews.AppointmentSchema.Location,
+                Ews.AppointmentSchema.Organizer,
+                Ews.AppointmentSchema.IsAllDayEvent,
+                Ews.AppointmentSchema.AppointmentType,
+                Ews.AppointmentSchema.MyResponseType,
+                Ews.AppointmentSchema.IsMeeting,
+                Ews.AppointmentSchema.IsCancelled);
+
+            Ews.FindItemsResults<Ews.Appointment> found = svc.FindAppointments(folderId, view);
+
+            var results = new List<SharedCalendarEventRow>();
+            // A ConvertId timeout on one item means the connection is broken for
+            // the rest of this call too - once that happens, stop calling ConvertId
+            // entirely rather than letting every remaining item pay its own full
+            // timeout (up to ~12 minutes for 50 items on a mid-loop connection
+            // drop, with list_events just hanging the whole time). A non-timeout
+            // failure on a single item is left alone (still tried for subsequent
+            // items) since that's plausibly just a one-off glitch for that item.
+            bool convertIdBroken = false;
+            foreach (Ews.Appointment appt in found.Items)
+            {
+                string entryId = null;
+                if (!convertIdBroken)
+                {
+                    try
+                    {
+                        entryId = ConvertToEntryId(svc, appt, mailboxSmtp);
+                    }
+                    catch (Exception ex) when (IsTimeout(ex))
+                    {
+                        DebugLog.WriteException("GetSharedCalendarEvents ConvertId timeout - aborting further ConvertId calls", ex);
+                        convertIdBroken = true;
+                        entryId = null;
+                    }
+                }
+                Ews.AppointmentType apptType = TryGetAppointmentType(appt);
+                results.Add(new SharedCalendarEventRow
+                {
+                    EntryId = entryId,
+                    Subject = appt.Subject,
+                    // Normalized to Unspecified (from EWS's Local) so the shape
+                    // printed by "o" formatting (no timezone offset) matches the
+                    // COM own-calendar path's DateTime.Kind exactly.
+                    Start = DateTime.SpecifyKind(appt.Start, DateTimeKind.Unspecified),
+                    End = DateTime.SpecifyKind(appt.End, DateTimeKind.Unspecified),
+                    Location = appt.Location,
+                    Organizer = TryGetOrganizerLabel(appt),
+                    AllDay = TryGetBool(appt, Ews.AppointmentSchema.IsAllDayEvent, false),
+                    Recurring = apptType == Ews.AppointmentType.RecurringMaster ||
+                                apptType == Ews.AppointmentType.Occurrence ||
+                                apptType == Ews.AppointmentType.Exception,
+                    ResponseStatus = TryGetResponseType(appt).ToString(),
+                    MeetingStatus = TryGetBool(appt, Ews.AppointmentSchema.IsCancelled, false) ? "Cancelled"
+                                    : (TryGetBool(appt, Ews.AppointmentSchema.IsMeeting, false) ? "Meeting" : "NonMeeting"),
+                });
+            }
+            return results;
+        }
+
+        // Some PropertySet-requested properties aren't reliably populated by every
+        // Exchange server for every item type returned from CalendarView - confirmed
+        // live 2026-10-01: Appointment.IsCancelled threw ServiceObjectPropertyException
+        // ("This property was requested, but it wasn't returned by the server") for a
+        // plain, non-meeting appointment, despite IsCancelled being in the PropertySet
+        // above. TryGetProperty is EWS's documented safe-read for exactly this case -
+        // these helpers wrap it so a missing property degrades to a sensible default
+        // instead of crashing the whole list_events call. Applied to every
+        // meeting-specific property read here (IsAllDayEvent/AppointmentType/
+        // MyResponseType/IsMeeting/IsCancelled/Organizer) since they're all plausibly
+        // absent for some item type, unlike Subject/Start/End/Location which are core
+        // enough to every calendar item that direct access is kept as-is.
+        private static bool TryGetBool(Ews.Appointment appt, Ews.PropertyDefinition prop, bool fallback)
+        {
+            object value;
+            if (appt.TryGetProperty(prop, out value) && value is bool) return (bool)value;
+            return fallback;
+        }
+
+        private static Ews.MeetingResponseType TryGetResponseType(Ews.Appointment appt)
+        {
+            object value;
+            if (appt.TryGetProperty(Ews.AppointmentSchema.MyResponseType, out value) && value is Ews.MeetingResponseType)
+                return (Ews.MeetingResponseType)value;
+            return Ews.MeetingResponseType.Unknown;
+        }
+
+        private static Ews.AppointmentType TryGetAppointmentType(Ews.Appointment appt)
+        {
+            object value;
+            if (appt.TryGetProperty(Ews.AppointmentSchema.AppointmentType, out value) && value is Ews.AppointmentType)
+                return (Ews.AppointmentType)value;
+            return Ews.AppointmentType.Single;
+        }
+
+        private static string TryGetOrganizerLabel(Ews.Appointment appt)
+        {
+            object value;
+            if (appt.TryGetProperty(Ews.AppointmentSchema.Organizer, out value) && value is Ews.EmailAddress)
+            {
+                Ews.EmailAddress organizer = (Ews.EmailAddress)value;
+                return organizer.Name ?? organizer.Address ?? "";
+            }
+            return "";
+        }
+
+        // Converts this item's EWS id to the classic Outlook/MAPI EntryID format so
+        // it stays resolvable via the existing Ns.GetItemFromID(entryId, storeId)
+        // every read/write tool already uses (get_event's own store_id parameter) -
+        // list_events' shared-calendar output must not change shape just because
+        // this path now fetches data via EWS instead of COM. Failure here (should
+        // be rare - reasoned from the EWS Managed API surface, not yet verified
+        // live) degrades to an empty event_id rather than dropping the whole event:
+        // the caller still sees the event exists, just can't act on it via
+        // get_event/edit_event until this is investigated.
+        //
+        // A timeout is deliberately NOT caught here - it propagates to
+        // GetSharedCalendarEvents' loop, which needs to distinguish "this was a
+        // timeout" (stop calling ConvertId for the rest of the batch) from any
+        // other failure (fine to keep trying subsequent items).
+        private static string ConvertToEntryId(Ews.ExchangeService svc, Ews.Appointment appt, string mailboxSmtp)
+        {
+            try
+            {
+                // HexEntryId, not EntryId: EntryId returns a base64-encoded
+                // PR_ENTRYID, but Outlook.AppointmentItem.EntryID / Namespace.
+                // GetItemFromID (which every ItemById/get_event/edit_event call in
+                // this add-in goes through) expect the hex-encoded form - EWS's
+                // own docs call HexEntryId "the format used by Microsoft Outlook".
+                var converted = svc.ConvertId(new Ews.AlternateId(Ews.IdFormat.EwsId, appt.Id.UniqueId, mailboxSmtp), Ews.IdFormat.HexEntryId);
+                return ((Ews.AlternateId)converted).UniqueId;
+            }
+            catch (Exception ex) when (!IsTimeout(ex))
+            {
+                DebugLog.WriteException("GetSharedCalendarEvents ConvertId", ex);
+                return null;
+            }
+        }
+
+        // Queries Contacts and the Directory (GAL) separately and merges both,
+        // rather than the single-call ResolveNameSearchLocation.ContactsThenDirectory
+        // this used to use. ContactsThenDirectory short-circuits: Exchange's ANR
+        // match against a personal Contacts folder only checks DisplayName (not
+        // GivenName/Surname/company/etc.), and if that phase returns anything at
+        // all, the fuller GAL ANR (which does cover first/last name) never runs -
+        // confirmed as the cause of search_contacts matching display name only.
+        // ContactSearchFormat.Format (the caller) already dedupes by email/name
+        // and applies the limit, so merging both lists here is safe.
+        private static IReadOnlyList<ContactMatch> ResolveNames(Uri url, string query)
+        {
+            var results = new List<ContactMatch>();
+            Ews.ExchangeService svc = NewService(url);
+            AppendResolutions(svc, query, Ews.ResolveNameSearchLocation.ContactsOnly, results);
+            AppendResolutions(svc, query, Ews.ResolveNameSearchLocation.DirectoryOnly, results);
+            return results;
+        }
+
+        private static void AppendResolutions(Ews.ExchangeService svc, string query, Ews.ResolveNameSearchLocation location, List<ContactMatch> results)
+        {
             Ews.NameResolutionCollection col;
             try
             {
-                col = svc.ResolveName(query, Ews.ResolveNameSearchLocation.ContactsThenDirectory, true);
+                col = svc.ResolveName(query, location, true);
             }
             catch (Ews.ServiceResponseException)
             {
                 // ErrorNameResolutionNoResults / NoMailbox surface here on some
-                // servers rather than as an empty collection - treat as "no matches".
-                return results;
+                // servers rather than as an empty collection - treat as "no matches"
+                // at this search location (the other location may still match).
+                return;
             }
 
             foreach (Ews.NameResolution nr in col)
@@ -184,11 +361,13 @@ namespace OutlookAiAddIn
                 string email = SmtpFrom(nr);
                 if (string.IsNullOrEmpty(email)) continue; // mirror mcp-outlook: drop entries with no address
 
-                string name = DisplayNameFrom(nr, email);
-                results.Add(new KeyValuePair<string, string>(name, email));
+                results.Add(new ContactMatch
+                {
+                    FullName = FullNameFrom(nr),
+                    DisplayName = DisplayNameFrom(nr, email),
+                    Email = email,
+                });
             }
-
-            return results;
         }
 
         private static string SmtpFrom(Ews.NameResolution nr)
@@ -224,19 +403,33 @@ namespace OutlookAiAddIn
             return null;
         }
 
+        // The directory's own display name - may be org-formatted (e.g. a GAL
+        // entry whose AD displayName attribute reads "Dept/Unit/Title") and look
+        // nothing like the person's actual name. Kept separate from
+        // FullNameFrom (below) specifically so a caller can show both when they
+        // disagree - confirmed live 2026-10-01: an agent saw only this field,
+        // it didn't resemble the searched name, and it wrongly concluded the
+        // search had failed even though the match was correct.
         private static string DisplayNameFrom(Ews.NameResolution nr, string emailFallback)
         {
             Ews.Contact contact = nr.Contact;
-            if (contact != null)
-            {
-                if (!string.IsNullOrEmpty(contact.DisplayName)) return contact.DisplayName;
-                string given = contact.GivenName ?? "";
-                string surname = contact.Surname ?? "";
-                string joined = (given + " " + surname).Trim();
-                if (joined.Length > 0) return joined;
-            }
+            if (contact != null && !string.IsNullOrEmpty(contact.DisplayName)) return contact.DisplayName;
             if (nr.Mailbox != null && !string.IsNullOrEmpty(nr.Mailbox.Name)) return nr.Mailbox.Name;
             return emailFallback;
+        }
+
+        // The directory's GivenName/Surname (AD's givenName/sn attributes) - the
+        // actual person's name, independent of however DisplayName happens to be
+        // formatted. Empty for a shared/role mailbox with no such fields (e.g.
+        // "IT Helpdesk"), in which case ContactSearchFormat falls back to
+        // DisplayName alone.
+        private static string FullNameFrom(Ews.NameResolution nr)
+        {
+            Ews.Contact contact = nr.Contact;
+            if (contact == null) return "";
+            string given = contact.GivenName ?? "";
+            string surname = contact.Surname ?? "";
+            return (given + " " + surname).Trim();
         }
 
         // Timeouts surface inconsistently across EWS Managed API paths - as a

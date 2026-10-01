@@ -333,8 +333,8 @@ export interface AddInConfig {
    * Track changes' original meaning: every tool, since Word/Excel/
    * PowerPoint's real edit tools are legitimately usable under native
    * track-changes recording. Outlook sets this to unlock
-   * accept_meeting/decline_meeting on top of its own "Draft only"
-   * (commentOnly) tier - see availableForMode() below.
+   * accept_meeting/decline_meeting/tentative_meeting on top of its own
+   * "Draft only" (commentOnly) tier - see availableForMode() below.
    */
   trackChangesExtraTools?: string[]
   /** inject the user's current selection into per-turn context (Word, Excel, PowerPoint - FT-2) */
@@ -543,6 +543,7 @@ export function startAddIn(config: AddInConfig): void {
         providers: s.ai.providers,
         theme: s.theme,
         lang: s.lang,
+        reasoningEffort: s.reasoningEffort,
       }
     })(),
     // Post-hoc addition (2026-08-24, user-requested): AgentLoop.cancel()
@@ -608,6 +609,10 @@ export function startAddIn(config: AddInConfig): void {
         skipTlsVerify: settings.skipTlsVerify,
         theme: settings.theme,
         lang: settings.lang,
+        // Only present when saved from the full settings view (same gating
+        // as docSystemMessage/registeredTools below) - fall back to the
+        // current value so a quick-dropdown save never wipes it out.
+        reasoningEffort: settings.reasoningEffort ?? current.reasoningEffort,
       })
       postTlsBypass(settings.skipTlsVerify)
       // lang used to be a pre-existing gap here - threaded into the payload

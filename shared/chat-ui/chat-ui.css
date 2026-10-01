@@ -110,6 +110,26 @@
     color: var(--color-text-tertiary); font-size: 12px;
   }
   .ai-history-sep::before, .ai-history-sep::after { content: ''; flex: 1; height: 1px; background: var(--color-border-default); }
+  /* Permanent trailing element in every conversation (not just a reopened
+     one), created once at mount and kept as .ai-chat's last child by
+     appendToChat() - see updateEndBufferActive() (2026-09-30, user-requested):
+     once a conversation is long enough to scroll, this latches to a fixed
+     height and stays there for the rest of the session (whether that
+     conversation was just reopened or is being freely continued), so a
+     reply that starts filling it doesn't visibly shift the transcript, and
+     the divider isn't glued to the chip dock right underneath it either.
+     Inactive (height: 0) for any conversation that still fits on one
+     screen - .ai-chat's own `gap`/padding already give that case normal
+     breathing room without this.
+     Deliberately NOT transitioned: updateEndBufferActive() toggles .active
+     then immediately reads chatEl.scrollHeight to land scrollTop - with a
+     CSS transition, that synchronous read happens on the very first (0px-
+     grown) animation frame, landing scroll short by however much the buffer
+     still had left to grow and leaving a leftover gap at the bottom
+     (confirmed live 2026-09-30). Instant height change keeps the read
+     accurate. */
+  .ai-chat-end-buffer { height: 0; flex-shrink: 0; }
+  .ai-chat-end-buffer.active { height: 64px; }
   /* No fade: verified genoffice applies an .ai-msg-historic class to old
      messages but there is NO CSS rule for it anywhere in the codebase - the
      restored transcript renders at full, identical opacity to live messages,
@@ -144,6 +164,9 @@
     background: var(--color-bg-page); color: var(--color-text-secondary); cursor: pointer; font-size: 13px;
   }
   .ai-lang-toggle button.active { border-color: var(--docs-brand-ring); background: var(--docs-brand-ghost-weak); color: var(--color-brand-secondary); }
+  /* Reasoning effort has 6 options (vs. 3 for lang/theme) - too many to fit flex:1 in one row without truncating labels, so this variant wraps into two rows of three instead. Both classes in the selector (PR review, 2026-10-02): the markup always carries both, and this makes the override win on specificity rather than on being declared later - reordering the base rule can no longer silently un-wrap this. */
+  .ai-lang-toggle-wrap { flex-wrap: wrap; }
+  .ai-lang-toggle.ai-lang-toggle-wrap button { flex: 1 1 30%; }
   /* PP-6: connection test result, shown between the fields and the action row. */
   .ai-settings-test-result { font-size: 12px; margin-top: 10px; min-height: 1em; }
   .ai-settings-test-result.success { color: var(--docs-ok-ink); }
@@ -165,6 +188,7 @@
   .ai-panel.settings-open .ai-settings-view { display: block; }
   .ai-panel.settings-open .ai-chat,
   .ai-panel.settings-open .ai-composer,
+  .ai-panel.settings-open .ai-chip-dock,
   .ai-panel.settings-open [data-t-title="newChat"] { display: none; }
 
   .ai-more-settings-btn {
@@ -248,6 +272,41 @@
   }
   .ai-starter:hover { border-color: var(--color-border-strong); background: var(--color-bg-subtle); }
   .ai-starter:active { filter: brightness(0.88); transform: scale(0.98); }
+
+  /* ---- reopened-conversation chip dock ----
+     A sibling of .ai-chat/.ai-composer (NOT a descendant of the scrolling
+     .ai-chat flex column), shown by showHistoric() and hidden again by
+     resetToEmpty(). This is deliberate: .ai-chat-empty above sets `flex: 1`
+     + `overflow: hidden`, and per the flexbox spec that combination gives it
+     a zero automatic minimum size - once a replayed transcript already fills
+     the pane, the shrink algorithm crushes THAT element toward zero height
+     (it alone is allowed to shrink below its content size) rather than the
+     message bubbles around it, hiding its welcome icon/title/starters. This
+     dock lives entirely outside that scrolling flex column, with its own
+     `flex-shrink: 0`, so nothing can crush it the same way. */
+  .ai-chip-dock {
+    display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; flex-shrink: 0;
+    overflow-x: auto; padding: 10px 16px; border-top: 1px solid var(--color-border-default);
+    /* Scrolls, but the native scrollbar is unwanted chrome in a single-row
+       chip strip - Firefox and WebView2/Chromium hide it separately. */
+    scrollbar-width: none;
+  }
+  .ai-chip-dock::-webkit-scrollbar { display: none; }
+  /* Same specificity pitfall as .ai-more-settings-btn above: this class's own
+     `display: flex` matches the plain [hidden] rule's specificity, so the
+     `hidden` IDL property alone would not hide it without this override. */
+  .ai-chip-dock[hidden] { display: none; }
+  .ai-chip {
+    flex-shrink: 0; white-space: nowrap; padding: 6px 12px; border-radius: var(--radius-30);
+    border: 1px solid var(--color-border-default); background: var(--color-bg-page);
+    font-size: 12px; cursor: pointer; transition: var(--transition-fast);
+  }
+  .ai-chip:hover { border-color: var(--color-border-strong); background: var(--color-bg-subtle); }
+  .ai-chip:active { filter: brightness(0.88); transform: scale(0.98); }
+  /* Distinct from the starter chips - a dashed border + brand color marks
+     this one as "leave the reopened conversation", not "ask this". */
+  .ai-chip.chip-newconvo { border-style: dashed; color: var(--color-brand-secondary); }
+  .ai-chip.chip-newconvo:hover { background: var(--docs-brand-ghost-weak); }
 
   .ai-msg-user {
     align-self: flex-end; background: var(--color-bg-subtle); padding: 8px 16px;

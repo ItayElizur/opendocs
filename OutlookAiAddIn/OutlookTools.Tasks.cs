@@ -143,7 +143,7 @@ namespace OutlookAiAddIn
             catch { return "(none)"; }
         }
 
-        private static ToolResult CreateTask(JsonElement input)
+        private static ToolResult CreateTask(string mbxKey, JsonElement input)
         {
             string subject = ReqStr(input, "subject");
             Outlook.TaskItem t = (Outlook.TaskItem)App.CreateItem(Outlook.OlItemType.olTaskItem);
@@ -161,10 +161,18 @@ namespace OutlookAiAddIn
             if (imp != null) t.Importance = ParseImportance(imp);
 
             t.Save();
+            RecordCreated(mbxKey, "create_task", "task_id", t, subject);
             return new ToolResult { Output = "Task created: " + subject + "\ntask_id: " + t.EntryID, Mutated = true, Summary = "create_task" };
         }
 
-        private static ToolResult UpdateTask(JsonElement input)
+        // Snapshotted as a group: Complete/PercentComplete/Status drive each
+        // other in Outlook, so undo restores all of them together. Complete
+        // comes before PercentComplete/Status so restoring Complete=false
+        // doesn't reset the other two after they're written.
+        private static readonly string[] TaskUndoProps = { "Subject", "DueDate", "StartDate", "Complete", "PercentComplete", "Status" };
+        private static readonly string[] FlaggedMailUndoProps = { "TaskDueDate", "TaskStartDate", "FlagStatus" };
+
+        private static ToolResult UpdateTask(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "task_id");
             // folder is only needed when task_id is a flagged email from a
@@ -177,6 +185,7 @@ namespace OutlookAiAddIn
             Outlook.TaskItem t = item as Outlook.TaskItem;
             if (t != null)
             {
+                object[] before = ReadProps(t, TaskUndoProps);
                 string subject = Str(input, "subject", null);
                 if (subject != null) t.Subject = subject;
                 DateTime? due = DateArg(input, "due_date");
@@ -190,6 +199,7 @@ namespace OutlookAiAddIn
                 if (Bool(input, "mark_complete", false)) { t.Complete = true; t.PercentComplete = 100; }
 
                 t.Save();
+                RecordSnapshot(mbxKey, "update_task", t, t.Subject ?? "", TaskUndoProps, before);
                 return new ToolResult { Output = "Task updated: " + (t.Subject ?? ""), Mutated = true, Summary = "update_task" };
             }
 
@@ -199,6 +209,7 @@ namespace OutlookAiAddIn
             Outlook.MailItem mail = item as Outlook.MailItem;
             if (mail != null)
             {
+                object[] before = ReadProps(mail, FlaggedMailUndoProps);
                 DateTime? due = DateArg(input, "due_date");
                 if (due.HasValue) mail.TaskDueDate = due.Value;
                 DateTime? sd = DateArg(input, "start_date");
@@ -214,6 +225,7 @@ namespace OutlookAiAddIn
                 if (Int(input, "percent_complete", -1) >= 0) ignored.Add("percent_complete");
 
                 mail.Save();
+                RecordSnapshot(mbxKey, "update_task", mail, mail.Subject ?? "", FlaggedMailUndoProps, before);
                 string output = "Flagged email updated: " + (mail.Subject ?? "");
                 if (ignored.Count > 0) output += "\n(ignored - only apply to real tasks: " + string.Join(", ", ignored) + ")";
                 return new ToolResult { Output = output, Mutated = true, Summary = "update_task" };
@@ -222,12 +234,14 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = "task_id does not resolve to a task or a flagged email.", IsError = true, Summary = "update_task" };
         }
 
-        private static ToolResult SetReminder(JsonElement input)
+        private static ToolResult SetReminder(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "item_id");
             bool clear = Bool(input, "clear", false);
             object item = ItemById(id, null);
             dynamic d = item;
+            string[] props = { "ReminderTime", "ReminderSet" };
+            object[] before = ReadProps(item, props);
 
             if (clear)
             {
@@ -241,21 +255,28 @@ namespace OutlookAiAddIn
                 d.ReminderTime = rem.Value;
             }
             d.Save();
+            string subject = "";
+            try { subject = d.Subject; } catch { }
+            RecordSnapshot(mbxKey, "set_reminder", item, subject, props, before);
             return new ToolResult { Output = clear ? "Reminder cleared." : "Reminder set.", Mutated = true, Summary = "set_reminder" };
         }
 
-        private static ToolResult SetEmailReminder(JsonElement input)
+        private static ToolResult SetEmailReminder(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "message_id");
             Outlook.MailItem mail = ItemById(id, StoreOf(input)) as Outlook.MailItem;
             if (mail == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "set_email_reminder" };
 
-            mail.MarkAsTask(ParseMarkInterval(Str(input, "mark_interval", null)));
+            bool wasMarkedAsTask = mail.IsMarkedAsTask;
+            object[] before = ReadProps(mail, EmailFlagEntry.FlagProps);
+            Outlook.OlMarkInterval interval = ParseMarkInterval(Str(input, "mark_interval", null));
+            mail.MarkAsTask(interval);
             DateTime? due = DateArg(input, "due_date");
             if (due.HasValue) { mail.TaskDueDate = due.Value; mail.TaskStartDate = due.Value; }
             DateTime? rem = DateArg(input, "reminder_time");
             if (rem.HasValue) { mail.ReminderSet = true; mail.ReminderTime = rem.Value; }
             mail.Save();
+            RecordEmailFlag(mbxKey, mail, wasMarkedAsTask, interval, before);
 
             return new ToolResult
             {

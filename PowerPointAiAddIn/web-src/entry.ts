@@ -514,7 +514,7 @@ const MUTATION_TOOLS = [
   },
   {
     name: 'edit_table_cell',
-    description: 'Replaces one table cell\'s text (0-based row/col).',
+    description: 'Replaces one table cell\'s text (0-based row/col). Row 0 is just the first physical row, including when it holds column headers - there is no separate header concept in the index space (edit_table_style\'s firstRow only changes that row\'s visual style, not its index).',
     inputSchema: {
       type: 'object',
       properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, row: { type: 'number' }, col: { type: 'number' }, paragraphs: { type: 'string' } },
@@ -523,7 +523,7 @@ const MUTATION_TOOLS = [
   },
   {
     name: 'edit_table_structure',
-    description: 'Inserts or deletes a table row/column. index (0-based) addresses an EXISTING row/column; before decides which side the new one goes on for insert kinds. Deleting/inserting shifts every later row/column\'s index - re-read the table before a second structural edit in the same run.',
+    description: 'Inserts or deletes a table row/column. index (0-based) addresses an EXISTING row/column, including row 0 even if it holds column headers - there is no separate header concept in the index space (edit_table_style\'s firstRow only changes that row\'s visual style, not its index). before decides which side the new one goes on for insert kinds. Deleting/inserting shifts every later row/column\'s index - re-read the table before a second structural edit in the same run.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -739,6 +739,20 @@ const MUTATION_TOOLS = [
       required: ['masterShapeIndex'],
     },
   },
+  {
+    name: 'undo_last_action',
+    description:
+      "Reverses the presentation's last action, like Ctrl+Z (dispatched via PowerPoint's own ribbon Undo command, since the object model has no direct Undo method). " +
+      'Reports honestly whether anything was actually undone ("Nothing to undo." if the undo history is empty).',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'redo_last_action',
+    description:
+      "Re-applies the presentation's last undone action, like Ctrl+Y (dispatched via PowerPoint's own ribbon Redo command). " +
+      'Reports honestly whether anything was actually redone ("Nothing to redo." if there is nothing to reapply).',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ]
 
 const ALL_TOOLS = [...READER_TOOLS, ...MUTATION_TOOLS]
@@ -938,6 +952,14 @@ const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'List layouts', he: 'רשימת פריסות' },
     description: { en: "Lists every layout name in the presentation's theme.", he: 'מציג רשימה של כל שמות הפריסות בעיצוב המצגת.' },
   },
+  undo_last_action: {
+    label: { en: 'Undo', he: 'ביטול' },
+    description: { en: "Reverses the presentation's last action, like Ctrl+Z.", he: 'מבטל את הפעולה האחרונה במצגת, כמו Ctrl+Z.' },
+  },
+  redo_last_action: {
+    label: { en: 'Redo', he: 'ביצוע חוזר' },
+    description: { en: 'Re-applies the last undone action, like Ctrl+Y.', he: 'מבצע מחדש את הפעולה האחרונה שבוטלה, כמו Ctrl+Y.' },
+  },
 }
 
 startAddIn({
@@ -965,7 +987,8 @@ startAddIn({
     'You can manage Slide Master basics: set_headers_footers (slide number/footer/date, deck-wide or per slide - mirrors PowerPoint\'s native "Insert Header and Footer" dialog), ' +
     'and add_master_element/read_master_elements/set_master_element_transform/remove_master_element to pin a logo, icon, or small text label to a corner of every slide via the Slide Master rather than editing each slide individually. ' +
     'Any of those four tools can also target one specific layout instead of the whole Slide Master, via an optional layoutName (matched across every design/theme in the deck) - call list_layouts first to see the real names, or check the selected slide\'s layoutName already given in your context. ' +
-    'Your available tools depend on the current editing mode (Read Only, Comment Only, Track Changes, or Full Autonomy) - only call tools that are currently offered to you.',
+    'Your available tools depend on the current editing mode (Read Only, Comment Only, Track Changes, or Full Autonomy) - only call tools that are currently offered to you. ' +
+    'undo_last_action/redo_last_action mirror PowerPoint\'s own Ctrl+Z/Ctrl+Y - use them if the user asks to undo/redo, or to back out a change you just made that turned out wrong.',
   starters: [
     { en: "Improve this slide's title and copy", he: 'שפר את הכותרת והטקסט של השקופית' },
     { en: "Make this slide's bullets more concise", he: 'קצר את התבליטים בשקופית' },

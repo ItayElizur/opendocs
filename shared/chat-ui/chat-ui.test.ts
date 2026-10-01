@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
-import { defaultModeFor, mountChatUI, type ToolDisplayEntry } from './chat-ui'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { caretLineMeasurement, defaultModeFor, mountChatUI, type ToolDisplayEntry } from './chat-ui'
 
 const TEST_TOOLS: ToolDisplayEntry[] = [
   { name: 'get_document_context', label: { en: 'Read document', he: 'קרא מסמך' }, description: { en: 'Reads a summary of the document.', he: 'קורא תקציר של המסמך.' } },
@@ -59,6 +59,16 @@ describe('mountChatUI', () => {
     expect(root.querySelector('#modeMenu')!.classList.contains('open')).toBe(true)
     root.querySelector<HTMLTextAreaElement>('.ai-textarea')!.click()
     expect(root.querySelector('#modeMenu')!.classList.contains('open')).toBe(false)
+  })
+
+  it('a drag that starts inside the mode menu and releases outside leaves it open', () => {
+    const { root } = setup()
+    root.querySelector<HTMLButtonElement>('.ai-mode-btn')!.click()
+    const menuItem = root.querySelector<HTMLElement>('#modeMenu [data-mode="trackChanges"]')!
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    menuItem.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    textarea.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(root.querySelector('#modeMenu')!.classList.contains('open')).toBe(true)
   })
 
   it('settings only call onSettingsSave when Save is clicked, not on field input', () => {
@@ -207,6 +217,185 @@ describe('mountChatUI', () => {
     expect(root.querySelector('.ai-history-sep')).not.toBeNull()
     expect(root.textContent).toContain('earlier question')
     expect(root.querySelector('.ai-history-faded')).toBeNull()
+  })
+
+  // ---- reopened-conversation chip dock (replaces the crushable trailing
+  // emptyStateHtml() that used to be appended after the history divider) ----
+
+  it('a fresh, never-reopened chat shows no chip dock', () => {
+    const { root } = setup()
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
+  })
+
+  it('showHistoric shows the chip dock and does not append a trailing .ai-chat-empty inside .ai-chat', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(false)
+    expect(root.querySelector('.ai-chat .ai-chat-empty')).toBeNull()
+  })
+
+  it('clicking a starter chip in the dock fills the composer, same as an inline starter click', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chip = root.querySelector<HTMLElement>('#chipDock .ai-chip:not(.chip-newconvo)')!
+    expect(chip.textContent).toBe('Summarize this document')
+    chip.click()
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    expect(textarea.value).toBe('Summarize this document')
+    expect(document.activeElement).toBe(textarea)
+  })
+
+  it('clicking the "New conversation" chip fires the same callback as the header\'s newChat button', () => {
+    const { root, handle, onNewChat } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    root.querySelector<HTMLElement>('#chipDock .chip-newconvo')!.click()
+    expect(onNewChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('resetToEmpty hides the chip dock again', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(false)
+    handle.resetToEmpty()
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
+  })
+
+  it('the "New conversation" chip leads the dock, ahead of the starter chips', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const first = root.querySelector<HTMLElement>('#chipDock')!.firstElementChild
+    expect(first?.classList.contains('chip-newconvo')).toBe(true)
+  })
+
+  it('sending a new message in a reopened conversation hides the chip dock', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(false)
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    textarea.value = 'continue the conversation'
+    root.querySelector<HTMLButtonElement>('.ai-send-btn')!.click()
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
+  })
+
+  it('the end buffer exists (inactive) from mount, even before any history is shown', () => {
+    const { root } = setup()
+    const buffer = root.querySelector<HTMLElement>('.ai-chat-end-buffer')
+    expect(buffer).not.toBeNull()
+    expect(buffer!.classList.contains('active')).toBe(false)
+  })
+
+  it('the end buffer activates once the conversation overflows the visible pane, and never turns back off', () => {
+    const { root, handle } = setup()
+    const chat = root.querySelector<HTMLElement>('.ai-chat')!
+    const buffer = root.querySelector<HTMLElement>('.ai-chat-end-buffer')!
+    Object.defineProperty(chat, 'clientHeight', { value: 400, configurable: true })
+    Object.defineProperty(chat, 'scrollHeight', { value: 400, configurable: true })
+    handle.addUserMessage('short message')
+    expect(buffer.classList.contains('active')).toBe(false)
+
+    Object.defineProperty(chat, 'scrollHeight', { value: 900, configurable: true })
+    handle.addUserMessage('this pushes the transcript past one screen')
+    expect(buffer.classList.contains('active')).toBe(true)
+
+    // One-way latch, per user request: even if content were to report as
+    // short again, the buffer must not shrink back to inactive.
+    Object.defineProperty(chat, 'scrollHeight', { value: 200, configurable: true })
+    handle.addUserMessage('short again')
+    expect(buffer.classList.contains('active')).toBe(true)
+  })
+
+  it('resetToEmpty deactivates the end buffer for the new conversation', () => {
+    const { root, handle } = setup()
+    const chat = root.querySelector<HTMLElement>('.ai-chat')!
+    Object.defineProperty(chat, 'clientHeight', { value: 100, configurable: true })
+    Object.defineProperty(chat, 'scrollHeight', { value: 900, configurable: true })
+    handle.addUserMessage('long enough to overflow')
+    expect(root.querySelector('.ai-chat-end-buffer')!.classList.contains('active')).toBe(true)
+    handle.resetToEmpty()
+    expect(root.querySelector('.ai-chat-end-buffer')!.classList.contains('active')).toBe(false)
+  })
+
+  it('a message sent after reopening a conversation renders above the end buffer, which stays the last child', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chat = root.querySelector<HTMLElement>('.ai-chat')!
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    textarea.value = 'continue the conversation'
+    root.querySelector<HTMLButtonElement>('.ai-send-btn')!.click()
+    // doSend() only clears the textarea and calls onSend() - rendering the
+    // user's own bubble is the host's job (addUserMessage), same as real usage.
+    handle.addUserMessage('continue the conversation')
+    expect(chat.lastElementChild?.classList.contains('ai-chat-end-buffer')).toBe(true)
+    // :last-of-type matches the last <div> sibling regardless of class (the
+    // buffer, now trailing) - pull the last .ai-msg-user match instead.
+    const userMsgs = chat.querySelectorAll('.ai-msg-user')
+    const newMsg = userMsgs[userMsgs.length - 1]!
+    expect(newMsg.textContent).toBe('continue the conversation')
+    expect(newMsg.compareDocumentPosition(chat.lastElementChild!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('switching language preserves the chat scroll position instead of resetting it', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chat = root.querySelector<HTMLElement>('.ai-chat')!
+    chat.scrollTop = 123
+
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-lang="he"]')!.click()
+    root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
+
+    expect(chat.scrollTop).toBe(123)
+  })
+
+  it('switching language relocalizes an already-shown "Earlier conversation" divider', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    expect(root.querySelector('.ai-history-sep')!.textContent).toBe('Earlier conversation')
+
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-lang="he"]')!.click()
+    root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
+
+    expect(root.querySelector('.ai-history-sep')!.textContent).toBe('שיחה קודמת')
+  })
+
+  it('showHistoric keeps the end buffer as the last child, after the divider', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chat = root.querySelector('.ai-chat')!
+    expect(chat.lastElementChild?.classList.contains('ai-chat-end-buffer')).toBe(true)
+  })
+
+  it('showHistoric([]) is a no-op - no divider, no dock, empty state untouched', () => {
+    const { root, handle } = setup()
+    handle.showHistoric([])
+    expect(root.querySelector('.ai-history-sep')).toBeNull()
+    expect(root.querySelector<HTMLElement>('#chipDock')!.hidden).toBe(true)
+    expect(root.querySelector('.ai-chat .ai-chat-empty')).not.toBeNull()
+  })
+
+  it('dock chips are keyboard-activatable (tabindex + Enter/Space)', () => {
+    const { root, handle, onNewChat } = setup()
+    handle.showHistoric([{ role: 'user', text: 'earlier question' }, { role: 'assistant', text: 'earlier answer' }])
+    const chip = root.querySelector<HTMLElement>('#chipDock .ai-chip:not(.chip-newconvo)')!
+    expect(chip.getAttribute('tabindex')).toBe('0')
+    expect(chip.getAttribute('role')).toBe('button')
+    chip.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    expect(textarea.value).toBe('Summarize this document')
+
+    const newConvo = root.querySelector<HTMLElement>('#chipDock .chip-newconvo')!
+    newConvo.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))
+    expect(onNewChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('inline empty-state starters are keyboard-activatable too', () => {
+    const { root } = setup()
+    const starter = root.querySelector<HTMLElement>('.ai-starter')!
+    expect(starter.getAttribute('tabindex')).toBe('0')
+    starter.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    expect(textarea.value).toBe(starter.textContent)
   })
 
   it('setSelectionScope updates the hint label text for a live selection, and reverts to Whole document', () => {
@@ -675,6 +864,45 @@ describe('mountChatUI', () => {
     )
   })
 
+  it('clicking a reasoning effort option updates .active and reports it on Save from the full view', () => {
+    const { root, onSettingsSave } = setup()
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(root.querySelector('[data-reasoning-choice="default"]')!.classList.contains('active')).toBe(true)
+
+    root.querySelector<HTMLButtonElement>('[data-reasoning-choice="xhigh"]')!.click()
+    expect(root.querySelector('[data-reasoning-choice="xhigh"]')!.classList.contains('active')).toBe(true)
+    expect(root.querySelector('[data-reasoning-choice="default"]')!.classList.contains('active')).toBe(false)
+    expect(onSettingsSave).not.toHaveBeenCalled()
+
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+    expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'xhigh' }))
+  })
+
+  it('reasoningEffort is seeded from initialSettings and omitted from the quick-dropdown Save payload', () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const onSettingsSave = vi.fn()
+    mountChatUI(root, {
+      onSend: vi.fn(), onModeChange: vi.fn(), onSettingsSave, onNewChat: vi.fn(),
+      starters: [], onCollapseChange: vi.fn(),
+      initialSettings: { reasoningEffort: 'high' },
+    })
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(root.querySelector('[data-reasoning-choice="high"]')!.classList.contains('active')).toBe(true)
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+    expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'high' }))
+
+    onSettingsSave.mockClear()
+    // Save above left dirty=false but inSettingsView=true - one click backs out
+    // to the chat view, a second re-opens the quick dropdown (settingsBtn does
+    // double duty, see chat-ui.ts's comment on that handler).
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
+    const payload = onSettingsSave.mock.calls[0]![0]
+    expect(payload.reasoningEffort).toBeUndefined()
+  })
+
   it('clicking a theme option updates .active but does not call onSettingsSave until Save is clicked', () => {
     const { root, onSettingsSave } = setup()
     root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
@@ -828,6 +1056,36 @@ describe('mountChatUI', () => {
   })
 
   // ---- Up/Down-arrow recall of previously sent messages ----
+  //
+  // caretCollapsedAtFirstLine/caretCollapsedAtLastLine (chat-ui.ts) decide
+  // whether an arrow press should recall history or just move the caret,
+  // by comparing caretLineMeasurement.measure(pos) - the pixel offsetTop of
+  // the visual line `pos` renders on, via a hidden mirror div - against the
+  // measurement at position 0 (top) / value.length (bottom). jsdom (used
+  // here) performs no real text layout, so a *real* mirror-div measurement
+  // always reports offsetTop 0 for every position in this environment -
+  // there is no way to assert a genuine pixel-line answer from jsdom alone.
+  // So every test in this section stubs caretLineMeasurement.measure with a
+  // small fake that reproduces a specific, known line layout, and asserts
+  // only the surrounding gating/recall logic against it. The default stub
+  // below (hard '\n' counting) reproduces exactly the *old* behavior, which
+  // is still supposed to work today - i.e. it's what real browsers do for
+  // text with no soft-wrapping - so the pre-existing hard-newline tests
+  // keep meaning what they say. The dedicated soft-wrap test further down
+  // installs its own stub simulating word-wrap, to exercise the actual bug
+  // fix (a long, single-line, no-'\n' draft that wraps across several
+  // visual lines).
+  function hardNewlineLineIndex(textarea: HTMLTextAreaElement, pos: number): number {
+    return (textarea.value.slice(0, pos).match(/\n/g) || []).length
+  }
+  let originalMeasure: typeof caretLineMeasurement.measure
+  beforeEach(() => {
+    originalMeasure = caretLineMeasurement.measure
+    caretLineMeasurement.measure = hardNewlineLineIndex
+  })
+  afterEach(() => {
+    caretLineMeasurement.measure = originalMeasure
+  })
 
   function arrow(textarea: HTMLTextAreaElement, key: 'ArrowUp' | 'ArrowDown'): void {
     textarea.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
@@ -862,7 +1120,7 @@ describe('mountChatUI', () => {
     expect(textarea.value).toBe('half-typed')
   })
 
-  it('ArrowUp only recalls when the caret is collapsed on the first line', () => {
+  it('ArrowUp only recalls when the caret is collapsed on the first line (hard \\n break)', () => {
     const { root } = setup()
     const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
     sendText(root, 'prior')
@@ -877,6 +1135,107 @@ describe('mountChatUI', () => {
     textarea.setSelectionRange(0, 0)
     arrow(textarea, 'ArrowUp')
     expect(textarea.value).toBe('prior')
+  })
+
+  it('ArrowDown only recalls when the caret is collapsed on the last line (hard \\n break)', () => {
+    const { root } = setup()
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    sendText(root, 'prior')
+    // Enter recall mode first (ArrowUp from an empty draft), then type a
+    // multi-line draft "on top of" the recalled state, same shape as the
+    // ArrowUp test above but exercising caretCollapsedAtLastLine instead.
+    arrow(textarea, 'ArrowUp')
+    expect(textarea.value).toBe('prior')
+
+    textarea.value = 'line one\nline two'
+    // Caret on the first line - ArrowDown should move within the textarea, not recall.
+    textarea.setSelectionRange(0, 0)
+    arrow(textarea, 'ArrowDown')
+    expect(textarea.value).toBe('line one\nline two')
+
+    // Caret at the very end (last line) - now it recalls (nothing newer than
+    // 'prior', so recall lands back on the live draft that was stashed on
+    // the very first ArrowUp above - the empty string).
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    arrow(textarea, 'ArrowDown')
+    expect(textarea.value).toBe('')
+  })
+
+  it('a long single-line (soft-wrapped) draft does not recall on the first ArrowUp - only once the caret reaches the topmost visual line', () => {
+    const { root } = setup()
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    sendText(root, 'prior message')
+
+    // No '\n' anywhere - under the old lastIndexOf('\n', ...)-only check this
+    // was indistinguishable from a single-line draft, so caretCollapsedAtFirstLine()
+    // was always true here and the very first ArrowUp always recalled
+    // history. Simulate a real browser word-wrapping this into 4 visual
+    // lines of 20 characters each (line index = floor(pos / 20)) - the exact
+    // shape the mirror-div technique measures in production, stubbed here
+    // because jsdom can't lay text out for real (see the section comment above).
+    const longDraft = 'x'.repeat(80)
+    const WRAP_WIDTH = 20
+    caretLineMeasurement.measure = (ta, pos) => Math.floor(pos / WRAP_WIDTH)
+
+    textarea.value = longDraft
+    textarea.setSelectionRange(longDraft.length, longDraft.length) // end of text -> visual line 3 (bottom), not line 0 (top)
+
+    arrow(textarea, 'ArrowUp')
+    expect(textarea.value).toBe(longDraft) // not recalled - the fix lets a real browser move the caret up a visual line instead
+
+    // Move the caret to the topmost visual line and try again - now it does recall.
+    textarea.setSelectionRange(5, 5) // line index 0
+    arrow(textarea, 'ArrowUp')
+    expect(textarea.value).toBe('prior message')
+  })
+
+  it('a long single-line (soft-wrapped) draft does not recall on ArrowDown until the caret reaches the bottommost visual line', () => {
+    const { root } = setup()
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    sendText(root, 'prior message')
+    arrow(textarea, 'ArrowUp') // enter recall mode, stashing the (empty) live draft
+    expect(textarea.value).toBe('prior message')
+
+    const longDraft = 'y'.repeat(80)
+    const WRAP_WIDTH = 20
+    caretLineMeasurement.measure = (ta, pos) => Math.floor(pos / WRAP_WIDTH)
+
+    textarea.value = longDraft
+    textarea.setSelectionRange(0, 0) // top -> visual line 0, not the bottommost line
+
+    arrow(textarea, 'ArrowDown')
+    expect(textarea.value).toBe(longDraft) // not recalled
+
+    textarea.setSelectionRange(longDraft.length, longDraft.length) // bottommost visual line
+    arrow(textarea, 'ArrowDown')
+    expect(textarea.value).toBe('') // recalls past the newest entry, back to the stashed empty draft
+  })
+
+  it('a mix of hard \\n breaks and soft wrapping only recalls once the caret is truly on the first/last rendered line', () => {
+    const { root } = setup()
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    sendText(root, 'prior message')
+
+    // 'AAAA\n' + 40 x's: line 0 is the short hard-broken first line; the
+    // second '\n'-delimited chunk itself soft-wraps into further visual
+    // lines. Simulate: position <= 4 -> visual line 0; beyond the newline,
+    // wrap every 10 chars of the remainder into its own subsequent line.
+    const draft = 'AAAA\n' + 'x'.repeat(40)
+    caretLineMeasurement.measure = (ta, pos) => {
+      const head = ta.value.slice(0, pos)
+      const nl = head.indexOf('\n')
+      if (nl === -1 || pos <= nl) return 0
+      return 1 + Math.floor((pos - nl - 1) / 10)
+    }
+    textarea.value = draft
+    textarea.setSelectionRange(draft.length, draft.length) // deep in the wrapped tail, not line 0
+
+    arrow(textarea, 'ArrowUp')
+    expect(textarea.value).toBe(draft) // still not line 0 - no recall
+
+    textarea.setSelectionRange(2, 2) // within the literal first line
+    arrow(textarea, 'ArrowUp')
+    expect(textarea.value).toBe('prior message')
   })
 
   it('New chat clears the recall history', () => {

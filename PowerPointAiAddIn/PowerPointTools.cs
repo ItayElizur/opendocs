@@ -39,7 +39,8 @@ namespace PowerPointAiAddIn
             try
             {
                 EditingMode mode = ModeFor(docKey);
-                if (!AlwaysAllowedTools.Contains(name) && !IsMutationAllowed(mode))
+                bool isAlwaysAllowed = AlwaysAllowedTools.Contains(name);
+                if (!isAlwaysAllowed && !IsMutationAllowed(mode))
                 {
                     return new ToolResult
                     {
@@ -47,6 +48,36 @@ namespace PowerPointAiAddIn
                         IsError = true,
                         Summary = name,
                     };
+                }
+
+                // PowerPoint's native undo manager can coalesce several
+                // back-to-back COM-driven mutations into a single undo entry
+                // when there's no UI tick between them (confirmed live,
+                // 2026-10-02: add_table immediately followed by
+                // edit_table_structure's delete-row got merged - one
+                // undo_last_action removed the whole table, not just the
+                // row). StartNewUndoEntry() (confirmed via reflection against
+                // the referenced PIA - Microsoft.Office.Interop.PowerPoint
+                // has no Document-level undo, so this is the only available
+                // boundary) forces a fresh entry before each mutating tool
+                // call, so one tool call always maps to exactly one undo
+                // step. Not called for always-allowed (read-only) tools -
+                // nothing to barrier there.
+                //
+                // Deliberately NOT excluded here (unlike Word's analogous
+                // fix in WordTools.cs, which also excludes undo_last_action/
+                // redo_last_action): live-tested, 2026-10-02 - calling
+                // StartNewUndoEntry() immediately before PowerPoint's own
+                // ExecuteMso("Undo"/"Redo") (PowerPointTools.History.cs) with
+                // nothing undo-worthy pending did not disturb the redo stack.
+                // This is a genuine behavioral difference from Word, not
+                // copy-paste drift - Word's UndoRecord.StartCustomRecord
+                // wrapping Document.Undo()/Redo() would be meaningless by
+                // construction, whereas PowerPoint's barrier is just inert
+                // when empty.
+                if (!isAlwaysAllowed)
+                {
+                    Globals.ThisAddIn.Application.StartNewUndoEntry();
                 }
 
                 switch (name)
@@ -100,6 +131,8 @@ namespace PowerPointAiAddIn
                     case "remove_master_element": return RemoveMasterElement(input);
                     case "read_master_elements": return ReadMasterElements(input);
                     case "list_layouts": return ListLayouts(input);
+                    case "undo_last_action": return UndoLastAction();
+                    case "redo_last_action": return RedoLastAction();
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
             }

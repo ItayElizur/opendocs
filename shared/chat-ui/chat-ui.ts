@@ -1,5 +1,5 @@
 import './chat-ui.css'
-import { AI_PROVIDERS, type AiProviderId } from '@genoffice/ai-provider'
+import { AI_PROVIDERS, type AiProviderId, type ReasoningEffort } from '@genoffice/ai-provider'
 
 export type EditingMode = 'readOnly' | 'commentOnly' | 'trackChanges' | 'fullAutonomy'
 
@@ -31,6 +31,10 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   save:                 { en: 'Save', he: 'שמור' },
   collapse:             { en: 'Collapse panel', he: 'כווץ חלונית' },
   historySep:           { en: 'Earlier conversation', he: 'שיחה קודמת' },
+  // Chip-dock's own "start over" chip (distinct from the composer's `newChat`
+  // header button, which this chip calls into via the same onNewChat) - see
+  // showHistoric()/resetToEmpty() for when the dock itself is shown/hidden.
+  newConversationChip:  { en: 'New conversation', he: 'שיחה חדשה' },
   scopeWholeDoc:        { en: 'Whole document', he: 'כל המסמך' },
   emptyTitle:           { en: 'What can I help with?', he: 'איך אפשר לעזור?' },
   modeReadOnly:         { en: 'Read only', he: 'קריאה בלבד' },
@@ -64,6 +68,14 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   themeLight:           { en: 'Light', he: 'בהיר' },
   themeDark:            { en: 'Dark', he: 'כהה' },
   themeDefault:         { en: 'Default', he: 'ברירת מחדל' },
+  sectionReasoning:     { en: 'Reasoning effort', he: 'מאמץ חשיבה' },
+  reasoningNote:        { en: "Not every model supports every tier - unsupported choices are ignored by the model, not an error.", he: 'לא כל מודל תומך בכל רמה - בחירה לא נתמכת פשוט מתעלמת מהמודל, ואינה שגיאה.' },
+  reasoningDefault:     { en: 'Default', he: 'ברירת מחדל' },
+  reasoningOff:         { en: 'Off', he: 'כבוי' },
+  reasoningLow:         { en: 'Low', he: 'נמוך' },
+  reasoningMedium:      { en: 'Medium', he: 'בינוני' },
+  reasoningHigh:        { en: 'High', he: 'גבוה' },
+  reasoningXHigh:       { en: 'Extra high', he: 'גבוה במיוחד' },
   sectionDocMessage:    { en: 'Document guidelines', he: 'הנחיות למסמך' },
   scopeNote:            { en: 'Applies immediately and resets tool registration below.', he: 'חל מיידית ומאפס את רישום הכלים למטה.' },
   docMessagePlaceholder:{ en: 'Background and guidelines about this document - included at the start of every new conversation.', he: 'רקע והנחיות לגבי המסמך הזה - ייכלל בתחילת כל שיחה חדשה.' },
@@ -137,6 +149,8 @@ export interface SettingsSavePayload {
   docSystemMessage?: string
   /** only present when saved from the full settings view (FT-1) - registration itself already took effect live via onToolRegistrationChange; this is an echo for symmetry with the other fields */
   registeredTools?: string[]
+  /** only present when saved from the full settings view, same gating as docSystemMessage above - global, not per-provider */
+  reasoningEffort?: ReasoningEffort
 }
 
 /** One tool's UI-only display info (FT-1 Task 5) - distinct from the tool's
@@ -160,6 +174,8 @@ export interface InitialSettings {
   theme?: 'light' | 'dark' | 'default'
   /** Seeds the Language toggle's selected button. Defaults to 'default' if omitted. */
   lang?: LangPref
+  /** Seeds the Reasoning effort section's selected button. Defaults to 'default' if omitted. */
+  reasoningEffort?: ReasoningEffort
 }
 
 export interface ChatUIOptions {
@@ -456,12 +472,120 @@ function truncateForDisplay(s: string, max: number): string {
 /** Inline cap for a tool's rendered output; longer outputs get a "show all" toggle. */
 const TOOL_OUTPUT_PREVIEW_CHARS = 2_000
 
-function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
-  const pills = options.starters
-    .map((s) => `<div class="ai-starter">${escapeHtml(s[currentLang])}</div>`)
+// ---- Caret visual-line measurement, for the ArrowUp/ArrowDown history-recall
+// gate (caretCollapsedAtFirstLine/caretCollapsedAtLastLine in mountChatUI
+// below). A message with no literal '\n' can still word-wrap into several
+// *visual* lines inside the textarea (.ai-textarea has no white-space:
+// nowrap) - checking only for '\n' (the old implementation) can't tell those
+// visual lines apart, so it always reported "on the first/last line", and
+// the very first ArrowUp/ArrowDown always recalled history instead of first
+// moving the caret up/down within the wrapped draft. This mirrors the
+// standard "textarea-caret-position" technique: clone the textarea's box
+// model into a hidden same-width div, insert the value up to a given
+// position plus a marker span, and read where that marker actually rendered.
+const MIRROR_CSS_PROPS = [
+  'boxSizing', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+  'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+  'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontVariant', 'letterSpacing',
+  'lineHeight', 'textIndent', 'textTransform', 'wordSpacing', 'tabSize',
+  'direction', 'textAlign',
+] as const
+
+let caretMirrorDiv: HTMLDivElement | null = null
+
+// Created lazily on first use and reused for the panel's lifetime (a plain
+// module-level singleton - never recreated per keystroke, and there's only
+// ever one composer textarea per pane).
+function getCaretMirrorDiv(): HTMLDivElement {
+  if (!caretMirrorDiv) {
+    const div = document.createElement('div')
+    div.style.position = 'absolute'
+    div.style.visibility = 'hidden'
+    div.style.top = '0'
+    div.style.left = '0'
+    div.style.overflow = 'hidden'
+    div.style.whiteSpace = 'pre-wrap'
+    div.style.wordWrap = 'break-word'
+    div.style.wordBreak = 'break-word'
+    document.body.appendChild(div)
+    caretMirrorDiv = div
+  }
+  return caretMirrorDiv
+}
+
+// Returns the pixel offsetTop of the visual line that position `pos` in
+// `textarea.value` renders on. Two positions on the same visual line always
+// return the same number, two positions on different visual lines never do -
+// regardless of whether the line break between them is a hard '\n' or a soft
+// word-wrap - so callers compare this against the offset of position 0 (or
+// value.length) rather than needing to separately count lines. Copies
+// direction/textAlign from the textarea's *computed* style, which already
+// reflects dir="auto" resolution (see updateTextareaDir) - so RTL messages
+// measure correctly too.
+function measureCaretLineTop(textarea: HTMLTextAreaElement, pos: number): number {
+  const div = getCaretMirrorDiv()
+  const style = window.getComputedStyle(textarea)
+  for (const prop of MIRROR_CSS_PROPS) {
+    div.style[prop as any] = style[prop as any]
+  }
+  // clientWidth (not the computed CSS width) so a visible vertical
+  // scrollbar - which narrows the textarea's actual text-wrapping column -
+  // is accounted for too.
+  div.style.width = `${textarea.clientWidth}px`
+
+  div.textContent = ''
+  div.appendChild(document.createTextNode(textarea.value.slice(0, pos)))
+  const marker = document.createElement('span')
+  marker.textContent = '​' // zero-width space: gives the span real geometry even at a line boundary
+  div.appendChild(marker)
+  div.appendChild(document.createTextNode(textarea.value.slice(pos) || '.'))
+  return marker.offsetTop
+}
+
+// Exposed purely so tests can stub the measurement: jsdom (used by
+// chat-ui.test.ts) does not perform real text layout, so offsetTop on a
+// jsdom-rendered element is always 0 - measureCaretLineTop's *output* can't
+// be asserted against real pixel positions in that environment. Production
+// code always goes through this object's `measure`, calling the real
+// mirror-div implementation above; tests instead reassign `.measure` to a
+// fake per-position line map so the surrounding gating logic
+// (caretCollapsedAtFirstLine/caretCollapsedAtLastLine) - the actual bug fix -
+// can still be exercised deterministically.
+export const caretLineMeasurement = { measure: measureCaretLineTop }
+
+// Shared by emptyStateHtml and chipDockHtml below so the two starter lists
+// (inline pills, dock chips) can't drift apart from independently-edited
+// copies of the same map/escape logic. Both are keyboard-activatable
+// (tabindex + role="button"): see the keydown delegation next to their click
+// handlers further down.
+function starterItemsHtml(options: ChatUIOptions, currentLang: Lang, className: string): string {
+  return options.starters
+    .map((s) => `<div class="${className}" tabindex="0" role="button">${escapeHtml(s[currentLang])}</div>`)
     .join('')
+}
+
+function emptyStateHtml(options: ChatUIOptions, currentLang: Lang): string {
+  const pills = starterItemsHtml(options, currentLang, 'ai-starter')
   const title = escapeHtml(STRINGS.emptyTitle[currentLang])
   return `<div class="ai-chat-empty"><img class="ai-chat-empty-bg" src="chat-empty-bg.svg" alt="" /><div class="ai-chat-empty-title" data-t="emptyTitle">${title}</div><div class="ai-starters">${pills}</div></div>`
+}
+
+// The reopened-conversation chip dock (see showHistoric()) - lives OUTSIDE
+// the scrolling .ai-chat flex column entirely (a sibling in the panel
+// skeleton), so it can never be crushed toward zero height the way
+// .ai-chat-empty was when appended inside .ai-chat after a divider (that
+// element's `flex: 1` + `overflow: hidden` gives it a zero automatic
+// minimum size once the transcript above it already fills the pane - see
+// the fix's PR description for the full flexbox explanation). Reuses the
+// same options.starters data as emptyStateHtml, not a second copy of it,
+// plus one extra "New conversation" chip.
+function chipDockHtml(options: ChatUIOptions, currentLang: Lang): string {
+  const chips = starterItemsHtml(options, currentLang, 'ai-chip')
+  const newConvoLabel = escapeHtml(STRINGS.newConversationChip[currentLang])
+  // "New conversation" leads the dock - it's the action most people reopening
+  // an old conversation actually want, and with overflow-x scrolling a
+  // trailing chip could need a scroll to even reach.
+  return `<div class="ai-chip chip-newconvo" tabindex="0" role="button">${newConvoLabel}</div>${chips}`
 }
 
 export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHandle {
@@ -509,6 +633,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         </div>
       </div>
       <div class="ai-chat"></div>
+      <div class="ai-chip-dock" id="chipDock" hidden></div>
       <div class="ai-settings-view" id="settingsView">
         <div class="ai-settings-section">
           <h4 data-t="sectionTheme">Theme</h4>
@@ -525,6 +650,18 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <div class="ai-scope-control" id="scopeControl"></div>
         </div>
         <div class="ai-settings-section" id="connectionSlot"></div>
+        <div class="ai-settings-section">
+          <h4 data-t="sectionReasoning">Reasoning effort</h4>
+          <p class="ai-settings-section-note" data-t="reasoningNote">Not every model supports every tier - unsupported choices are ignored by the model, not an error.</p>
+          <div class="ai-lang-toggle ai-lang-toggle-wrap" id="reasoningToggle">
+            <button class="active" data-reasoning-choice="default" data-t="reasoningDefault">Default</button>
+            <button data-reasoning-choice="off" data-t="reasoningOff">Off</button>
+            <button data-reasoning-choice="low" data-t="reasoningLow">Low</button>
+            <button data-reasoning-choice="medium" data-t="reasoningMedium">Medium</button>
+            <button data-reasoning-choice="high" data-t="reasoningHigh">High</button>
+            <button data-reasoning-choice="xhigh" data-t="reasoningXHigh">Extra high</button>
+          </div>
+        </div>
         <div class="ai-settings-section">
           <h4><span data-t="sectionTools">Tools</span> <span class="ai-tools-count" id="toolsCount"></span></h4>
           <div class="ai-tools-list" id="toolsList"></div>
@@ -560,6 +697,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   `
 
   const chatEl = root.querySelector<HTMLDivElement>('.ai-chat')!
+  const chipDockEl = root.querySelector<HTMLDivElement>('#chipDock')!
   const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
   const sendBtn = root.querySelector<HTMLButtonElement>('.ai-send-btn')!
   const stopBtn = root.querySelector<HTMLButtonElement>('.ai-stop-btn')!
@@ -662,6 +800,16 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const wholeScopeKey = WHOLE_SCOPE_KEYS[options.scopeUnit ?? 'doc']!
 
   chatEl.innerHTML = emptyStateHtml(options, currentLang)
+  chipDockEl.innerHTML = chipDockHtml(options, currentLang)
+
+  // Permanent trailing element, present for every conversation (not just a
+  // reopened one) - see updateEndBufferActive()/appendToChat() below. Created
+  // once here and only ever moved (never recreated), so its 'active' state
+  // (and the CSS transition riding on it) survives every chatEl.innerHTML
+  // rewrite below (resetToEmpty, the language-switch empty-state refresh).
+  const endBufferEl = document.createElement('div')
+  endBufferEl.className = 'ai-chat-end-buffer'
+  chatEl.appendChild(endBufferEl)
 
   // Built once at mount from options.modeOverrides (modeCommentOnly/
   // modeCommentOnlyDesc/etc. keys, same shape as STRINGS) - t() checks this
@@ -767,6 +915,12 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // preference, set independently below/on click - same split as theme's
   // applyTheme/#themeToggle).
   function setLang(l: Lang): void {
+    // Flipping `dir` forces a full bidi/layout reflow of the whole subtree,
+    // which resets .ai-chat's scroll position in some browsers (observed in
+    // WebView2) even though nothing about the conversation itself moved -
+    // measured as distance from the bottom so it's unaffected by any of the
+    // content-height changes below (the divider's text, the empty state).
+    const chatScrollFromBottom = chatEl.scrollHeight - chatEl.scrollTop
     dockEl.setAttribute('lang', l)
     dockEl.setAttribute('dir', l === 'he' ? 'rtl' : 'ltr')
     currentLang = l
@@ -780,7 +934,23 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     if (existingEmpty) {
       existingEmpty.remove()
       chatEl.insertAdjacentHTML('beforeend', emptyStateHtml(options, currentLang))
+      // insertAdjacentHTML always lands after endBufferEl (the true last
+      // child) - re-append to move it (not clone it - it's already in the
+      // DOM) back to the end.
+      chatEl.appendChild(endBufferEl)
     }
+    // Relocalize the chip dock's chips too - it's not removed/rebuilt by
+    // anything else across a language switch (unlike .ai-chat-empty above,
+    // it persists for the rest of a reopened conversation's session), so it
+    // must be refreshed here even while hidden (a fresh, never-reopened chat).
+    chipDockEl.innerHTML = chipDockHtml(options, currentLang)
+    // The "Earlier conversation" divider's text is plain textContent set
+    // once in showHistoric() (no data-t, so applyStrings() never touches
+    // it) - without this it stays in whatever language it was reopened in
+    // until the whole panel remounts.
+    const historySep = chatEl.querySelector('.ai-history-sep')
+    if (historySep) historySep.textContent = t('historySep')
+    chatEl.scrollTop = chatEl.scrollHeight - chatScrollFromBottom
   }
 
   // Scoped to .ai-dock, never document.documentElement - same rule as
@@ -812,6 +982,13 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       b.classList.toggle('active', b.dataset.themeChoice === pendingTheme)
     })
   }
+  let pendingReasoningEffort: ReasoningEffort = 'default'
+  if (options.initialSettings?.reasoningEffort) {
+    pendingReasoningEffort = options.initialSettings.reasoningEffort
+    root.querySelectorAll<HTMLButtonElement>('#reasoningToggle button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.reasoningChoice === pendingReasoningEffort)
+    })
+  }
   // Save-gated, exactly like the language toggle above: a click only updates
   // the pending value and its own .active class - no visual effect, no
   // callback, until the settings view's Save button is clicked (below).
@@ -819,6 +996,13 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     btn.addEventListener('click', () => {
       pendingTheme = btn.dataset.themeChoice as 'light' | 'dark' | 'default'
       root.querySelectorAll('#themeToggle button').forEach((b) => b.classList.toggle('active', b === btn))
+    })
+  })
+
+  root.querySelectorAll<HTMLButtonElement>('#reasoningToggle button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      pendingReasoningEffort = btn.dataset.reasoningChoice as ReasoningEffort
+      root.querySelectorAll('#reasoningToggle button').forEach((b) => b.classList.toggle('active', b === btn))
     })
   })
 
@@ -841,15 +1025,39 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           `<span class="ai-typing-label" data-t="thinking">${escapeHtml(t('thinking'))}</span>` +
           `<span class="ai-typing-dots"><span></span><span></span><span></span></span>`
       }
-      chatEl.appendChild(thinkingEl) // re-append keeps it as the last child
+      appendToChat(thinkingEl) // re-append keeps it right before any spacer
       scrollToBottom()
     } else if (thinkingEl) {
       thinkingEl.remove()
     }
   }
 
+  // One-way latch (user-requested behavior, 2026-09-30): once a conversation
+  // is long enough to need scrolling, permanently reserve endBufferEl's fixed
+  // height so the reply that starts filling it doesn't visibly shift/"jump"
+  // the transcript - and it never turns back off, so the buffer's size stays
+  // constant for the rest of the session regardless of what's sent next.
+  // Checked here (rather than a ResizeObserver) because scrollToBottom()
+  // already runs after every content change that could newly overflow the
+  // pane. Measures BEFORE the potential activation below, while the buffer
+  // is still height:0, so its own box never counts toward "is this
+  // overflowing" - only real conversation content does.
+  function updateEndBufferActive(): void {
+    if (endBufferEl.classList.contains('active')) return
+    if (chatEl.scrollHeight > chatEl.clientHeight) endBufferEl.classList.add('active')
+  }
+
   function scrollToBottom(): void {
+    updateEndBufferActive()
     chatEl.scrollTop = chatEl.scrollHeight
+  }
+
+  // Every message/notice/thinking-indicator element renders through this
+  // instead of a bare chatEl.appendChild, so endBufferEl - created once at
+  // mount, never recreated - stays the LAST child of .ai-chat no matter what
+  // gets added.
+  function appendToChat(el: HTMLElement): void {
+    chatEl.insertBefore(el, endBufferEl)
   }
 
   // Up/Down-arrow recall of previously sent messages, shell-style. Seeded from
@@ -867,13 +1075,18 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     historyDraft = ''
   }
 
+  // See measureCaretLineTop/caretLineMeasurement above: comparing the
+  // caret's own visual-line offset against position 0's (or the text's
+  // end's) correctly accounts for soft word-wrap, not just hard '\n' -
+  // that's the fix for "ArrowUp recalls history from the middle of a
+  // wrapped, single-line draft" instead of first moving the caret up.
   function caretCollapsedAtFirstLine(): boolean {
     return textarea.selectionStart === textarea.selectionEnd &&
-      textarea.value.lastIndexOf('\n', textarea.selectionStart - 1) === -1
+      caretLineMeasurement.measure(textarea, textarea.selectionStart) === caretLineMeasurement.measure(textarea, 0)
   }
   function caretCollapsedAtLastLine(): boolean {
     return textarea.selectionStart === textarea.selectionEnd &&
-      textarea.value.indexOf('\n', textarea.selectionEnd) === -1
+      caretLineMeasurement.measure(textarea, textarea.selectionEnd) === caretLineMeasurement.measure(textarea, textarea.value.length)
   }
   function applyRecalledValue(v: string): void {
     textarea.value = v
@@ -913,19 +1126,61 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     textarea.value = ''
     updateTextareaDir()
     pushSentHistory(text)
+    // Continuing a reopened conversation with a real message means the user
+    // has moved on from "pick a starter or start over" - same reasoning as
+    // renderMessage() dropping .ai-chat-empty on a live chat's first message.
+    chipDockEl.hidden = true
     options.onSend(text)
   }
 
   textarea.addEventListener('input', updateTextareaDir)
 
+  // Shared by both the inline empty-state starters (.ai-starter, inside
+  // .ai-chat) and the chip dock's starter chips (.ai-chip, a sibling outside
+  // .ai-chat) below - one fill behavior, not two parallel implementations.
+  function fillFromStarterText(text: string): void {
+    textarea.value = text
+    updateTextareaDir()
+    textarea.focus()
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+  }
+
   chatEl.addEventListener('click', (e) => {
     const target = (e.target as HTMLElement).closest('.ai-starter')
-    if (target) {
-      textarea.value = target.textContent || ''
-      updateTextareaDir()
-      textarea.focus()
-      textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    if (target) fillFromStarterText(target.textContent || '')
+  })
+  // Chips are tabindex="0" role="button" (see starterItemsHtml) - a <div>
+  // gets no native Enter/Space activation from the browser, so it has to be
+  // wired up by hand for keyboard-only users to reach them at all.
+  chatEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    const target = (e.target as HTMLElement).closest('.ai-starter')
+    if (!target) return
+    e.preventDefault()
+    fillFromStarterText(target.textContent || '')
+  })
+
+  // The chip dock lives outside .ai-chat (see showHistoric()), so it needs
+  // its own delegated listener - the "New conversation" chip calls the exact
+  // same options.onNewChat() as newChatBtn below, and a starter chip reuses
+  // fillFromStarterText, same as an inline .ai-starter click.
+  function activateChipDockChip(chip: HTMLElement): void {
+    if (chip.classList.contains('chip-newconvo')) {
+      options.onNewChat()
+      return
     }
+    fillFromStarterText(chip.textContent || '')
+  }
+  chipDockEl.addEventListener('click', (e) => {
+    const chip = (e.target as HTMLElement).closest<HTMLElement>('.ai-chip')
+    if (chip) activateChipDockChip(chip)
+  })
+  chipDockEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    const chip = (e.target as HTMLElement).closest<HTMLElement>('.ai-chip')
+    if (!chip) return
+    e.preventDefault()
+    activateChipDockChip(chip)
   })
 
   // Post-hoc addition (2026-08-24, user-requested): a separate stop button
@@ -1192,6 +1447,29 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     }
   })
 
+  // A plain 'click' listener isn't enough to tell "clicked outside" from
+  // "dragged a selection that started inside and released outside" - when
+  // mousedown and mouseup land on different elements, the browser fires
+  // 'click' on their common ancestor, which is often outside the dropdown
+  // even though the gesture started inside it. Track where mousedown
+  // happened and only treat the click as "outside" if it did too, so an
+  // in-panel drag (e.g. selecting text) released outside never closes it.
+  // Shared by every dismiss-on-outside-click popup (PR review, 2026-10-02:
+  // settings dropdown and mode menu had copy-pasted this identical
+  // tracking block, which is exactly how the mode menu went without the
+  // fix for a while in the first place) - a future popup gets this by
+  // calling the helper, not by copy-pasting another block.
+  function trackMouseDownOutside(container: HTMLElement, btn: HTMLElement): () => boolean {
+    let outside = true
+    document.addEventListener('mousedown', (e) => {
+      const target = e.target as Node
+      outside = !container.contains(target) && !btn.contains(target)
+    })
+    return () => outside
+  }
+
+  const isSettingsMouseDownOutside = trackMouseDownOutside(settingsPanel, settingsBtn)
+
   // Post-hoc addition (2026-08-24, user-requested): closes the quick
   // settings dropdown on an outside click - only applies to the dropdown
   // ('open' class); the full inline settings VIEW has its own back/close
@@ -1199,16 +1477,20 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // deliberately untouched here.
   document.addEventListener('click', (e) => {
     if (!settingsPanel.classList.contains('open')) return
+    if (!isSettingsMouseDownOutside()) return
     const target = e.target as Node
     if (settingsPanel.contains(target) || settingsBtn.contains(target)) return
     settingsPanel.classList.remove('open')
   })
+
+  const isModeMouseDownOutside = trackMouseDownOutside(modeMenu, modeBtn)
 
   // Same outside-click-to-close behavior as the settings dropdown above -
   // the mode menu had no equivalent handler (bug report: clicking outside it
   // left it open, unlike Settings).
   document.addEventListener('click', (e) => {
     if (!modeMenu.classList.contains('open')) return
+    if (!isModeMouseDownOutside()) return
     const target = e.target as Node
     if (modeMenu.contains(target) || modeBtn.contains(target)) return
     modeMenu.classList.remove('open')
@@ -1227,6 +1509,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       theme: pendingTheme,
       docSystemMessage: docMessageInput.value,
       registeredTools: registeredToolNames,
+      reasoningEffort: pendingReasoningEffort,
     })
     dirty = false
     settingsSavedNote.classList.add('visible')
@@ -1252,7 +1535,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     } else {
       div.textContent = text
     }
-    chatEl.appendChild(div)
+    appendToChat(div)
     return div
   }
 
@@ -1327,7 +1610,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       const groupEl = document.createElement('div')
       groupEl.className = 'ai-work-group running'
       groupEl.innerHTML = `<div class="ai-work-group-summary"><span class="caret">&#9656;</span><span class="label">Running tools...</span></div><div class="ai-work-group-body"><div class="steps"></div></div>`
-      chatEl.appendChild(groupEl)
+      appendToChat(groupEl)
       groupEl.querySelector('.ai-work-group-summary')!.addEventListener('click', () => groupEl.classList.toggle('open'))
       const summaryEl = groupEl.querySelector<HTMLElement>('.label')!
       const stepsEl = groupEl.querySelector<HTMLElement>('.steps')!
@@ -1439,7 +1722,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       const div = document.createElement('div')
       div.className = 'ai-msg-error'
       div.textContent = message
-      chatEl.appendChild(div)
+      appendToChat(div)
       scrollToBottom()
     },
     showNotice(kind, onContinue) {
@@ -1463,7 +1746,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         })
         div.appendChild(btn)
       }
-      chatEl.appendChild(div)
+      appendToChat(div)
       scrollToBottom()
     },
     translate(key) {
@@ -1471,6 +1754,16 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     },
     resetToEmpty() {
       chatEl.innerHTML = emptyStateHtml(options, currentLang)
+      // chatEl.innerHTML wiped endBufferEl along with everything else - it's
+      // the same element (never recreated), just detached; re-attach it and
+      // drop its 'active' state, since a genuine New Chat isn't scrollable yet.
+      endBufferEl.classList.remove('active')
+      chatEl.appendChild(endBufferEl)
+      // A genuine New Chat reset returns to the plain fresh-empty-chat state
+      // (emptyStateHtml's own inline starters are showing again), so the
+      // chip dock - the reopened-conversation's way back to those actions -
+      // has no reason to stay up.
+      chipDockEl.hidden = true
       // chatEl.innerHTML wiped the node; drop the stale ref and busy flag so a
       // New chat during a run doesn't leave a detached indicator behind.
       thinkingEl = null
@@ -1480,6 +1773,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       historyDraft = ''
     },
     showHistoric(messages) {
+      // No history to replay - leave the fresh-empty-chat state (and its
+      // inline emptyStateHtml() starters) exactly as mount left it, instead
+      // of appending an empty divider and showing a dock with nothing above
+      // it to distinguish from a brand-new chat.
+      if (messages.length === 0) return
       for (const m of messages) {
         renderMessage(m.role, m.text)
         if (m.role === 'user') pushSentHistory(m.text)
@@ -1487,8 +1785,17 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       const sep = document.createElement('div')
       sep.className = 'ai-history-sep'
       sep.textContent = t('historySep')
-      chatEl.appendChild(sep)
-      chatEl.insertAdjacentHTML('beforeend', emptyStateHtml(options, currentLang))
+      // No trailing emptyStateHtml() append here (that used to be the bug):
+      // .ai-chat-empty sets `flex: 1` + `overflow: hidden`, which per the
+      // flexbox spec gives it a zero automatic minimum size - once the
+      // replayed transcript above already fills the pane, the shrink
+      // algorithm crushes this element toward zero height instead of the
+      // message bubbles around it, hiding the welcome icon/title/starters.
+      // The chip dock (a sibling outside .ai-chat entirely) replaces it as
+      // this reopened conversation's way back to both actions, and stays
+      // visible for the rest of the session (only resetToEmpty hides it).
+      appendToChat(sep)
+      chipDockEl.hidden = false
       scrollToBottom()
     },
     setSelectionScope(selection) {
