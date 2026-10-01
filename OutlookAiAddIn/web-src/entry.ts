@@ -101,7 +101,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'search_contacts',
     description:
-      'Resolves a name or email fragment against Exchange via server-side ambiguous-name resolution (EWS ResolveName): your personal Contacts first, then the Global Address List. Returns {name, email} entries. On-prem Exchange only; returns a clear error if Exchange cannot be reached.',
+      'Resolves a name or email fragment against Exchange via server-side ambiguous-name resolution (EWS ResolveName): your personal Contacts first, then the Global Address List. Each result line is "- Name <email>", or "- Name (Directory Label) <email>" when the directory\'s own display name differs from the person\'s actual name (e.g. an org-formatted label like "Department/Unit/Title") - the leading name is always the one to match against your query; the parenthesized label is just extra context, not a second candidate. A result with no parenthesized label and only a label-like name (e.g. a shared/role mailbox like "IT Helpdesk") has no separate person name available. On-prem Exchange only; returns a clear error if Exchange cannot be reached.',
     inputSchema: {
       type: 'object',
       properties: {

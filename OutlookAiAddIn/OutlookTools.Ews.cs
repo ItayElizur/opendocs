@@ -51,7 +51,7 @@ namespace OutlookAiAddIn
             }
 
             // ResolveName, off the UI thread.
-            IReadOnlyList<KeyValuePair<string, string>> matches;
+            IReadOnlyList<ContactMatch> matches;
             try
             {
                 matches = await OutlookEws.ResolveNamesAsync(url, query);
