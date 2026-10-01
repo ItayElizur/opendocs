@@ -43,7 +43,25 @@ foreach ($appName in $Apps) {
     $csproj = Join-Path $RepoRoot "$projName\$projName.csproj"
     if (-not (Test-Path $csproj)) { throw "Project file not found: $csproj" }
 
+    $appDir = Join-Path $RepoRoot $projName
+    $esbuild = Join-Path $appDir "node_modules\.bin\esbuild.cmd"
+    if (-not (Test-Path $esbuild)) { throw "$esbuild not found - run 'npm install' in $appDir first." }
+
     Write-Host ""
+    Write-Host "Building $projName web bundle (esbuild)..."
+    Push-Location $appDir
+    try {
+        & $esbuild web-src/entry.ts --bundle --outfile=web/bundle.js `
+            --alias:@genoffice/agent-core=../shared/web-src/agent-core/index.ts `
+            --alias:@genoffice/ai-provider=../shared/web-src/ai-provider/index.ts `
+            --alias:@officeai/chat-ui=../shared/chat-ui/chat-ui.ts `
+            --alias:@officeai/app-shell=../shared/web-src/app-shell/index.ts `
+            --target=chrome100 --format=iife --sourcemap
+        if ($LASTEXITCODE -ne 0) { throw "$projName esbuild bundle failed (exit code $LASTEXITCODE)." }
+    } finally {
+        Pop-Location
+    }
+
     Write-Host "Building $projName (Release)..."
     & $MSBuild $csproj -t:Build -p:Configuration=Release -v:minimal
     if ($LASTEXITCODE -ne 0) { throw "$projName build failed (exit code $LASTEXITCODE)." }
