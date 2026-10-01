@@ -514,7 +514,7 @@ const MUTATION_TOOLS = [
   },
   {
     name: 'edit_table_cell',
-    description: 'Replaces one table cell\'s text (0-based row/col).',
+    description: 'Replaces one table cell\'s text (0-based row/col). Row 0 is just the first physical row, including when it holds column headers - there is no separate header concept in the index space (edit_table_style\'s firstRow only changes that row\'s visual style, not its index).',
     inputSchema: {
       type: 'object',
       properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, row: { type: 'number' }, col: { type: 'number' }, paragraphs: { type: 'string' } },
@@ -523,7 +523,7 @@ const MUTATION_TOOLS = [
   },
   {
     name: 'edit_table_structure',
-    description: 'Inserts or deletes a table row/column. index (0-based) addresses an EXISTING row/column; before decides which side the new one goes on for insert kinds. Deleting/inserting shifts every later row/column\'s index - re-read the table before a second structural edit in the same run.',
+    description: 'Inserts or deletes a table row/column. index (0-based) addresses an EXISTING row/column, including row 0 even if it holds column headers - there is no separate header concept in the index space (edit_table_style\'s firstRow only changes that row\'s visual style, not its index). before decides which side the new one goes on for insert kinds. Deleting/inserting shifts every later row/column\'s index - re-read the table before a second structural edit in the same run.',
     inputSchema: {
       type: 'object',
       properties: {

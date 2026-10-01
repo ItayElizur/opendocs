@@ -34,6 +34,10 @@ namespace WordAiAddIn
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
             "get_document_context", "read_blocks", "read_chart", "read_table", "read_smartart",
+            // find_text/get_headings are part of the read-only toolset (PR review,
+            // 2026-10-02) - were previously missing here, which both blocked them
+            // in Read Only mode and wrapped them in a pointless undo custom record.
+            "find_text", "get_headings",
         };
 
         public static ToolResult Execute(string docKey, string name, JsonElement input)
@@ -70,48 +74,97 @@ namespace WordAiAddIn
                     ActiveDoc.TrackRevisions = (mode == EditingMode.TrackChanges);
                 }
 
-                switch (name)
+                // Word's native undo stack registers one entry PER COM write,
+                // not per tool call - confirmed live, 2026-10-02: add_table's
+                // cell-by-cell `Range.Text =` loop (WordTools.Tables.cs) left
+                // undo_last_action peeling back one cell at a time instead of
+                // reverting the whole table in one step (the mirror image of
+                // PowerPoint's issue, which coalesces too much instead of too
+                // little - see PowerPointTools.cs's Execute() for that fix).
+                // UndoRecord.StartCustomRecord/EndCustomRecord (confirmed via
+                // reflection against the referenced PIA) groups every COM
+                // write between the two calls into one user-visible undo
+                // entry, so one tool call always maps to exactly one undo
+                // step. Not used for always-allowed (read-only) tools or
+                // undo/redo themselves - wrapping Document.Undo()/Redo() in a
+                // custom record would be meaningless. Must run in try/finally:
+                // a tool throwing mid-mutation without EndCustomRecord would
+                // leave Word recording forever, silently absorbing every
+                // later edit (including the user's own) into one entry.
+                bool shouldRecordUndo = !isAlwaysAllowed && name != "undo_last_action" && name != "redo_last_action";
+                if (shouldRecordUndo)
                 {
-                    case "get_document_context":
-                        return GetDocumentContext();
-                    case "insert_content":
-                        return InsertContent(input);
-                    case "edit_chart":
-                        return EditChart(input);
-                    case "read_chart":
-                        return ReadChart(input);
-                    case "add_table":
-                        return AddTable(input);
-                    case "edit_table":
-                        return EditTable(input);
-                    case "read_table":
-                        return ReadTable(input);
-                    case "add_smartart":
-                        return AddSmartArt(input);
-                    case "edit_smartart":
-                        return EditSmartArt(input);
-                    case "read_smartart":
-                        return ReadSmartArt(input);
-                    case "read_blocks":
-                        return ReadBlocks(input);
-                    case "find_text":
-                        return FindText(input);
-                    case "get_headings":
-                        return GetHeadings();
-                    case "replace_blocks":
-                        return ReplaceBlocks(input);
-                    case "apply_commands":
-                        return ApplyCommands(input);
-                    case "add_comment":
-                        return AddComment(input);
-                    case "add_image":
-                        return AddImage(input);
-                    case "undo_last_action":
-                        return UndoLastAction();
-                    case "redo_last_action":
-                        return RedoLastAction();
-                    default:
-                        return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
+                    Globals.ThisAddIn.Application.UndoRecord.StartCustomRecord(name);
+                }
+                try
+                {
+                    switch (name)
+                    {
+                        case "get_document_context":
+                            return GetDocumentContext();
+                        case "insert_content":
+                            return InsertContent(input);
+                        case "edit_chart":
+                            return EditChart(input);
+                        case "read_chart":
+                            return ReadChart(input);
+                        case "add_table":
+                            return AddTable(input);
+                        case "edit_table":
+                            return EditTable(input);
+                        case "read_table":
+                            return ReadTable(input);
+                        case "add_smartart":
+                            return AddSmartArt(input);
+                        case "edit_smartart":
+                            return EditSmartArt(input);
+                        case "read_smartart":
+                            return ReadSmartArt(input);
+                        case "read_blocks":
+                            return ReadBlocks(input);
+                        case "find_text":
+                            return FindText(input);
+                        case "get_headings":
+                            return GetHeadings();
+                        case "replace_blocks":
+                            return ReplaceBlocks(input);
+                        case "apply_commands":
+                            return ApplyCommands(input);
+                        case "add_comment":
+                            return AddComment(input);
+                        case "add_image":
+                            return AddImage(input);
+                        case "undo_last_action":
+                            return UndoLastAction();
+                        case "redo_last_action":
+                            return RedoLastAction();
+                        default:
+                            return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
+                    }
+                }
+                finally
+                {
+                    // Caught separately (PR review, 2026-10-02): a successful
+                    // ToolResult already computed by the switch above is
+                    // still in flight when a finally block runs - if
+                    // EndCustomRecord() itself threw uncaught here, C#'s
+                    // finally-after-return semantics would discard that
+                    // already-successful result and propagate this exception
+                    // to the outer catch instead, reporting a real mutation
+                    // as a generic failure. Logged, not rethrown, so a
+                    // cosmetic undo-grouping failure can never mask a
+                    // mutation that actually succeeded.
+                    if (shouldRecordUndo)
+                    {
+                        try
+                        {
+                            Globals.ThisAddIn.Application.UndoRecord.EndCustomRecord();
+                        }
+                        catch (Exception endEx)
+                        {
+                            DebugLog.WriteException("Execute: EndCustomRecord for " + name, endEx);
+                        }
+                    }
                 }
             }
             catch (Exception ex)
