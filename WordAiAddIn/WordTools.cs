@@ -34,6 +34,10 @@ namespace WordAiAddIn
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
             "get_document_context", "read_blocks", "read_chart", "read_table", "read_smartart",
+            // find_text/get_headings are part of the read-only toolset (PR review,
+            // 2026-10-02) - were previously missing here, which both blocked them
+            // in Read Only mode and wrapped them in a pointless undo custom record.
+            "find_text", "get_headings",
         };
 
         public static ToolResult Execute(string docKey, string name, JsonElement input)
