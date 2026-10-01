@@ -13,6 +13,7 @@ The Word/Excel/PowerPoint sections compare against the equivalent surface docume
 `genoffice` (`C:\dev\genoffice\docs\ai-tool-surface.md`, a from-scratch web-based
 Office clone suite that this project ports its tool design from); the **Outlook**
 section has no genoffice counterpart and mirrors `C:\dev\mcp-outlook` instead.
+
 ## Architecture
 
 officeoffice drives the **real desktop Office applications** via VSTO + COM interop
@@ -88,7 +89,6 @@ prompt-only mitigation rather than a code-level guardrail, pending real sign-off
 
 ### `apply_commands` command kinds (15)
 
-
 8 kinds with a genoffice equivalent, 2 officeoffice-only additions with no genoffice
 counterpart (`copyBlocks`, `copyFormat`), and 5 officeoffice-only shorthand aliases
 (`set_bold`, `set_italic`, `set_heading`, `find_replace`, `set_bullet`) — all genuinely
@@ -142,7 +142,7 @@ formulas, then `set_formula` to edit them.
 
 No `undo_last_action`/`redo_last_action` for Excel: Excel clears its undo stack on any
 object-model write, so there is no native history for such a tool to walk (see the
-changelog's 2026-09-28 entry for the tools' brief existence and removal).
+changelog's 2026-09-27 entry for the tools' brief existence and removal).
 
 Notable native-COM advantage: `find_cells`'s `errors_only` mode uses
 `Range.SpecialCells(xlCellTypeFormulas, xlErrors)` — a genuinely native error-cell
@@ -305,7 +305,6 @@ rather than as one flat table.
 | Tool | Notes |
 |---|---|
 | `undo_last_action` / `redo_last_action` | PowerPoint's own Ctrl+Z/Ctrl+Y. PowerPoint's object model has no Undo/Redo method, so these go through the generic ribbon-command dispatch, `Application.CommandBars.ExecuteMso("Undo"/"Redo")`, with a `GetEnabledMso` pre-check so an empty stack reports "Nothing to undo/redo" instead of a silent no-op (`PowerPointTools.History.cs`). `Application.StartNewUndoEntry()` runs before **every** non-read tool call — undo/redo included, an intentional difference from Word, whose `UndoRecord` wrapping excludes them — so one tool call = one undo step. Track Changes mode and up. |
-
 
 ### Missing entirely (confirmed absent from both the C# switch and the advertised tool list)
 
