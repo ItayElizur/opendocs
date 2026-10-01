@@ -164,6 +164,9 @@
     background: var(--color-bg-page); color: var(--color-text-secondary); cursor: pointer; font-size: 13px;
   }
   .ai-lang-toggle button.active { border-color: var(--docs-brand-ring); background: var(--docs-brand-ghost-weak); color: var(--color-brand-secondary); }
+  /* Reasoning effort has 6 options (vs. 3 for lang/theme) - too many to fit flex:1 in one row without truncating labels, so this variant wraps into two rows of three instead. Both classes in the selector (PR review, 2026-10-02): the markup always carries both, and this makes the override win on specificity rather than on being declared later - reordering the base rule can no longer silently un-wrap this. */
+  .ai-lang-toggle-wrap { flex-wrap: wrap; }
+  .ai-lang-toggle.ai-lang-toggle-wrap button { flex: 1 1 30%; }
   /* PP-6: connection test result, shown between the fields and the action row. */
   .ai-settings-test-result { font-size: 12px; margin-top: 10px; min-height: 1em; }
   .ai-settings-test-result.success { color: var(--docs-ok-ink); }
