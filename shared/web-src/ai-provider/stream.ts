@@ -757,7 +757,12 @@ function openAiReasoningFields(
       : { reasoning_effort: 'minimal' }
   }
   return {
-    reasoning_effort: effort,
+    // 'xhigh' is a real tier for vLLM-served models like Qwen3 (sent as-is
+    // when includeThinkingKwargs is set), but the plain OpenAI API's
+    // reasoning_effort enum only goes up to 'high' - sending 'xhigh' there
+    // verbatim is a hard 400, not a silent no-op, unlike every other
+    // unsupported-tier case this function handles (PR review, 2026-10-02).
+    reasoning_effort: !includeThinkingKwargs && effort === 'xhigh' ? 'high' : effort,
     ...(includeThinkingKwargs
       ? { chat_template_kwargs: { enable_thinking: true, preserve_thinking: true } }
       : {}),
