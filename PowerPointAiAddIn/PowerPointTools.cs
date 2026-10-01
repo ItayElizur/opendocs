@@ -39,7 +39,8 @@ namespace PowerPointAiAddIn
             try
             {
                 EditingMode mode = ModeFor(docKey);
-                if (!AlwaysAllowedTools.Contains(name) && !IsMutationAllowed(mode))
+                bool isAlwaysAllowed = AlwaysAllowedTools.Contains(name);
+                if (!isAlwaysAllowed && !IsMutationAllowed(mode))
                 {
                     return new ToolResult
                     {
@@ -62,7 +63,19 @@ namespace PowerPointAiAddIn
                 // call, so one tool call always maps to exactly one undo
                 // step. Not called for always-allowed (read-only) tools -
                 // nothing to barrier there.
-                if (!AlwaysAllowedTools.Contains(name))
+                //
+                // Deliberately NOT excluded here (unlike Word's analogous
+                // fix in WordTools.cs, which also excludes undo_last_action/
+                // redo_last_action): live-tested, 2026-10-02 - calling
+                // StartNewUndoEntry() immediately before PowerPoint's own
+                // ExecuteMso("Undo"/"Redo") (PowerPointTools.History.cs) with
+                // nothing undo-worthy pending did not disturb the redo stack.
+                // This is a genuine behavioral difference from Word, not
+                // copy-paste drift - Word's UndoRecord.StartCustomRecord
+                // wrapping Document.Undo()/Redo() would be meaningless by
+                // construction, whereas PowerPoint's barrier is just inert
+                // when empty.
+                if (!isAlwaysAllowed)
                 {
                     Globals.ThisAddIn.Application.StartNewUndoEntry();
                 }

@@ -144,9 +144,26 @@ namespace WordAiAddIn
                 }
                 finally
                 {
+                    // Caught separately (PR review, 2026-10-02): a successful
+                    // ToolResult already computed by the switch above is
+                    // still in flight when a finally block runs - if
+                    // EndCustomRecord() itself threw uncaught here, C#'s
+                    // finally-after-return semantics would discard that
+                    // already-successful result and propagate this exception
+                    // to the outer catch instead, reporting a real mutation
+                    // as a generic failure. Logged, not rethrown, so a
+                    // cosmetic undo-grouping failure can never mask a
+                    // mutation that actually succeeded.
                     if (shouldRecordUndo)
                     {
-                        Globals.ThisAddIn.Application.UndoRecord.EndCustomRecord();
+                        try
+                        {
+                            Globals.ThisAddIn.Application.UndoRecord.EndCustomRecord();
+                        }
+                        catch (Exception endEx)
+                        {
+                            DebugLog.WriteException("Execute: EndCustomRecord for " + name, endEx);
+                        }
                     }
                 }
             }
