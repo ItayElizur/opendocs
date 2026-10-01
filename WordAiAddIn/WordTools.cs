@@ -70,48 +70,80 @@ namespace WordAiAddIn
                     ActiveDoc.TrackRevisions = (mode == EditingMode.TrackChanges);
                 }
 
-                switch (name)
+                // Word's native undo stack registers one entry PER COM write,
+                // not per tool call - confirmed live, 2026-10-02: add_table's
+                // cell-by-cell `Range.Text =` loop (WordTools.Tables.cs) left
+                // undo_last_action peeling back one cell at a time instead of
+                // reverting the whole table in one step (the mirror image of
+                // PowerPoint's issue, which coalesces too much instead of too
+                // little - see PowerPointTools.cs's Execute() for that fix).
+                // UndoRecord.StartCustomRecord/EndCustomRecord (confirmed via
+                // reflection against the referenced PIA) groups every COM
+                // write between the two calls into one user-visible undo
+                // entry, so one tool call always maps to exactly one undo
+                // step. Not used for always-allowed (read-only) tools or
+                // undo/redo themselves - wrapping Document.Undo()/Redo() in a
+                // custom record would be meaningless. Must run in try/finally:
+                // a tool throwing mid-mutation without EndCustomRecord would
+                // leave Word recording forever, silently absorbing every
+                // later edit (including the user's own) into one entry.
+                bool shouldRecordUndo = !isAlwaysAllowed && name != "undo_last_action" && name != "redo_last_action";
+                if (shouldRecordUndo)
                 {
-                    case "get_document_context":
-                        return GetDocumentContext();
-                    case "insert_content":
-                        return InsertContent(input);
-                    case "edit_chart":
-                        return EditChart(input);
-                    case "read_chart":
-                        return ReadChart(input);
-                    case "add_table":
-                        return AddTable(input);
-                    case "edit_table":
-                        return EditTable(input);
-                    case "read_table":
-                        return ReadTable(input);
-                    case "add_smartart":
-                        return AddSmartArt(input);
-                    case "edit_smartart":
-                        return EditSmartArt(input);
-                    case "read_smartart":
-                        return ReadSmartArt(input);
-                    case "read_blocks":
-                        return ReadBlocks(input);
-                    case "find_text":
-                        return FindText(input);
-                    case "get_headings":
-                        return GetHeadings();
-                    case "replace_blocks":
-                        return ReplaceBlocks(input);
-                    case "apply_commands":
-                        return ApplyCommands(input);
-                    case "add_comment":
-                        return AddComment(input);
-                    case "add_image":
-                        return AddImage(input);
-                    case "undo_last_action":
-                        return UndoLastAction();
-                    case "redo_last_action":
-                        return RedoLastAction();
-                    default:
-                        return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
+                    Globals.ThisAddIn.Application.UndoRecord.StartCustomRecord(name);
+                }
+                try
+                {
+                    switch (name)
+                    {
+                        case "get_document_context":
+                            return GetDocumentContext();
+                        case "insert_content":
+                            return InsertContent(input);
+                        case "edit_chart":
+                            return EditChart(input);
+                        case "read_chart":
+                            return ReadChart(input);
+                        case "add_table":
+                            return AddTable(input);
+                        case "edit_table":
+                            return EditTable(input);
+                        case "read_table":
+                            return ReadTable(input);
+                        case "add_smartart":
+                            return AddSmartArt(input);
+                        case "edit_smartart":
+                            return EditSmartArt(input);
+                        case "read_smartart":
+                            return ReadSmartArt(input);
+                        case "read_blocks":
+                            return ReadBlocks(input);
+                        case "find_text":
+                            return FindText(input);
+                        case "get_headings":
+                            return GetHeadings();
+                        case "replace_blocks":
+                            return ReplaceBlocks(input);
+                        case "apply_commands":
+                            return ApplyCommands(input);
+                        case "add_comment":
+                            return AddComment(input);
+                        case "add_image":
+                            return AddImage(input);
+                        case "undo_last_action":
+                            return UndoLastAction();
+                        case "redo_last_action":
+                            return RedoLastAction();
+                        default:
+                            return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
+                    }
+                }
+                finally
+                {
+                    if (shouldRecordUndo)
+                    {
+                        Globals.ThisAddIn.Application.UndoRecord.EndCustomRecord();
+                    }
                 }
             }
             catch (Exception ex)

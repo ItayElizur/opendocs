@@ -49,6 +49,24 @@ namespace PowerPointAiAddIn
                     };
                 }
 
+                // PowerPoint's native undo manager can coalesce several
+                // back-to-back COM-driven mutations into a single undo entry
+                // when there's no UI tick between them (confirmed live,
+                // 2026-10-02: add_table immediately followed by
+                // edit_table_structure's delete-row got merged - one
+                // undo_last_action removed the whole table, not just the
+                // row). StartNewUndoEntry() (confirmed via reflection against
+                // the referenced PIA - Microsoft.Office.Interop.PowerPoint
+                // has no Document-level undo, so this is the only available
+                // boundary) forces a fresh entry before each mutating tool
+                // call, so one tool call always maps to exactly one undo
+                // step. Not called for always-allowed (read-only) tools -
+                // nothing to barrier there.
+                if (!AlwaysAllowedTools.Contains(name))
+                {
+                    Globals.ThisAddIn.Application.StartNewUndoEntry();
+                }
+
                 switch (name)
                 {
                     case "get_deck_context": return GetDeckContext();

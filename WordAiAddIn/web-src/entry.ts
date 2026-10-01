@@ -418,6 +418,7 @@ const ALL_WORD_TOOLS = [
         'borders:true draws a single-line border on every table edge (default color black, override with borderColor); borders:false removes all table borders. ' +
         'set_shading scope: "cell" (needs row+col), "row" (needs row, fills the whole row), "col" (needs col, fills the whole column), "table" (fills every cell) - color is a required hex string, e.g. "#FFFF00". ' +
         'tableIndex addresses the table (0-based, document order); omit to target the first table. ' +
+        'row/col are 0-based over every physical row/column, including row 0 even if it holds column headers - there is no separate header concept in the index space (set_style\'s headerRow only changes that row\'s visual style, not its index). ' +
         'Structural edits shift later indices - re-read the table (read_table) before a second structural edit in the same run.',
       inputSchema: {
         type: 'object',
