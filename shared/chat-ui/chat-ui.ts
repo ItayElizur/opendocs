@@ -1,5 +1,5 @@
 import './chat-ui.css'
-import { AI_PROVIDERS, type AiProviderId } from '@genoffice/ai-provider'
+import { AI_PROVIDERS, type AiProviderId, type ReasoningEffort } from '@genoffice/ai-provider'
 
 export type EditingMode = 'readOnly' | 'commentOnly' | 'trackChanges' | 'fullAutonomy'
 
@@ -68,6 +68,14 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   themeLight:           { en: 'Light', he: 'בהיר' },
   themeDark:            { en: 'Dark', he: 'כהה' },
   themeDefault:         { en: 'Default', he: 'ברירת מחדל' },
+  sectionReasoning:     { en: 'Reasoning effort', he: 'מאמץ חשיבה' },
+  reasoningNote:        { en: "Not every model supports every tier - unsupported choices are ignored by the model, not an error.", he: 'לא כל מודל תומך בכל רמה - בחירה לא נתמכת פשוט מתעלמת מהמודל, ואינה שגיאה.' },
+  reasoningDefault:     { en: 'Default', he: 'ברירת מחדל' },
+  reasoningOff:         { en: 'Off', he: 'כבוי' },
+  reasoningLow:         { en: 'Low', he: 'נמוך' },
+  reasoningMedium:      { en: 'Medium', he: 'בינוני' },
+  reasoningHigh:        { en: 'High', he: 'גבוה' },
+  reasoningXHigh:       { en: 'Extra high', he: 'גבוה במיוחד' },
   sectionDocMessage:    { en: 'Document guidelines', he: 'הנחיות למסמך' },
   scopeNote:            { en: 'Applies immediately and resets tool registration below.', he: 'חל מיידית ומאפס את רישום הכלים למטה.' },
   docMessagePlaceholder:{ en: 'Background and guidelines about this document - included at the start of every new conversation.', he: 'רקע והנחיות לגבי המסמך הזה - ייכלל בתחילת כל שיחה חדשה.' },
@@ -141,6 +149,8 @@ export interface SettingsSavePayload {
   docSystemMessage?: string
   /** only present when saved from the full settings view (FT-1) - registration itself already took effect live via onToolRegistrationChange; this is an echo for symmetry with the other fields */
   registeredTools?: string[]
+  /** only present when saved from the full settings view, same gating as docSystemMessage above - global, not per-provider */
+  reasoningEffort?: ReasoningEffort
 }
 
 /** One tool's UI-only display info (FT-1 Task 5) - distinct from the tool's
@@ -164,6 +174,8 @@ export interface InitialSettings {
   theme?: 'light' | 'dark' | 'default'
   /** Seeds the Language toggle's selected button. Defaults to 'default' if omitted. */
   lang?: LangPref
+  /** Seeds the Reasoning effort section's selected button. Defaults to 'default' if omitted. */
+  reasoningEffort?: ReasoningEffort
 }
 
 export interface ChatUIOptions {
@@ -639,6 +651,18 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         </div>
         <div class="ai-settings-section" id="connectionSlot"></div>
         <div class="ai-settings-section">
+          <h4 data-t="sectionReasoning">Reasoning effort</h4>
+          <p class="ai-settings-section-note" data-t="reasoningNote">Not every model supports every tier - unsupported choices are ignored by the model, not an error.</p>
+          <div class="ai-lang-toggle ai-lang-toggle-wrap" id="reasoningToggle">
+            <button class="active" data-reasoning-choice="default" data-t="reasoningDefault">Default</button>
+            <button data-reasoning-choice="off" data-t="reasoningOff">Off</button>
+            <button data-reasoning-choice="low" data-t="reasoningLow">Low</button>
+            <button data-reasoning-choice="medium" data-t="reasoningMedium">Medium</button>
+            <button data-reasoning-choice="high" data-t="reasoningHigh">High</button>
+            <button data-reasoning-choice="xhigh" data-t="reasoningXHigh">Extra high</button>
+          </div>
+        </div>
+        <div class="ai-settings-section">
           <h4><span data-t="sectionTools">Tools</span> <span class="ai-tools-count" id="toolsCount"></span></h4>
           <div class="ai-tools-list" id="toolsList"></div>
         </div>
@@ -958,6 +982,13 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       b.classList.toggle('active', b.dataset.themeChoice === pendingTheme)
     })
   }
+  let pendingReasoningEffort: ReasoningEffort = 'default'
+  if (options.initialSettings?.reasoningEffort) {
+    pendingReasoningEffort = options.initialSettings.reasoningEffort
+    root.querySelectorAll<HTMLButtonElement>('#reasoningToggle button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.reasoningChoice === pendingReasoningEffort)
+    })
+  }
   // Save-gated, exactly like the language toggle above: a click only updates
   // the pending value and its own .active class - no visual effect, no
   // callback, until the settings view's Save button is clicked (below).
@@ -965,6 +996,13 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     btn.addEventListener('click', () => {
       pendingTheme = btn.dataset.themeChoice as 'light' | 'dark' | 'default'
       root.querySelectorAll('#themeToggle button').forEach((b) => b.classList.toggle('active', b === btn))
+    })
+  })
+
+  root.querySelectorAll<HTMLButtonElement>('#reasoningToggle button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      pendingReasoningEffort = btn.dataset.reasoningChoice as ReasoningEffort
+      root.querySelectorAll('#reasoningToggle button').forEach((b) => b.classList.toggle('active', b === btn))
     })
   })
 
@@ -1409,6 +1447,19 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     }
   })
 
+  // A plain 'click' listener isn't enough to tell "clicked outside" from
+  // "dragged a selection that started inside and released outside" - when
+  // mousedown and mouseup land on different elements, the browser fires
+  // 'click' on their common ancestor, which is often outside the dropdown
+  // even though the gesture started inside it. Track where mousedown
+  // happened and only treat the click as "outside" if it did too, so an
+  // in-panel drag (e.g. selecting text) released outside never closes it.
+  let settingsMouseDownOutside = true
+  document.addEventListener('mousedown', (e) => {
+    const target = e.target as Node
+    settingsMouseDownOutside = !settingsPanel.contains(target) && !settingsBtn.contains(target)
+  })
+
   // Post-hoc addition (2026-08-24, user-requested): closes the quick
   // settings dropdown on an outside click - only applies to the dropdown
   // ('open' class); the full inline settings VIEW has its own back/close
@@ -1416,9 +1467,16 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // deliberately untouched here.
   document.addEventListener('click', (e) => {
     if (!settingsPanel.classList.contains('open')) return
+    if (!settingsMouseDownOutside) return
     const target = e.target as Node
     if (settingsPanel.contains(target) || settingsBtn.contains(target)) return
     settingsPanel.classList.remove('open')
+  })
+
+  let modeMouseDownOutside = true
+  document.addEventListener('mousedown', (e) => {
+    const target = e.target as Node
+    modeMouseDownOutside = !modeMenu.contains(target) && !modeBtn.contains(target)
   })
 
   // Same outside-click-to-close behavior as the settings dropdown above -
@@ -1426,6 +1484,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // left it open, unlike Settings).
   document.addEventListener('click', (e) => {
     if (!modeMenu.classList.contains('open')) return
+    if (!modeMouseDownOutside) return
     const target = e.target as Node
     if (modeMenu.contains(target) || modeBtn.contains(target)) return
     modeMenu.classList.remove('open')
@@ -1444,6 +1503,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       theme: pendingTheme,
       docSystemMessage: docMessageInput.value,
       registeredTools: registeredToolNames,
+      reasoningEffort: pendingReasoningEffort,
     })
     dirty = false
     settingsSavedNote.classList.add('visible')

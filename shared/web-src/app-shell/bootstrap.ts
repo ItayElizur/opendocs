@@ -543,6 +543,7 @@ export function startAddIn(config: AddInConfig): void {
         providers: s.ai.providers,
         theme: s.theme,
         lang: s.lang,
+        reasoningEffort: s.reasoningEffort,
       }
     })(),
     // Post-hoc addition (2026-08-24, user-requested): AgentLoop.cancel()
@@ -608,6 +609,10 @@ export function startAddIn(config: AddInConfig): void {
         skipTlsVerify: settings.skipTlsVerify,
         theme: settings.theme,
         lang: settings.lang,
+        // Only present when saved from the full settings view (same gating
+        // as docSystemMessage/registeredTools below) - fall back to the
+        // current value so a quick-dropdown save never wipes it out.
+        reasoningEffort: settings.reasoningEffort ?? current.reasoningEffort,
       })
       postTlsBypass(settings.skipTlsVerify)
       // lang used to be a pre-existing gap here - threaded into the payload

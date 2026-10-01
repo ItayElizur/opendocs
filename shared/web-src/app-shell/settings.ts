@@ -5,6 +5,7 @@ import {
   streamForProvider,
   type AiProviderConfig,
   type AiSettings,
+  type ReasoningEffort,
 } from '@genoffice/ai-provider'
 
 // Connection settings are user-editable via the panel's Settings dropdown
@@ -33,6 +34,8 @@ export interface PanelSettings {
    * pre-existing gap now closed alongside adding the 'default' option.
    */
   lang: 'en' | 'he' | 'default'
+  /** Global, not per-provider - see chat-ui.ts's "More settings" reasoning section. 'default' omits the param entirely (today's behavior). */
+  reasoningEffort: ReasoningEffort
 }
 
 // PP-0's flat { baseUrl, apiKey, model, skipTlsVerify } shape, kept only as
@@ -59,6 +62,7 @@ function defaultsForThisRepo(): AiSettings {
 
 const VALID_THEMES = ['light', 'dark', 'default'] as const
 const VALID_LANGS = ['en', 'he', 'default'] as const
+const VALID_REASONING_EFFORTS = ['default', 'off', 'low', 'medium', 'high', 'xhigh'] as const
 
 function normalizeTheme(value: unknown): PanelSettings['theme'] {
   return (VALID_THEMES as readonly unknown[]).includes(value) ? (value as PanelSettings['theme']) : 'default'
@@ -68,11 +72,15 @@ function normalizeLang(value: unknown): PanelSettings['lang'] {
   return (VALID_LANGS as readonly unknown[]).includes(value) ? (value as PanelSettings['lang']) : 'default'
 }
 
+function normalizeReasoningEffort(value: unknown): ReasoningEffort {
+  return (VALID_REASONING_EFFORTS as readonly unknown[]).includes(value) ? (value as ReasoningEffort) : 'default'
+}
+
 function loadSettings(): PanelSettings {
   const defaults = defaultsForThisRepo()
   try {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY)
-    if (!raw) return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default' }
+    if (!raw) return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default', reasoningEffort: 'default' }
     const parsed = JSON.parse(raw) as Partial<PanelSettings> & LegacyStoredSettings
     return {
       // resolveAiSettings migrates the legacy flat {baseUrl, apiKey, model}
@@ -82,9 +90,10 @@ function loadSettings(): PanelSettings {
       skipTlsVerify: !!parsed.skipTlsVerify,
       theme: normalizeTheme(parsed.theme),
       lang: normalizeLang(parsed.lang),
+      reasoningEffort: normalizeReasoningEffort(parsed.reasoningEffort),
     }
   } catch {
-    return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default' }
+    return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default', reasoningEffort: 'default' }
   }
 }
 
@@ -129,7 +138,12 @@ export function makeTransport(): AgentTransport {
       // the very next message without rebuilding the loop.
       const id = currentSettings.ai.provider
       const slot = currentSettings.ai.providers[id]
-      const config: AiProviderConfig = { apiKey: slot.apiKey, model: slot.model, baseUrl: slot.baseUrl }
+      const config: AiProviderConfig = {
+        apiKey: slot.apiKey,
+        model: slot.model,
+        baseUrl: slot.baseUrl,
+        reasoningEffort: currentSettings.reasoningEffort,
+      }
       streamForProvider(id, config, request.system, request.messages, request.tools, MAX_TOKENS, {
         onDelta: callbacks.onDelta,
         onToolCall: callbacks.onToolCall,

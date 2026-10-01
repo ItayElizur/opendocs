@@ -61,6 +61,16 @@ describe('mountChatUI', () => {
     expect(root.querySelector('#modeMenu')!.classList.contains('open')).toBe(false)
   })
 
+  it('a drag that starts inside the mode menu and releases outside leaves it open', () => {
+    const { root } = setup()
+    root.querySelector<HTMLButtonElement>('.ai-mode-btn')!.click()
+    const menuItem = root.querySelector<HTMLElement>('#modeMenu [data-mode="trackChanges"]')!
+    const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    menuItem.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    textarea.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(root.querySelector('#modeMenu')!.classList.contains('open')).toBe(true)
+  })
+
   it('settings only call onSettingsSave when Save is clicked, not on field input', () => {
     const { root, onSettingsSave } = setup()
     root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
@@ -852,6 +862,45 @@ describe('mountChatUI', () => {
     expect(onSettingsSave).toHaveBeenCalledWith(
       expect.objectContaining({ docSystemMessage: 'Always cite sources.', registeredTools: ['get_document_context', 'apply_commands'] }),
     )
+  })
+
+  it('clicking a reasoning effort option updates .active and reports it on Save from the full view', () => {
+    const { root, onSettingsSave } = setup()
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(root.querySelector('[data-reasoning-choice="default"]')!.classList.contains('active')).toBe(true)
+
+    root.querySelector<HTMLButtonElement>('[data-reasoning-choice="xhigh"]')!.click()
+    expect(root.querySelector('[data-reasoning-choice="xhigh"]')!.classList.contains('active')).toBe(true)
+    expect(root.querySelector('[data-reasoning-choice="default"]')!.classList.contains('active')).toBe(false)
+    expect(onSettingsSave).not.toHaveBeenCalled()
+
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+    expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'xhigh' }))
+  })
+
+  it('reasoningEffort is seeded from initialSettings and omitted from the quick-dropdown Save payload', () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const onSettingsSave = vi.fn()
+    mountChatUI(root, {
+      onSend: vi.fn(), onModeChange: vi.fn(), onSettingsSave, onNewChat: vi.fn(),
+      starters: [], onCollapseChange: vi.fn(),
+      initialSettings: { reasoningEffort: 'high' },
+    })
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(root.querySelector('[data-reasoning-choice="high"]')!.classList.contains('active')).toBe(true)
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+    expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'high' }))
+
+    onSettingsSave.mockClear()
+    // Save above left dirty=false but inSettingsView=true - one click backs out
+    // to the chat view, a second re-opens the quick dropdown (settingsBtn does
+    // double duty, see chat-ui.ts's comment on that handler).
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.click()
+    const payload = onSettingsSave.mock.calls[0]![0]
+    expect(payload.reasoningEffort).toBeUndefined()
   })
 
   it('clicking a theme option updates .active but does not call onSettingsSave until Save is clicked', () => {
