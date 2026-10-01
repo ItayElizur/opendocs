@@ -1454,11 +1454,21 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // even though the gesture started inside it. Track where mousedown
   // happened and only treat the click as "outside" if it did too, so an
   // in-panel drag (e.g. selecting text) released outside never closes it.
-  let settingsMouseDownOutside = true
-  document.addEventListener('mousedown', (e) => {
-    const target = e.target as Node
-    settingsMouseDownOutside = !settingsPanel.contains(target) && !settingsBtn.contains(target)
-  })
+  // Shared by every dismiss-on-outside-click popup (PR review, 2026-10-02:
+  // settings dropdown and mode menu had copy-pasted this identical
+  // tracking block, which is exactly how the mode menu went without the
+  // fix for a while in the first place) - a future popup gets this by
+  // calling the helper, not by copy-pasting another block.
+  function trackMouseDownOutside(container: HTMLElement, btn: HTMLElement): () => boolean {
+    let outside = true
+    document.addEventListener('mousedown', (e) => {
+      const target = e.target as Node
+      outside = !container.contains(target) && !btn.contains(target)
+    })
+    return () => outside
+  }
+
+  const isSettingsMouseDownOutside = trackMouseDownOutside(settingsPanel, settingsBtn)
 
   // Post-hoc addition (2026-08-24, user-requested): closes the quick
   // settings dropdown on an outside click - only applies to the dropdown
@@ -1467,24 +1477,20 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // deliberately untouched here.
   document.addEventListener('click', (e) => {
     if (!settingsPanel.classList.contains('open')) return
-    if (!settingsMouseDownOutside) return
+    if (!isSettingsMouseDownOutside()) return
     const target = e.target as Node
     if (settingsPanel.contains(target) || settingsBtn.contains(target)) return
     settingsPanel.classList.remove('open')
   })
 
-  let modeMouseDownOutside = true
-  document.addEventListener('mousedown', (e) => {
-    const target = e.target as Node
-    modeMouseDownOutside = !modeMenu.contains(target) && !modeBtn.contains(target)
-  })
+  const isModeMouseDownOutside = trackMouseDownOutside(modeMenu, modeBtn)
 
   // Same outside-click-to-close behavior as the settings dropdown above -
   // the mode menu had no equivalent handler (bug report: clicking outside it
   // left it open, unlike Settings).
   document.addEventListener('click', (e) => {
     if (!modeMenu.classList.contains('open')) return
-    if (!modeMouseDownOutside) return
+    if (!isModeMouseDownOutside()) return
     const target = e.target as Node
     if (modeMenu.contains(target) || modeBtn.contains(target)) return
     modeMenu.classList.remove('open')
