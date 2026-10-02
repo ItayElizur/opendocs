@@ -29,22 +29,16 @@ namespace ExcelAiAddIn
 
         protected override string GetChatId()
         {
-            // A saved id is final - never re-checked again. An "unsaved-" id
-            // is provisional: re-check the workbook's Path on every call, so
-            // the first use after the user saves migrates chat history and
-            // doc settings onto the real per-file id (FT-1 Task 7b). The Path
-            // read is one cheap COM property on operations (load-history,
-            // append-message, etc.) that are already doing file I/O.
+            // A saved id is final; an "unsaved-" id re-checks the workbook's Path on every call so saving
+            // migrates chat history/doc settings onto the real per-file id (FT-1 Task 7b) - see
+            // TaskPaneHost.cs.md.
             if (_chatId != null && !_chatId.StartsWith("unsaved-")) return _chatId;
 
             if (string.IsNullOrEmpty(_workbook.Path))
             {
-                // An unsaved workbook has no on-disk Path; Workbook.FullName
-                // falls back to its temp Name (e.g. "Book1") in that case,
-                // which is not a stable key across sessions - and with
-                // multiple panes now possible in one process, "unsaved-<pid>"
-                // alone would collide across two different unsaved workbooks,
-                // so the window handle is folded in too.
+                // Window handle folded in: an unsaved workbook's FullName falls back to a temp Name (e.g.
+                // "Book1"), and with multiple panes possible in one process, "unsaved-<pid>" alone could
+                // collide across two different unsaved workbooks - see TaskPaneHost.cs.md.
                 return _chatId ?? (_chatId = "unsaved-" + Process.GetCurrentProcess().Id + "-" + _hwnd);
             }
 
@@ -81,10 +75,8 @@ namespace ExcelAiAddIn
             return result;
         }
 
-        // FT-2 Task 2: called from ThisAddIn's SheetSelectionChange handler,
-        // routed here via the active window's hwnd. Debounced through
-        // PaneHostBase.PostSelection (Task 1) - SheetSelectionChange fires on
-        // every arrow-key press and would flood the WebView2 bridge otherwise.
+        // Called from ThisAddIn's SheetSelectionChange handler via the active window's hwnd; debounced
+        // through PaneHostBase.PostSelection since SheetSelectionChange fires on every arrow-key press.
         public void OnSelectionChanged(Excel.Worksheet sheet, Excel.Range target)
         {
             // Task 2 Step 3: a chart/shape selection is not a Range at all -
@@ -110,13 +102,9 @@ namespace ExcelAiAddIn
             bool entireColumns = target.Rows.Count == sheet.Rows.Count;
             bool entireRows = target.Columns.Count == sheet.Columns.Count;
 
-            // Task 2b: report the effective (UsedRange-intersected) extent
-            // alongside the literal one for whole-column/row selections and
-            // any large selection - a bare "B1:B1048576" is both useless to
-            // show the user and something the model would try to read in
-            // full, hitting read_range's 2000-cell cap. Only pay for
-            // UsedRange when it can matter; an ordinary drag-selection never
-            // needs it.
+            // Reports the UsedRange-intersected extent alongside the literal one for whole-column/row or
+            // large selections - a bare "B1:B1048576" exceeds read_range's cap and isn't useful to show.
+            // See TaskPaneHost.cs.md.
             string effectiveAddress = null;
             long effectiveCellCount = 0;
             int effectiveRows = 0;

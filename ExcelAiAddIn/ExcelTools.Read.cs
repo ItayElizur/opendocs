@@ -80,11 +80,8 @@ namespace ExcelAiAddIn
             return new ToolResult { Output = "Selected " + address + " on " + sheet.Name + ".", Summary = "select_range" };
         }
 
-        // PP-13 Task 3: measured ~1.1s for a 200-cell read with the widened
-        // per-cell property set (12 COM reads/cell vs. the previous 4) on this
-        // dev machine - comfortably under the ~2s budget the plan flagged, so
-        // the 200-cell cap is kept as-is rather than lowered or split into a
-        // properties?:string[] filter.
+        // 200-cell cap kept as-is (PP-13 Task 3): measured ~1.1s for a 200-cell read with the widened
+        // per-cell property set, comfortably under budget - see ExcelTools.Read.cs.md.
         private static ToolResult ReadFormats(JsonElement input)
         {
             string address = input.GetProperty("address").GetString();
@@ -116,10 +113,8 @@ namespace ExcelAiAddIn
                     if (cell.Borders[idx].LineStyle != Excel.XlLineStyle.xlLineStyleNone) { hasBorder = true; break; }
                 }
 
-                // Widened to match everything format_range can now set (PP-13) -
-                // a cell that is only e.g. centered, or only bordered, must not
-                // be filtered out as "unformatted", or a read-modify-write cycle
-                // silently drops that property.
+                // Must cover everything format_range can set (PP-13) - missing a property here would filter
+                // a cell as "unformatted" and drop it in a read-modify-write cycle.
                 bool hasDefaultFormat = !bold && !italic && !underline && !strikethrough
                     && (numberFormat == "General" || numberFormat == null)
                     && hAlign == Excel.XlHAlign.xlHAlignGeneral && vAlign == Excel.XlVAlign.xlVAlignBottom
