@@ -40,15 +40,8 @@ export interface SelectionState {
   fullText: string
 }
 
-/**
- * FT-2: the raw 'selection-changed' WebMessage, before any app-specific
- * interpretation. Every field below is app-specific and optional - `app`
- * distinguishes Excel/PowerPoint's payloads from Word's (which carries no
- * `app` field at all, only `hasSelection`/`preview`/`fullText`). This bridge
- * module stays app-agnostic (per its own file-header rule) - only
- * bootstrap.ts's per-app describeSelection/classification logic interprets
- * these fields into a SelectionContext.
- */
+/** The raw 'selection-changed' WebMessage, before any app-specific interpretation
+ * (see `bridge.ts.md`); only bootstrap.ts's per-app logic interprets these fields. */
 export interface RawSelectionPayload {
   hasSelection: boolean
   // Word
@@ -90,12 +83,9 @@ export interface RawSelectionPayload {
   textPreview?: string[]
   shapeIndex?: number
   text?: string
-  // PowerPoint (user-requested, 2026-09-22): the selected slide's current
-  // layout name (custom-theme layouts, e.g. "Title Slide") - lets the model
-  // address add_master_element/read_master_elements/etc.'s layoutName
-  // directly from context instead of a separate read_slide call. Sent for
-  // all three selKind variants (a shapes/shapeText selection is always
-  // within exactly one slide, so this is unambiguous there too).
+  // PowerPoint: the selected slide's current layout name, so the model can
+  // address add_master_element/etc. without a separate read_slide call
+  // (see `bridge.ts.md`).
   layoutName?: string | null
   // Outlook ('app: "outlook"') - the Explorer's currently-selected mail
   // item(s) / conversation. subject is the first item's subject.
@@ -126,14 +116,9 @@ export interface BridgeHandlers {
    * per pane lifetime.
    */
   onOfficeThemeLoaded(theme: 'light' | 'dark'): void
-  /**
-   * Office's own UI display language, read once via Application.
-   * LanguageSettings.LanguageID(msoLanguageIDUI) when the pane boots and
-   * sent once in response to requestOfficeLanguage() - never re-sent later
-   * (by design, see OfficeAi.Shared/OfficeLanguage.cs), so this fires
-   * exactly once per pane lifetime. Only "he"/"en" are supported UI
-   * languages; any other Office UI language resolves to "en" server-side.
-   */
+  /** Office's own UI display language, read once when the pane boots and sent once
+   * in response to requestOfficeLanguage() (see `bridge.ts.md`); only "he"/"en" are
+   * supported, any other Office UI language resolves to "en" server-side. */
   onOfficeLanguageLoaded(language: 'en' | 'he'): void
 }
 

@@ -23,16 +23,9 @@ export interface ToolDisplayInfo {
   description: { en: string; he: string }
 }
 
-/**
- * FT-2 Task 4: what the user has selected, classified from the raw bridge
- * payload into the vocabulary each app's tools actually take - Word's
- * paragraph-index tools get content, Excel's A1-addressed tools get an
- * address, PowerPoint's slideIndex/shapeIndex tools get indices. The `range`
- * variant carries more than the plan's minimal sketch (entireColumns/
- * entireRows/effectiveAddress/effectiveCellCount) because describeSelection's
- * whole-column/whole-row wording needs them - there is nowhere else for that
- * data to live.
- */
+/** What the user has selected, classified from the raw bridge payload into the
+ * vocabulary each app's tools actually take (paragraph index, A1 address, or
+ * slide/shape index - see `bootstrap.ts.md`). */
 export type SelectionContext =
   | { kind: 'none' }
   | {
@@ -127,25 +120,18 @@ function toSelectionContext(raw: RawSelectionPayload): SelectionContext {
   }
 }
 
-/**
- * FT-2 Task 4 Step 2: the per-turn sentence injected via buildContext() -
- * must state the addressing vocabulary explicitly (an A1 address or a
- * slideIndex/shapeIndex pair) so the selection is actionable, not merely
- * informative. Kind-keyed rather than per-app-configurable because each app
- * only ever produces its own subset of kinds (Word: text/none; Excel:
- * range/none; PowerPoint: slides/shapes/shapeText/none) - AddInConfig.
- * describeSelection lets an app override this if it ever needs to.
- */
+/** The per-turn sentence injected via buildContext() - states the addressing
+ * vocabulary explicitly (an A1 address or a slideIndex/shapeIndex pair) so the
+ * selection is actionable, not merely informative (see `bootstrap.ts.md`). */
 function defaultDescribeSelection(ctx: SelectionContext): string {
   switch (ctx.kind) {
     case 'none':
       return ''
     case 'text':
-      // Post-hoc addition (2026-08-24, user-reported: selecting a table/
-      // chart/SmartArt "doesn't appear under selection") - these objects'
-      // own selection.Text is empty or a placeholder character, so this
-      // must be checked before the ctx.fullText emptiness check below, or
-      // an object selection would always fall through to "no selection".
+      // A table/chart/SmartArt's own selection.Text is empty or a placeholder
+      // character, so this must be checked before the ctx.fullText emptiness
+      // check below, or an object selection would always fall through to "no
+      // selection" (see `bootstrap.ts.md`).
       if (ctx.objectKind) {
         const readTool = ctx.objectKind === 'table' ? 'read_table' : ctx.objectKind === 'chart' ? 'read_chart' : 'read_smartart'
         const indexField = ctx.objectKind === 'table' ? 'tableIndex' : ctx.objectKind === 'chart' ? 'chartIndex' : 'smartArtIndex'
@@ -154,13 +140,9 @@ function defaultDescribeSelection(ctx: SelectionContext): string {
           `Use ${readTool} {${indexField}:${ctx.objectIndex}} to see its current content before editing it.`
         )
       }
-      // Post-hoc fix (2026-08-24, user-reported): previously gave only the
-      // text with no addressability, so a request to transform the
-      // selection in place (e.g. "translate this paragraph") had no way to
-      // target replace_blocks at exactly the selected paragraphs and fell
-      // back to insert_content, appending a new paragraph instead of
-      // replacing the original. Now states the 0-based paragraph range
-      // explicitly, matching FT-2's addressable wording for Excel/PowerPoint.
+      // States the 0-based paragraph range explicitly so a request to transform
+      // the selection in place can target replace_blocks at exactly those
+      // paragraphs instead of falling back to insert_content (see `bootstrap.ts.md`).
       if (!ctx.fullText) return ''
       if (ctx.startBlockIndex < 0) return `Content selected by the user:\n${ctx.fullText}`
       return (
@@ -249,13 +231,9 @@ function columnLetterToNumber(col: string): number {
   return n
 }
 
-/**
- * FT-2 Task 5: classifies the raw payload into the UI's SelectionExtent -
- * chat-ui.ts owns rendering/localizing the words, this only picks which case
- * applies and extracts the numbers, per Task 5 Step 3 ("a label the shell
- * computes"). Returns null for "no selection" (reverts the pill to its
- * per-app whole-scope label).
- */
+/** Classifies the raw payload into the UI's SelectionExtent; chat-ui.ts owns
+ * rendering/localizing the words (see `bootstrap.ts.md`). Returns null for "no
+ * selection" (reverts the pill to its per-app whole-scope label). */
 function toSelectionScopeUpdate(raw: RawSelectionPayload): { hasSelection: boolean; preview?: string; extent?: SelectionExtent } | null {
   if (!raw.hasSelection) return null
   if (raw.app === 'excel') {
@@ -304,10 +282,9 @@ function toSelectionScopeUpdate(raw: RawSelectionPayload): { hasSelection: boole
     }
     return null
   }
-  // Word (post-hoc addition, 2026-08-24): a table/chart/SmartArt selection
-  // renders as a proper extent pill (e.g. "Table 2") instead of the
-  // quoted-text form, which would otherwise show empty/placeholder text for
-  // these object kinds - the exact "no pointer" gap the user reported.
+  // Word: a table/chart/SmartArt selection renders as a proper extent pill
+  // (e.g. "Table 2") instead of the quoted-text form, which would otherwise
+  // show empty/placeholder text for these object kinds (see `bootstrap.ts.md`).
   if (raw.objectKind) {
     return { hasSelection: true, extent: { kind: 'wordObject', objectKind: raw.objectKind, objectIndex: raw.objectIndex ?? 0 } }
   }
@@ -327,15 +304,9 @@ export interface AddInConfig {
   readOnlyTools: string[]
   /** additionally available in Comment only mode (Word's add_comment; empty/absent elsewhere) */
   commentOnlyExtraTools?: string[]
-  /**
-   * Additionally available in Track changes mode, ON TOP OF Comment only's
-   * set (not a replacement) - `null`/absent (every app but Outlook) keeps
-   * Track changes' original meaning: every tool, since Word/Excel/
-   * PowerPoint's real edit tools are legitimately usable under native
-   * track-changes recording. Outlook sets this to unlock
-   * accept_meeting/decline_meeting/tentative_meeting on top of its own
-   * "Draft only" (commentOnly) tier - see availableForMode() below.
-   */
+  /** Additionally available in Track changes mode, ON TOP OF Comment only's set
+   * (not a replacement); `null`/absent keeps Track changes' original meaning of
+   * "every tool" (see `bootstrap.ts.md` and availableForMode() below). */
   trackChangesExtraTools?: string[]
   /** inject the user's current selection into per-turn context (Word, Excel, PowerPoint - FT-2) */
   useSelectionContext?: boolean
@@ -343,12 +314,8 @@ export interface AddInConfig {
   describeSelection?: (ctx: SelectionContext) => string
   /** FT-2 Task 5: the scope-hint pill's "no selection" wording - defaults to 'doc' (Word). */
   scopeUnit?: 'doc' | 'sheet' | 'deck' | 'mailbox'
-  /**
-   * Restricts the editing-mode menu to this subset, in this order. Defaults to
-   * all four modes (Word/Excel/PowerPoint). Outlook passes all four too, with
-   * commentOnly/trackChanges repurposed as "Draft only"/"Automate approvals"
-   * (see modeOverrides) rather than their Word-ish original meaning.
-   */
+  /** Restricts the editing-mode menu to this subset, in this order (see `bootstrap.ts.md`
+   * for how Outlook repurposes commentOnly/trackChanges via modeOverrides). */
   availableModes?: EditingMode[]
   /** Per-app relabeling of a mode's menu text - see ChatUIOptions.modeOverrides. */
   modeOverrides?: ModeOverrides
@@ -358,16 +325,9 @@ export interface AddInConfig {
   autoSendTools?: string[]
 }
 
-// Fix for: relative-date tool args (draft_event, find_meeting_slots, etc.)
-// were resolved by the model with no ground truth for "today" anywhere in
-// the system prompt - it had to guess both the date and the weekday from
-// training data, which is exactly how "next Tuesday" turned into
-// Wednesday. Called fresh from systemSuffix() below on every turn, not
-// frozen at conversation start: the full system prompt is already resent
-// on every turn regardless (see loop.ts's startTurn()), so recomputing this
-// ~20-token line costs nothing extra, and it keeps a conversation that
-// spans midnight (or a laptop that sleeps overnight) correct instead of
-// stuck on its start-of-chat date.
+// Gives the model ground truth for "today" (relative-date tool args otherwise
+// get guessed from training data - see `bootstrap.ts.md`). Called fresh every
+// turn via systemSuffix() below, not frozen at conversation start.
 function todayContextLine(): string {
   try {
     const now = new Date()
@@ -384,25 +344,14 @@ function todayContextLine(): string {
   }
 }
 
-/**
- * Boots one add-in's chat panel: WebView2 bridge, settings, transport,
- * chat-UI mount, and AgentLoop event plumbing. Everything here was
- * previously duplicated near-verbatim across WordAiAddIn/ExcelAiAddIn/
- * PowerPointAiAddIn's entry.ts (PP-0) - each app now supplies only what is
- * genuinely app-specific through `config`.
- */
+/** Boots one add-in's chat panel: WebView2 bridge, settings, transport, chat-UI
+ * mount, and AgentLoop event plumbing (see `bootstrap.ts.md`); each app supplies
+ * only what is genuinely app-specific through `config`. */
 export function startAddIn(config: AddInConfig): void {
-  // Task 11 (Word): editing-mode control. Client-side filtering only (first
-  // line of defense - smaller prompts, fewer wasted turns); the real
-  // enforcement is server-side in each app's *Tools.Execute, which gates
-  // mutating tool calls even if the model somehow requests one that wasn't
-  // offered here.
-  // A fresh session no longer starts in Full Autonomy by default - see
-  // defaultModeFor() in chat-ui.ts. This must resolve identically to
-  // mountChatUI's own `defaultMode` computation below (same helper, same
-  // inputs) or the UI's initial selection and this filtering state disagree
-  // about what's actually available before the user ever touches the mode
-  // menu.
+  // Editing-mode control: client-side filtering only (first line of defense);
+  // the real enforcement is server-side in each app's *Tools.Execute. Must
+  // resolve identically to mountChatUI's own `defaultMode` computation below
+  // (see `bootstrap.ts.md`).
   let editingMode: EditingMode = defaultModeFor(resolveModes(config.availableModes), config.defaultMode ?? 'trackChanges')
 
   const readOnlySet = new Set(config.readOnlyTools)
@@ -451,16 +400,11 @@ export function startAddIn(config: AddInConfig): void {
   let latestSelectionContext: SelectionContext = { kind: 'none' }
   const describeSelectionFn = config.describeSelection ?? defaultDescribeSelection
 
-  // FT-1 Task 8: the document guidelines message. `savedDocMessage` is
-  // whatever is currently persisted on disk (kept in sync by the bridge's
-  // doc-settings-loaded response and by a successful Save); `activeDocMessage`
-  // is what actually gets injected into the system prompt this conversation -
-  // frozen by beginConversation() at conversation-start boundaries only
-  // (initial load, New chat), never read live per-turn, so editing the
-  // guidelines mid-conversation cannot retroactively change a run in progress.
-  // The date context line is the opposite: recomputed live on every turn by
-  // systemSuffix() below (todayContextLine()'s own comment explains why),
-  // not frozen here.
+  // `savedDocMessage` is whatever is persisted on disk; `activeDocMessage` is
+  // what's injected into the system prompt this conversation, frozen by
+  // beginConversation() at conversation-start boundaries only - so editing the
+  // guidelines mid-conversation cannot retroactively change a run in progress
+  // (see `bootstrap.ts.md`).
   let savedDocMessage = ''
   let activeDocMessage = ''
   function beginConversation(): void {
@@ -491,27 +435,17 @@ export function startAddIn(config: AddInConfig): void {
     executeTool: (call) => callDotNetTool(call.name, call.input),
   }
 
-  // Theme reconciliation. `currentThemePref` is the persisted 3-way choice;
-  // `lastKnownOfficeTheme` is Office's real theme, read exactly once from the
-  // registry (via requestOfficeTheme() below) and cached for this pane's
-  // whole lifetime - not re-checked while the pane stays open, by design.
-  // C# never sees `currentThemePref`; it only ever reports "what does Office
-  // look like right now", and this file alone decides whether that answer
-  // gets applied (only when the preference is 'default').
+  // Theme reconciliation: `currentThemePref` is the persisted 3-way choice;
+  // `lastKnownOfficeTheme` is Office's real theme, read once and cached for the
+  // pane's lifetime. C# never sees `currentThemePref` - this file alone decides
+  // whether Office's answer gets applied (see `bootstrap.ts.md`).
   let currentThemePref: 'light' | 'dark' | 'default' = getSettings().theme
   let lastKnownOfficeTheme: 'light' | 'dark' = 'light'
   function effectiveTheme(pref: 'light' | 'dark' | 'default'): 'light' | 'dark' {
     return pref === 'default' ? lastKnownOfficeTheme : pref
   }
 
-  // Language reconciliation - exact same shape as theme above.
-  // `currentLangPref` is the persisted 3-way choice; `lastKnownOfficeLanguage`
-  // is Office's real UI display language, read exactly once (via
-  // requestOfficeLanguage() below, see OfficeAi.Shared/OfficeLanguage.cs) and
-  // cached for this pane's whole lifetime. C# never sees `currentLangPref`;
-  // it only ever reports "what language is Office's own UI in right now",
-  // and this file alone decides whether that answer gets applied (only when
-  // the preference is 'default').
+  // Language reconciliation - exact same shape as theme above (see `bootstrap.ts.md`).
   let currentLangPref: 'en' | 'he' | 'default' = getSettings().lang
   let lastKnownOfficeLanguage: 'en' | 'he' = 'en'
   function effectiveLang(pref: 'en' | 'he' | 'default'): 'en' | 'he' {
@@ -546,23 +480,15 @@ export function startAddIn(config: AddInConfig): void {
         reasoningEffort: s.reasoningEffort,
       }
     })(),
-    // Post-hoc addition (2026-08-24, user-requested): AgentLoop.cancel()
-    // already existed (its own comment even anticipated "when the user
-    // clicks stop") but was never reachable from any UI control until now -
-    // wired here, same forward-reference-via-closure pattern onSend already
-    // uses for `loop` below (declared further down this file).
+    // Wires AgentLoop.cancel() to the stop button (same forward-reference-via-
+    // closure pattern onSend uses for `loop` below, declared further down this
+    // file; see `bootstrap.ts.md`).
     onStop: () => loop.cancel(),
     onSend: (text) => {
-      // Post-hoc change (2026-08-24, user-requested): previously a no-op
-      // while busy (the textarea used to be disabled too, so this was
-      // unreachable anyway). Now the textarea stays enabled during a run,
-      // so a send while busy queues the message instead of dropping it -
-      // dispatched automatically once the current run finishes (onDone
-      // below), whether it finished normally or was stopped. The user's
-      // message is shown and persisted immediately (chronologically
-      // accurate - they sent it now), only the actual model run is
-      // deferred; `pendingQueuedText` is declared further down this file
-      // (same forward-reference-via-closure pattern already used for `loop`).
+      // A send while busy queues the message instead of dropping it, dispatched
+      // once the current run finishes (onDone below). The user's message is
+      // shown and persisted immediately; only the model run is deferred (see
+      // `bootstrap.ts.md`).
       if (loop.busy) {
         pendingQueuedText = text
         ui.addUserMessage(text)
@@ -615,10 +541,9 @@ export function startAddIn(config: AddInConfig): void {
         reasoningEffort: settings.reasoningEffort ?? current.reasoningEffort,
       })
       postTlsBypass(settings.skipTlsVerify)
-      // lang used to be a pre-existing gap here - threaded into the payload
-      // but never persisted or applied. Now folded into setSettings() above
-      // and applied immediately, same as theme, so Save's effect (including
-      // picking 'default') is visible without waiting for anything async.
+      // Folded into setSettings() above and applied immediately, same as theme,
+      // so Save's effect (including picking 'default') is visible without
+      // waiting for anything async (see `bootstrap.ts.md`).
       currentThemePref = settings.theme
       ui.setTheme(effectiveTheme(settings.theme))
       currentLangPref = settings.lang
@@ -684,12 +609,10 @@ export function startAddIn(config: AddInConfig): void {
   // go back to strict verification every time they reopen the document.
   postTlsBypass(getSettings().skipTlsVerify)
 
-  // Same idea for theme: an explicit Light/Dark preference is known
-  // synchronously from localStorage, so apply it immediately to avoid a
-  // flash of the wrong theme. 'default' has no synchronous answer (only C#
-  // knows Office's real theme) - left as-is until the async reply below
-  // resolves it; a one-frame flash there is accepted, not fixable without
-  // delaying first paint.
+  // An explicit Light/Dark preference is known synchronously from localStorage,
+  // so apply it immediately to avoid a flash of the wrong theme. 'default' has
+  // no synchronous answer, so it waits for the async reply below (see
+  // `bootstrap.ts.md`).
   if (currentThemePref !== 'default') ui.setTheme(currentThemePref)
 
   // Same idea for language - an explicit English/Hebrew preference is known
@@ -697,22 +620,14 @@ export function startAddIn(config: AddInConfig): void {
   // reply below, same one-frame-flash tradeoff as theme.
   if (currentLangPref !== 'default') ui.setLang(currentLangPref)
 
-  // Post-hoc addition (2026-08-24, user-requested): a message sent while a
-  // run is already busy is queued here rather than dropped, and dispatched
-  // in onDone below once the current run finishes (normally or via stop).
+  // A message sent while a run is already busy is queued here rather than
+  // dropped, and dispatched in onDone below once the current run finishes.
   let pendingQueuedText: string | null = null
 
   let currentToolGroup: ReturnType<typeof ui.beginToolGroup> | null = null
-  // Post-hoc fix (2026-08-24, user-reported): loop.ts's "turn" is one model
-  // response - for a model that chains several tool calls back-to-back with
-  // no text between them, that is often exactly one tool call per turn, so
-  // closing/nulling currentToolGroup on every onTurnEnd split a single
-  // logical batch into a separate "Ran 1 tool" box per call instead of one
-  // group incrementing to "Ran N tools". The group should only actually
-  // close when text has genuinely streamed since it opened (so a LATER
-  // block of tools still gets its own group below that text, preserving
-  // chronological order) - tracked here since only bootstrap.ts sees both
-  // onText and onTurnEnd.
+  // The group only closes once text has genuinely streamed since it opened, so
+  // back-to-back tool-only turns (no text between) share one incrementing group
+  // instead of a separate box per turn (see `bootstrap.ts.md`).
   let textStreamedSinceGroup = false
   const activeSteps = new Map<string, ReturnType<ReturnType<typeof ui.beginToolGroup>['addStep']>>()
   function closeToolGroup(): void {
@@ -738,12 +653,9 @@ export function startAddIn(config: AddInConfig): void {
     loop.run(CONTINUE_INSTRUCTION)
   }
 
-  // Post-hoc addition (2026-08-24, user-requested): dispatches a message
-  // queued via onSend while the previous run was busy - the user bubble and
-  // ChatStore persistence already happened at queue time, so this only
-  // needs to actually start the model run. Called from onDone/onError below
-  // regardless of how the prior run ended (finished normally, truncated, or
-  // stopped via the stop button) - a queued message should still go out.
+  // Dispatches a message queued via onSend while the previous run was busy -
+  // the user bubble and persistence already happened at queue time, so this
+  // only needs to start the model run (see `bootstrap.ts.md`).
   function dispatchQueuedIfAny(): void {
     if (pendingQueuedText === null) return
     const queued = pendingQueuedText
