@@ -11,7 +11,7 @@ namespace OfficeAi.Shared
         // Any JsonValueKind other than String/Number/True/False (including
         // Null, Array, and Object) falls through to null - e.g. a nested
         // array passed as a cell value silently lands as an empty cell rather
-        // than throwing. Pinned as-is; not a Phase 0 behavior change.
+        // than throwing. Intentional, not a bug - don't change this.
         public static object JsonValueToObject(JsonElement v)
         {
             switch (v.ValueKind)

@@ -3,12 +3,10 @@ using System;
 namespace OfficeAi.Shared
 {
     /// <summary>
-    /// Resolves Office's own "Office Theme" setting (File &gt; Account) to a
-    /// plain "dark"/"light" verdict, read once per pane at creation time -
-    /// there is no supported object-model property for this, only an
-    /// undocumented registry value, so every failure mode here degrades to
-    /// "light" rather than throwing (a theme-detection bug must never break
-    /// pane creation).
+    /// Resolves Office's "Office Theme" setting (File &gt; Account) to a plain
+    /// "dark"/"light" verdict via an undocumented registry value (no
+    /// object-model property exists). Every failure mode degrades to "light"
+    /// rather than throwing. See OfficeTheme.cs.md.
     /// </summary>
     public static class OfficeTheme
     {
@@ -18,12 +16,9 @@ namespace OfficeAi.Shared
         private const string PersonalizeValue = "AppsUseLightTheme";
 
         /// <summary>
-        /// Test seam: matches Microsoft.Win32.Registry.GetValue's exact
-        /// signature (keyName, valueName, defaultValue) -&gt; object, so the
-        /// real read is just `registryGetValue ?? Registry.GetValue`. Kept
-        /// as a plain delegate parameter rather than an interface, matching
-        /// this repo's existing convention (e.g. WebViewBridgeHost's
-        /// constructor).
+        /// Test seam matching Microsoft.Win32.Registry.GetValue's signature -
+        /// the real read is `registryGetValue ?? Registry.GetValue`. See
+        /// OfficeTheme.cs.md.
         /// </summary>
         public static string ReadEffectiveTheme(Func<string, string, object, object> registryGetValue = null)
         {

@@ -102,13 +102,9 @@ namespace OfficeAi.Shared
             return all.Skip(lastDivider + 1).Where(r => r.Role != "divider").ToList();
         }
 
-        // FT-1 Task 7b: called once a provisional ("unsaved-...") chat id has
-        // just resolved to a real, path-derived one. This store is append-only
-        // JSONL, so concatenating the provisional file's lines onto whatever
-        // the target already has (the user may have saved over a path they'd
-        // chatted about before) is trivially valid and chronologically
-        // correct - no merge logic needed beyond "append, then remove the
-        // source". A missing source is a silent no-op (nothing to migrate).
+        // Appends a provisional chat id's lines onto the target id's file and
+        // removes the source; a missing source is a silent no-op. See
+        // ChatStore.cs.md for why plain append is sufficient here.
         public static void Migrate(string appDataFolderName, string oldChatId, string newChatId)
         {
             string oldPath = ChatPath(appDataFolderName, oldChatId);

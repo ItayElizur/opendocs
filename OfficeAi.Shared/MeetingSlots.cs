@@ -16,14 +16,7 @@ namespace OfficeAi.Shared
     // Pure, COM-free ranking of candidate meeting times from Outlook
     // Recipient.FreeBusy strings. Lives here (not in OutlookAiAddIn) so it can
     // be unit tested without the Outlook PIA. See OutlookTools.Calendar.cs's
-    // find_meeting_slots for the COM half (resolving recipients, calling
-    // Recipient.FreeBusy).
-    //
-    // Each FreeBusy string has one character per `stepMinutes` minutes,
-    // starting at `rangeStartMidnight`. '0' = free; any other char (or an
-    // index past the end of the string, or before the range) is treated as
-    // free too only when past the end - a shorter-than-expected string means
-    // "no known busy info". Before the range is never reached in practice.
+    // find_meeting_slots for the COM half.
     public static class MeetingSlots
     {
         public static List<FreeSlot> Rank(
@@ -76,6 +69,8 @@ namespace OfficeAi.Shared
                 .ToList();
         }
 
+        // One char per `stepMinutes` minutes starting at `rangeStartMidnight`;
+        // '0' = free. Edge cases: MeetingSlots.cs.md.
         private static bool IsFree(string freeBusy, DateTime rangeStartMidnight, DateTime slotStart, int slotCount, int stepMinutes)
         {
             if (string.IsNullOrEmpty(freeBusy)) return true;

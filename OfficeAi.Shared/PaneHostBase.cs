@@ -5,31 +5,23 @@ using System.Windows.Forms;
 
 namespace OfficeAi.Shared
 {
-    // Previously declared identically as three separate app-namespaced enums
-    // (WordAiAddIn.EditingMode, ExcelAiAddIn.EditingMode, PowerPointAiAddIn.EditingMode)
-    // with the same four members. PaneHostBase's SetEditingMode hook needs one
-    // shared type to dispatch through, so this replaces all three - each app's
-    // *Tools.cs now references this instead of declaring its own.
+    // Shared editing-mode enum dispatched through PaneHostBase.SetEditingMode;
+    // each app's *Tools.cs references this instead of declaring its own. See
+    // PaneHostBase.cs.md.
     public enum EditingMode { ReadOnly, CommentOnly, TrackChanges, FullAutonomy }
 
-    // Shared across Word/Excel/PowerPoint's TaskPaneHost.cs - the three copies
-    // differed only in the COM type used to resolve the owning document (the
-    // abstract hooks below) and app-data folder name (now a constructor
-    // parameter). Everything else - the status label, the WebView2 bridge,
-    // and the OnOtherMessage branches that don't need app-specific
-    // resolution - lives once, here.
+    // Shared base for Word/Excel/PowerPoint's TaskPaneHost.cs - the status
+    // label, the WebView2 bridge, and the app-agnostic OnOtherMessage
+    // branches live once, here; subclasses supply only the COM document type
+    // and app-data folder name. See PaneHostBase.cs.md.
     public abstract class PaneHostBase : UserControl
     {
         private readonly Label _status;
         private readonly string _appDataFolderName;
         private readonly WebViewBridgeHost _bridge;
 
-        // FT-2 Task 1: shared debounced selection dispatch. A WinForms Timer
-        // (not System.Timers.Timer) ticks on the UI thread, where this
-        // UserControl and its WebView2 already live - no cross-thread
-        // marshaling needed. 200ms was chosen empirically: holding an arrow
-        // key down in Excel settles the pill once, after the burst ends,
-        // rather than flickering on every keystroke.
+        // Shared debounced selection dispatch; 200ms chosen empirically. See
+        // PaneHostBase.cs.md.
         private readonly Timer _selectionTimer;
         private object _pendingSelection;
         private string _pendingSelectionSignature;
@@ -52,14 +44,11 @@ namespace OfficeAi.Shared
             _selectionTimer = new Timer { Interval = 200 };
             _selectionTimer.Tick += OnSelectionTimerTick;
 
-            // This base constructor never touches the owning document/
-            // workbook/presentation - it only takes the app-data folder name.
-            // Each subclass's own constructor stores its COM document
-            // reference WITHOUT dereferencing it (no .Path/.FullName access
-            // there); see GetChatId()'s doc comment on each subclass for the
-            // confirmed repro of why an eager read silently kills the whole
-            // VSTO connection (no exception, no error - just Connect=False
-            // forever) when done at construction time instead of lazily.
+            // Never dereference the owning document/workbook/presentation at
+            // construction time (no .Path/.FullName access) - doing so
+            // silently kills the VSTO connection (no exception, just
+            // Connect=False forever). Subclasses must resolve it lazily. See
+            // PaneHostBase.cs.md.
             _bridge = new WebViewBridgeHost(this, ExecuteTool, appDataFolderName, UpdateStatus, OnOtherMessage);
         }
 
@@ -74,12 +63,9 @@ namespace OfficeAi.Shared
             _bridge.PostMessage(payload);
         }
 
-        // FT-2 Task 1: coalesces bursts of selection-change events and drops
-        // exact repeats. `signature` is a cheap string identifying the
-        // selection (e.g. "Sheet1!B2:D40", "slides:2,3") - when it matches the
-        // last one actually posted, the event is dropped outright rather than
-        // even restarting the timer, so an event storm that never changes the
-        // selection (e.g. re-entrant COM notifications) costs nothing.
+        // Coalesces bursts of selection-change events and drops exact repeats
+        // (by `signature`, e.g. "Sheet1!B2:D40") before even restarting the
+        // timer. See PaneHostBase.cs.md.
         protected void PostSelection(object payload, string signature)
         {
             if (signature == _lastSelectionSignature) return;
@@ -113,20 +99,15 @@ namespace OfficeAi.Shared
         // without changing the shared ToolExecutor delegate's signature.
         protected abstract Task<ToolResult> ExecuteTool(string name, JsonElement input);
 
-        // The per-document chat-history/mode key. Lazily computed and cached
-        // by each subclass on first actual use (never in the constructor -
-        // see the constructor comment above). A subclass's override re-checks
-        // a still-provisional ("unsaved-...") id on every call and migrates
-        // ChatStore/DocSettingsStore onto the real id the moment the document
-        // is saved (FT-1 Task 7b) - callers never need to know this happens.
+        // The per-document chat-history/mode key, lazily computed and cached
+        // by each subclass on first use (never in the constructor - see
+        // above). Transparently migrates a still-provisional id onto the real
+        // one once the document is saved. See PaneHostBase.cs.md.
         protected abstract string GetChatId();
 
-        // FT-1 Task 7b Step 2: called from each app's document-close handler
-        // (ThisAddIn.cs, alongside pane disposal) to force one last GetChatId()
-        // check before the pane goes away - covers "save, then immediately
-        // close" without needing a save-then-close-specific hook. ThisAddIn
-        // cannot call the protected GetChatId() directly (different class,
-        // not a subclass), hence this public wrapper.
+        // Forces one last GetChatId() check before the pane is disposed, so a
+        // save-then-close sequence still migrates the chat id. ThisAddIn
+        // can't call the protected GetChatId() directly. See PaneHostBase.cs.md.
         public void FlushChatIdMigration()
         {
             try { GetChatId(); }
@@ -137,13 +118,10 @@ namespace OfficeAi.Shared
         // so the mode is per-document rather than shared across every window.
         protected abstract void SetEditingMode(EditingMode mode);
 
-        // Office's UI display language (Application.LanguageSettings.
-        // LanguageID[MsoAppLanguageID.msoLanguageIDUI]) - needs each
-        // subclass's own Globals.ThisAddIn.Application, same reason
-        // GetChatId()/SetEditingMode are abstract here rather than
-        // implemented once (this shared assembly has no access to any
-        // app's own VSTO-generated Globals class). See OfficeLanguage.cs
-        // for how the returned LCID maps to a supported UI language.
+        // Office's UI display language id - abstract because this shared
+        // assembly has no access to any app's own VSTO-generated Globals
+        // class. See OfficeLanguage.cs for how the LCID maps to a UI
+        // language, and PaneHostBase.cs.md for the exact property path.
         protected abstract int GetOfficeUiLanguageId();
 
         private void OnOtherMessage(string kind, JsonElement root)
@@ -182,9 +160,9 @@ namespace OfficeAi.Shared
                 case "expand-pane":
                     RequestPaneWidth?.Invoke(420);
                     break;
-                // FT-1 Task 7: the document system message. Both branches use
-                // GetChatId(), so they inherit the per-document keying and the
-                // lazy-COM-resolution rule for free, same as chat history above.
+                // The document system message; both branches use GetChatId()
+                // so they inherit the per-document keying and lazy-COM-
+                // resolution rule for free, same as chat history above.
                 case "load-doc-settings":
                     DocSettings settings = DocSettingsStore.Load(_appDataFolderName, GetChatId());
                     PostMessage(new { kind = "doc-settings-loaded", systemMessage = settings.SystemMessage });

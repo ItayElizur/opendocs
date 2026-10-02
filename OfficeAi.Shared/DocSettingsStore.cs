@@ -78,11 +78,9 @@ namespace OfficeAi.Shared
             File.Move(tempPath, path);
         }
 
-        // FT-1 Task 7b: called once a provisional ("unsaved-...") chat id has
-        // just resolved to a real, path-derived one. Non-empty wins - a single
-        // JSON document cannot be concatenated the way ChatStore's JSONL can,
-        // so real guidelines already on the target must never be overwritten
-        // by an empty provisional value.
+        // Migrates a provisional chat id's settings onto a real one. Non-empty
+        // wins - a single JSON document can't be concatenated like ChatStore's
+        // JSONL. See DocSettingsStore.cs.md.
         public static void Migrate(string appDataFolderName, string oldChatId, string newChatId)
         {
             string oldPath = SettingsPath(appDataFolderName, oldChatId);
