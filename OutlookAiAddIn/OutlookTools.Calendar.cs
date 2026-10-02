@@ -47,17 +47,10 @@ namespace OutlookAiAddIn
             // the caller typed.
             string displayName = !string.IsNullOrEmpty(recipient.Name) ? recipient.Name : mailbox;
 
-            // 2026-09-30: this used to also enumerate the folder's Items (Sort ->
-            // IncludeRecurrences -> Restrict -> foreach), which froze Outlook - that
-            // COM enumeration against a shared, normally-not-cached-offline mailbox
-            // could mean a live round trip to Exchange per property per event. Now
-            // this call is ONLY used to read .Store.StoreID (get_event's own
-            // store_id parameter needs it - see its comment); the actual event data
-            // comes from EWS below, off the UI thread. See
-            // docs/superpowers/specs/2026-09-30-outlook-shared-calendar-ews-design.md's
-            // "Open question" section: if Outlook still freezes after this change,
-            // this GetSharedDefaultFolder call itself - not the enumeration it used
-            // to do - is the next thing to investigate.
+            // This call is ONLY used to read .Store.StoreID now (get_event's
+            // store_id parameter needs it) - the actual event data comes from
+            // EWS below, off the UI thread. See OutlookTools.Calendar.cs.md
+            // for why (a prior COM enumeration here froze Outlook).
             Outlook.Folder sharedCal;
             try
             {
@@ -69,13 +62,11 @@ namespace OutlookAiAddIn
                 return new ToolResult { Output = "Could not open " + mailbox + "'s calendar - you may not have been granted access to view it, or need to add it via Outlook's own \"Open Calendar\" first. (" + ex.Message + ")", IsError = true, Summary = "list_events" };
             }
 
-            // Split from the GetSharedDefaultFolder try/catch above on purpose
-            // (restores the shape from commit ec53129, predating this branch): a
-            // StoreID read failure here means the folder itself opened fine, so it
-            // should degrade to a missing store_id (costing only get_event
-            // usability for these specific events) rather than being misreported
-            // as "you may not have been granted access" - see ec53129 for the
-            // original bug this shape fixes.
+            // Split from the GetSharedDefaultFolder try/catch above on purpose:
+            // a StoreID read failure here means the folder itself opened fine,
+            // so it should degrade to a missing store_id, not be misreported
+            // as "you may not have been granted access". See
+            // OutlookTools.Calendar.cs.md.
             string storeId;
             try { storeId = sharedCal.Store == null ? null : sharedCal.Store.StoreID; }
             catch (Exception ex) { DebugLog.WriteException("ListEvents shared calendar StoreID", ex); storeId = null; }
@@ -152,15 +143,10 @@ namespace OutlookAiAddIn
                 if (appt == null) continue;
                 n++;
                 // Whatever Outlook itself resolves for Subject/Location is
-                // passed through as-is, including for private items on a
-                // shared calendar - this add-in doesn't add its own
-                // visibility restriction on top of the caller's real
-                // Exchange permissions. If the caller's access level would
-                // let them see this in Outlook's own UI (or if the object
-                // model exposes more than the UI would, which is a known
-                // Outlook behavior for the "Private" flag), that's between
-                // the caller and the calendar owner's actual sharing
-                // settings, not something this code second-guesses.
+                // passed through as-is, including for private items - this
+                // add-in adds no visibility restriction of its own on top of
+                // the caller's real Exchange permissions. See
+                // OutlookTools.Calendar.cs.md.
                 sb.AppendLine("- event_id: " + appt.EntryID);
                 sb.AppendLine("  subject: " + (appt.Subject ?? ""));
                 try { sb.AppendLine("  start: " + Iso(appt.Start) + "  end: " + Iso(appt.End)); } catch { }
@@ -193,11 +179,8 @@ namespace OutlookAiAddIn
         private static ToolResult GetEvent(JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            // store_id is only needed for an event_id from someone else's
-            // shared calendar (returned by list_events' mailbox parameter) -
-            // ItemById/GetItemFromID can't find an item outside the
-            // caller's own default store without it. Omit for your own
-            // events, same as before this parameter existed.
+            // Needed only for an event_id from someone else's shared calendar
+            // (list_events' mailbox parameter); omit for your own events.
             string storeId = Str(input, "store_id", null);
             Outlook.AppointmentItem appt = ItemById(id, storeId) as Outlook.AppointmentItem;
             if (appt == null)
@@ -317,13 +300,11 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "find_meeting_slots" };
         }
 
-        // Generalization of mcp-outlook's scheduling.default_range (originally
-        // "today through Thursday of this work week, rolling to next Sun-Thu
-        // if today is Fri/Sat") for an arbitrary work-days set: walk forward
-        // from today to the next work day (today itself if it already is
-        // one), then extend through the following contiguous run of work
-        // days (capped at a week) - correct for any shape, including a
-        // work week that wraps past a calendar-week boundary.
+        // Default range for an arbitrary work-days set: walk forward from
+        // today to the next work day, then extend through the following
+        // contiguous run of work days (capped at a week). See
+        // OutlookTools.Calendar.cs.md for the mcp-outlook lineage this
+        // generalizes.
         private static void DefaultWorkRange(DateTime today, HashSet<DayOfWeek> workDays, out DateTime start, out DateTime end)
         {
             DateTime d = today.Date;
@@ -396,23 +377,17 @@ namespace OutlookAiAddIn
             return "\"" + (appt.Subject ?? "") + "\" has already been canceled - there's nothing to respond to.";
         }
 
-        // response is the actual OlMeetingResponse to send (not just a bool)
-        // so this one helper covers all three: accept_meeting, decline_meeting,
-        // tentative_meeting. message is an optional comment attached to the
-        // response before it's sent - UNVERIFIED live whether the organizer
-        // actually sees this text on the delivered response (needs a real
-        // received invite to test, not a self-organized item).
+        // response is the actual OlMeetingResponse to send, so this one
+        // helper covers all three: accept_meeting, decline_meeting,
+        // tentative_meeting. message is an optional comment attached before
+        // sending - UNVERIFIED live whether the organizer actually sees it
+        // on the delivered response.
         private static ToolResult RespondMeeting(string mbxKey, JsonElement input, Outlook.OlMeetingResponse response, string toolName)
         {
             string id = ReqStr(input, "event_id");
-            // Only needed for an event_id from someone else's shared
-            // calendar (returned by list_events' mailbox parameter) -
-            // ItemById/GetItemFromID can't find an item outside the
-            // caller's own default store without it. Omit for your own
-            // events, same as before this parameter existed. Whether the
-            // caller actually has permission to act on the resulting item
-            // is entirely up to Outlook/Exchange - this add-in doesn't add
-            // its own authorization check on top of that.
+            // Needed only for an event_id from someone else's shared calendar
+            // (list_events' mailbox parameter); omit for your own events. See
+            // OutlookTools.Calendar.cs.md for the authorization-scope note.
             string storeId = Str(input, "store_id", null);
             object item = ItemById(id, storeId);
             Outlook.AppointmentItem appt = ResolveMeetingAppointment(item);
@@ -457,39 +432,18 @@ namespace OutlookAiAddIn
             };
         }
 
-        // Draft-tier counterpart to RespondMeeting - redesigned after a code
-        // review confirmed (via Respond()'s documented behavior, and this
-        // project's own prior history with draft_cancel_event hitting the
-        // identical shape of bug) that calling appt.Respond() commits a real
-        // calendar change at call time - a new EntryID on accept/tentative,
-        // a move to Deleted Items on decline - independent of whether the
-        // resulting response is ever sent or the window ever closed with an
-        // action taken. That directly broke this codebase's "draft tools
-        // persist nothing until the user acts" guarantee, the same way an
-        // earlier version of draft_cancel_event did with an unsaved
-        // MeetingStatus change. Fixed the same way that was: never mutate
-        // the item at all here. Opens the original item completely
-        // unchanged; the user picks Accept/Tentative/Decline themselves
-        // from Outlook's own native ribbon buttons. Since this tool no
-        // longer calls Respond() with a specific response type, one unified
-        // tool replaces what used to be three separate ones
-        // (draft_accept_meeting/draft_decline_meeting/draft_tentative_meeting).
-        // message can no longer be pre-filled into a response body (that
-        // would require calling Respond() to get the MeetingItem, the exact
-        // call this redesign avoids) - it's returned in the output text
-        // instead, for the user to paste in themselves if they use
-        // Outlook's own "Edit response before sending" option.
+        // Draft-tier counterpart to RespondMeeting: never mutates the item.
+        // Opens it unchanged; the user picks Accept/Tentative/Decline from
+        // Outlook's own native ribbon buttons, and a suggested comment is
+        // returned in the output text instead of pre-filled. See
+        // OutlookTools.Calendar.cs.md for why appt.Respond() itself can't be
+        // called here (it was tried and broke the draft-tools contract).
         private static ToolResult DraftRespondMeeting(JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            // Only needed for an event_id from someone else's shared
-            // calendar (returned by list_events' mailbox parameter) -
-            // ItemById/GetItemFromID can't find an item outside the
-            // caller's own default store without it. Omit for your own
-            // events, same as before this parameter existed. Whether the
-            // caller actually has permission to act on the resulting item
-            // is entirely up to Outlook/Exchange - this add-in doesn't add
-            // its own authorization check on top of that.
+            // Needed only for an event_id from someone else's shared calendar
+            // (list_events' mailbox parameter); omit for your own events. See
+            // OutlookTools.Calendar.cs.md for the authorization-scope note.
             string storeId = Str(input, "store_id", null);
             object item = ItemById(id, storeId);
             Outlook.AppointmentItem appt = ResolveMeetingAppointment(item);
@@ -514,28 +468,13 @@ namespace OutlookAiAddIn
             };
         }
 
-        // Shared by draft_edit_event/edit_event: an olMeetingReceived
-        // (or olMeetingReceivedAndCanceled) appointment is one the user only
-        // attends, not organizes - Outlook gives attendees no authority to
-        // unilaterally move someone else's meeting. Confirmed via .NET
-        // reflection against the referenced Microsoft.Office.Interop.Outlook
-        // 15.0.0.0 PIA that neither AppointmentItem/_AppointmentItem nor
-        // MeetingItem/_MeetingItem expose any "Propose New Time" member -
-        // _AppointmentItem.Respond only takes an OlMeetingResponse
-        // (Accept/Decline/Tentative), no counter-proposal overload. Real
-        // Outlook's "Propose New Time" is a ribbon/UI feature (MAPI
-        // counter-proposal properties), not one the classic COM object model
-        // exposes cleanly, so there is no authoritative or even semi-authoritative
-        // way to honor a reschedule request on a received meeting here - both
-        // tools refuse up front instead of silently attempting a Save()/Send()
-        // Outlook wouldn't actually honor as a real reschedule.
-        //
-        // OlMeetingStatus has 5 values: olNonMeeting (0), olMeeting (1),
-        // olMeetingReceived (3), olMeetingCanceled (5),
-        // olMeetingReceivedAndCanceled (7) - checking only the exact
-        // olMeetingReceived value here would let an attendee's copy of a
-        // meeting the organizer has since canceled (olMeetingReceivedAndCanceled)
-        // through silently, so both "received" statuses count.
+        // Shared by draft_edit_event/edit_event: an olMeetingReceived (or
+        // olMeetingReceivedAndCanceled) appointment is one the user only
+        // attends, not organizes - no COM API exists to honor a reschedule
+        // request on it, so both tools refuse up front. Both "received"
+        // statuses count, not just the exact one - see
+        // OutlookTools.Calendar.cs.md for why (and for the reflection
+        // evidence behind the "no COM API" claim).
         private static bool IsReceivedMeeting(Outlook.AppointmentItem appt)
         {
             return appt.MeetingStatus == Outlook.OlMeetingStatus.olMeetingReceived ||
@@ -565,13 +504,10 @@ namespace OutlookAiAddIn
             return "\"" + (appt.Subject ?? "") + "\" has been canceled, so there's nothing to reschedule.";
         }
 
-        // Shared by all four occurrence-aware tools (reschedule/cancel, draft
-        // and immediate). occurrence_date lets a caller target one instance
-        // of a recurring series instead of the whole master.
-        // RecurrencePattern.GetOccurrence(DateTime) confirmed present via
-        // .NET reflection against the referenced PIA (not assumed) - this
-        // had been undocumented capability until this addition, even though
-        // every occurrence list_events returns shares the master's EntryID.
+        // Shared by all four occurrence-aware tools. occurrence_date lets a
+        // caller target one instance of a recurring series instead of the
+        // whole master, via RecurrencePattern.GetOccurrence(DateTime)
+        // (confirmed present via reflection - see OutlookTools.Calendar.cs.md).
         private static ToolResult? ResolveOccurrenceTarget(Outlook.AppointmentItem master, string occurrenceDate, string toolName, out Outlook.AppointmentItem target)
         {
             target = master;
@@ -596,35 +532,20 @@ namespace OutlookAiAddIn
         }
 
         // Checks whether moving an occurrence from `original` to `target` would
-        // cross or land on the same day as another occurrence of the same series -
-        // Outlook rejects both (confirmed live 2026-09-28 by reproducing the
-        // specific error manually in Outlook's UI: "Cannot reschedule an occurrence
-        // of the recurring appointment ... if it skips over a later occurrence of
-        // the same appointment" - both cases surface only as a generic
-        // COMException "Cannot save this item." from .Save(), with no way to
-        // distinguish the cause from the exception itself). Checking this
-        // ourselves first gives an exact, deterministic answer instead of relying
-        // on Outlook's collapsed generic exception message.
-        //
-        // Queries the Calendar folder the same way ListEvents does (Sort("[Start]")
-        // -> IncludeRecurrences = true -> Restrict, in that order - load-bearing,
-        // see ListEvents' own comment) over the range between `original` and
-        // `target` (inclusive of both endpoint days), then keeps only occurrences
-        // of THIS series (matching master's EntryID) other than the one being
-        // moved (excluded by day - it's still sitting at `original` since nothing
-        // has been saved yet). If any remain, the closest one to `original` is the
-        // binding obstruction; returns null if the move is clear.
+        // cross or land on the same day as another occurrence of the same
+        // series - Outlook rejects both, but only via a generic COMException
+        // with no way to distinguish the cause. Checking this ourselves first
+        // gives an exact, deterministic answer instead. See
+        // OutlookTools.Calendar.cs.md for the confirmed repro and the query
+        // approach's details.
         private static ToolResult? CheckOccurrenceReorderCollision(Outlook.AppointmentItem master, DateTime original, DateTime target, string subject, string toolName)
         {
             DateTime rangeStart = (original < target ? original : target).Date;
             DateTime rangeEnd = (original < target ? target : original).Date.AddDays(1);
 
             // master's own Parent folder, not the caller's default calendar -
-            // for an event resolved via store_id from someone else's shared
-            // calendar, those are different folders entirely. Using the
-            // caller's own default calendar here meant this check silently
-            // never found a collision for a shared-calendar event (found via
-            // PR review, 2026-09-29).
+            // those differ for a shared-calendar event resolved via store_id.
+            // See OutlookTools.Calendar.cs.md for the bug this fixed.
             Outlook.Folder cal = (Outlook.Folder)master.Parent;
             Outlook.Items items = cal.Items;
             items.Sort("[Start]");
@@ -658,18 +579,10 @@ namespace OutlookAiAddIn
         }
 
         // Shared by edit_event/draft_edit_event: replaces the required and/or
-        // optional attendee list wholesale (not a diff/merge - the caller
-        // supplies the full new list each time, reading the current one
-        // first via get_event if they need to preserve someone). The two
-        // categories are independently optional: a null argument leaves that
-        // attendee category completely untouched; a non-null argument
-        // (including "") fully replaces it - clearing the existing entries
-        // in that category and re-adding via the same AddAttendees helper
-        // create_event/draft_event already use. The organizer recipient is
-        // never touched. Recipients indices are 1-based (confirmed via .NET
-        // reflection against the referenced PIA, matching every other
-        // Outlook collection in this codebase); iterating downward from
-        // Count avoids skipping an element after Remove shifts the rest down.
+        // optional attendee list wholesale, not a diff/merge. A null argument
+        // leaves that category untouched; non-null (including "") fully
+        // replaces it. The organizer is never touched. See
+        // OutlookTools.Calendar.cs.md for the iteration-order note.
         private static void ReplaceAttendees(Outlook.AppointmentItem appt, string requiredCsv, string optionalCsv, List<string> unresolved)
         {
             for (int i = appt.Recipients.Count; i >= 1; i--)
@@ -678,22 +591,14 @@ namespace OutlookAiAddIn
                 if (requiredCsv != null && type == (int)Outlook.OlMeetingRecipientType.olRequired) { appt.Recipients.Remove(i); continue; }
                 if (optionalCsv != null && type == (int)Outlook.OlMeetingRecipientType.olOptional) { appt.Recipients.Remove(i); continue; }
             }
-            // AddAttendees resolves each recipient individually now - the
-            // collection-level ResolveAll() that used to run here never
-            // reliably resolved anything (confirmed live via COM).
             if (requiredCsv != null) AddAttendees(appt, requiredCsv, Outlook.OlMeetingRecipientType.olRequired, unresolved);
             if (optionalCsv != null) AddAttendees(appt, optionalCsv, Outlook.OlMeetingRecipientType.olOptional, unresolved);
         }
 
-        // Counts real attendees only, excluding the organizer - used by
-        // EditEvent/DraftEditEvent to decide whether clearing attendees
-        // should revert MeetingStatus back to olNonMeeting. Confirmed live
-        // via COM that the organizer does NOT appear in Recipients even
-        // after a real .Send() (Recipients.Count matched exactly the number
-        // of real invited attendees, organizer never counted) - this
-        // exclusion is defensive insurance for any account/Exchange
-        // configuration where that might differ, not a fix for an observed
-        // bug.
+        // Counts real attendees only, excluding the organizer - used to
+        // decide whether clearing attendees should revert MeetingStatus back
+        // to olNonMeeting. See OutlookTools.Calendar.cs.md for why the
+        // exclusion is defensive insurance rather than an observed-bug fix.
         private static int CountAttendeeRecipients(Outlook.AppointmentItem appt)
         {
             int count = 0;
@@ -724,14 +629,9 @@ namespace OutlookAiAddIn
         private static ToolResult EditEvent(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            // Only needed for an event_id from someone else's shared
-            // calendar (returned by list_events' mailbox parameter) -
-            // ItemById/GetItemFromID can't find an item outside the
-            // caller's own default store without it. Omit for your own
-            // events, same as before this parameter existed. Whether the
-            // caller actually has permission to act on the resulting item
-            // is entirely up to Outlook/Exchange - this add-in doesn't add
-            // its own authorization check on top of that.
+            // Needed only for an event_id from someone else's shared calendar
+            // (list_events' mailbox parameter); omit for your own events. See
+            // OutlookTools.Calendar.cs.md for the authorization-scope note.
             string storeId = Str(input, "store_id", null);
             string occDate = Str(input, "occurrence_date", null);
             Outlook.AppointmentItem master = ItemById(id, storeId) as Outlook.AppointmentItem;
@@ -818,20 +718,11 @@ namespace OutlookAiAddIn
                 int recipientsBefore = CountAttendeeRecipients(appt);
                 ReplaceAttendees(appt, requiredAttendees, optionalAttendees, unresolvedAttendees);
                 int recipientsAfter = CountAttendeeRecipients(appt);
-                // If clearing brought the real attendee count to zero, the
-                // event should revert to olNonMeeting - otherwise it stays
-                // permanently "a meeting" (and thus a permanent undo barrier)
-                // even after every attendee is removed. The actual flip is
-                // deferred to just after .Send() below (not done here) - a
-                // code review of this method noted that flipping MeetingStatus
-                // to olNonMeeting BEFORE .Send() risks Outlook not treating
-                // the send as a cancellation notice to the just-removed
-                // attendees. Deferring is safe: reaching recipientsAfter == 0
-                // from a meeting always means wasMeetingBefore was true, which
-                // always forces isMeetingNow/mustBarrier true below, so the
-                // .Send() branch always runs when this flag is set - there is
-                // no code path where revertToNonMeeting is set but .Send() is
-                // skipped.
+                // If clearing brought attendee count to zero, revert to
+                // olNonMeeting - but only AFTER .Send() below, not here (see
+                // OutlookTools.Calendar.cs.md for why flipping it early risks
+                // Outlook not treating the send as a cancellation notice, and
+                // for why deferring is provably safe).
                 if (recipientsAfter == 0)
                 {
                     if (appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting) revertToNonMeeting = true;
@@ -845,12 +736,9 @@ namespace OutlookAiAddIn
                 // mechanism for notifying only added/removed attendees rather
                 // than everyone on the list.
                 appt.ForceUpdateToAllAttendees = false;
-                // A call supplying e.g. required_attendees="" on an event that
-                // already has zero attendees is a true no-op - nothing was
-                // added or removed, so it shouldn't count as an attendee
-                // change (which would otherwise force isMeetingNow below and
-                // burn a real .Send()/undo barrier for a call that changed
-                // nothing).
+                // required_attendees="" on an event already at zero attendees
+                // is a true no-op - don't let it force isMeetingNow below and
+                // burn a real .Send()/undo barrier for nothing.
                 attendeesChanged = !(recipientsBefore == 0 && recipientsAfter == 0);
             }
 
@@ -866,23 +754,12 @@ namespace OutlookAiAddIn
             {
                 if (isMeetingNow)
                 {
-                    // Send while still flagged as a meeting so Outlook treats
-                    // this as a real meeting update/cancellation to whoever
-                    // was just removed, THEN apply the deferred revert to
-                    // olNonMeeting (if attendees were cleared to zero), THEN
-                    // Save. .Send() alone can leave the item's own Saved flag
-                    // stuck False even after a successful send - confirmed
-                    // live via COM (create a recurring meeting, clear its
-                    // attendees, revert MeetingStatus, .Send(): Saved reads
-                    // False even on a fresh re-fetch by EntryID, causing
-                    // Outlook to prompt "save changes?" if the user later just
-                    // opens and closes the item with nothing to change). An
-                    // explicit .Save() right after .Send() clears it -
-                    // confirmed the same sequence with the extra Save() reads
-                    // Saved=True on a fresh re-fetch. The Save() is wrapped
-                    // since it runs after the irreversible Send() has already
-                    // succeeded - a failure here must not be reported as a
-                    // failed edit_event call (the update already went out).
+                    // Send while still flagged as a meeting, THEN apply the
+                    // deferred revert to olNonMeeting, THEN Save - .Send()
+                    // alone can leave Saved stuck False (confirmed live via
+                    // COM); see OutlookTools.Calendar.cs.md. The Save() is
+                    // wrapped since it runs after the irreversible Send() has
+                    // already succeeded - a failure here isn't a failed call.
                     appt.Send();
                     if (revertToNonMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olNonMeeting;
                     try { appt.Save(); }
@@ -912,13 +789,11 @@ namespace OutlookAiAddIn
                 DebugLog.WriteException("EditEvent Save", ex);
                 if (occDate != null)
                 {
-                    // Same false-negative Save() risk confirmed for the
-                    // retired reschedule tool's occurrence path: property setters
-                    // write immediately via RPC, independent of Save()'s own
-                    // finalize step, which can fail separately. Re-check by
-                    // the NEW date if a time change was requested (the
-                    // occurrence now sits there, not at occDate), else by the
-                    // unchanged occDate.
+                    // Property setters write immediately via RPC, independent
+                    // of Save()'s own finalize step, which can fail
+                    // separately - re-check rather than trust the exception.
+                    // Re-check by the NEW date if a time change was
+                    // requested, else by the unchanged occDate.
                     Outlook.AppointmentItem recheck;
                     string checkDate = start.HasValue ? Iso(start.Value) : occDate;
                     ToolResult? stillMissing = ResolveOccurrenceTarget(master, checkDate, "edit_event", out recheck);
@@ -948,16 +823,11 @@ namespace OutlookAiAddIn
                 }
             }
 
-            // RecordSnapshot reads appt.EntryID via ItemEntryIdOf(appt) - for an
-            // occurrence, that's the real, resolvable EntryID GetOccurrence's
-            // returned item gets once saved, so undo/redo works via the exact
-            // same SnapshotEntry mechanism as the retired reschedule tool - no new
-            // undo-entry type needed. props is always non-empty here: reaching
-            // this branch requires mustBarrier == false, which means attendees
-            // were never touched (that forces isMeetingNow, hence a barrier)
-            // and, if a time change was requested, it's occurrence/non-recurring
-            // (whole-series-recurring also forces a barrier) - so at least one
-            // of Start/End/Subject/Body/Location is always in props.
+            // props is always non-empty here: reaching this branch requires
+            // mustBarrier == false, which rules out an untouched attendee
+            // list and a whole-series recurring time change - see
+            // OutlookTools.Calendar.cs.md for the full argument and for why
+            // RecordSnapshot needs no new undo-entry type for an occurrence.
             RecordSnapshot(mbxKey, "edit_event", appt, appt.Subject ?? "", props.ToArray(), before);
             return new ToolResult
             {
@@ -976,14 +846,9 @@ namespace OutlookAiAddIn
         private static ToolResult DraftEditEvent(JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            // Only needed for an event_id from someone else's shared
-            // calendar (returned by list_events' mailbox parameter) -
-            // ItemById/GetItemFromID can't find an item outside the
-            // caller's own default store without it. Omit for your own
-            // events, same as before this parameter existed. Whether the
-            // caller actually has permission to act on the resulting item
-            // is entirely up to Outlook/Exchange - this add-in doesn't add
-            // its own authorization check on top of that.
+            // Needed only for an event_id from someone else's shared calendar
+            // (list_events' mailbox parameter); omit for your own events. See
+            // OutlookTools.Calendar.cs.md for the authorization-scope note.
             string storeId = Str(input, "store_id", null);
             string occDate = Str(input, "occurrence_date", null);
             Outlook.AppointmentItem master = ItemById(id, storeId) as Outlook.AppointmentItem;
@@ -1103,29 +968,14 @@ namespace OutlookAiAddIn
         // Draft-tier: just opens the item unchanged, for both branches - the
         // user drives Outlook's own native "Cancel Meeting"/"Send
         // Cancellation" UI (or Delete, for a plain appointment) from there.
-        //
-        // Originally set MeetingStatus = olMeetingCanceled unsaved before
-        // Display(false), mirroring the retired draft reschedule tool's unsaved
-        // Start/End - removed 2026-09-28 after live testing showed Outlook
-        // persists that change when the Inspector closes even without the
-        // user clicking "Send Cancellation" (unlike Start/End, an unsaved
-        // MeetingStatus change apparently isn't purely cosmetic here). That
-        // silently canceled the meeting locally with attendees never
-        // notified - worse than doing nothing, since it also means this tool
-        // can no longer be un-done or reattempted (cancel_event/edit_event
-        // both refuse on an already-canceled item). Never
-        // mutates the item at all now.
+        // Never mutates the item. See OutlookTools.Calendar.cs.md for the
+        // live incident that ruled out pre-setting MeetingStatus unsaved.
         private static ToolResult DraftCancelEvent(JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            // Only needed for an event_id from someone else's shared
-            // calendar (returned by list_events' mailbox parameter) -
-            // ItemById/GetItemFromID can't find an item outside the
-            // caller's own default store without it. Omit for your own
-            // events, same as before this parameter existed. Whether the
-            // caller actually has permission to act on the resulting item
-            // is entirely up to Outlook/Exchange - this add-in doesn't add
-            // its own authorization check on top of that.
+            // Needed only for an event_id from someone else's shared calendar
+            // (list_events' mailbox parameter); omit for your own events. See
+            // OutlookTools.Calendar.cs.md for the authorization-scope note.
             string storeId = Str(input, "store_id", null);
             string occDate = Str(input, "occurrence_date", null);
             Outlook.AppointmentItem master = ItemById(id, storeId) as Outlook.AppointmentItem;
@@ -1153,33 +1003,18 @@ namespace OutlookAiAddIn
             };
         }
 
-        // Full-autonomy-only counterpart to draft_cancel_event above: for a
-        // meeting the user organizes, sends the cancellation notice
-        // immediately (no review step, mirroring edit_event's/
-        // create_event's attendee-present branches) then removes it from the
-        // user's own calendar; for a plain appointment, just removes it -
-        // nobody to notify. Either way the item is moved to Deleted Items
-        // (recoverable there), same as delete_email's non-permanent path, not
-        // permanently deleted.
-        //
-        // An already-canceled event (IsCanceledMeeting - either the
-        // organizer's own olMeetingCanceled copy, or an attendee's stale
-        // olMeetingReceivedAndCanceled one) is treated as cleanup, not
-        // refused: there's nothing new to notify anyone of, so it just moves
-        // straight to Deleted Items like a plain appointment. This is the
-        // only way to dismiss a canceled event at all - draft_cancel_event
-        // still refuses on one (nothing to preview/review for a cleanup).
+        // Full-autonomy-only counterpart to draft_cancel_event: for an
+        // organized meeting, sends the cancellation notice immediately then
+        // moves it to Deleted Items (recoverable); for a plain appointment,
+        // just moves it. An already-canceled event is treated as cleanup,
+        // not refused - see OutlookTools.Calendar.cs.md for why that's the
+        // only way to dismiss one at all.
         private static ToolResult CancelEvent(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            // Only needed for an event_id from someone else's shared
-            // calendar (returned by list_events' mailbox parameter) -
-            // ItemById/GetItemFromID can't find an item outside the
-            // caller's own default store without it. Omit for your own
-            // events, same as before this parameter existed. Whether the
-            // caller actually has permission to act on the resulting item
-            // is entirely up to Outlook/Exchange - this add-in doesn't add
-            // its own authorization check on top of that.
+            // Needed only for an event_id from someone else's shared calendar
+            // (list_events' mailbox parameter); omit for your own events. See
+            // OutlookTools.Calendar.cs.md for the authorization-scope note.
             string storeId = Str(input, "store_id", null);
             string occDate = Str(input, "occurrence_date", null);
             Outlook.AppointmentItem master = ItemById(id, storeId) as Outlook.AppointmentItem;
@@ -1216,11 +1051,9 @@ namespace OutlookAiAddIn
                 if (isOccurrence)
                 {
                     // No COM API to un-delete a single occurrence
-                    // (RecurrencePattern.Exceptions is entirely read-only -
-                    // confirmed via reflection) - always a barrier above,
-                    // regardless of plain-appointment vs. meeting, unlike
-                    // whole-event cancellation below which stays undo-able
-                    // for the plain-appointment case.
+                    // (RecurrencePattern.Exceptions is read-only - confirmed
+                    // via reflection), so this is always a barrier, unlike
+                    // whole-event cancellation below.
                     bool removedLocally = true;
                     try { appt.Delete(); }
                     catch (Exception ex)
