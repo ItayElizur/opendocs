@@ -7,23 +7,14 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAiAddIn
 {
-    // Spike 3: real COM tool execution against the live Word document, called
-    // from the WebView2-hosted AgentLoop via the JSON WebMessage bridge.
+    // Real COM tool execution against the live Word document, called from the
+    // WebView2-hosted AgentLoop via the JSON WebMessage bridge.
     public static partial class WordTools
     {
-        // Resolves a Range's 0-based paragraph index (matching
-        // ActiveDoc.Paragraphs' own indexing, which read_blocks/
-        // apply_commands/find_text/get_headings all address by) without
-        // Word's slow positional Paragraphs[i] lookup - indexing the
-        // Paragraphs collection by position has to re-walk the document
-        // from the start on EVERY single access, which turned a scan of N
-        // positions into roughly O(N^2) internally (confirmed root cause of
-        // a real freeze report). This instead marches forward once via the
-        // cheap Paragraph.Next() chain, and only as far as needed since the
-        // last call - callers must request positions in non-decreasing
-        // document order (true for both find_text and get_headings, which
-        // each only ever move forward through the document), so the total
-        // marching work across a whole call is O(N), not O(N) per lookup.
+        // Resolves a Range's 0-based paragraph index via a forward-marching
+        // Paragraph.Next() chain instead of Word's slow positional Paragraphs[i]
+        // lookup; callers must request positions in non-decreasing document order.
+        // See WordTools.Content.cs.md.
         private sealed class ParagraphIndexResolver
         {
             private Word.Paragraph _current;
@@ -47,21 +38,11 @@ namespace WordAiAddIn
             }
         }
 
-        // Read-only search - unlike apply_commands' find_replace, this never
-        // touches the document. Added because there was previously no way to
-        // locate text without either mutating it (find_replace) or reading
-        // the whole document paragraph-by-paragraph via read_blocks.
-        //
-        // Plain-substring queries use Word's own native Find engine - the
-        // same one behind Ctrl+F - which does a single optimized traversal
-        // and only costs work proportional to the number of MATCHES, not the
-        // number of paragraphs in the document (the original implementation
-        // scanned every paragraph via positional Paragraphs[i] indexing
-        // regardless of match count, which is what caused a real reported
-        // freeze on a large document). Word's Find has no regex mode (only
-        // its own more limited wildcard syntax), so a regex:true query still
-        // needs a per-paragraph scan - but via the cheap forward
-        // Paragraph.Next() chain, not positional indexing.
+        // Read-only search (never mutates, unlike find_replace). Plain-substring
+        // queries use Word's native Find engine (cost proportional to match count,
+        // not paragraph count); a regex:true query falls back to a per-paragraph
+        // scan via the cheap Paragraph.Next() chain, since Word's Find has no regex
+        // mode. See WordTools.Content.cs.md.
         private static ToolResult FindText(JsonElement input)
         {
             string query = input.GetProperty("query").GetString();
@@ -116,15 +97,9 @@ namespace WordAiAddIn
             return new ToolResult { Output = found > 0 ? sb.ToString() : "No matches.", Summary = "find_text" };
         }
 
-        // Navigation-Pane-style outline: every Heading-styled paragraph with
-        // its index and level, so the model can see document structure
-        // without reading every paragraph via read_blocks.
-        //
-        // Uses Word's own wdGoToHeading jump - the same internal heading
-        // index that powers the Navigation Pane and "Browse by Heading" -
-        // which lands directly on each heading without ever touching a
-        // non-heading paragraph, instead of scanning every paragraph's style
-        // name to find the ones that are headings.
+        // Navigation-Pane-style outline of every Heading-styled paragraph, found via
+        // Word's own wdGoToHeading jump (same index that powers the Navigation Pane)
+        // rather than scanning every paragraph's style name. See WordTools.Content.cs.md.
         private static ToolResult GetHeadings()
         {
             Word.Document doc = ActiveDoc;
@@ -135,14 +110,10 @@ namespace WordAiAddIn
             Word.Range cursor = doc.Content;
             cursor.Collapse(Word.WdCollapseDirection.wdCollapseStart);
 
-            // wdGoToHeading wraps back to the first heading once it runs out
-            // of headings ahead (same as the "Browse by Heading" scrollbar
-            // control) rather than signaling "no more" - detected below via
-            // next.Start <= cursor.Start. This safety cap is a defensive
-            // backstop in case that wrap ever isn't caught (e.g. an
-            // off-by-one on a document with an unusual heading at the very
-            // end), so a real bug there degrades to a merely-incomplete
-            // result instead of an infinite loop.
+            // wdGoToHeading wraps back to the first heading once it runs out, rather
+            // than signaling "no more" (detected via next.Start <= cursor.Start below).
+            // safetyLimit is a defensive backstop against an uncaught wrap becoming
+            // an infinite loop.
             int safetyLimit = doc.Paragraphs.Count + 1;
             for (int i = 0; i < safetyLimit; i++)
             {
@@ -185,10 +156,9 @@ namespace WordAiAddIn
             return new ToolResult { Output = output, Summary = "read document context" };
         }
 
-        // PP-10 Task 1 + Task 3: positional insert, plain-text or restricted
-        // HTML. Backward compatible: {text} with no afterBlockIndex/html
-        // keeps the exact original end-of-document, single-paragraph
-        // behavior (Global Constraint - existing prompts/history depend on it).
+        // Positional insert, plain-text or restricted HTML. Backward compatible:
+        // {text} with no afterBlockIndex/html keeps the original end-of-document
+        // behavior, since existing prompts/history depend on it.
         private static ToolResult InsertContent(JsonElement input)
         {
             bool hasText = input.TryGetProperty("text", out var textEl) && textEl.ValueKind == JsonValueKind.String;
@@ -251,24 +221,15 @@ namespace WordAiAddIn
             };
         }
 
-        // PP-10 Task 4: 'html' mode emits the same restricted subset
-        // InsertHtmlFragment accepts, so read_blocks -> replace_blocks/
-        // insert_content round-trips (headings/bold/italic/underline/list
-        // membership survive; anything outside the subset, e.g. font color,
-        // is documented as not surviving). Capped well below text mode - a
-        // per-word COM property read for every paragraph is far slower than
-        // a flat Range.Text read.
+        // 'html' mode emits the same restricted subset InsertHtmlFragment accepts, so
+        // read_blocks -> replace_blocks/insert_content round-trips (anything outside
+        // the subset, e.g. font color, doesn't survive). Capped well below text mode
+        // since a per-word COM property read per paragraph is far slower than a flat
+        // Range.Text read.
         private const int HtmlReadBlocksMaxParagraphs = 100;
 
-        // Post-hoc addition (2026-08-27, user-reported): 'text' mode (the
-        // default) previously had NO cap at all - only one Range.Text read
-        // per paragraph, so it was never capped the way 'html' mode was, but
-        // an unbounded range on a very large document still means an
-        // unbounded amount of walking and an unbounded output string (a
-        // separate, non-perf concern - context/token budget). Not
-        // independently benchmarked against a measured time budget the way
-        // read_formats' 200-cell cap or html mode's 100-paragraph cap were -
-        // chosen conservatively; raise it if real usage shows it's too tight.
+        // Chosen conservatively (not benchmarked like the html-mode cap above).
+        // See WordTools.Content.cs.md.
         private const int TextReadBlocksMaxParagraphs = 1000;
 
         private static string ReadBlockAsHtml(Word.Paragraph p)
@@ -320,20 +281,15 @@ namespace WordAiAddIn
             var sb = new System.Text.StringBuilder();
             string openList = null; // null | "ul" | "ol"
 
-            // Walks forward via Paragraph.Next() instead of positional
-            // paragraphs[i + 1] indexing - Paragraphs is not a real array in
-            // Word's COM object model, so indexing it by position re-walks
-            // the document from the start on EVERY single access (confirmed
-            // root cause of a real reported freeze elsewhere in this file -
-            // find_text/get_headings/ResolveTargetParagraphs all hit the
-            // same trap and were fixed the same way).
+            // Walks forward via Paragraph.Next(), not positional indexing - same
+            // O(n^2) trap as ParagraphIndexResolver above (and find_text/get_headings/
+            // ResolveTargetParagraphs).
             Word.Paragraph p = paragraphs.First;
             for (int skip = 0; skip < startIndex && p != null; skip++) p = p.Next();
 
             for (int i = startIndex; i <= endIndex && p != null; i++)
             {
-                // p must advance exactly once per iteration regardless of
-                // which branch below runs - finally guarantees that even
+                // finally guarantees p advances exactly once per iteration even
                 // though several branches `continue` early.
                 try
                 {
@@ -382,10 +338,9 @@ namespace WordAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "read_blocks" };
         }
 
-        // PP-10 Task 2 + Task 3 Step 5: non-destructive replace (preserves
-        // the first replaced paragraph's style by default, instead of
-        // silently stripping heading/list identity), plus an html
-        // alternative to text.
+        // Non-destructive replace: preserves the first replaced paragraph's style by
+        // default (instead of silently stripping heading/list identity), plus an
+        // html alternative to text.
         private static ToolResult ReplaceBlocks(JsonElement input)
         {
             int startIndex = input.GetProperty("startIndex").GetInt32();
@@ -427,11 +382,9 @@ namespace WordAiAddIn
             string preservedNote = "";
             if (capturedStyle != null && text.Length > 0)
             {
-                // Reapply the FIRST replaced paragraph's style to every
-                // resulting paragraph. Multi-paragraph replacements where the
-                // source paragraphs had differing styles are genuinely
-                // ambiguous - deliberately resolved this way rather than
-                // attempting a per-paragraph mapping, since the counts can differ.
+                // Reapply the FIRST replaced paragraph's style to every resulting
+                // paragraph - multi-paragraph replacements with differing source
+                // styles are genuinely ambiguous, so a per-paragraph mapping isn't attempted.
                 Word.Range newRange = doc.Range(paragraphs[startIndex + 1].Range.Start, range.End);
                 foreach (Word.Paragraph p in newRange.Paragraphs)
                 {

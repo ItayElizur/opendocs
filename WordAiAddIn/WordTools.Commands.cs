@@ -7,18 +7,14 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAiAddIn
 {
-    // Spike 3: real COM tool execution against the live Word document, called
-    // from the WebView2-hosted AgentLoop via the JSON WebMessage bridge.
+    // Real COM tool execution against the live Word document, called from the
+    // WebView2-hosted AgentLoop via the JSON WebMessage bridge.
     public static partial class WordTools
     {
-        // PP-5: mirrors WORD_COMMAND_SCHEMAS's `required` arrays in
-        // WordAiAddIn/web-src/entry.ts exactly (minus "kind" itself, which is
-        // validated separately in ApplyCommands before this table is
-        // consulted) - the two must be edited together. This is the actual
-        // guarantee: the TS schema is documentation the model reads, not a
-        // validator that runs (not every provider enforces oneOf/const), so
-        // this precheck is what turns a missing field into a specific,
-        // per-command error instead of a raw COM/NullReference exception.
+        // Mirrors WORD_COMMAND_SCHEMAS's `required` arrays in web-src/entry.ts exactly
+        // (minus "kind", validated separately) - edit both together. The TS schema is
+        // documentation the model reads, not an enforced validator, so this precheck is
+        // what turns a missing field into a specific error instead of a raw COM/NRE.
         private static readonly Dictionary<string, string[]> RequiredFields = new Dictionary<string, string[]>
         {
             ["set_bold"] = new[] { "startIndex", "endIndex", "value" },
@@ -38,13 +34,10 @@ namespace WordAiAddIn
             ["copyFormat"] = new[] { "sourceBlockIndex", "target" },
         };
 
-        // Fields where an explicit JSON null is a caller error rather than a
-        // value - e.g. set_bold's "value": null previously reached
-        // GetBoolean() and threw an opaque InvalidOperationException where
-        // this clean "missing required field" message belongs. Deliberately
-        // narrow: only add a field here after confirming null has no
-        // legitimate meaning for it (Excel's set_cell "value" is the
-        // counter-example - null there means "clear the cell").
+        // Fields where an explicit JSON null is a caller error rather than a value -
+        // e.g. set_bold's "value": null previously reached GetBoolean() and threw an
+        // opaque exception. Deliberately narrow: only add a field after confirming null
+        // has no legitimate meaning for it (Excel's set_cell "value": null clears the cell).
         private static readonly Dictionary<string, string[]> NonNullFields = new Dictionary<string, string[]>
         {
             ["set_bold"] = new[] { "value" },
@@ -64,14 +57,9 @@ namespace WordAiAddIn
             "copyBlocks", "copyFormat",
         };
 
-        // PP-12 Task 3 (the half PP-5 Task 4 Step 1 did not cover): each
-        // result line is prefixed with the command's 0-based position in the
-        // batch, and a summary header states how many succeeded/failed - with
-        // partial batches now the norm (no rollback - Word COM offers no
-        // batch transaction, and a hand-rolled undo would be less reliable
-        // than this honest report; the user retains Word's own Ctrl+Z), the
-        // model needs to know WHICH command in a batch of several identical
-        // kinds failed, not just that "one of them" did.
+        // Each result line is prefixed with the command's 0-based position in the
+        // batch; a summary header states how many succeeded/failed. No rollback -
+        // the model needs to know WHICH command failed, not just that one did. See WordTools.Commands.cs.md.
         private static ToolResult ApplyCommands(JsonElement input)
         {
             var lines = new System.Text.StringBuilder();
@@ -132,17 +120,9 @@ namespace WordAiAddIn
                             if (report.StartsWith("deleteParagraphBullets: 0 removed")) { /* nothing changed */ } else anyMutated = true;
                             break;
                         }
-                        // Post-hoc addition (2026-08-27, user-reported): a model
-                        // sent kind:"set_bullet" and got a dead-end "unknown
-                        // command kind". It is an entirely reasonable guess -
-                        // the neighbouring commands are set_bold/set_italic/
-                        // set_heading, so a snake_case set_X for bullets reads
-                        // as the obvious name, while the real ones are
-                        // camelCase createParagraphBullets/deleteParagraphBullets.
-                        // Rather than expect the model to memorise an
-                        // inconsistency, accept the guess: set_bullet takes the
-                        // same target as the two it delegates to, plus a
-                        // value:true|false picking which.
+                        // Accepted alias for createParagraphBullets/deleteParagraphBullets -
+                        // models often guess this snake_case name by analogy with
+                        // set_bold/set_italic/set_heading. See WordTools.Commands.cs.md.
                         case "set_bullet":
                         {
                             bool on = !cmd.TryGetProperty("value", out var bulletVal) || bulletVal.ValueKind != JsonValueKind.False;
@@ -166,9 +146,8 @@ namespace WordAiAddIn
                             CopyFormatCmd(cmd);
                             lines.AppendLine($"[{commandIndex}] {kind}: ok"); anyMutated = true; break;
                         default:
-                            // List what IS valid. A bare "unknown command kind"
-                            // is a dead end - the model has no way to correct
-                            // itself and typically retries the same wrong name.
+                            // Lists valid kinds - a bare "unknown command kind" is a dead
+                            // end the model can't recover from.
                             lines.AppendLine($"[{commandIndex}] {kind}: unknown command kind. Valid kinds: " +
                                              string.Join(", ", KnownCommandKinds) + ".");
                             failedCount++; break;
@@ -216,11 +195,9 @@ namespace WordAiAddIn
             findObj.Replacement.ClearFormatting();
             findObj.Replacement.Text = replace;
             findObj.MatchCase = matchCase;
-            // wdReplaceAll only reports whether ANYTHING matched (true/false),
-            // not how many - the caller's "N replacement(s)" message used to
-            // always say 0 or 1 regardless of the real count. Loop
-            // wdReplaceOne instead (the same one-at-a-time advance Word's own
-            // "Replace All" button does internally) so the count is accurate.
+            // wdReplaceAll only reports whether ANYTHING matched, not how many - loop
+            // wdReplaceOne instead (same one-at-a-time advance Word's "Replace All"
+            // does internally) so the count is accurate.
             int count = 0;
             while (findObj.Execute(Replace: Word.WdReplace.wdReplaceOne))
             {
@@ -230,12 +207,9 @@ namespace WordAiAddIn
             return count;
         }
 
-        // Returns each matched paragraph's 0-based index AND its already-
-        // resolved Paragraph object (not just the index) - every caller used
-        // to turn around and re-look up paragraphs[i + 1] per match, paying
-        // Word's slow positional-indexing cost a second time. Returning the
-        // object we already have in hand during the walk removes that
-        // second lookup entirely.
+        // Returns each matched paragraph's 0-based index AND its already-resolved
+        // Paragraph object, so callers don't re-pay Word's slow positional-indexing
+        // cost (paragraphs[i + 1]) a second time per match.
         private static List<(int Index, Word.Paragraph Paragraph)> ResolveTargetParagraphs(JsonElement target)
         {
             string nodeType = target.TryGetProperty("nodeType", out var nt) && nt.ValueKind == JsonValueKind.String ? nt.GetString() : null;
@@ -267,25 +241,17 @@ namespace WordAiAddIn
                 }
             }
 
-            // Walks forward via the collection's own enumerator instead of
-            // positional paragraphs[i + 1] indexing - Paragraphs is not a
-            // real array in Word's COM object model, so indexing it by
-            // position re-walks the document from the start on EVERY single
-            // access, turning a full scan into roughly O(n^2) internally
-            // (confirmed root cause of a real reported freeze in find_text/
-            // get_headings, fixed there the same way). Every command that
-            // funnels through this one function - updateTextStyle,
-            // updateParagraphStyle, deleteBlocks, createParagraphBullets,
-            // deleteParagraphBullets - inherits the fix.
+            // Walks forward via the enumerator, not positional paragraphs[i + 1]
+            // indexing - Word's COM Paragraphs re-walks from the start on every
+            // positional access, making a full scan roughly O(n^2) (root cause of a
+            // real find_text/get_headings freeze). See WordTools.Commands.cs.md.
             var result = new List<(int, Word.Paragraph)>();
             int i = 0;
             foreach (Word.Paragraph p in paragraphs)
             {
-                // The body has several early `continue`s (skip this
-                // paragraph, keep walking) - wrapping it in try/finally
-                // guarantees i still advances exactly once per paragraph on
-                // every path, since `continue` inside a try still runs its
-                // finally before moving to the next iteration.
+                // Wrapped in try/finally so `i` still advances exactly once per
+                // paragraph on every early-`continue` path (continue inside a try
+                // still runs its finally first).
                 try
                 {
                     if (scope == "selection")
