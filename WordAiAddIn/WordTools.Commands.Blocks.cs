@@ -190,7 +190,7 @@ namespace WordAiAddIn
             insertionPoint.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
 
             // Word's own native TOC field - auto-scans heading-styled paragraphs and
-            // produces real, page-numbered entries directly.
+            // produces real, page-numbered entries directly. See WordTools.Commands.Blocks.cs.md.
             ActiveDoc.TablesOfContents.Add(insertionPoint, UseHeadingStyles: true);
         }
     }
