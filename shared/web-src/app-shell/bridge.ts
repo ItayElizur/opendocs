@@ -47,13 +47,13 @@ export interface RawSelectionPayload {
   // Word
   preview?: string
   fullText?: string
-  // Word (post-hoc fix, 2026-08-24): 0-based paragraph range the selection
-  // spans, so the model can address it with replace_blocks.
+  // Word: 0-based paragraph range the selection spans, so the model can
+  // address it with replace_blocks.
   startBlockIndex?: number
   endBlockIndex?: number
-  // Word (post-hoc addition, 2026-08-24): set when the selection is a
-  // table/chart/SmartArt object rather than plain text - the 0-based index
-  // read_table/read_chart/read_smartart would use to address it.
+  // Word: set when the selection is a table/chart/SmartArt object rather than
+  // plain text - the 0-based index read_table/read_chart/read_smartart would
+  // use to address it.
   objectKind?: 'table' | 'chart' | 'smartart' | null
   objectIndex?: number
   // Excel ('app: "excel"'), PowerPoint ('app: "powerpoint"'), Outlook ('app: "outlook"')
