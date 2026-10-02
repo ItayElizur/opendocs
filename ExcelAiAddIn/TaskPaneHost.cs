@@ -13,9 +13,8 @@ namespace ExcelAiAddIn
         private string _chatId;
 
         // Deliberately does NOT dereference _workbook here (no .Path/.FullName
-        // read) - see WordAiAddIn/TaskPaneHost.cs's identical comment for the
-        // confirmed repro of why an eager read at construction time silently
-        // kills the whole add-in connection.
+        // read) - see TaskPaneHost.cs.md for the confirmed repro (kept in sync
+        // with WordAiAddIn/TaskPaneHost.cs.md's identical note).
         public TaskPaneHost(Excel.Workbook workbook, int hwnd) : base("ExcelAiAddIn")
         {
             _workbook = workbook;
@@ -31,7 +30,7 @@ namespace ExcelAiAddIn
         {
             // A saved id is final; an "unsaved-" id re-checks the workbook's Path on every call so saving
             // migrates chat history/doc settings onto the real per-file id (FT-1 Task 7b) - see
-            // TaskPaneHost.cs.md.
+            // TaskPaneHost.cs.md (kept in sync with WordAiAddIn/TaskPaneHost.cs.md's identical rationale).
             if (_chatId != null && !_chatId.StartsWith("unsaved-")) return _chatId;
 
             if (string.IsNullOrEmpty(_workbook.Path))
@@ -48,8 +47,7 @@ namespace ExcelAiAddIn
                 ChatStore.Migrate("ExcelAiAddIn", _chatId, saved);
                 DocSettingsStore.Migrate("ExcelAiAddIn", _chatId, saved);
             }
-            // Save As after this point does NOT re-key - see WordAiAddIn/
-            // TaskPaneHost.cs's identical comment for the rationale.
+            // Save As after this point does NOT re-key. See TaskPaneHost.cs.md.
             return _chatId = saved;
         }
 

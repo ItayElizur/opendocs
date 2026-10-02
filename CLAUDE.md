@@ -90,6 +90,29 @@ Do not resurrect `docs/tool-surface-todo.md` as a place to track gaps — it's r
 (see the changelog) specifically because a checklist like that drifted badly out of
 sync with actual implementation state in the past.
 
+## Long rationale comments live in a companion `<File>.md`, not inline
+
+Source comments in this repo come in two flavors. A short "what this does/why" note
+stays inline, right where it applies. Longer historical/rationale material — confirmed
+repro steps, "we tried X, it didn't work, here's why", design decisions with a real
+trade-off — moves into a companion file sitting next to the source file, named
+`<SourceFile>.md` (e.g. `TaskPaneHost.cs` → `TaskPaneHost.cs.md`), with a short inline
+comment left behind pointing at it (`// See TaskPaneHost.cs.md.`). This keeps the
+source readable without losing the reasoning.
+
+**Hard rule: a file's companion `.md` must be self-contained — never point at a
+different file's `.md`.** Even when two files share genuinely identical rationale (e.g.
+Word's and Excel's/PowerPoint's `TaskPaneHost.cs`, which all share the same COM-timing
+construction quirk), each gets its own local `.md` with the full text, not a pointer
+into another app's companion file. A one-line "kept in sync with
+`OtherApp/OtherFile.cs.md`'s identical note" cross-reference is fine as a bonus, but
+never as the only record — a cross-file-only pointer breaks the moment either file is
+split, renamed, or the comment is trimmed further on one side but not the other (this
+exact bug was caught and fixed once already for `PowerPointAiAddIn/TaskPaneHost.cs`,
+commit `6947058`). When you touch a file that has a `.md` companion and the underlying
+rationale changes, update both files in the same commit — don't let the inline pointer
+outlive the thing it used to say.
+
 ## Outlook specifically: native query APIs are mandatory, not a nice-to-have
 
 Outlook's read tools (`list_emails`, `search_emails`, `list_events`, etc.) must use

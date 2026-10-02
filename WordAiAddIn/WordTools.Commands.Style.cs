@@ -305,7 +305,9 @@ namespace WordAiAddIn
                     break;
                 case "NUMBERED_DECIMAL_ALPHA_ROMAN":
                     // Alpha/roman sub-levels need real multi-level nesting, which this
-                    // flat per-paragraph model has none of, so level 1 stays plain decimal.
+                    // flat per-paragraph model has none of, so level 1 stays plain decimal -
+                    // narrower than genoffice's version, but honestly so (documented in the
+                    // schema description).
                     range.ListFormat.ApplyNumberDefault();
                     break;
                 case "NUMBERED_UPPERALPHA":

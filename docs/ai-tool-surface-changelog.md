@@ -1192,6 +1192,23 @@ row/column, header row included. Both apps' tool tables gained the
 
 ---
 
+### 2026-10-02 — Corrected stale attendee-resolution description
+
+The main doc's `draft_event`/`edit_event`/`create_event` rows described attendee
+resolution as `Recipients.Add(...)` followed by the collection-level
+`Recipients.ResolveAll()`. That stopped being true before this doc was last verified
+against source: `OutlookAiAddIn/OutlookTools.Compose.cs`'s `AddAttendees` resolves each
+added `Recipient` individually via `r.Resolve()` right after `Recipients.Add(...)` —
+`ResolveAll()` was confirmed live to not reliably resolve these at all (`Resolved`
+stayed `False`, `Address` stayed empty, and a `.Send()` using it never actually
+delivered). `edit_event`'s `ReplaceAttendees` reuses the same per-recipient `AddAttendees`
+helper, so it was never calling `ResolveAll()` either. Also undocumented until now: all
+four attendee-touching tools (`create_event`/`draft_event`/`edit_event`/
+`draft_edit_event`) append a trailing note to their result text naming any address that
+failed to resolve, via the shared `FormatUnresolvedAttendeesNote`. Fixed in the main
+doc's tables directly; see `OutlookAiAddIn/OutlookTools.Compose.cs.md` for the full
+rationale behind resolving per-recipient instead of via `ResolveAll()`.
+
 ## See also
 
 - `docs/superpowers/plans/STATUS.md` — the full PP/FT plan execution log (all ~25
