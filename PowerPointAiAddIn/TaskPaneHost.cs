@@ -15,7 +15,8 @@ namespace PowerPointAiAddIn
 
         // Deliberately does NOT dereference _presentation here - doing so at this
         // exact COM timing silently kills the add-in connection. See
-        // WordAiAddIn/TaskPaneHost.cs.md for the confirmed repro.
+        // TaskPaneHost.cs.md for the confirmed repro (kept in sync with
+        // WordAiAddIn/TaskPaneHost.cs.md's identical note).
         public TaskPaneHost(PowerPoint.Presentation presentation, int hwnd) : base("PowerPointAiAddIn")
         {
             _presentation = presentation;
@@ -29,8 +30,8 @@ namespace PowerPointAiAddIn
 
         // A saved id is cached permanently; an "unsaved-" id is re-checked against
         // the presentation's Path on each call, so the first use after save migrates
-        // chat history/doc settings onto the real per-file id. See
-        // WordAiAddIn/TaskPaneHost.cs.md for the identical rationale.
+        // chat history/doc settings onto the real per-file id. See TaskPaneHost.cs.md
+        // (kept in sync with WordAiAddIn/TaskPaneHost.cs.md's identical rationale).
         protected override string GetChatId()
         {
             if (_chatId != null && !_chatId.StartsWith("unsaved-")) return _chatId;
@@ -49,7 +50,7 @@ namespace PowerPointAiAddIn
                 ChatStore.Migrate("PowerPointAiAddIn", _chatId, saved);
                 DocSettingsStore.Migrate("PowerPointAiAddIn", _chatId, saved);
             }
-            // Sticky: a later Save As does NOT re-key. See WordAiAddIn/TaskPaneHost.cs.md.
+            // Sticky: a later Save As does NOT re-key. See TaskPaneHost.cs.md.
             return _chatId = saved;
         }
 
