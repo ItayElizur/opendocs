@@ -10,14 +10,9 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
-        // PP-23 Task 8 (post-hoc fix): previously only checked HasTextFrame,
-        // so read_slide/get_deck_context reported table and SmartArt shapes
-        // with no content at all - the model could add_table/add_smartart
-        // and then have no way to see what it just created. Table reading
-        // reuses the same statically-typed Table.Cell(r,c).Shape.TextFrame
-        // pattern AddTable/EditTableCell already use in this file; SmartArt
-        // is dynamic (HasSmartArt/.SmartArt aren't on the statically-typed
-        // Shape interface), matching AddSmartArt's own existing pattern.
+        // Returns a shape's readable text content, covering plain text frames,
+        // table cells, and SmartArt nodes (not just HasTextFrame). See
+        // PowerPointTools.Read.cs.md for why all three are needed.
         private static string ShapeText(PowerPoint.Shape shape)
         {
             if (shape.HasTextFrame == Microsoft.Office.Core.MsoTriState.msoTrue && shape.TextFrame.HasText == Microsoft.Office.Core.MsoTriState.msoTrue)
@@ -91,11 +86,8 @@ namespace PowerPointAiAddIn
             PowerPoint.Slide slide = slides[slideIndex + 1];
             var sb = new StringBuilder();
 
-            // PP-24: surfaces layout/transition/animation-count so the model
-            // isn't blind to state set_slide_layout/set_slide_transition/
-            // add_animation just created - same "the model can add
-            // something but then can't see it" gap PP-23's read_chart/
-            // read_table/read_smartart all exist to close.
+            // Surfaces layout/transition/animation-count so the model isn't blind to
+            // state set_slide_layout/set_slide_transition/add_animation just created.
             string layoutName = null;
             foreach (var kv in SlideLayoutMap) { if (kv.Value == slide.Layout) { layoutName = kv.Key; break; } }
             if (layoutName != null) sb.AppendLine("Layout: " + layoutName);
@@ -109,24 +101,14 @@ namespace PowerPointAiAddIn
             int animCount = slide.TimeLine.MainSequence.Count;
             if (animCount > 0) sb.AppendLine(animCount + " animation(s) - call read_animations to see them.");
 
-            // Review finding: unguarded, unlike every other HeadersFooters
-            // access PowerPointTools.Master.cs added elsewhere in this same
-            // PR - that file documents several real, previously-unknown COM
-            // states where reading/writing a slide's HeadersFooters throws
-            // "HeaderFooter (unknown member)". read_slide is a core, always-
-            // allowed read tool; if the same restriction ever hits a read
-            // (not just the write paths already fixed), don't let it discard
-            // everything already built into `sb` above.
+            // Guarded: HeadersFooters access can throw "HeaderFooter (unknown member)"
+            // in several real COM states (see PowerPointTools.Master.cs.md) - don't let
+            // that discard everything already built into `sb` above.
             try { sb.AppendLine(DescribeHeadersFooters(slide)); }
             catch (Exception ex) { DebugLog.WriteException("ReadSlide DescribeHeadersFooters", ex); sb.AppendLine("Headers/footers: unavailable."); }
 
-            // Post-hoc addition (2026-08-24, user-requested: "see the order
-            // between objects"): slide.Shapes is already ordered back-to-
-            // front by z-order (confirmed via reflection: Shape.ZOrderPosition
-            // is a get-only int matching this same collection order) - the
-            // shapeIndex below was already exactly this order, just never
-            // stated explicitly. No new read tool needed; making the
-            // existing order's meaning explicit is enough.
+            // slide.Shapes is already ordered back-to-front by z-order; this just states
+            // that explicitly rather than needing a new read tool. See .md.
             if (slide.Shapes.Count > 1) sb.AppendLine("Shapes below are listed back-to-front (z-order) - index 0 is furthest back, the last index is drawn on top. Use set_element_order to change this.");
 
             int shapeIndex = 0;
@@ -150,11 +132,9 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "read_slide" };
         }
 
-        // Recursive listing of a group's contents, one shape per line, nested
-        // groups indented and expanded in place. Each line's "[path]" is the
-        // dotted shapeIndex (e.g. "3.1.0") that set_element_text/_style/_fill/
-        // _stroke accept directly - so the model can restyle or retext a
-        // labeled child without ungrouping. Positional/structural edits still
+        // Recursive listing of a group's contents, nested groups indented in place.
+        // Each line's dotted "[path]" (e.g. "3.1.0") is accepted directly by
+        // set_element_text/_style/_fill/_stroke; positional/structural edits still
         // require ungroup_element first.
         private static ToolResult ReadGroup(JsonElement input)
         {
@@ -192,12 +172,9 @@ namespace PowerPointAiAddIn
             }
         }
 
-        // Read-only search across every slide's shape text (via the existing
-        // ShapeText helper, so text boxes/placeholders/tables/SmartArt are all
-        // covered the same as get_deck_context/read_slide) plus speaker notes.
-        // There was previously no way to locate text in a deck without
-        // reading every slide one at a time via read_slide and scanning
-        // yourself.
+        // Read-only search across every slide's shape text (via ShapeText, so text
+        // boxes/placeholders/tables/SmartArt are all covered) plus speaker notes -
+        // previously the only way to locate text was read_slide plus manual scanning.
         private static ToolResult FindTextPpt(JsonElement input)
         {
             string query = input.GetProperty("query").GetString();

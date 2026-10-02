@@ -22,15 +22,10 @@ namespace PowerPointAiAddIn
         private readonly Dictionary<int, PaneEntry> _panes = new Dictionary<int, PaneEntry>();
 
         // Guards against reentrancy into EnsurePaneFor for the same hwnd -
-        // confirmed repro (single presentation open): CustomTaskPanes.Add can
-        // pump the Windows message queue internally, which lets a nested
-        // WindowActivate for the window already being set up reenter this
-        // method before the outer call has returned and written
-        // _panes[hwnd]. Without this guard that constructs a SECOND
-        // TaskPaneHost/WebViewBridgeHost for the one window, and both race to
-        // create a CoreWebView2Environment against the identical user-data
-        // folder - which WebView2 rejects with "the group or resource is not
-        // in the correct state" (HRESULT 0x8007139F).
+        // CustomTaskPanes.Add can pump the Windows message queue internally,
+        // letting a nested WindowActivate reenter before _panes[hwnd] is written.
+        // See PowerPointAiAddIn/ThisAddIn.cs.md for the confirmed repro and the
+        // WebView2 error this prevents.
         private readonly HashSet<int> _paneCreationInProgress = new HashSet<int>();
 
         private void ThisAddIn_Startup(object sender, EventArgs e)
@@ -39,17 +34,9 @@ namespace PowerPointAiAddIn
             this.Application.PresentationClose += Application_PresentationClose;
             this.Application.WindowSelectionChange += Application_WindowSelectionChange;
 
-            // The startup window, as today - every subsequently-opened window
-            // gets its own pane via Application_WindowActivate below. Guarded
-            // (unlike every other EnsurePaneFor call site, all of which are
-            // already wrapped) because PowerPoint can start on its own "Start
-            // Screen" template chooser rather than a real presentation - a
-            // state ActiveWindow may not represent as a normal, fully-formed
-            // PowerPoint.DocumentWindow (confirmed repro: this call,
-            // unguarded, left the add-in showing a blank/gray pane). If that
-            // happens here, no pane is created for the Start Screen at all -
-            // the first real presentation (Ctrl+N, File > Open, etc.) still
-            // gets a working pane via Application_WindowActivate regardless.
+            // The startup window, as today. Guarded because PowerPoint can start on
+            // its own "Start Screen" template chooser, a state ActiveWindow may not
+            // represent as a normal DocumentWindow. See .md for the confirmed repro.
             try
             {
                 PowerPoint.DocumentWindow active = this.Application.ActiveWindow;
@@ -65,20 +52,10 @@ namespace PowerPointAiAddIn
             this.Application.WindowSelectionChange -= Application_WindowSelectionChange;
         }
 
-        // The one real COM call for Office's UI display language in this
-        // app - Ribbon.cs and TaskPaneHost.cs each need their own copy of
-        // this (their base classes' GetOfficeUiLanguageId hooks are
-        // abstract, since neither shared assembly can see this app's own
-        // Globals class), but delegate here rather than re-issuing the COM
-        // call themselves, so there is exactly one place per app that can
-        // fail and exactly one place that guards against it. A theme-
-        // detection bug must never break pane creation (OfficeTheme.cs's own
-        // stated posture) - same reasoning applies here: if
-        // LanguageSettings throws (an unusual COM/host state), degrade to
-        // the code that already means "not Hebrew" rather than letting the
-        // ribbon render a blank label or the "load-language" bridge message
-        // die silently with no reply ever sent (that one-shot message has no
-        // retry - see PaneHostBase's "load-language" case).
+        // The one real COM call for Office's UI display language in this app -
+        // Ribbon.cs and TaskPaneHost.cs delegate here instead of re-issuing the COM
+        // call themselves, so there is exactly one place that can fail and one place
+        // that guards against it. Degrades to "not Hebrew" on failure. See .md.
         public int GetOfficeUiLanguageId()
         {
             try
