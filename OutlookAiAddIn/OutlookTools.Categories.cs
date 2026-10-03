@@ -115,14 +115,9 @@ namespace OutlookAiAddIn
         private static ToolResult SetEventCategories(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            // Only needed for an event_id from someone else's shared
-            // calendar (returned by list_events' mailbox parameter) -
-            // ItemById/GetItemFromID can't find an item outside the
-            // caller's own default store without it. Omit for your own
-            // events, same as before this parameter existed. Whether the
-            // caller actually has permission to act on the resulting item
-            // is entirely up to Outlook/Exchange - this add-in doesn't add
-            // its own authorization check on top of that.
+            // Needed only for an event_id from someone else's shared calendar
+            // (list_events' mailbox parameter); omit for your own events. See
+            // OutlookTools.Categories.cs.md for the authorization-scope note.
             string storeId = Str(input, "store_id", null);
             string categories = (Str(input, "categories", "") ?? "").Trim();
 
@@ -215,14 +210,9 @@ namespace OutlookAiAddIn
         private static ToolResult SetEventAvailability(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "event_id");
-            // Only needed for an event_id from someone else's shared
-            // calendar (returned by list_events' mailbox parameter) -
-            // ItemById/GetItemFromID can't find an item outside the
-            // caller's own default store without it. Omit for your own
-            // events, same as before this parameter existed. Whether the
-            // caller actually has permission to act on the resulting item
-            // is entirely up to Outlook/Exchange - this add-in doesn't add
-            // its own authorization check on top of that.
+            // Needed only for an event_id from someone else's shared calendar
+            // (list_events' mailbox parameter); omit for your own events. See
+            // OutlookTools.Categories.cs.md for the authorization-scope note.
             string storeId = Str(input, "store_id", null);
             string raw = ReqStr(input, "availability");
 

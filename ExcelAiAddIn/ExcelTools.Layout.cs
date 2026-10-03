@@ -49,10 +49,8 @@ namespace ExcelAiAddIn
             Sheet(op).Range[$"{row}:{row + count - 1}"].RowHeight = heightPoints;
         }
 
-        // Character-width units, NOT pixels: Excel's native ColumnWidth property has
-        // no pixel unit at the COM layer. Converts genoffice's px schema using the
-        // standard Calibri-11 approximation (px - 5) / 7 - a documented, deliberate
-        // approximation, not exact for other default fonts.
+        // ColumnWidth is character-width units, not pixels - converts the px schema via the Calibri-11
+        // approximation (px-5)/7 (not exact for other default fonts).
         private static void SetColWidth(JsonElement op)
         {
             int col = op.GetProperty("column").GetInt32();
@@ -114,10 +112,8 @@ namespace ExcelAiAddIn
             {
                 setup.Zoom = false; // Zoom and FitToPages are mutually exclusive in Excel's own UI
                 if (hasFitWidth) setup.FitToPagesWide = (int)ftwEl.GetDouble();
-                // fitToHeight: 0 means "unlimited tall" - Excel expresses that as
-                // FitToPagesTall = false, the single most common real-world
-                // page-setup request ("fit on one page wide") that was otherwise
-                // unexpressible.
+                // fitToHeight: 0 means "unlimited tall" - Excel expresses that as FitToPagesTall = false
+                // (enables the common "fit on one page wide" request).
                 if (hasFitHeight)
                 {
                     double fth = fthEl.GetDouble();
@@ -155,13 +151,8 @@ namespace ExcelAiAddIn
             }
         }
 
-        // copy_range/move_range share this one method (cut:false/true), same
-        // shape as InsertDeleteRows/InsertDeleteCols above. The 2000-cell cap
-        // matches ReadRange's, but is unmeasured for a Copy/Cut-based op
-        // specifically - ReadRange's cap exists because of Value2 marshaling
-        // cost back across COM, which a native Copy/Cut (Excel-side only)
-        // doesn't incur, so this may be needlessly conservative once tested
-        // against real Excel.
+        // Shares this method with move_range (cut:false/true). 2000-cell cap matches ReadRange's but is
+        // unmeasured for Copy/Cut specifically - see ExcelTools.Layout.cs.md.
         private static string CopyOrMoveRange(JsonElement op, bool cut)
         {
             string sourceAddr = op.GetProperty("sourceRange").GetString();
@@ -175,21 +166,15 @@ namespace ExcelAiAddIn
             Excel.Worksheet targetSheet = op.TryGetProperty("targetSheetId", out var tsid) && tsid.ValueKind == JsonValueKind.String
                 ? (Excel.Worksheet)Globals.ThisAddIn.Application.ActiveWorkbook.Sheets[tsid.GetString()]
                 : sourceSheet;
-            // Fresh, plain indexer lookup - never a .Resize/.Offset-chained
-            // object passed as another COM method's argument. See
-            // Chart.SetSourceData's E_INVALIDARG scar (STATUS.md's "Live
-            // debugging session") - Destination is documented to genuinely
-            // accept a Range here, so this exact failure isn't expected to
-            // recur, but a plain lookup costs nothing and removes a variable.
+            // Plain indexer lookup only (no .Resize/.Offset chain) - defensive against a COM E_INVALIDARG
+            // seen elsewhere with chained Range objects; see ExcelTools.Layout.cs.md.
             Excel.Range destination = targetSheet.Range[targetCellAddr];
 
             int rows = source.Rows.Count;
             int cols = source.Columns.Count;
 
-            // Cut(Destination:) already empties the source as part of the
-            // call (Cut = move) - no follow-up ClearContents(): redundant on
-            // success, and wrong on a hypothetical partial failure (would
-            // destroy data that was never actually relocated).
+            // No follow-up ClearContents(): Cut(Destination:) already empties the source, so a second
+            // clear would be redundant on success and destructive on a hypothetical partial failure.
             if (cut) source.Cut(Destination: destination);
             else source.Copy(Destination: destination);
 

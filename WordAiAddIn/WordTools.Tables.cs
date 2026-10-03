@@ -7,22 +7,18 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAiAddIn
 {
-    // Spike 3: real COM tool execution against the live Word document, called
-    // from the WebView2-hosted AgentLoop via the JSON WebMessage bridge.
+    // Real COM tool execution against the live Word document, called from the
+    // WebView2-hosted AgentLoop via the JSON WebMessage bridge.
     public static partial class WordTools
     {
-        // PP-23 Task 1: 0-based at the tool boundary, matching every other
-        // index in this file; Document.Tables is 1-based in COM. Document
-        // order (no inline-vs-floating split needed - Word tables are always
-        // flow content, unlike charts/SmartArt which can float).
+        // 0-based at the tool boundary (Document.Tables is 1-based in COM). No
+        // inline-vs-floating split needed - Word tables are always flow content,
+        // unlike charts/SmartArt.
         private static Word.Table ResolveTable(JsonElement input)
         {
-            // Bug found via DebugLog from a real repro (2026-08-24): this
-            // used GetProperty (required), throwing KeyNotFoundException
-            // whenever tableIndex was omitted - directly contradicting this
-            // tool's own documented "omit to target the first table"
-            // behavior (and ReadTable's own correct TryGetProperty pattern,
-            // right below in this same file). Fixed to match.
+            // Must use TryGetProperty, not GetProperty - tableIndex is optional, and
+            // omitting it previously threw, contradicting the documented "omit to
+            // target the first table" behavior.
             int tableIndex = input.TryGetProperty("tableIndex", out var ti) && ti.ValueKind == JsonValueKind.Number ? ti.GetInt32() : 0;
             Word.Tables tables = ActiveDoc.Tables;
             if (tableIndex < 0 || tableIndex >= tables.Count)
@@ -129,29 +125,19 @@ namespace WordAiAddIn
                         table.ApplyStyleHeadingRows = hdr.ValueKind == JsonValueKind.True;
                     if (input.TryGetProperty("bandedRows", out var band))
                         table.ApplyStyleRowBands = band.ValueKind == JsonValueKind.True;
-                    // Post-hoc fix (2026-08-24, user-reported): this branch had
-                    // no border support at all - "borders" is a real field on
-                    // updateParagraphStyle elsewhere in this file, and the model
-                    // (reasonably, given that precedent) called edit_table with
-                    // the same field name expecting the same effect. Since
-                    // set_style never checked for it, the call silently did
-                    // nothing - a real gap, not a user error. table.Borders
-                    // mirrors the Word.Border collection updateParagraphStyle
-                    // already uses for paragraph borders, applied here at the
-                    // whole-table level (outside + inside edges).
+                    // "borders" mirrors updateParagraphStyle's border field, applied at
+                    // the whole-table level (previously unsupported here - the call
+                    // silently did nothing). See WordTools.Tables.cs.md.
                     if (input.TryGetProperty("borders", out var bordersEl))
                     {
                         bool on = bordersEl.ValueKind == JsonValueKind.True;
                         Word.WdColor color = input.TryGetProperty("borderColor", out var bc) && bc.ValueKind == JsonValueKind.String
                             ? (Word.WdColor)ColorUtil.HexToOle(bc.GetString())
                             : (Word.WdColor)ColorUtil.HexToOle("#000000");
-                        // Post-hoc fix (2026-08-24, user-reported): table.Borders
-                        // is not just the 6 grid sides - it also includes
-                        // wdBorderDiagonalDown/wdBorderDiagonalUp (the rare
-                        // cell-split diagonal lines), so the blind foreach over
-                        // the whole collection turned those on too, producing
-                        // crisscrossing diagonals across every cell. Enumerate
-                        // only the real table grid sides explicitly.
+                        // table.Borders also includes the diagonal cell-split sides
+                        // (wdBorderDiagonalDown/Up) - enumerate only the real grid sides
+                        // explicitly, or a blind foreach turns on crisscrossing diagonals.
+                        // See WordTools.Tables.cs.md.
                         Word.WdBorderType[] sides =
                         {
                             Word.WdBorderType.wdBorderTop, Word.WdBorderType.wdBorderLeft,
@@ -169,16 +155,9 @@ namespace WordAiAddIn
                 }
                 case "set_shading":
                 {
-                    // Post-hoc addition (2026-08-24, user-requested): fills
-                    // cell background color at cell/row/col/whole-table
-                    // scope. Word.Cell.Shading.BackgroundPatternColor is the
-                    // same property/pattern updateParagraphStyle's
-                    // shadingFill already uses on paragraphs elsewhere in
-                    // this file - applied per-cell here since Word tables
-                    // have no single "shade this row" API, only per-cell
-                    // shading (matches PowerPoint's own EditTableStyle,
-                    // which does the identical per-cell loop for its
-                    // shadingColor field).
+                    // Fills background color at cell/row/col/table scope via per-cell
+                    // Shading.BackgroundPatternColor (Word tables have no single "shade
+                    // this row" API; matches PowerPoint's EditTableStyle). See WordTools.Tables.cs.md.
                     string scope = input.GetProperty("scope").GetString();
                     Word.WdColor color = (Word.WdColor)ColorUtil.HexToOle(input.GetProperty("color").GetString());
                     int rowCount = table.Rows.Count, colCount = table.Columns.Count;
@@ -269,12 +248,7 @@ namespace WordAiAddIn
             return new ToolResult { Output = sb.ToString().TrimEnd(), Summary = "read_table" };
         }
 
-        // PP-23 Task 4: ported from PowerPointTools.SmartArtLayouts.ByName /
-        // ResolveSmartArtLayout verbatim - same seven keys, same
-        // two-distinct-errors design (unknown key vs. valid-key-but-not-in-
-        // this-install's-gallery). SmartArt is the Office-shared object
-        // model, not PowerPoint-specific - Application.SmartArtLayouts
-        // resolves identically against this add-in's own ThisAddIn.
+        // See WordTools.Tables.cs.md for a historical note on SmartArtLayouts.ByName.
 
     }
 }

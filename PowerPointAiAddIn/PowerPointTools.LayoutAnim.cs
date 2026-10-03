@@ -10,12 +10,8 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
-        // PP-24: curated subset of the 37 PpSlideLayout values (confirmed via
-        // reflection against the real referenced PIA, not recalled) - the
-        // pre-2007 leftovers (ppLayoutOrgchart, ppLayoutMediaClipAndText,
-        // etc.) are omitted as unlikely to be what a model means by a
-        // layout request. Same curated-map-with-throw-on-unknown pattern as
-        // ChartTypes.ByName/AlignmentMap elsewhere in this file.
+        // Curated subset of PpSlideLayout's 37 values - pre-2007 leftovers
+        // (ppLayoutOrgchart, etc.) are omitted as unlikely layout requests.
         private static readonly Dictionary<string, PowerPoint.PpSlideLayout> SlideLayoutMap = new Dictionary<string, PowerPoint.PpSlideLayout>
         {
             ["title"] = PowerPoint.PpSlideLayout.ppLayoutTitle,
@@ -37,17 +33,11 @@ namespace PowerPointAiAddIn
             ["pictureWithCaption"] = PowerPoint.PpSlideLayout.ppLayoutPictureWithCaption,
         };
 
-        // Mirrors WordTools.cs's ResolveSmartArtGalleryItem (PP-23): resolves
-        // by case-insensitive substring match against this deck's own live
-        // theme layouts, since custom layout names are not a fixed enum -
-        // a miss lists the real available names so the caller can retry
-        // correctly instead of guessing blind. Shares its exact-match-
-        // preference + ambiguous-match detection with PowerPointTools.
-        // Master.cs's ResolveLayoutByName via the same ResolveLayoutByQuery
-        // core (review finding: this used to silently take the first
-        // substring match with no ambiguity check at all - unlike
-        // ResolveLayoutByName's own multi-design search, this function's
-        // scope is unchanged, always just this one slide's own Design).
+        // Resolves by case-insensitive substring match against this slide's own
+        // theme layouts (not a fixed enum), sharing exact-match-preference and
+        // ambiguous-match detection with PowerPointTools.Master.cs's
+        // ResolveLayoutByName via the same ResolveLayoutByQuery core. See
+        // PowerPointTools.LayoutAnim.cs.md for the ambiguity-check history.
         private static PowerPoint.CustomLayout ResolveCustomLayout(PowerPoint.Slide slide, string query)
         {
             var candidates = new List<LayoutCandidate>();
@@ -65,13 +55,8 @@ namespace PowerPointAiAddIn
             if (kind == "custom")
             {
                 string layoutName = input.GetProperty("layoutName").GetString();
-                // Review finding: unlike ResolveMasterTarget's explicit
-                // !string.IsNullOrEmpty(query) check for the identical field
-                // on add_master_element/read_master_elements/etc., this path
-                // never guarded against an empty string - IndexOf("") matches
-                // every layout, so it silently picked the first one (or threw
-                // a confusing "matches more than one" error with >1 layout)
-                // for input that named nothing.
+                // Guard against an empty string - IndexOf("") matches every layout,
+                // which would otherwise silently pick the first one. See .md.
                 if (string.IsNullOrEmpty(layoutName))
                     throw new ArgumentException("set_slide_layout: layoutName must be a non-empty string for kind:\"custom\".");
                 slide.CustomLayout = ResolveCustomLayout(slide, layoutName);

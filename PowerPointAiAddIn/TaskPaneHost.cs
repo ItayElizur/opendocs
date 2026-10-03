@@ -13,10 +13,10 @@ namespace PowerPointAiAddIn
         private readonly int _hwnd;
         private string _chatId;
 
-        // Deliberately does NOT dereference _presentation here (no
-        // .Path/.FullName read) - see WordAiAddIn/TaskPaneHost.cs's identical
-        // comment for the confirmed repro of why an eager read at
-        // construction time silently kills the whole add-in connection.
+        // Deliberately does NOT dereference _presentation here - doing so at this
+        // exact COM timing silently kills the add-in connection. See
+        // TaskPaneHost.cs.md for the confirmed repro (kept in sync with
+        // WordAiAddIn/TaskPaneHost.cs.md's identical note).
         public TaskPaneHost(PowerPoint.Presentation presentation, int hwnd) : base("PowerPointAiAddIn")
         {
             _presentation = presentation;
@@ -28,24 +28,19 @@ namespace PowerPointAiAddIn
             return Task.FromResult(PowerPointTools.Execute(GetChatId(), name, input));
         }
 
+        // A saved id is cached permanently; an "unsaved-" id is re-checked against
+        // the presentation's Path on each call, so the first use after save migrates
+        // chat history/doc settings onto the real per-file id. See TaskPaneHost.cs.md
+        // (kept in sync with WordAiAddIn/TaskPaneHost.cs.md's identical rationale).
         protected override string GetChatId()
         {
-            // A saved id is final - never re-checked again. An "unsaved-" id
-            // is provisional: re-check the presentation's Path on every call,
-            // so the first use after the user saves migrates chat history and
-            // doc settings onto the real per-file id (FT-1 Task 7b). The Path
-            // read is one cheap COM property on operations (load-history,
-            // append-message, etc.) that are already doing file I/O.
             if (_chatId != null && !_chatId.StartsWith("unsaved-")) return _chatId;
 
             if (string.IsNullOrEmpty(_presentation.Path))
             {
-                // An unsaved presentation has no on-disk Path; Presentation.FullName
-                // falls back to its temp Name (e.g. "Presentation1") in that case,
-                // which is not a stable key across sessions - and with multiple
-                // panes now possible in one process, "unsaved-<pid>" alone would
-                // collide across two different unsaved presentations, so the
-                // window handle is folded in too.
+                // Unsaved presentation: FullName falls back to a temp Name
+                // (e.g. "Presentation1"), not stable/unique across panes - pid+hwnd
+                // avoids collisions between two different unsaved presentations.
                 return _chatId ?? (_chatId = "unsaved-" + Process.GetCurrentProcess().Id + "-" + _hwnd);
             }
 
@@ -55,8 +50,7 @@ namespace PowerPointAiAddIn
                 ChatStore.Migrate("PowerPointAiAddIn", _chatId, saved);
                 DocSettingsStore.Migrate("PowerPointAiAddIn", _chatId, saved);
             }
-            // Save As after this point does NOT re-key - see WordAiAddIn/
-            // TaskPaneHost.cs's identical comment for the rationale.
+            // Sticky: a later Save As does NOT re-key. See TaskPaneHost.cs.md.
             return _chatId = saved;
         }
 
@@ -100,11 +94,8 @@ namespace PowerPointAiAddIn
             // Task 3 Step 3: Slides is 1-based in COM, ResolveShape's tools
             // are 0-based - convert once, here, and never again downstream.
             foreach (PowerPoint.Slide s in sel.SlideRange) indexes.Add(s.SlideIndex - 1);
-            // User-requested (2026-09-22): surface the layout name so the
-            // model can address it directly (e.g. via add_master_element's
-            // layoutName) without a separate read_slide call. Reflects the
-            // FIRST selected slide only - a multi-slide selection may span
-            // more than one layout, not represented here.
+            // Surfaces the layout name for direct use (e.g. add_master_element's
+            // layoutName). Reflects the FIRST selected slide only.
             string layoutName = null;
             try { layoutName = sel.SlideRange[1].CustomLayout.Name; } catch { }
             string signature = "ppt:slides:" + string.Join(",", indexes);

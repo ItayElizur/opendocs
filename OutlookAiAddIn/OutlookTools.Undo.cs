@@ -8,25 +8,13 @@ using Outlook = Microsoft.Office.Interop.Outlook;
 namespace OutlookAiAddIn
 {
     // undo_last_action / redo_last_action - an undo/redo stack of the
-    // assistant's OWN reversible actions, per mailbox chat, in memory only
-    // (lost when Outlook restarts). Never touches the user's manual actions.
-    //
-    // Why not Outlook's native Undo (CommandBars.ExecuteMso("Undo")): tried
-    // and tested by hand on 2026-09-28. Outlook's Undo is a single slot tied
-    // to the Explorer window that toggles undo/redo, it doesn't see
-    // object-model changes (a move_email followed by the ribbon Undo did
-    // nothing), and after one ExecuteMso("Undo") both our tool and the
-    // ribbon button failed with "The operation cannot be performed because
-    // the message has changed." There is no API to put an object-model
-    // change onto that slot.
-    //
-    // Every handler that mutates records one entry AFTER its change succeeds.
-    // Irreversible actions (sends, meeting responses, permanent delete) push
-    // a barrier: undo stops there instead of silently reversing something
-    // older. Before reversing, each entry checks the item still holds what
-    // the assistant left there; if the user (or anything else) changed it
-    // since, undo refuses rather than overwrite that change. A failed or
-    // refused entry is discarded, never retried.
+    // assistant's OWN reversible actions, per mailbox chat, in memory only.
+    // Never touches the user's manual actions, and never Outlook's native
+    // Undo - see OutlookTools.Undo.cs.md for why that was tried and ruled
+    // out. Every mutating handler records one entry AFTER its change
+    // succeeds; irreversible actions push a barrier instead. Before
+    // reversing, each entry checks the item still holds what the assistant
+    // left there and refuses rather than overwrite an intervening change.
     public static partial class OutlookTools
     {
         private static readonly Dictionary<string, ActionHistory<UndoEntry>> HistoryByMailbox =

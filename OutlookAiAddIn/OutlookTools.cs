@@ -19,14 +19,10 @@ namespace OutlookAiAddIn
             ModeByMailbox[mbxKey] = mode;
         }
 
-        // Falls back to CommentOnly (Outlook's "Draft only" tier - see
-        // AlwaysAllowedTools' comment below), matching the client's own new
-        // default (chat-ui.ts's defaultModeFor()), for the brief window
-        // before the client's first explicit "set-mode" bridge message
-        // arrives (only sent on a user-initiated mode change, never on
-        // mount). Previously fell back to FullAutonomy, which was safe only
-        // because FullAutonomy was also the client's own default at the
-        // time - no longer true.
+        // Falls back to CommentOnly ("Draft only"), matching the client's own
+        // default, for the brief window before its first explicit "set-mode"
+        // message arrives. See OutlookTools.cs.md for why the old
+        // FullAutonomy fallback is no longer safe.
         private static EditingMode ModeFor(string mbxKey)
         {
             EditingMode m;
@@ -35,13 +31,10 @@ namespace OutlookAiAddIn
 
         // Outlook repurposes two EditingMode slots Word/Excel/PowerPoint use
         // for real editing concepts that have no meaning for mail:
-        // CommentOnly -> "Draft only" (draft/mutate freely, nothing sends),
-        // TrackChanges -> "Automate approvals" (adds accept/decline/tentatively-respond, which
-        // already auto-notify the organizer via resp.Send()). FullAutonomy
-        // adds the tools that compose and send/create new content with no
-        // review step. Ordinal check below relies on the enum's declared
-        // order (ReadOnly < CommentOnly < TrackChanges < FullAutonomy)
-        // matching this escalation exactly - see OfficeAi.Shared.EditingMode.
+        // CommentOnly -> "Draft only", TrackChanges -> "Automate approvals".
+        // The ordinal check below relies on the enum's declared order
+        // (ReadOnly < CommentOnly < TrackChanges < FullAutonomy) matching
+        // this escalation exactly - see OfficeAi.Shared.EditingMode.
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
             "list_emails", "search_emails", "get_email", "list_folders", "search_contacts",
@@ -51,23 +44,11 @@ namespace OutlookAiAddIn
 
         // Tier 2 ("Draft only" / CommentOnly): mutates the mailbox or opens a
         // draft, but never leaves it unreviewed. set_event_categories/
-        // set_category_color/set_event_availability belong here, not in
-        // SendTierTools below - all three are purely local
-        // (appt.Categories/.BusyStatus/.Save(), cats.Add()/.Color), never
-        // call .Send(), and carry the same risk profile as
-        // move_email/flag_email_important right next to them. An earlier
-        // version of this fix put them in SendTierTools to match their old
-        // (pre-four-tier) Full-Autonomy-only gate, but that was restoring
-        // the OLD binary model rather than applying this PR's own tiering
-        // logic - every other local-only mutation here was deliberately
-        // downgraded from Full-Autonomy-only, and these two were simply
-        // missed, not deliberately kept stricter. apply_search is here for
-        // a different reason: it never mutates data, but unlike every other
-        // AlwaysAllowedTools entry it has a real, visible side effect - it
-        // hijacks the user's actual Outlook Explorer window (folder jump +
-        // search overlay) with no consent step. "Read only" is supposed to
-        // guarantee the assistant never touches the user's screen; leaving
-        // it always-allowed broke that. Must stay in sync with entry.ts's
+        // set_category_color/set_event_availability belong here rather than
+        // SendTierTools - see OutlookTools.cs.md for why. apply_search is
+        // here because it has a real, visible side effect (hijacks the
+        // user's Explorer window) despite never mutating data - see
+        // OutlookTools.cs.md. Must stay in sync with entry.ts's
         // commentOnlyExtraTools.
         private static readonly HashSet<string> DraftTierTools = new HashSet<string>
         {
@@ -131,16 +112,12 @@ namespace OutlookAiAddIn
                         };
                     }
 
-                    // delete_email is a single tool spanning two risk classes:
-                    // permanent:false (default) just moves to Deleted Items -
-                    // fully reversible, same Draft-tier gate as move_email
-                    // above. permanent:true additionally calls .Delete() from
-                    // there, which is irreversible from within Outlook (see
-                    // DeleteEmail's own result text) - the same risk class as
-                    // SendTierTools, so it needs that gate too even though the
-                    // tool NAME sits in DraftTierTools. This is name-based
-                    // gating's one input-aware exception; keep it that way
-                    // rather than generalizing to a per-argument system.
+                    // delete_email spans two risk classes: permanent:false is
+                    // fully reversible (Draft tier, like move_email);
+                    // permanent:true is irreversible (needs the SendTierTools
+                    // gate too, despite the tool NAME sitting in
+                    // DraftTierTools). This is name-based gating's one
+                    // input-aware exception - see OutlookTools.cs.md.
                     if (name == "delete_email" && Bool(input, "permanent", false) && (int)mode < (int)EditingMode.FullAutonomy)
                     {
                         return new ToolResult

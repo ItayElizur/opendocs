@@ -9,15 +9,8 @@ namespace ExcelAiAddIn
 {
     public static partial class ExcelTools
     {
-        // Returns a description including the created chart's name (PP-15
-        // Task 4), so a follow-up edit_chart in the same batch can address it
-        // without guessing Excel's auto-assigned "Chart 1"-style name.
-        // Excel's SetSourceData auto-detects category (x-axis) labels only when
-        // the leftmost column/top row of the bound range is text - if it's
-        // numeric, Excel can't tell it apart from another value series and the
-        // chart falls back to a plain 1,2,3... index. This forces every
-        // series' XValues to an explicit range so the model can put a numeric
-        // column (dates, ids, years) on the x-axis on purpose.
+        // Forces every series' XValues to an explicit range, since Excel's category-label auto-detection
+        // fails for a numeric leftmost column/top row - see ExcelTools.Charts.cs.md.
         private static void ApplyChartCategoryRange(dynamic chart, Excel.Range categories)
         {
             dynamic seriesCollection = chart.SeriesCollection();
@@ -57,6 +50,8 @@ namespace ExcelAiAddIn
             {
                 chartObj.Name = nameEl.GetString();
             }
+            // Include the name so a follow-up edit_chart in the same batch can address it without guessing
+            // Excel's auto-assigned "Chart 1"-style name (PP-15 Task 4).
             return "name=" + (string)chartObj.Name;
         }
 
@@ -67,10 +62,8 @@ namespace ExcelAiAddIn
             dynamic chartObj = chartObjects.Item(chartName);
             dynamic chart = chartObj.Chart;
 
-            // PP-15 Task 2: rebinding, done FIRST - some chart-type changes
-            // reset the plot, so this must happen before ChartType below.
-            // dataSheet lets the chart's own sheet differ from the data's
-            // sheet (e.g. chart on Sheet1, data on Sheet2).
+            // Rebind before ChartType below: some chart-type changes reset the plot (PP-15 Task 2).
+            // dataSheet lets the chart live on a different sheet than its data.
             if (op.TryGetProperty("dataRange", out var dr) && dr.ValueKind == JsonValueKind.String)
             {
                 Excel.Worksheet dataSheet = op.TryGetProperty("dataSheet", out var dsEl) && dsEl.ValueKind == JsonValueKind.String
@@ -117,11 +110,8 @@ namespace ExcelAiAddIn
             }
             if (op.TryGetProperty("legend", out var legend) && legend.ValueKind == JsonValueKind.String)
             {
-                // PP-21 Task 2 Step 5: was a terminal-else-to-bottom - any
-                // unmatched value (a model could plausibly send anything not
-                // in this exact set) silently moved the legend to the bottom
-                // instead of erroring, the identical defect PP-21 fixes on
-                // the PowerPoint side.
+                // Errors on an unmatched value instead of silently defaulting to bottom (PP-21 Task 2 Step 5) -
+                // see ExcelTools.Charts.cs.md.
                 string pos = legend.GetString();
                 if (pos == "none") { chart.HasLegend = false; }
                 else
@@ -174,18 +164,13 @@ namespace ExcelAiAddIn
             }
         }
 
-        // Returns a description including the target address (PP-18 Task 3
-        // Step 5) - this PIA's SparklineGroup exposes no separate stable id
-        // beyond the cells it occupies, so the target address IS the
-        // addressing handle for a later edit (there is no delete_sparkline/
-        // edit_sparkline operation yet to consume it, but it is at least
-        // visible in the transcript for the user/model to reason about).
+        // Returns the target address as the addressing handle for a later edit - SparklineGroup exposes no
+        // separate stable id (PP-18 Task 3 Step 5) - see ExcelTools.Charts.cs.md.
         private static string AddSparkline(JsonElement op)
         {
             string dataRange = op.GetProperty("dataRange").GetString();
-            // Required, not defaulted to dataRange: that default drew the
-            // sparkline over its own source numbers, an actively-wrong result
-            // that was silent before this fix.
+            // Required, not defaulted to dataRange - that default silently drew the sparkline over its own
+            // source data (prior bug).
             if (!op.TryGetProperty("targetCell", out var tc) || tc.ValueKind != JsonValueKind.String)
                 throw new ArgumentException("add_sparkline: 'targetCell' is required (the cell immediately right of, or below, dataRange is the usual choice - it must not overlap dataRange).");
             string targetCell = tc.GetString();
@@ -202,10 +187,8 @@ namespace ExcelAiAddIn
             Excel.Range dataRangeObj = sheet.Range[dataRange];
             Excel.Range targetRangeObj = sheet.Range[targetCell];
 
-            // Shape validation: one sparkline per data row (multi-cell target
-            // matching row count) or a single sparkline for the whole range
-            // (single-cell target). Anything else fails opaquely in the COM
-            // call below without this check.
+            // One sparkline per row (multi-cell target matching row count) or one for the whole range
+            // (single-cell target) - anything else fails opaquely in the COM call below.
             int dataRows = dataRangeObj.Rows.Count;
             int targetCells = targetRangeObj.Cells.Count;
             bool overlaps = string.Equals(
@@ -230,9 +213,7 @@ namespace ExcelAiAddIn
             return "target=" + targetCell;
         }
 
-        // Returns the created shape's name (PP-16 Task 3), so a follow-up
-        // edit_shape/delete_visual in the same batch can address it without
-        // guessing Excel's auto-generated name.
+        // Returns the shape's name so a follow-up edit_shape/delete_visual can address it (PP-16 Task 3).
         private static string AddShapeExcel(JsonElement op)
         {
             string shapeType = op.GetProperty("shapeType").GetString();

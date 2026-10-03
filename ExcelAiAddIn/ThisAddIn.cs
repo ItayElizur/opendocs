@@ -19,16 +19,9 @@ namespace ExcelAiAddIn
         // Hwnd is a stable int, unique per top-level document window.
         private readonly Dictionary<int, PaneEntry> _panes = new Dictionary<int, PaneEntry>();
 
-        // Guards against reentrancy into EnsurePaneFor for the same hwnd -
-        // confirmed repro (single document open): CustomTaskPanes.Add can
-        // pump the Windows message queue internally, which lets a nested
-        // WindowActivate for the window already being set up reenter this
-        // method before the outer call has returned and written
-        // _panes[hwnd]. Without this guard that constructs a SECOND
-        // TaskPaneHost/WebViewBridgeHost for the one window, and both race to
-        // create a CoreWebView2Environment against the identical user-data
-        // folder - which WebView2 rejects with "the group or resource is not
-        // in the correct state" (HRESULT 0x8007139F).
+        // Guards reentrancy into EnsurePaneFor for the same hwnd - CustomTaskPanes.Add can pump the message
+        // queue and let a nested WindowActivate reenter before _panes[hwnd] is written, racing to create
+        // two WebView2 environments for one window (HRESULT 0x8007139F). See ThisAddIn.cs.md.
         private readonly HashSet<int> _paneCreationInProgress = new HashSet<int>();
 
         private void ThisAddIn_Startup(object sender, EventArgs e)
@@ -37,17 +30,9 @@ namespace ExcelAiAddIn
             this.Application.WorkbookBeforeClose += Application_WorkbookBeforeClose;
             this.Application.SheetSelectionChange += Application_SheetSelectionChange;
 
-            // The startup window, as today - every subsequently-opened window
-            // gets its own pane via Application_WindowActivate below. Guarded
-            // (unlike every other EnsurePaneFor call site, all of which are
-            // already wrapped) because Excel can start on its own "Start
-            // Screen" template chooser rather than a real workbook - a state
-            // ActiveWindow may not represent as a normal, fully-formed
-            // Excel.Window (confirmed repro: this call, unguarded, left the
-            // add-in showing a blank/gray pane). If that happens here, no
-            // pane is created for the Start Screen at all - the first real
-            // workbook (Ctrl+N, File > Open, etc.) still gets a working pane
-            // via Application_WindowActivate regardless.
+            // Covers the startup window; later windows get panes via Application_WindowActivate. Guarded
+            // because Excel's Start Screen template chooser can leave ActiveWindow in a state EnsurePaneFor
+            // can't handle (confirmed repro: blank/gray pane) - see ThisAddIn.cs.md.
             try
             {
                 Excel.Window active = this.Application.ActiveWindow;
@@ -63,20 +48,9 @@ namespace ExcelAiAddIn
             this.Application.SheetSelectionChange -= Application_SheetSelectionChange;
         }
 
-        // The one real COM call for Office's UI display language in this
-        // app - Ribbon.cs and TaskPaneHost.cs each need their own copy of
-        // this (their base classes' GetOfficeUiLanguageId hooks are
-        // abstract, since neither shared assembly can see this app's own
-        // Globals class), but delegate here rather than re-issuing the COM
-        // call themselves, so there is exactly one place per app that can
-        // fail and exactly one place that guards against it. A theme-
-        // detection bug must never break pane creation (OfficeTheme.cs's own
-        // stated posture) - same reasoning applies here: if
-        // LanguageSettings throws (an unusual COM/host state), degrade to
-        // the code that already means "not Hebrew" rather than letting the
-        // ribbon render a blank label or the "load-language" bridge message
-        // die silently with no reply ever sent (that one-shot message has no
-        // retry - see PaneHostBase's "load-language" case).
+        // Single COM call + guard for Office's UI language id; Ribbon.cs/TaskPaneHost.cs delegate here
+        // instead of re-issuing the call themselves. Degrades to "not Hebrew" on failure rather than
+        // propagating - see ThisAddIn.cs.md.
         public int GetOfficeUiLanguageId()
         {
             try
@@ -89,10 +63,8 @@ namespace ExcelAiAddIn
             }
         }
 
-        // Read once per pane creation - the CustomTaskPane's native title bar
-        // is a third UI surface, separate from the ribbon and the WebView2
-        // content, so it needs its own call site even though all three now
-        // share GetOfficeUiLanguageId().
+        // Own call site for the CustomTaskPane's native title bar - a third UI surface, separate from the
+        // ribbon and WebView2 content, though all three share GetOfficeUiLanguageId().
         private string PaneTitle()
         {
             return OfficeLanguage.ResolveBrandName(GetOfficeUiLanguageId());
@@ -142,17 +114,13 @@ namespace ExcelAiAddIn
             }
             catch
             {
-                // Resizing is best-effort - never let a transient Office
-                // COM exception (e.g. pane docked top/bottom) propagate
-                // out and permanently reveal the debug status label via
-                // WebViewBridgeHost's generic error-status path.
+                // Resizing is best-effort - don't let a transient COM exception (e.g. pane docked
+                // top/bottom) surface the debug status label via WebViewBridgeHost's error-status path.
             }
         }
 
-        // WindowActivate is the single hook covering every path that produces
-        // a window needing a pane: File > Open, File > New, a file
-        // double-clicked while the app runs, and View > New Window - each
-        // newly-created window fires this as it becomes active.
+        // Single hook covering every path that produces a window needing a pane (File > Open/New, a
+        // double-clicked file, View > New Window) - each fires this as it becomes active.
         private void Application_WindowActivate(Excel.Workbook wb, Excel.Window window)
         {
             try { EnsurePaneFor(window); }
@@ -184,11 +152,9 @@ namespace ExcelAiAddIn
             catch { }
         }
 
-        // FT-2 Task 2: routed to the pane owning the active window.
-        // SheetSelectionChange hands over only the sheet and range, not a
-        // window/document reference, so ActiveWindow is how this resolves
-        // which pane it belongs to - the same pattern WordAiAddIn's
-        // Application_WindowSelectionChange uses.
+        // Routed to the pane owning the active window: SheetSelectionChange hands over only sheet/range,
+        // not a window reference, so ActiveWindow resolves which pane it belongs to (same pattern as
+        // WordAiAddIn's Application_WindowSelectionChange).
         private void Application_SheetSelectionChange(object Sh, Excel.Range Target)
         {
             try

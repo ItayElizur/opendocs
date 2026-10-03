@@ -7,15 +7,13 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAiAddIn
 {
-    // Spike 3: real COM tool execution against the live Word document, called
-    // from the WebView2-hosted AgentLoop via the JSON WebMessage bridge.
+    // Real COM tool execution against the live Word document, called from the
+    // WebView2-hosted AgentLoop via the JSON WebMessage bridge.
     public static partial class WordTools
     {
-        // PP-11: same air-gapped local-file-only rule as Excel's
-        // AddImageExcel/PowerPoint's replace_image, worded consistently. The
-        // File.Exists check is the one addition over Excel's version -
-        // AddPicture on a missing file throws a bare COMException with a
-        // useless message; this lets the model correct the path next turn.
+        // Same air-gapped local-file-only rule as Excel's AddImageExcel/PowerPoint's
+        // replace_image. The File.Exists check is the one addition - AddPicture on a
+        // missing file throws a bare COMException with a useless message.
         private static string ValidateLocalImagePath(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
@@ -77,10 +75,8 @@ namespace WordAiAddIn
                 shape.Width = finalWidth;
                 shape.Height = finalHeight;
                 if (altText != null) shape.AlternativeText = altText;
-                // InlineShapes is ordered by document position, not insertion
-                // time - the new shape is only the LAST entry if it was
-                // appended at the document's end. Find its real index by
-                // position instead of assuming Count-1.
+                // InlineShapes is ordered by document position, not insertion time -
+                // find the real index by position instead of assuming Count-1.
                 int newIndex = -1;
                 int shapeStart = shape.Range.Start;
                 for (int idx = 0; idx < doc.InlineShapes.Count; idx++)

@@ -19,10 +19,8 @@ namespace OfficeAi.Shared
             if (hex == null) throw new ArgumentException("Color is required, e.g. \"#RRGGBB\".", nameof(hex));
             string h = hex.Trim().TrimStart('#');
 
-            // "abc" is the widely-used CSS shorthand for "aabbcc" - accepted
-            // because a model asked for "a light grey" will often produce it,
-            // and the old code failed it with an opaque Substring error
-            // rather than a usable message.
+            // "abc" is CSS shorthand for "aabbcc" - accepted deliberately,
+            // not a bug. See ColorUtil.cs.md.
             if (h.Length == 3)
                 h = new string(new[] { h[0], h[0], h[1], h[1], h[2], h[2] });
 

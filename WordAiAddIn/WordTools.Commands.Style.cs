@@ -7,14 +7,13 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAiAddIn
 {
-    // Spike 3: real COM tool execution against the live Word document, called
-    // from the WebView2-hosted AgentLoop via the JSON WebMessage bridge.
+    // Real COM tool execution against the live Word document, called from the
+    // WebView2-hosted AgentLoop via the JSON WebMessage bridge.
     public static partial class WordTools
     {
-        // PP-12 Task 1: Word highlighting is a fixed 16-entry palette
-        // (WdColorIndex), NOT arbitrary RGB - unlike Font.Color above, which
-        // "color" uses. Accept only these names; anything else is an error
-        // rather than a silent nearest-match.
+        // Word highlighting is a fixed 16-entry palette (WdColorIndex), NOT arbitrary
+        // RGB like Font.Color's "color" field. Accept only these names; anything else
+        // is an error rather than a silent nearest-match.
         private static readonly Dictionary<string, Word.WdColorIndex> HighlightColors =
             new Dictionary<string, Word.WdColorIndex>(StringComparer.OrdinalIgnoreCase)
         {
@@ -37,21 +36,18 @@ namespace WordAiAddIn
             ["white"] = Word.WdColorIndex.wdWhite,
         };
 
-        // PP-12 Task 1 Step 3: the general false-success hole - any
-        // misspelled/unimplemented field name in `fields` previously matched
-        // no `if` and silently applied nothing while still reporting "ok".
+        // A misspelled/unimplemented field name in `fields` previously matched no
+        // `if` and silently applied nothing while still reporting success - these
+        // sets are validated against up front to close that hole.
         private static readonly HashSet<string> KnownTextStyleFields = new HashSet<string>
         { "bold", "italic", "underline", "strike", "sizeHalfPoints", "font", "color", "baselineOffset", "link", "highlight" };
 
         private static readonly HashSet<string> KnownParagraphStyleFields = new HashSet<string>
         { "align", "lineSpacing", "indentLeft", "indentRight", "indentFirstLine", "spaceBefore", "spaceAfter", "pageBreakBefore", "shadingFill", "borders" };
 
-        // Shared by UpdateTextStyle (parses these from JSON) and CopyFormatCmd
-        // (reads these live from a source paragraph's Font, no JSON round
-        // trip). Native-enum params, not the JSON-facing bool/string shapes,
-        // so a copy never loses fidelity a JSON-driven caller doesn't need
-        // anyway - e.g. `underline` can be any real WdUnderline style here,
-        // not just the true/false-&gt;Single/None the schema knows.
+        // Shared by UpdateTextStyle (parses from JSON) and CopyFormatCmd (reads live
+        // from a source Font). Takes native-enum params, not the JSON bool/string
+        // shapes, so a copy never loses fidelity the JSON schema doesn't need anyway.
         private static void ApplyTextStyle(
             Word.Range range, bool? bold, bool? italic, Word.WdUnderline? underline, bool? strike,
             float? sizePoints, string font, Word.WdColor? color, bool? superscript, bool? subscript,
@@ -69,12 +65,9 @@ namespace WordAiAddIn
             if (highlight.HasValue) range.HighlightColorIndex = highlight.Value;
         }
 
-        // Shared by UpdateParagraphStyle and CopyFormatCmd - see ApplyTextStyle's
-        // comment above. Borders are deliberately NOT here - CopyFormatCmd
-        // copies them per-side (Top/Left/Bottom/Right) directly, since this
-        // method's all-on/all-off boolean shape is a disclosed simplification
-        // for WRITING, not something a READ of mixed border sides should be
-        // forced through.
+        // Shared by UpdateParagraphStyle and CopyFormatCmd. Borders are deliberately
+        // not here - CopyFormatCmd copies them per-side directly, since this method's
+        // all-on/all-off boolean shape is a simplification for writes, not reads.
         private static void ApplyParagraphStyle(
             Word.Paragraph p, Word.WdParagraphAlignment? align, float? lineSpacing, float? indentLeft,
             float? indentRight, float? indentFirstLine, float? spaceBefore, float? spaceAfter,
@@ -203,13 +196,10 @@ namespace WordAiAddIn
             }
         }
 
-        // Format painter: copies ALL of sourceBlockIndex's character (Font)
-        // and paragraph (ParagraphFormat/Shading/4-side Borders) formatting
-        // onto every paragraph matched by `target`, atomically. Whole-
-        // paragraph granularity only - no sub-paragraph text-run targeting.
-        // Hyperlinks are deliberately never copied (real Word Format Painter
-        // doesn't carry them either - a hyperlink is a document part, not a
-        // font/paragraph attribute).
+        // Format painter: copies all of sourceBlockIndex's Font and paragraph
+        // (ParagraphFormat/Shading/4-side Borders) formatting onto every paragraph
+        // matched by `target`, atomically, whole-paragraph only. Hyperlinks are
+        // deliberately never copied (real Word Format Painter doesn't carry them either).
         private static void CopyFormatCmd(JsonElement cmd)
         {
             int sourceBlockIndex = cmd.GetProperty("sourceBlockIndex").GetInt32();
@@ -223,13 +213,10 @@ namespace WordAiAddIn
             Word.Range srcRange = source.Range;
             Word.ParagraphFormat srcFmt = source.Format;
 
-            // One read, one consistent snapshot, applied identically to every
-            // target below - the atomicity guarantee. NOTE: a source range
-            // spanning non-uniform character formatting (e.g. half-bold) can
-            // return Word's "mixed value" sentinel for some of these
-            // properties rather than a real value - unverified against real
-            // Word from this codebase (see the plan's Risks section); this
-            // reads the raw live values without a mixed-value guard for now.
+            // One snapshot read, applied identically to every target below - the
+            // atomicity guarantee. Note: a source range with non-uniform character
+            // formatting (e.g. half-bold) may return Word's "mixed value" sentinel
+            // for some properties; not guarded against here.
             bool bold = srcRange.Font.Bold == -1;
             bool italic = srcRange.Font.Italic == -1;
             Word.WdUnderline underline = srcRange.Font.Underline;
@@ -251,12 +238,10 @@ namespace WordAiAddIn
             bool pageBreakBefore = srcFmt.PageBreakBefore == -1;
             Word.WdColor shadingFill = source.Shading.BackgroundPatternColor;
 
-            // Explicit 4-named-side copy - NOT a foreach over p.Borders (that
-            // collection's all-on/all-off write-path shape, used by
-            // UpdateParagraphStyle above, would misrepresent a paragraph with
-            // mixed border sides if reused for a read). Mirrors PP-23's table-
-            // border fix: only Top/Left/Bottom/Right, never the diagonal
-            // entries.
+            // Explicit 4-named-side copy, not a foreach over p.Borders - that
+            // collection's all-on/all-off write shape would misrepresent a paragraph
+            // with mixed border sides if reused for a read. Only Top/Left/Bottom/Right,
+            // never the diagonal entries.
             Word.WdLineStyle topStyle = source.Borders[Word.WdBorderType.wdBorderTop].LineStyle;
             Word.WdColor topColor = source.Borders[Word.WdBorderType.wdBorderTop].Color;
             Word.WdLineStyle leftStyle = source.Borders[Word.WdBorderType.wdBorderLeft].LineStyle;
@@ -288,16 +273,10 @@ namespace WordAiAddIn
             }
         }
 
-        // PP-12 Task 2: fixed, explicit preset set - each implemented by
-        // applying Word's own proven default bullet/number list (rather than
-        // constructing a ListTemplate from a gallery index, which the plan
-        // itself flags as unstable across Office versions/locales) and then,
-        // where the preset needs more than the default, overriding the
-        // resulting level's NumberStyle/NumberFormat explicitly. The two
-        // Wingdings-glyph variants (diamond/checkbox) are the least certain
-        // of the seven without an interactive Word session to verify against -
-        // flagged in this plan's verification file; narrow the enum to drop
-        // them if they don't render correctly (Step 7's sanctioned fallback).
+        // Fixed, explicit preset set: each applies Word's own default bullet/number
+        // list, then overrides NumberStyle/NumberFormat where the preset needs more.
+        // The Wingdings diamond/checkbox variants are the least certain of the seven
+        // without an interactive Word session to verify against. See WordTools.Commands.Style.cs.md.
         private static readonly HashSet<string> BulletPresets = new HashSet<string>
         {
             "BULLET_DISC_CIRCLE_SQUARE", "BULLET_DIAMOND_X", "BULLET_CHECKBOX",
@@ -325,11 +304,10 @@ namespace WordAiAddIn
                     range.ListFormat.ApplyNumberDefault();
                     break;
                 case "NUMBERED_DECIMAL_ALPHA_ROMAN":
-                    // Word's per-level glyph sequence needs real multi-level
-                    // nesting to show the alpha/roman sub-levels; this file's
-                    // flat per-paragraph model has no such nesting, so level 1
-                    // stays plain decimal - narrower than genoffice's version,
-                    // but honestly so (documented in the schema description).
+                    // Alpha/roman sub-levels need real multi-level nesting, which this
+                    // flat per-paragraph model has none of, so level 1 stays plain decimal -
+                    // narrower than genoffice's version, but honestly so (documented in the
+                    // schema description).
                     range.ListFormat.ApplyNumberDefault();
                     break;
                 case "NUMBERED_UPPERALPHA":
@@ -346,9 +324,8 @@ namespace WordAiAddIn
             }
         }
 
-        // Returns a report string (PP-12 Task 2 Step 5 / Task 4) instead of
-        // void + a bare "ok" - the caller (ApplyCommands) uses this text
-        // directly so a skipped-heading count is visible, not silently lost.
+        // Returns a report string instead of void+"ok" so a skipped-heading count
+        // is visible to the caller, not silently lost.
         private static string CreateParagraphBullets(JsonElement cmd)
         {
             var matches = ResolveTargetParagraphs(cmd.GetProperty("target"));
@@ -373,9 +350,8 @@ namespace WordAiAddIn
             return $"createParagraphBullets: {applied} applied, {skippedHeadings} heading(s) skipped.";
         }
 
-        // Returns a report string (PP-12 Task 4) instead of void + a bare
-        // "ok" - a target matching only non-list paragraphs previously
-        // reported success while changing nothing.
+        // Returns a report string instead of void+"ok" - a target matching only
+        // non-list paragraphs previously reported success while changing nothing.
         private static string DeleteParagraphBullets(JsonElement cmd)
         {
             var matches = ResolveTargetParagraphs(cmd.GetProperty("target"));

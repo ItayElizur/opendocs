@@ -403,12 +403,9 @@ async function anthropicTurn(
   const lastTool = completedTools.at(-1)
   if (stopReason === 'max_tokens' && lastTool) lastTool.truncated = true
   for (const call of completedTools) cb.onToolCall(call)
-  // A stream with no content AND no message framing (no stop_reason ever seen)
-  // is a gateway soft-failure, not a model turn — surface it instead of letting
-  // it dissolve into an empty "successful" turn with no diagnostics. A genuine
-  // empty closing turn (common after tool-heavy runs) still carries end_turn.
-  // The "(empty stream)" suffix is a contract: app renderers match it to
-  // classify the failure as empty output (fail fast, no billed retries).
+  // No content and no message framing at all is a gateway soft-failure, not a
+  // model turn (see `stream.ts.md`). The "(empty stream)" suffix is a contract:
+  // app renderers match it to classify the failure as empty output.
   if (!emitted && completedTools.length === 0 && !stopReason) {
     throw new Error('Claude returned no content (empty stream)')
   }
@@ -736,14 +733,8 @@ function emitOpenAiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
   if (choice?.finish_reason === 'length') cb.onStopReason?.('max_tokens')
 }
 
-/**
- * `reasoning_effort` is OpenAI's own field name, tried against any
- * OpenAI-compatible surface. `chat_template_kwargs` is vLLM-specific (it
- * forwards into the model's Jinja chat template, e.g. to toggle a
- * Qwen3-style `enable_thinking` switch) - only worth sending to a
- * self-hosted `custom` endpoint, never to the real OpenAI/DeepSeek APIs,
- * which don't use it.
- */
+/** `reasoning_effort` is OpenAI's field name; `chat_template_kwargs` is vLLM-specific
+ * (only worth sending to a self-hosted `custom` endpoint, see `stream.ts.md`). */
 function openAiReasoningFields(
   effort: ReasoningEffort | undefined,
   includeThinkingKwargs: boolean,
@@ -757,11 +748,9 @@ function openAiReasoningFields(
       : { reasoning_effort: 'minimal' }
   }
   return {
-    // 'xhigh' is a real tier for vLLM-served models like Qwen3 (sent as-is
-    // when includeThinkingKwargs is set), but the plain OpenAI API's
-    // reasoning_effort enum only goes up to 'high' - sending 'xhigh' there
-    // verbatim is a hard 400, not a silent no-op, unlike every other
-    // unsupported-tier case this function handles (PR review, 2026-10-02).
+    // Clamp 'xhigh' to 'high' for the plain OpenAI API: unlike other unsupported
+    // tiers, sending 'xhigh' there verbatim is a hard 400, not a silent no-op
+    // (see `stream.ts.md`).
     reasoning_effort: !includeThinkingKwargs && effort === 'xhigh' ? 'high' : effort,
     ...(includeThinkingKwargs
       ? { chat_template_kwargs: { enable_thinking: true, preserve_thinking: true } }

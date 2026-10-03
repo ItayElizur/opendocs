@@ -763,12 +763,8 @@ describe('mountChatUI', () => {
     moreSettingsBtn.click()
     expect(root.querySelector('.ai-panel')!.classList.contains('settings-open')).toBe(true)
     expect(gear.title).toBe('Back to conversation')
-    // The "More settings" button makes no sense once already inside the
-    // settings view it opens - this only checks the `hidden` IDL attribute
-    // the code sets, which jsdom does not render; it does NOT catch a CSS
-    // rule silently overriding [hidden]'s effect (confirmed repro: a
-    // `display: block` rule on this exact button did exactly that - see the
-    // fix in chat-ui.css). Real visual verification needs a real browser.
+    // Checks only the `hidden` IDL attribute; jsdom doesn't render CSS, so this
+    // can't catch a stylesheet rule overriding [hidden] (see `chat-ui.test.ts.md`).
     expect(moreSettingsBtn.hidden).toBe(true)
 
     gear.click()
@@ -778,12 +774,9 @@ describe('mountChatUI', () => {
   })
 
   it('the gear button toggles the quick settings dropdown open and closed in chat view', () => {
-    // Regression test: a duplicate click listener on this button (one from
-    // before FT-1, one from FT-1 itself) each toggled .open independently,
-    // so every click cancelled itself out and the button appeared totally
-    // unresponsive - confirmed by real-world testing, not caught by any
-    // existing test since the ones above interact with the panel's fields
-    // directly without ever asserting the dropdown's own open/closed state.
+    // Regression test: a duplicate click listener on this button once made every
+    // click cancel itself out (see `chat-ui.test.ts.md`) - this asserts the
+    // dropdown's own open/closed state directly.
     const { root } = setup()
     const gear = root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!
     const panel = root.querySelector<HTMLElement>('#settingsPanel')!
@@ -1057,24 +1050,11 @@ describe('mountChatUI', () => {
 
   // ---- Up/Down-arrow recall of previously sent messages ----
   //
-  // caretCollapsedAtFirstLine/caretCollapsedAtLastLine (chat-ui.ts) decide
-  // whether an arrow press should recall history or just move the caret,
-  // by comparing caretLineMeasurement.measure(pos) - the pixel offsetTop of
-  // the visual line `pos` renders on, via a hidden mirror div - against the
-  // measurement at position 0 (top) / value.length (bottom). jsdom (used
-  // here) performs no real text layout, so a *real* mirror-div measurement
-  // always reports offsetTop 0 for every position in this environment -
-  // there is no way to assert a genuine pixel-line answer from jsdom alone.
-  // So every test in this section stubs caretLineMeasurement.measure with a
-  // small fake that reproduces a specific, known line layout, and asserts
-  // only the surrounding gating/recall logic against it. The default stub
-  // below (hard '\n' counting) reproduces exactly the *old* behavior, which
-  // is still supposed to work today - i.e. it's what real browsers do for
-  // text with no soft-wrapping - so the pre-existing hard-newline tests
-  // keep meaning what they say. The dedicated soft-wrap test further down
-  // installs its own stub simulating word-wrap, to exercise the actual bug
-  // fix (a long, single-line, no-'\n' draft that wraps across several
-  // visual lines).
+  // jsdom performs no real text layout, so these tests stub
+  // caretLineMeasurement.measure with a fake per-position line map instead of
+  // asserting real pixel offsets (see `chat-ui.test.ts.md`). The default stub
+  // below reproduces hard '\n' counting (the pre-existing behavior); the
+  // dedicated soft-wrap tests further down install their own stub.
   function hardNewlineLineIndex(textarea: HTMLTextAreaElement, pos: number): number {
     return (textarea.value.slice(0, pos).match(/\n/g) || []).length
   }
@@ -1166,13 +1146,9 @@ describe('mountChatUI', () => {
     const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
     sendText(root, 'prior message')
 
-    // No '\n' anywhere - under the old lastIndexOf('\n', ...)-only check this
-    // was indistinguishable from a single-line draft, so caretCollapsedAtFirstLine()
-    // was always true here and the very first ArrowUp always recalled
-    // history. Simulate a real browser word-wrapping this into 4 visual
-    // lines of 20 characters each (line index = floor(pos / 20)) - the exact
-    // shape the mirror-div technique measures in production, stubbed here
-    // because jsdom can't lay text out for real (see the section comment above).
+    // No '\n' anywhere; simulate a real browser word-wrapping this into 4 visual
+    // lines of 20 characters each (line index = floor(pos / 20)) - see
+    // `chat-ui.test.ts.md` for why this used to always recall on the first ArrowUp.
     const longDraft = 'x'.repeat(80)
     const WRAP_WIDTH = 20
     caretLineMeasurement.measure = (ta, pos) => Math.floor(pos / WRAP_WIDTH)
