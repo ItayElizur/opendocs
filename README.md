@@ -1,21 +1,43 @@
 # OpenDocs
 
-VSTO add-ins that put an LLM chat pane directly into Word, Excel, PowerPoint, and
-Outlook — Word/Excel/PowerPoint/Outlook run as real, already-installed desktop
-Microsoft Office applications, driven via COM interop
-(`Microsoft.Office.Interop.{Word,Excel,PowerPoint,Outlook}`), not a web renderer or a
-clone. The chat UI is a WebView2 page hosted in a CustomTaskPane; tool calls cross a
-`chrome.webview.postMessage` ⇄ `CoreWebView2.PostWebMessageAsJson` JSON bridge into C#
-handlers that call the Office object model directly. The deployment target is
-**air-gapped** — there is no web search, image generation, or media analysis anywhere
-in the repo, and every tool that touches a file (`add_image`, `replace_image`,
-`get_attachment`, …) is local-file-only, never a remote URL.
+**An AI assistant that lives inside Word, Excel, PowerPoint, and Outlook — not next to
+them.**
 
-For the full, current-state catalog of every tool the AI can call in each app — read
-tools, editing tools, editing-mode gating, known gaps — see
-**[`docs/architecture.md`](docs/architecture.md)** and the per-app references under
-**[`docs/tools/`](docs/tools/)**. If you're an AI coding agent working in this repo,
-also read **[`CLAUDE.md`](CLAUDE.md)** first.
+OpenDocs adds a chat pane directly to the real, already-installed Microsoft Office
+desktop apps you already use. There's no separate app to learn, no copy-pasting
+content into a browser tab, and no document conversion step that mangles your
+formatting: the assistant reads and edits your actual Word document, Excel workbook,
+PowerPoint deck, or Outlook mailbox through the same COM automation layer Office's own
+macros use — so a table it adds is a real native table, a comment it leaves is a real
+native comment, and an edit it makes shows up in Track Changes like anyone else's.
+
+**Why it's different:**
+
+- **Drives the real app, not a clone.** No from-scratch document renderer to fall
+  behind Office's own feature set — every edit goes through the genuine Word/Excel/
+  PowerPoint/Outlook object model, so it looks and behaves exactly like a native
+  change, including undo/redo.
+- **You decide how much autonomy it gets.** A four-tier editing-mode control — Read
+  Only, Comment Only, Track Changes, Full Autonomy (Outlook: Read only, Draft only,
+  Automate approvals, Full autonomy) — governs what the assistant is allowed to touch,
+  enforced on both ends: the client only offers tools for the current tier, and the
+  add-in independently refuses anything beyond it even if asked.
+- **Built for air-gapped and on-prem environments.** No web search, no image
+  generation, no media analysis, and every file-touching tool is local-file-only —
+  nothing leaves your machine except the chat request itself, to whichever AI
+  provider you pick.
+- **Bring your own model.** Anthropic, OpenAI, Gemini, DeepSeek, Genspark, or any
+  OpenAI-compatible endpoint (self-hosted vLLM, etc.) — switch providers from the
+  settings panel, with a one-click connection test.
+- **Deep, real tool coverage.** Native Word comments and a true auto-paginating TOC,
+  Excel pivot tables with calculated fields, PowerPoint Slide Master editing and
+  native-clipboard cross-slide shape copy, and full Outlook mailbox/calendar
+  automation — including shared calendars, recurring series, and meeting responses.
+  See [`docs/tools/`](docs/tools/) for the complete, current-state catalog per app.
+
+For how it's built — the COM/WebView2 bridge, the shared provider transport, and the
+editing-mode gating — see [`docs/architecture.md`](docs/architecture.md). If you're an
+AI coding agent working in this repo, read [`CLAUDE.md`](CLAUDE.md) first.
 
 ## Layout
 
