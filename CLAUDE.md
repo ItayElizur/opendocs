@@ -1,4 +1,4 @@
-# Agent guidance for officeoffice
+# Agent guidance for OpenDocs
 
 This file is for an AI coding agent working in this repo. It only covers things that
 are specific to *this* codebase's conventions and pitfalls — not general engineering

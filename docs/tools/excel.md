@@ -14,7 +14,7 @@ and shape for the read side (`get_workbook_context`, `read_range`, `read_cells`,
 `select_range`, `read_formats`, `read_sheet_features`, `find_cells`, `trace_precedents`,
 `trace_dependents`). `load_guide` has no equivalent (deliberately out of scope —
 genoffice's is an internal prompt-budget mechanism for managing its larger op count in
-context, not needed at officeoffice's current scale).
+context, not needed at OpenDocs's current scale).
 
 `find_cells` and `propose_operations`' `find_replace` op both default to **the active
 sheet only** (matching Ctrl+F/Ctrl+H's default "Within: Sheet"), with an `allSheets`
@@ -63,7 +63,7 @@ entry.ts`) — the single source of truth for both the wire schema and the human
 description, cross-checked exhaustively against `ExcelTools.cs`'s `ProposeOperations`
 switch.
 
-Where officeoffice's version is still **narrower** than genoffice's:
+Where OpenDocs's version is still **narrower** than genoffice's:
 
 | Op | Gap |
 |---|---|
@@ -80,4 +80,4 @@ rebinding to a new range (`dataRange`+`dataSheet`+`plotBy`).
 
 No `dataSource`/provenance-enforcement mechanism exists anywhere (see
 [`docs/architecture.md`](../architecture.md) — nothing analogous exists in
-officeoffice's Excel or PowerPoint chart tools).
+OpenDocs's Excel or PowerPoint chart tools).
