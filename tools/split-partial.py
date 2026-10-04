@@ -2,8 +2,8 @@
 """
 Split one big C# static class into `partial class` files, by member name.
 
-Written for Phases 1+3 of the officeoffice refactor
-(docs/superpowers/plans/2026-08-27-phase1-3-file-split.md). The split is
+Written for Phases 1+3 of the officeoffice refactor, which split the three
+*Tools.cs files into ~10 partial-class files each. The split is
 mechanical and error-prone by hand across ~200 members, so it is scripted:
 the script refuses to run unless EVERY member is assigned to exactly one
 destination, which is the mistake that would otherwise be silent.

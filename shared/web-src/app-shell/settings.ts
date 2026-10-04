@@ -25,14 +25,8 @@ export interface PanelSettings {
    * by bootstrap.ts's onSettingsSave handler, never live on click.
    */
   theme: 'light' | 'dark' | 'default'
-  /**
-   * 'en'/'he' are explicit overrides; 'default' follows Office's own UI
-   * display language, read once at pane startup (see
-   * OfficeAi.Shared/OfficeLanguage.cs) - not re-checked while the pane stays
-   * open. Same save-gating as theme. Previously this preference was threaded
-   * through chat-ui.ts's Save payload but never actually persisted here - a
-   * pre-existing gap now closed alongside adding the 'default' option.
-   */
+  /** 'en'/'he' are explicit overrides; 'default' follows Office's own UI display
+   * language, read once at pane startup. Same save-gating as theme (see `settings.ts.md`). */
   lang: 'en' | 'he' | 'default'
   /** Global, not per-provider - see chat-ui.ts's "More settings" reasoning section. 'default' omits the param entirely (today's behavior). */
   reasoningEffort: ReasoningEffort
@@ -47,12 +41,8 @@ interface LegacyStoredSettings {
   skipTlsVerify?: boolean
 }
 
-// officeoffice is an air-gapped/on-prem-oriented deployment; defaultAiSettings()
-// alone would default to Genspark (a hosted proxy that needs a login), which
-// would silently change out-of-box behavior for this repo's test/mock-server
-// flow (docs/superpowers/plans/2026-08-22-mock-server-mode-testing.md). Override
-// just the default provider + the custom slot's starting values, so a fresh
-// profile behaves exactly as it did before PP-6.
+// Overrides defaultAiSettings()'s Genspark default with this repo's own
+// test/mock-server provider + starting values (see `settings.ts.md`).
 function defaultsForThisRepo(): AiSettings {
   const defaults = defaultAiSettings()
   defaults.provider = 'custom'
@@ -103,16 +93,7 @@ function persistSettings(settings: PanelSettings): void {
 
 let currentSettings: PanelSettings = loadSettings()
 
-// Per-turn output budget. 1024 was too small for models that spend budget on
-// reasoning before emitting visible text: the provider returned
-// finish_reason=length with zero content and the run ended in an unexplained
-// empty reply (PP-4). 8192 is comfortably above a long tool-using turn's real
-// output while staying well under every supported provider's per-request cap
-// - checked against every model in shared/web-src/ai-provider/providers.ts
-// (Claude/GPT/Gemini/DeepSeek families all support output limits well above
-// 8192 via their APIs). Not made user-configurable from Settings: it's a
-// footgun with no better default a user could pick, and Settings is already
-// growing in PP-6/FT-1.
+// Per-turn output budget (see `settings.ts.md` for why 8192 and not smaller/configurable).
 export const MAX_TOKENS = 8192
 
 /**

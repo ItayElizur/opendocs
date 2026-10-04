@@ -507,16 +507,9 @@ export class AgentLoop<TSnapshot = unknown> {
     // no-tools finalizing turn after hitting the limit
     // (a cancelled turn drops its tool calls — no results would follow)
     if (toolCalls.length === 0 || this.cancelled || this.finalizing) {
-      // Models often end a tool-using run with an empty text turn ("I'm done").
-      // Leaving assistant text empty in history then poisons the next user
-      // prompt: Anthropic rejects empty content arrays, Gemini rejects empty
-      // parts, and OpenAI-compatible routes send content:null with no tool_calls —
-      // all of which make follow-up turns fail or return empty again (see
-      // genoffice#12 / #22: first prompt works, second shows "no summary").
-      // Same normalization as restore(), applied unconditionally: cancelled and
-      // read-only empty turns poison follow-ups just the same. onDone still
-      // reports the raw turn text so app UIs keep their localized fallbacks
-      // instead of surfacing this English placeholder.
+      // An empty assistant text here would poison the next user prompt - several
+      // providers reject or choke on empty content (see `loop.ts.md`). onDone
+      // still reports the raw turn text so app UIs keep their own fallbacks.
       this.history.push({ role: 'assistant', text: this.turnText || COMPLETED_VIA_TOOLS_TEXT })
       this.running = false
       this.runUserMsg = null
@@ -624,15 +617,8 @@ export class AgentLoop<TSnapshot = unknown> {
   }
 }
 
-/**
- * Redact secret-looking tokens from an outgoing user message so accidentally
- * pasted API keys, URL credentials, and password assignments don't reach
- * remote model APIs verbatim.
- *
- * Imported from public PR #32 (BuiltByHarshil), with the credential pattern
- * narrowed to URL userinfo (scheme://user:pass@host) so ordinary "a:b@c"
- * prose is never rewritten.
- */
+/** Redacts secret-looking tokens (API keys, URL credentials, password assignments)
+ * from an outgoing user message before it reaches remote model APIs (see `loop.ts.md`). */
 export function sanitizeAgentPayload(payload: string): string {
   return payload
     .replace(/\b(?:sk-|AIza|ghp_|secret_)[A-Za-z0-9_-]{16,}/g, '[REDACTED_API_KEY]')

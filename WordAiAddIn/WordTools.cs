@@ -7,15 +7,13 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAiAddIn
 {
-    // Spike 3: real COM tool execution against the live Word document, called
-    // from the WebView2-hosted AgentLoop via the JSON WebMessage bridge.
+    // Real COM tool execution against the live Word document, called from the
+    // WebView2-hosted AgentLoop via the JSON WebMessage bridge.
     public static partial class WordTools
     {
-        // Task 11 (per-document since PP-1): server-side editing-mode gate,
-        // keyed by the same per-document id TaskPaneHost.GetChatId() produces,
-        // so a mode change in one window's pane never affects another
-        // window's. Absent key defaults to FullAutonomy so existing behavior
-        // is unchanged for a document that has never had its mode set.
+        // Server-side editing-mode gate, keyed by the same per-document id
+        // TaskPaneHost.GetChatId() produces, so a mode change in one window never
+        // affects another. Absent key defaults to FullAutonomy.
         private static readonly Dictionary<string, EditingMode> ModeByDoc = new Dictionary<string, EditingMode>();
 
         public static void SetMode(string docKey, EditingMode mode)
@@ -34,30 +32,27 @@ namespace WordAiAddIn
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
             "get_document_context", "read_blocks", "read_chart", "read_table", "read_smartart",
-            // find_text/get_headings are part of the read-only toolset (PR review,
-            // 2026-10-02) - were previously missing here, which both blocked them
-            // in Read Only mode and wrapped them in a pointless undo custom record.
+            // find_text/get_headings are read-only too - were previously missing here,
+            // which both blocked them in Read Only mode and wrapped them in a
+            // pointless undo custom record.
             "find_text", "get_headings",
         };
 
         public static ToolResult Execute(string docKey, string name, JsonElement input)
         {
-            // Post-hoc diagnostic addition (2026-08-24): every tool call and
-            // every top-level failure is logged, regardless of which tool -
-            // this is the single catch-all that guarantees a repro always
-            // shows up in the log even if a specific method's own logging
-            // (WriteChartData/ReadChart/etc.) missed the actual failure point.
+            // Logs every tool call and failure regardless of which tool, so a repro
+            // always shows up even if a specific method's own logging missed the
+            // failure point.
             DebugLog.Write("Execute: " + name + " input=" + input.GetRawText());
             try
             {
                 EditingMode mode = ModeFor(docKey);
                 bool isAlwaysAllowed = AlwaysAllowedTools.Contains(name);
                 bool isAddComment = name == "add_comment";
-                // "Mutating" here means "changes document content/structure" -
-                // used only to decide whether TrackRevisions should be toggled.
-                // add_comment does not mutate document content (it adds a
-                // comment annotation), so it's excluded from this set even
-                // though it is gated like a mutating tool below.
+                // "Mutating" means "changes document content/structure", used only to
+                // decide whether TrackRevisions toggles. add_comment doesn't mutate
+                // content, so it's excluded here even though it's gated like a
+                // mutating tool below.
                 bool isContentMutating = !isAlwaysAllowed && !isAddComment;
 
                 if (mode == EditingMode.ReadOnly && !isAlwaysAllowed)
@@ -74,23 +69,11 @@ namespace WordAiAddIn
                     ActiveDoc.TrackRevisions = (mode == EditingMode.TrackChanges);
                 }
 
-                // Word's native undo stack registers one entry PER COM write,
-                // not per tool call - confirmed live, 2026-10-02: add_table's
-                // cell-by-cell `Range.Text =` loop (WordTools.Tables.cs) left
-                // undo_last_action peeling back one cell at a time instead of
-                // reverting the whole table in one step (the mirror image of
-                // PowerPoint's issue, which coalesces too much instead of too
-                // little - see PowerPointTools.cs's Execute() for that fix).
-                // UndoRecord.StartCustomRecord/EndCustomRecord (confirmed via
-                // reflection against the referenced PIA) groups every COM
-                // write between the two calls into one user-visible undo
-                // entry, so one tool call always maps to exactly one undo
-                // step. Not used for always-allowed (read-only) tools or
-                // undo/redo themselves - wrapping Document.Undo()/Redo() in a
-                // custom record would be meaningless. Must run in try/finally:
-                // a tool throwing mid-mutation without EndCustomRecord would
-                // leave Word recording forever, silently absorbing every
-                // later edit (including the user's own) into one entry.
+                // Word's native undo stack registers one entry per COM write, not per
+                // tool call; StartCustomRecord/EndCustomRecord groups all writes in a
+                // tool call into one undo step. Skipped for always-allowed/undo/redo
+                // tools. Must run in try/finally - an uncaught throw mid-mutation would
+                // leave Word recording forever. See WordTools.cs.md.
                 bool shouldRecordUndo = !isAlwaysAllowed && name != "undo_last_action" && name != "redo_last_action";
                 if (shouldRecordUndo)
                 {
@@ -144,16 +127,10 @@ namespace WordAiAddIn
                 }
                 finally
                 {
-                    // Caught separately (PR review, 2026-10-02): a successful
-                    // ToolResult already computed by the switch above is
-                    // still in flight when a finally block runs - if
-                    // EndCustomRecord() itself threw uncaught here, C#'s
-                    // finally-after-return semantics would discard that
-                    // already-successful result and propagate this exception
-                    // to the outer catch instead, reporting a real mutation
-                    // as a generic failure. Logged, not rethrown, so a
-                    // cosmetic undo-grouping failure can never mask a
-                    // mutation that actually succeeded.
+                    // Logged, not rethrown - an uncaught throw from EndCustomRecord()
+                    // here would discard an already-successful ToolResult (C#'s
+                    // finally-after-return semantics) and report a real mutation as a
+                    // generic failure. See WordTools.cs.md.
                     if (shouldRecordUndo)
                     {
                         try
@@ -191,23 +168,16 @@ namespace WordAiAddIn
             return new ToolResult { Output = "Comment added.", Mutated = true, Summary = "add_comment" };
         }
 
-        // Known limitation (PP-1 Task 5 Step 5): resolves whichever document is
-        // ACTIVE right now, not necessarily the one whose pane initiated this
-        // tool call. A tool call is always initiated by a user in the
-        // currently-focused window, so this is normally correct - but a
-        // long-running run whose user switches windows mid-run would write
-        // into the newly-active document instead of the one the run started
-        // against. Fixing this needs per-document COM target resolution
-        // across every executor method - out of scope here; left as a known
-        // issue for a follow-up item.
+        // Resolves whichever document is ACTIVE right now, not necessarily the one
+        // whose pane initiated this call - a long-running run whose user switches
+        // windows mid-run would write into the wrong document. Known limitation,
+        // not fixed here. See WordTools.cs.md.
         private static Word.Document ActiveDoc => Globals.ThisAddIn.Application.ActiveDocument;
 
-        // PP-10 Task 1: shared insertion-point resolver. afterBlockIndex is
-        // 0-based over ActiveDoc.Paragraphs, matching every other
-        // block-addressed tool in this file. -1 means "before the first
-        // paragraph", matching insertToc/moveBlocks' existing convention.
-        // Consumed by insert_content, apply_commands' chart anchoring (PP-9),
-        // and add_image (PP-11) - one helper, not three copies.
+        // Shared insertion-point resolver. afterBlockIndex is 0-based over
+        // ActiveDoc.Paragraphs, matching every other block-addressed tool; -1 means
+        // "before the first paragraph". Consumed by insert_content, chart anchoring,
+        // and add_image - one helper, not three copies.
         private static Word.Range RangeAfterBlock(int afterBlockIndex)
         {
             Word.Paragraphs paragraphs = ActiveDoc.Paragraphs;
@@ -225,9 +195,8 @@ namespace WordAiAddIn
             return r;
         }
 
-        // PP-23: shared end-of-document insertion point, matching InsertContent's
-        // and AddImage's existing inline "collapse doc.Content to the end" idiom
-        // (extracted here rather than duplicated a third time).
+        // Shared end-of-document insertion point, matching InsertContent's/AddImage's
+        // inline idiom (extracted rather than duplicated a third time).
         private static Word.Range EndOfDocumentRange()
         {
             Word.Range end = ActiveDoc.Content;
@@ -235,24 +204,11 @@ namespace WordAiAddIn
             return end;
         }
 
-        // Chart-type vocabulary now lives in OfficeAi.Shared.ChartTypes -
-        // one table for all three add-ins (PP-9's "one chart vocabulary"
-        // intent, now enforced by construction rather than by comment).
+        // Chart-type vocabulary now lives in OfficeAi.Shared.ChartTypes - one table
+        // shared by all three add-ins.
 
-        // PP-9: ported from PowerPointTools.AddChartPpt's data-writing block -
-        // the embedded chart workbook MUST be closed and released in a
-        // finally, or a leaked hidden Excel process stays alive for the rest
-        // of the Word session. seriesArray items are {name?, values}.
-        // Post-hoc fix (2026-08-24, user-reported): the embedded workbook's
-        // OLE server occasionally still throws "The remote procedure call
-        // failed" (HRESULT 0x800706BE) even after the Clear()+batched-write
-        // fix above - a known, documented transient failure mode for rapid
-        // COM calls against Office's embedded chart-data Excel object, not
-        // something a single call can eliminate. Retrying after a short
-        // delay is the standard mitigation; only the specific known
-        // transient RPC HRESULTs are retried, so a genuine logic error
-        // (bad range, etc.) still fails immediately rather than being
-        // masked for 3 attempts.
+        // See WordTools.cs.md for a historical note on the chart workbook retry
+        // (ComRetry.Run usage in WordTools.Charts.cs) left here.
 
     }
 }

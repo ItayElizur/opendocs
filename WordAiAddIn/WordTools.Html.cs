@@ -7,19 +7,15 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAiAddIn
 {
-    // Spike 3: real COM tool execution against the live Word document, called
-    // from the WebView2-hosted AgentLoop via the JSON WebMessage bridge.
+    // Real COM tool execution against the live Word document, called from the
+    // WebView2-hosted AgentLoop via the JSON WebMessage bridge.
     public static partial class WordTools
     {
-        // PP-10 Task 3: restricted-HTML insertion. Supported set, fixed and
-        // small: block <p> <h1>-<h3> <ul>/<ol> with <li>; inline <b>/<strong>
-        // <i>/<em> <u> <br>. Nothing else - no tables, no images (PP-11), no
-        // attributes, no nested lists. Parsed via XElement.Parse (built on
-        // XmlReader) rather than a regex/hand scanner - gives well-formedness
-        // checking for free, so a malformed fragment throws before anything
-        // is written. The whole fragment is validated against the supported
-        // tag set BEFORE any Word write happens, so an unsupported tag
-        // halfway through cannot leave a partial insert.
+        // Restricted-HTML insertion: a fixed, small supported set (no tables, images,
+        // attributes, or nested lists). Parsed via XElement.Parse rather than a regex/
+        // hand scanner for well-formedness checking, and validated against the
+        // supported tag set before any Word write happens, so a bad fragment can't
+        // leave a partial insert.
         private static readonly HashSet<string> HtmlBlockTags = new HashSet<string> { "p", "h1", "h2", "h3", "ul", "ol" };
         private static readonly HashSet<string> HtmlInlineTags = new HashSet<string> { "b", "strong", "i", "em", "u", "br" };
 
@@ -77,11 +73,10 @@ namespace WordAiAddIn
             }
         }
 
-        // Writes one paragraph's inline content (text + b/strong/i/em/u/br)
-        // into `cursor`, which must be collapsed at the start of an empty
-        // paragraph. Word.Range is a COM reference type - Collapse/Text
-        // mutate the same underlying range the caller holds, so no ref
-        // parameter is needed for the recursion to see the cursor advance.
+        // Writes one paragraph's inline content into `cursor` (collapsed at the start
+        // of an empty paragraph). Word.Range is a COM reference type, so Collapse/Text
+        // mutate the caller's own range - no ref parameter is needed for the
+        // recursion to see the cursor advance.
         private static void WriteInlineNodes(Word.Range cursor, IEnumerable<System.Xml.Linq.XNode> nodes, bool bold, bool italic, bool underline)
         {
             foreach (System.Xml.Linq.XNode node in nodes)
@@ -115,11 +110,10 @@ namespace WordAiAddIn
             }
         }
 
-        // Inserts a validated HTML fragment (see ParseHtmlFragment) starting
-        // at `at`. Each block element becomes its own new paragraph, using
-        // the same InsertParagraphAfter+collapse idiom InsertContent already
-        // uses for plain text - the paragraph `at` itself pointed into is
-        // never merged into, only new paragraphs after it are created.
+        // Inserts a validated HTML fragment (see ParseHtmlFragment) starting at `at`.
+        // Each block element becomes its own new paragraph (same InsertParagraphAfter
+        // idiom InsertContent uses) - the paragraph `at` points into is never merged
+        // into, only new paragraphs after it are created.
         private static void InsertHtmlFragment(Word.Range at, string html)
         {
             System.Xml.Linq.XElement root = ParseHtmlFragment(html);

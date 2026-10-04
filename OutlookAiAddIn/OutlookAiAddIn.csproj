@@ -114,7 +114,7 @@
     <!-- search_contacts only: EWS ResolveName (server-side ANR over Contacts + GAL),
          the one non-COM call in the Outlook add-in. 2.2.0 is the last official
          release; on-prem Exchange speaks the same EWS SOAP, and it has no
-         transitive NuGet dependencies. See OutlookEws.cs / docs/ai-tool-surface.md. -->
+         transitive NuGet dependencies. See OutlookEws.cs / docs/tools/outlook.md. -->
     <PackageReference Include="Microsoft.Exchange.WebServices" Version="2.2.0" />
   </ItemGroup>
 

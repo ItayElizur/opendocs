@@ -9,8 +9,7 @@ namespace ExcelAiAddIn
 {
     public static partial class ExcelTools
     {
-        // Task 11 (per-document since PP-1): see WordTools.cs's identical
-        // pattern for the rationale - keyed by TaskPaneHost.GetChatId().
+        // Per-document editing mode, keyed by TaskPaneHost.GetChatId() - see WordTools.cs for the identical pattern.
         private static readonly Dictionary<string, EditingMode> ModeByDoc = new Dictionary<string, EditingMode>();
 
         public static void SetMode(string docKey, EditingMode mode)
@@ -31,30 +30,16 @@ namespace ExcelAiAddIn
             "get_workbook_context", "read_range", "read_cells", "select_range", "read_formats", "read_sheet_features", "find_cells", "trace_precedents", "trace_dependents",
         };
 
-        // Shape-name lookup now lives in OfficeAi.Shared.ShapeTypes (Phase 0) -
-        // union of this map and PowerPoint's near-identical copy. PP-16:
-        // mirrors EXCEL_SHAPE_TYPES / add_shape's shapeType enum in
-        // ExcelAiAddIn/web-src/entry.ts exactly, plus the separately-handled
-        // "textbox". Edit both together.
-
-        // PP-15: chart-type vocabulary for BOTH add_chart and edit_chart now
-        // lives in OfficeAi.Shared.ChartTypes, shared with Word and PowerPoint.
-        // The cross-referencing this comment used to describe by hand (and the
-        // PptChartTypeMap "bar" bug it records) is what motivated sharing it.
+        // Shape names: OfficeAi.Shared.ShapeTypes; mirrors entry.ts's shapeType enum (PP-16) - edit both together.
+        // Chart types: OfficeAi.Shared.ChartTypes, shared with Word and PowerPoint (PP-15).
 
         public static ToolResult Execute(string docKey, string name, JsonElement input)
         {
             try
             {
                 EditingMode mode = ModeFor(docKey);
-                // Excel has no add_comment-equivalent tool yet, so Comment Only
-                // mode allows no mutating tools at all (documented gap - see
-                // Task 16 brief). Track Changes mode currently behaves the
-                // same as Full Autonomy for gating purposes: Excel's
-                // track-changes equivalent (Workbook.HighlightChangesOnScreen /
-                // shared-workbook change tracking) is more limited than
-                // Word's TrackRevisions and is out of scope for this task, so
-                // there is deliberately no COM call wired up for it here.
+                // Comment Only blocks all mutating tools (no add_comment-equivalent tool yet); Track Changes
+                // currently behaves like Full Autonomy - see ExcelTools.cs.md for why.
                 bool isMutating = !AlwaysAllowedTools.Contains(name);
                 if (mode == EditingMode.ReadOnly && isMutating)
                 {
@@ -86,10 +71,8 @@ namespace ExcelAiAddIn
             }
         }
 
-        // Known limitation (PP-1 Task 5 Step 5): resolves the ACTIVE workbook/
-        // sheet right now, not necessarily the one whose pane initiated this
-        // tool call - see WordTools.cs's ActiveDoc for the identical
-        // rationale and the same out-of-scope decision.
+        // Known limitation (PP-1 Task 5 Step 5): resolves the ACTIVE workbook/sheet, not necessarily the one
+        // whose pane initiated this call - see WordTools.cs's ActiveDoc for the identical rationale.
         private static Excel.Worksheet Sheet(JsonElement input)
         {
             Excel.Application app = Globals.ThisAddIn.Application;

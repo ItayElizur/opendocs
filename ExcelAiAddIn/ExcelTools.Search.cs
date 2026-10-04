@@ -9,12 +9,9 @@ namespace ExcelAiAddIn
 {
     public static partial class ExcelTools
     {
-        // Shared by find_cells and propose_operations' find_replace: which
-        // sheets a call should touch. sheetId names one specific sheet;
-        // otherwise allSheets picks every sheet in the workbook (Ctrl+F's
-        // "Within: Workbook") or, by default, just the active sheet (Ctrl+F's
-        // default "Within: Sheet") - a narrower default than this tool used
-        // to have (previously: omitting sheetId meant the WHOLE workbook).
+        // Which sheets a call touches: sheetId for one sheet, allSheets for the whole workbook (Ctrl+F's
+        // "Within: Workbook"), otherwise the active sheet only (Ctrl+F's default) - see .md for the
+        // default-scope history.
         private static List<Excel.Worksheet> ResolveSheetsToSearch(Excel.Workbook wb, string sheetId, bool allSheets)
         {
             var sheets = new List<Excel.Worksheet>();
@@ -33,11 +30,8 @@ namespace ExcelAiAddIn
             return sheets;
         }
 
-        // Excel's own native Find/FindNext - the same engine behind Ctrl+F -
-        // over one sheet for one LookIn mode, instead of reading .Text on
-        // every single cell in the range regardless of match count. Wraps
-        // around like Ctrl+F itself; detected and stopped via the address of
-        // the first hit rather than scanning the whole range unconditionally.
+        // Uses Excel's native Find/FindNext (the Ctrl+F engine) instead of scanning every cell's .Text;
+        // wraps like Ctrl+F and stops via the first hit's address.
         private static int NativeFindInSheet(Excel.Worksheet sheet, string query, Excel.XlFindLookIn lookIn, int limit,
             HashSet<string> seenAddresses, System.Text.StringBuilder sb)
         {
@@ -96,9 +90,8 @@ namespace ExcelAiAddIn
                     Excel.Range errorCells = null;
                     try
                     {
-                        // Native error-cell scan - the exact advantage this project's
-                        // original feasibility report flagged VSTO/COM as having over
-                        // Office.js's wildcard-only Range.find.
+                        // Native error-cell scan - the VSTO/COM advantage over Office.js's wildcard-only
+                        // Range.find that this project's feasibility report flagged.
                         errorCells = sheet.UsedRange.SpecialCells(Excel.XlCellType.xlCellTypeFormulas, Excel.XlSpecialCellsValue.xlErrors);
                     }
                     catch (System.Runtime.InteropServices.COMException) { /* no error cells on this sheet - SpecialCells throws if none match */ }
@@ -137,11 +130,9 @@ namespace ExcelAiAddIn
                 return new ToolResult { Output = sb.ToString(), Summary = "find_cells" };
             }
 
-            // Plain substring - Excel's own native Find/FindNext, not a
-            // per-cell scan. xlValues/xlFormulas are separate native passes
-            // (Excel's Find only searches one LookIn mode per call); "both"
-            // runs both and de-dupes by address so a cell matching in either
-            // is reported once, matching the old per-cell "both" semantics.
+            // Native Find/FindNext, not a per-cell scan. xlValues/xlFormulas are separate passes (Excel's
+            // Find only searches one LookIn mode per call); "both" runs both and de-dupes by address to
+            // match the old per-cell "both" semantics.
             var seenAddresses = new HashSet<string>();
             foreach (Excel.Worksheet sheet in sheets)
             {
@@ -154,11 +145,9 @@ namespace ExcelAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "find_cells" };
         }
 
-        // The write-side counterpart of find_cells (shares its sheetId/
-        // allSheets scoping - active sheet only by default, matching Ctrl+H's
-        // "Within: Sheet") - only replaces within literal cell VALUES
-        // (cell.Value2 is a string), never formulas or numbers, so a formula
-        // is never corrupted by a text substitution.
+        // Write-side counterpart of find_cells (same sheetId/allSheets scoping, Ctrl+H's "Within: Sheet"
+        // default). Only replaces literal string VALUES - never formulas/numbers - so a formula can't be
+        // corrupted by a text substitution.
         private static int FindReplaceExcel(JsonElement op)
         {
             string find = op.GetProperty("find").GetString();
@@ -198,13 +187,9 @@ namespace ExcelAiAddIn
             return replaced;
         }
 
-        // Locates matches via Excel's own native Find/FindNext (the engine
-        // behind Ctrl+F/Ctrl+H) instead of reading .Text on every cell in the
-        // range, then replaces only the matched cell's literal text VALUE
-        // directly. current.Value2 is only ever a string for a literal text
-        // cell, so a numeric/date/formula cell that merely DISPLAYS a match
-        // (native Find matched its formatted text) is correctly skipped
-        // here, same safety scope as before.
+        // Uses Find/FindNext instead of scanning every cell's .Text; only replaces when Value2 is itself a
+        // string, so a numeric/date/formula cell that merely displays a match (via its formatted text) is
+        // skipped.
         private static int NativeFindReplaceInSheet(Excel.Worksheet sheet, string find, string replace, bool matchCase, StringComparison comparison)
         {
             Excel.Range usedRange = sheet.UsedRange;
@@ -221,9 +206,8 @@ namespace ExcelAiAddIn
                 if (first == null) first = current;
                 else if (address == first.Address[false, false]) break; // wrapped back to the first hit
 
-                // Captured before mutating current's cell, so FindNext's own
-                // position tracking is never asked to reason about a cell
-                // whose content just changed underneath it.
+                // Captured before mutating current's cell - FindNext's own position tracking must not
+                // reason about a cell that just changed underneath it.
                 Excel.Range next = usedRange.FindNext(current);
 
                 if (current.Value2 is string text && text.IndexOf(find, comparison) >= 0)

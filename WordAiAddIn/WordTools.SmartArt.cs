@@ -7,8 +7,8 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAiAddIn
 {
-    // Spike 3: real COM tool execution against the live Word document, called
-    // from the WebView2-hosted AgentLoop via the JSON WebMessage bridge.
+    // Real COM tool execution against the live Word document, called from the
+    // WebView2-hosted AgentLoop via the JSON WebMessage bridge.
     public static partial class WordTools
     {
         private static dynamic ResolveSmartArtLayout(string layoutKey)
@@ -31,22 +31,10 @@ namespace WordAiAddIn
                                                 "the standard English ones this tool assumes.");
         }
 
-        // Post-hoc addition (2026-08-24, user-reported: "smart art has no
-        // change style/color for an existing element"). Unlike layouts,
-        // SmartArt color schemes and quick styles are NOT a fixed enum in
-        // this Office object model (confirmed via reflection against the
-        // referenced Office 15 PIA - Microsoft.Office.Core has no
-        // MsoSmartArtColorType/MsoSmartArtQuickStyleType at all) - they are
-        // live COM collections (Application.SmartArtColors /
-        // .SmartArtQuickStyles) of SmartArtColor/SmartArtQuickStyle objects,
-        // each with a .Name populated at runtime by this install's own
-        // gallery. Rather than guess a curated list of exact display-name
-        // strings (unverifiable without a live session, and a wrong guess
-        // would either fail or - worse - silently match nothing), this
-        // resolves by case-insensitive SUBSTRING match against whatever
-        // names this install actually has, and a miss lists the real
-        // available names so the caller can retry correctly instead of
-        // guessing blind a second time.
+        // Unlike layouts, SmartArt color schemes/quick styles aren't a fixed enum in
+        // this object model - they're live COM collections populated at runtime by
+        // this install's gallery. Resolves by case-insensitive substring match against
+        // the real names; a miss lists what's actually available. See WordTools.SmartArt.cs.md.
         private static dynamic ResolveSmartArtGalleryItem(dynamic collection, string query, string toolName, string whatKind)
         {
             dynamic firstMatch = null;
@@ -78,10 +66,8 @@ namespace WordAiAddIn
             dynamic shape;
             if (afterBlockIndex.HasValue)
             {
-                // Mirrors PP-9's anchored-chart-creation path exactly, including
-                // its caveat: whether Shapes.AddSmartArt truly accepts a named
-                // Anchor parameter in this PIA is UNVERIFIED - flagged as
-                // elevated risk in the plan/verification file.
+                // Mirrors the chart's anchored-creation path; whether AddSmartArt truly
+                // accepts a named Anchor parameter in this PIA is unverified.
                 Word.Range at = RangeAfterBlock(afterBlockIndex.Value);
                 dynamic floatingAtAnchor = doc.Shapes.AddSmartArt(layout, 0, 0, width, height, Anchor: at);
                 shape = floatingAtAnchor.ConvertToInlineShape();
@@ -95,15 +81,10 @@ namespace WordAiAddIn
 
             dynamic smartArt = shape.SmartArt;
 
-            // Post-hoc fix (2026-08-24, user-reported): AddSmartArt seeds the
-            // new diagram with the layout's own default placeholder nodes
-            // (the same "[Text]" prompts the ribbon's SmartArt gallery shows) -
-            // same bug shape as the chart-data fix above (pre-seeded content
-            // never cleared before writing). Without clearing them first, the
-            // requested items were APPENDED after the placeholders instead of
-            // replacing them, leaving visible "[Text]" nodes above the real
-            // ones. Delete every existing node before adding the real ones,
-            // same idea as the chart fix's sheet.Cells.Clear().
+            // AddSmartArt seeds the diagram with the layout's default placeholder
+            // "[Text]" nodes; delete them first or requested items get appended after
+            // them instead of replacing them (same idea as the chart fix's
+            // Cells.Clear()). See WordTools.SmartArt.cs.md.
             dynamic existingNodes = smartArt.Nodes;
             for (int i = (int)existingNodes.Count; i >= 1; i--)
             {
@@ -118,19 +99,9 @@ namespace WordAiAddIn
             return new ToolResult { Output = "SmartArt added (" + input.GetProperty("items").GetArrayLength() + " node(s)).", Mutated = true, Summary = "add_smartart" };
         }
 
-        // PP-23 Task 5: SmartArt shapes are not chart shapes and are not
-        // tables - a small, separate list-and-resolve helper, mirroring
-        // ListChartShapes'/ResolveTable's shape but for shape.HasSmartArt
-        // instead of shape.HasChart.
-        //
-        // Post-hoc fix (2026-08-24, user-reported): HasSmartArt returns an
-        // MsoTriState, not a real bool, exactly like HasChart elsewhere in
-        // this file - a plain (bool) cast either throws (silently swallowed
-        // by the try/catch below) or never matches, so no shape was ever
-        // recognized as SmartArt and read_smartart/edit_smartart always
-        // reported "no SmartArt diagrams" even right after add_smartart had
-        // just created one. Fixed with the same (int)x == -1 comparison
-        // ListChartShapes already uses for HasChart.
+        // Mirrors ListChartShapes for shape.HasSmartArt. HasSmartArt returns an
+        // MsoTriState, not a bool - compared via (int)x == -1, same fix as HasChart.
+        // See WordTools.SmartArt.cs.md.
         internal static List<dynamic> ListSmartArtShapes(dynamic doc)
         {
             var shapes = new List<dynamic>();
@@ -145,11 +116,8 @@ namespace WordAiAddIn
             return shapes;
         }
 
-        // Post-hoc fix (2026-08-24, user-reported): reading N diagrams
-        // previously needed N separate read_smartart calls (one per index) -
-        // extracted so ReadSmartArt can read every diagram in one call when
-        // smartArtIndex is omitted, matching what the user actually wanted
-        // ("a way to read the entire smartart text at once").
+        // Extracted so ReadSmartArt can read every diagram in one call when
+        // smartArtIndex is omitted, instead of one call per diagram.
         private static string ReadOneSmartArt(dynamic shape, int index, int total)
         {
             dynamic smartArt = shape.SmartArt;
@@ -252,15 +220,9 @@ namespace WordAiAddIn
                 }
                 case "set_layout":
                 {
-                    // Post-hoc addition (2026-08-24, user-reported: "smart art
-                    // cant change layout"). Reuses ResolveSmartArtLayout
-                    // verbatim (same curated 7-key map + gallery lookup
-                    // add_smartart already uses) - SmartArt.Layout is
-                    // settable (confirmed via the same reflection pass that
-                    // found .Color/.QuickStyle), so changing an EXISTING
-                    // diagram's layout is the same resolve-then-assign shape
-                    // as creating one, just against smartArt.Layout instead
-                    // of the AddSmartArt call.
+                    // Reuses ResolveSmartArtLayout - SmartArt.Layout is settable
+                    // (confirmed via reflection), same resolve-then-assign shape as
+                    // creating one. See WordTools.SmartArt.cs.md.
                     string layoutKey = input.GetProperty("layout").GetString();
                     smartArt.Layout = ResolveSmartArtLayout(layoutKey);
                     return new ToolResult { Output = "SmartArt layout changed to '" + layoutKey + "'.", Mutated = true, Summary = "edit_smartart" };

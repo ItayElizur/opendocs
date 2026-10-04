@@ -10,13 +10,9 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
-        // PP-22 Task 2 Step 4: index-based lookup (SmartArtLayouts is
-        // index-addressable, and the built-in gallery order is stable across
-        // installs) was considered as a locale-independent alternative to
-        // name-matching. Not switched - index stability across Office versions
-        // is an assumption no better founded than the display-name assumption,
-        // and names at least fail loudly with a diagnostic message below,
-        // whereas a wrong index would silently insert the wrong diagram.
+        // Resolves a layout key to a gallery layout object by display name, not by
+        // index - see PowerPointTools.SmartArt.cs.md for why index-based lookup was
+        // considered and rejected.
         private static dynamic ResolveSmartArtLayout(string layoutKey)
         {
             string targetName;
@@ -31,25 +27,17 @@ namespace PowerPointAiAddIn
                     return layout;
                 }
             }
-            // Distinct from the unknown-key case above: the key was valid, but
-            // this Office install's gallery has no layout under that display
-            // name - the one diagnosis that actually points at a non-English
-            // install, which a silent fallback could never surface.
+            // Distinct from the unknown-key case above: a valid key with no matching
+            // gallery entry points at a non-English Office install. See .md.
             throw new InvalidOperationException("add_smartart: no SmartArt layout named '" + targetName +
                                                 "' was found in this Office install's gallery - this install may be " +
                                                 "non-English, where the built-in gallery's display names differ from " +
                                                 "the standard English ones this tool assumes (see plan Task 6 Step 1).");
         }
 
-        // Ported from WordTools.cs (2026-08-27) to bring PowerPoint's SmartArt
-        // surface to parity with Word's, which already had edit/read.
-        //
-        // The one real difference from Word's version: Word finds SmartArt in a
-        // flat document (doc.InlineShapes + doc.Shapes), while PowerPoint's
-        // shapes live per-slide. So a diagram is addressed by (slideIndex,
-        // smartArtIndex-within-that-slide) rather than a single document-wide
-        // index - slide-scoped indices match how every other PowerPoint tool
-        // here addresses shapes.
+        // Lists the SmartArt-bearing shapes on a slide. Ported from WordTools.cs
+        // (2026-08-27); addressed as (slideIndex, smartArtIndex-within-slide) rather
+        // than a document-wide index since PowerPoint shapes live per-slide. See .md.
         internal static List<dynamic> ListSmartArtShapesOnSlide(PowerPoint.Slide slide)
         {
             var shapes = new List<dynamic>();
@@ -228,11 +216,9 @@ namespace PowerPointAiAddIn
             dynamic shape = slide.Shapes.AddSmartArt(layout, left, top, width, height);
             dynamic smartArt = shape.SmartArt;
 
-            // Post-hoc fix (2026-08-24, found via Word's identical port of
-            // this code, PP-23): AddSmartArt seeds the diagram with the
-            // layout's own default "[Text]" placeholder nodes. Without
-            // clearing them first, the requested items were appended after
-            // the placeholders instead of replacing them.
+            // AddSmartArt seeds the diagram with the layout's own default "[Text]"
+            // placeholder nodes - clear them first or requested items append after
+            // them instead of replacing them (PP-23 fix). See .md.
             dynamic existingNodes = smartArt.Nodes;
             for (int i = (int)existingNodes.Count; i >= 1; i--)
             {

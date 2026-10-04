@@ -110,29 +110,11 @@ namespace OutlookAiAddIn
         }
 
         // Pushes an already-computed search filter into Outlook's own Explorer
-        // window (the native Instant Search UI) instead of only returning
-        // results to the model - the "show, don't just tell" counterpart to
-        // SearchEmails.
-        //
-        // _Explorer.Search(string Query, OlSearchScope SearchScope) signature
-        // confirmed via .NET reflection against the actually-referenced
-        // Microsoft.Office.Interop.Outlook 15.0.0.0 PIA in this repo. Does NOT
-        // take a DASL/SQL filter, despite the "@SQL=" prefix this file
-        // originally tried here (copied from SearchEmails' Items.Restrict
-        // usage): live testing (2026-09-26) proved that string doesn't throw,
-        // it just silently matches nothing, because Explorer.Search goes
-        // through Windows Instant Search - a different query engine from
-        // Items.Restrict's direct MAPI table access - and doesn't honor
-        // urn:schemas:httpmail:* property URNs. It DOES take the same
-        // Advanced Query Syntax (AQS) the Outlook search box itself accepts -
-        // confirmed via https://support.microsoft.com/en-us/outlook/search-mail-and-people-in-outlook-com
-        // and the user's own live "Advanced Search Options" list, which is
-        // what BuildSearchAqs below builds: `From:value` for sender,
-        // `Received:MM/DD/YYYY..MM/DD/YYYY` for a date range (the documented
-        // two-dot syntax - deliberately NOT `>=`/`<=`, which that same page
-        // does not confirm exists for this property). Plain free text with
-        // no prefix (already live-tested and confirmed working) covers the
-        // subject/body query term.
+        // window (the native Instant Search UI) - the "show, don't just tell"
+        // counterpart to SearchEmails. Builds Advanced Query Syntax (AQS), NOT
+        // the DASL/SQL SearchEmails uses - Explorer.Search doesn't accept that.
+        // See OutlookTools.Search.cs.md for the full why (signature source,
+        // AQS term formats, and the live-test history behind them).
         private static string BuildSearchAqs(string query, DateTime? start, DateTime? end, string sender)
         {
             var terms = new List<string>();
@@ -141,17 +123,10 @@ namespace OutlookAiAddIn
                 terms.Add("From:" + (sender.Contains(" ") ? "\"" + sender + "\"" : sender));
             if (start.HasValue || end.HasValue)
             {
-                // Live testing (2026-09-26) proved hardcoding MM/dd/yyyy (US
-                // order) was wrong: classic Outlook's search box parses typed
-                // dates using the DEVICE's Windows regional format, not a
-                // fixed order - on a day-first locale, "09/26/2036" reads as
-                // day=09/month=26, an invalid month, so the whole Received:
-                // clause silently failed to parse and the search returned 0
-                // results (no error - same silent-failure shape as the
-                // original "@SQL=" DASL bug this method replaced). Formatting
-                // with CurrentCulture instead of InvariantCulture matches
-                // whatever order this machine's own regional settings use,
-                // which is exactly what Outlook's own parser reads back.
+                // Format with CurrentCulture, not InvariantCulture: Outlook's
+                // search box parses typed dates using the device's regional
+                // date order, not a fixed MM/dd/yyyy - see .md for the live
+                // failure that proved it.
                 string lo = (start ?? new DateTime(1900, 1, 1)).ToString("d", CultureInfo.CurrentCulture);
                 string hi = (end ?? DateTime.Today.AddYears(10)).ToString("d", CultureInfo.CurrentCulture);
                 terms.Add("Received:" + lo + ".." + hi);
@@ -161,14 +136,8 @@ namespace OutlookAiAddIn
 
         // OlSearchScope (confirmed via reflection): CurrentFolder=0,
         // AllFolders=1, AllOutlookItems=2, Subfolders=3, CurrentStore=4.
-        // Default stays CurrentFolder - the one value actually exercised in
-        // the live test that validated this AQS approach in the first place;
-        // the wider scopes are unverified beyond being documented, valid
-        // enum members. Unrecognized non-empty input (e.g. a folder name
-        // passed here by mistake instead of in `folder`) throws rather than
-        // silently falling back to CurrentFolder - a live test hit exactly
-        // that mix-up and got a confusingly quiet "searched the wrong scope"
-        // instead of a clear error.
+        // Default stays CurrentFolder; an unrecognized non-empty value throws
+        // rather than silently falling back - see OutlookTools.Search.cs.md.
         private static readonly string[] ValidScopes = { "current_folder", "subfolders", "mailbox", "current_mailbox", "all_mailboxes", "all_folders" };
 
         private static Outlook.OlSearchScope ParseScope(string s)

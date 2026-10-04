@@ -7,8 +7,8 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAiAddIn
 {
-    // Spike 3: real COM tool execution against the live Word document, called
-    // from the WebView2-hosted AgentLoop via the JSON WebMessage bridge.
+    // Real COM tool execution against the live Word document, called from the
+    // WebView2-hosted AgentLoop via the JSON WebMessage bridge.
     public static partial class WordTools
     {
         private static void DeleteBlocksCmd(JsonElement cmd)
@@ -56,10 +56,8 @@ namespace WordAiAddIn
             }
 
             blockIndexes.Sort();
-            // Capture each moved paragraph's content as an OOXML string - a true,
-            // detached snapshot (plain text, not a live COM Range reference) -
-            // before any deletion shifts indices, so formatting survives the
-            // move without depending on FormattedText's live-vs-copy semantics.
+            // Capture each moved paragraph as a detached OOXML string before any
+            // deletion shifts indices, so formatting survives the move.
             var captured = blockIndexes.Select(i => paragraphs[i + 1].Range.WordOpenXML).ToList();
 
             // Delete moved paragraphs in descending order.
@@ -87,12 +85,8 @@ namespace WordAiAddIn
             }
         }
 
-        // copy-equivalent of MoveBlocksCmd above - deliberately uses the
-        // richer Target matcher (not moveBlocks' raw blockIndexes shape),
-        // since copying never shifts source-side indices (nothing is
-        // deleted), so there's no reason to deny it deleteBlocks-style
-        // matching (e.g. containsText) instead of forcing a pre-resolved
-        // index list.
+        // Copy-equivalent of MoveBlocksCmd, but uses the richer Target matcher (not
+        // moveBlocks' raw blockIndexes) since copying never shifts source indices.
         private static void CopyBlocksCmd(JsonElement cmd)
         {
             var matches = ResolveTargetParagraphs(cmd.GetProperty("target"));
@@ -107,16 +101,13 @@ namespace WordAiAddIn
             {
                 throw new ArgumentException("copyBlocks: afterBlockIndex out of range.");
             }
-            // Deliberately no "afterBlockIndex cannot be one of the copied
-            // blocks" check (moveBlocks has one) - duplicating a paragraph
-            // directly after itself is a reasonable request, and nothing is
-            // ever invalidated by it since copying never deletes anything.
+            // Deliberately no "afterBlockIndex cannot be one of the copied blocks"
+            // check (moveBlocks has one) - duplicating a paragraph right after
+            // itself is fine since copying never deletes anything.
 
-            // ResolveTargetParagraphs already walks the document forward via
-            // its own enumerator, so `matches` comes back in ascending
-            // original-index order for free - no re-sort needed here (unlike
-            // moveBlocks/deleteBlocks, which sort a raw caller-supplied index
-            // array).
+            // ResolveTargetParagraphs walks the document forward, so `matches` is
+            // already in ascending index order - no re-sort needed (unlike
+            // moveBlocks/deleteBlocks, which sort a caller-supplied index array).
             var captured = matches.Select(m => m.Paragraph.Range.WordOpenXML).ToList();
 
             Word.Range insertionPoint = afterBlockIndex == -1
@@ -199,9 +190,7 @@ namespace WordAiAddIn
             insertionPoint.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
 
             // Word's own native TOC field - auto-scans heading-styled paragraphs and
-            // produces real, page-numbered entries directly. This is a more direct,
-            // simpler native equivalent than genoffice's own hand-built TOC field-XML
-            // workaround (real Word already paginates; genoffice's web renderer doesn't).
+            // produces real, page-numbered entries directly. See WordTools.Commands.Blocks.cs.md.
             ActiveDoc.TablesOfContents.Add(insertionPoint, UseHeadingStyles: true);
         }
     }

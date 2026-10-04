@@ -17,12 +17,9 @@ namespace PowerPointAiAddIn
             float t = (float)input.GetProperty("t").GetDouble();
             float r = (float)input.GetProperty("r").GetDouble();
             float b = (float)input.GetProperty("b").GetDouble();
-            // Approximation, documented deliberately: fractions are applied against
-            // the shape's CURRENT on-slide size, not the original uncropped source
-            // image - classic Interop has no reliable "natural size" property once a
-            // picture has already been resized/cropped on the slide. Correct for a
-            // freshly-inserted, never-before-cropped picture; imprecise under
-            // repeated crop calls on the same shape.
+            // Approximation: fractions apply to the shape's CURRENT size, not the
+            // original uncropped image (Interop exposes no natural-size property
+            // once resized/cropped). See PowerPointTools.Images.cs.md for why.
             shape.PictureFormat.CropLeft = l * shape.Width;
             shape.PictureFormat.CropTop = t * shape.Height;
             shape.PictureFormat.CropRight = r * shape.Width;

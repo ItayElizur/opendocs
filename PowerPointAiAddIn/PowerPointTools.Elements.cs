@@ -85,21 +85,10 @@ namespace PowerPointAiAddIn
         // (PowerPointTools.CrossSlide.cs) - disambiguates `desired` against every
         // OTHER shape's current Name with a numeric suffix ("Rectangle 5" ->
         // "Rectangle 5 2"), the same convention read_slide/read_group key their
-        // output on.
-        //
-        // siblingShapes defaults to null, meaning "resolve it from the shape's
-        // own slide" (the common case for an ordinary slide shape, and the only
-        // case CrossSlide.cs/DuplicateElement ever need). Pass it explicitly
-        // (e.g. AddMasterElement passes target.Shapes) for a shape whose parent
-        // is never a PowerPoint.Slide - a Slide Master/layout shape - where
-        // ShapeSlide can never resolve one automatically; without this, dedup
-        // silently no-ops for those shapes. Review finding: this used to be two
-        // separate overloads and a caller could pick the wrong one (the 2-arg
-        // overload silently skipped dedup for a master/layout shape for a full
-        // round of development before being caught) - one method with a
-        // defaultable parameter makes the common case's default safe
-        // automatically instead of relying on the caller remembering which
-        // overload fits.
+        // output on. siblingShapes defaults to resolving from the shape's own
+        // slide; pass it explicitly for a Slide Master/layout shape, whose parent
+        // is never a PowerPoint.Slide. See PowerPointTools.Elements.cs.md for why
+        // this is one method with a defaultable parameter, not two overloads.
         private static string MakeUniqueNameOnSlide(PowerPoint.Shape shape, string desired, PowerPoint.Shapes siblingShapes = null)
         {
             if (siblingShapes == null)
@@ -184,15 +173,9 @@ namespace PowerPointAiAddIn
             return body.TextFrame.TextRange.Text;
         }
 
-        // Post-hoc fix (2026-08-26, user-reported): PowerPoint's TextRange
-        // never auto-flips paragraph direction/alignment based on typed
-        // content the way Word's editor does with "detect language
-        // automatically" - every write here always came out left-to-right/
-        // left-aligned, even for Hebrew. Same bidi mismatch class as
-        // chat-ui.ts's dir="auto" fix, but PowerPoint's COM object model has
-        // no built-in "auto" direction - it has to be decided per write from
-        // the text's own script mix. IsRtlMajority itself now lives in
-        // TextUtil (Phase 0) since it's free of COM types.
+        // PowerPoint's TextRange never auto-flips direction/alignment for RTL text
+        // the way Word's editor does - decided per write from the text's own script
+        // mix via TextUtil.IsRtlMajority. See PowerPointTools.Elements.cs.md.
         private static void ApplyAutoDirection(PowerPoint.TextRange range, string text)
         {
             if (!TextUtil.IsRtlMajority(text)) return;
@@ -200,15 +183,10 @@ namespace PowerPointAiAddIn
             range.ParagraphFormat.Alignment = PowerPoint.PpParagraphAlignment.ppAlignRight;
         }
 
-        // User-reported bug: a placeholder from a layout like "Title and
-        // Content" already renders its own native bullet per paragraph, so a
-        // model that ALSO types a literal bullet character ("•"/"-"/"*") at
-        // the start of each line ends up with two bullets per line. This
-        // gives the model a real on/off switch instead, so it never needs to
-        // embed a literal bullet character in the text. bulleted omitted
-        // (the JSON property absent, not merely false) leaves the shape's
-        // existing bullet setting untouched - matches prior behavior for
-        // every existing caller that doesn't pass it.
+        // Gives the model an explicit bulleted on/off switch instead of typing a
+        // literal bullet character (which double-bullets against a placeholder's
+        // own native bullet). Omitted `bulleted` leaves the existing setting
+        // untouched. See PowerPointTools.Elements.cs.md for the full bug report.
         private static void ApplyBulletSetting(PowerPoint.TextRange range, JsonElement input)
         {
             if (!input.TryGetProperty("bulleted", out var el)) return;
@@ -317,18 +295,9 @@ namespace PowerPointAiAddIn
                 range.Font.Subscript = b == "SUBSCRIPT" ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
                 applied.Add("baselineOffset");
             }
-            // PP-20 Task 1 Step 2: strikethrough deliberately NOT implemented.
-            // TextFrame (the older text model this file uses everywhere else)
-            // has no Strikethrough member on this PIA. Excel's interop PIA
-            // exposes TextFrame2/TextRange2 (the newer "DrawingML" text model,
-            // used by ExcelTools.cs's chart formatting) with a Strikethrough
-            // property, but Microsoft.Office.Interop.PowerPoint has no
-            // TextFrame2 type or Shape.TextFrame2 member at all (confirmed:
-            // absent from this PIA's own XML docs, and CS0234 - "TextRange2
-            // does not exist in the namespace" - on a direct attempt). Per
-            // this plan's own instruction: omit rather than ship a schema
-            // field the handler can't back, or a `dynamic` call this
-            // environment cannot runtime-verify.
+            // Strikethrough deliberately NOT implemented: this PIA's TextFrame has no
+            // Strikethrough member, and Microsoft.Office.Interop.PowerPoint has no
+            // TextFrame2 type at all (confirmed absent). See .md for the full story.
 
             return new ToolResult
             {
@@ -351,14 +320,9 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = "Transform updated.", Mutated = true, Summary = "set_element_transform" };
         }
 
-        // Post-hoc addition (2026-08-24, user-requested: "change the order
-        // of an element" - stacking/z-order, distinct from set_element_
-        // transform's position/size). Confirmed via reflection: Shape.ZOrder
-        // (MsoZOrderCmd) is the real relative-move method; MsoZOrderCmd has
-        // 6 values total, of which the first 4 apply to slide shapes
-        // (msoBringInFrontOfText/msoSendBehindText are for a shape's
-        // position relative to body text, not meaningful for a slide's flat
-        // z-order stack) - only those 4 are exposed.
+        // Stacking/z-order control, distinct from set_element_transform's
+        // position/size. Only 4 of MsoZOrderCmd's 6 values are exposed - the other
+        // two are relative-to-body-text, not meaningful for a slide's z-order stack.
         private static readonly Dictionary<string, Microsoft.Office.Core.MsoZOrderCmd> ZOrderMap = new Dictionary<string, Microsoft.Office.Core.MsoZOrderCmd>
         {
             ["bringToFront"] = Microsoft.Office.Core.MsoZOrderCmd.msoBringToFront,
@@ -376,10 +340,7 @@ namespace PowerPointAiAddIn
                 throw new ArgumentException("set_element_order: unknown kind '" + kind + "'. Valid: " + string.Join(", ", ZOrderMap.Keys) + ".");
             shape.ZOrder(cmd);
             // ZOrderPosition is 1-based in COM; reported 0-based to match
-            // read_slide's shapeIndex convention. Structural edit - every
-            // other shape's shapeIndex on this slide may have shifted too,
-            // same caveat as delete_element/ungroup_element elsewhere in
-            // this file.
+            // read_slide's shapeIndex convention.
             int newShapeIndex = shape.ZOrderPosition - 1;
             return new ToolResult { Output = "Shape order changed (" + kind + ") - now at shapeIndex " + newShapeIndex + ". Other shapes on this slide may have shifted index - re-read the slide (read_slide) before addressing another shape by index in the same run.", Mutated = true, Summary = "set_element_order" };
         }
@@ -429,27 +390,19 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = "Shape deleted.", Mutated = true, Summary = "delete_element" };
         }
 
-        // Shape.Duplicate() is a native in-place COM clone independent of
-        // Shape.Type - unlike copy_element/move_element (PowerPointTools.
-        // CrossSlide.cs), it needs no shape-kind dispatch at all and works
-        // uniformly for every kind, including groups/pictures/tables/charts/
-        // SmartArt. Positioning of the duplicate by Duplicate() itself is
-        // unverified, so this always computes the new position from the
-        // ORIGINAL shape's Left/Top, never from the duplicate's own
-        // post-Duplicate() position.
+        // Shape.Duplicate() is a native in-place COM clone, uniform across every
+        // shape kind (unlike copy_element/move_element's dispatch). The new position
+        // is always computed from the ORIGINAL shape's Left/Top, since Duplicate()'s
+        // own placement of the copy is unverified. See PowerPointTools.Elements.cs.md.
         private static ToolResult DuplicateElement(JsonElement input)
         {
             PowerPoint.Shape shape = ResolveTopLevelShape(input, "duplicate_element");
             PowerPoint.ShapeRange range = shape.Duplicate();
             PowerPoint.Shape dup = range[1];
 
-            // Each axis is independent: an explicit left/top is an exact
-            // coordinate; an omitted one falls back to the DEFAULT OFFSET on
-            // that axis, not to the original's exact coordinate. Review
-            // finding: the previous either/or branching treated "left given,
-            // top omitted" as "use exact left, but exact (unoffset) top too" -
-            // a duplicate with only left set landed fully overlapping the
-            // original vertically instead of keeping the normal offsetY gap.
+            // Each axis is independent: an explicit left/top is an exact coordinate;
+            // an omitted one falls back to the default offset on that axis, not to
+            // the original's exact coordinate. See .md for the bug this fixed.
             float offsetX = input.TryGetProperty("offsetX", out var ox) ? (float)ox.GetDouble() : 12f;
             float offsetY = input.TryGetProperty("offsetY", out var oy) ? (float)oy.GetDouble() : 12f;
             dup.Left = input.TryGetProperty("left", out var l) ? (float)l.GetDouble() : shape.Left + offsetX;
@@ -458,12 +411,9 @@ namespace PowerPointAiAddIn
             string named = ApplyOptionalName(dup, input);
             if (named == null)
             {
-                // Real-user-confirmed (2026-09-22, live testing): Shape.Duplicate()
-                // keeps the EXACT source Name (unlike a UI Ctrl+D/paste, which
-                // auto-renames) - two shapes end up identically named, confusing
-                // read_slide/read_group output. Dedupe it the same way an explicit
-                // name would be, using the duplicate's own (source-inherited) name
-                // as the "desired" one.
+                // Shape.Duplicate() keeps the EXACT source Name (unlike a UI
+                // Ctrl+D/paste, which auto-renames) - dedupe it the same way an
+                // explicit name would be. See .md.
                 string unique = MakeUniqueNameOnSlide(dup, dup.Name);
                 if (unique != dup.Name)
                 {
