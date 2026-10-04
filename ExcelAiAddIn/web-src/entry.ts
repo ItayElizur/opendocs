@@ -18,7 +18,7 @@ import { startAddIn } from '@officeai/app-shell'
 // every provider enforces oneOf/const) - the actual guarantee is the
 // required-field precheck in ExcelTools.cs's ProposeOperations (PP-5 Task 4).
 // Every kind below matches ExcelTools.cs's ProposeOperations switch exactly
-// (cross-checked in docs/ai-tool-surface.md) - do not add a kind here
+// (cross-checked in docs/tools/excel.md) - do not add a kind here
 // without a matching case there, or vice versa.
 
 interface OpSpec {

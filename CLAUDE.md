@@ -3,7 +3,8 @@
 This file is for an AI coding agent working in this repo. It only covers things that
 are specific to *this* codebase's conventions and pitfalls — not general engineering
 advice. Read `README.md` first for what the repo is and how to build/test it, and
-`docs/ai-tool-surface.md` for the full current tool catalog.
+`docs/architecture.md` plus the per-app references under `docs/tools/` for the full
+current tool catalog.
 
 ## The `.csproj` files do not glob — a new `.cs` file is silently dropped otherwise
 
@@ -14,9 +15,9 @@ a new `.cs` file to one of these projects and don't add a matching `<Compile Inc
 line to its `.csproj`, the file **silently does not compile**. There is no error at the
 new file itself — MSBuild just never sees it, and the first symptom is usually a
 compile error at some unrelated call site that expected the new type/method to exist.
-This bit the project once already: see `docs/ai-tool-surface-changelog.md`'s
-"Phases 1+3" entry, which split the three `*Tools.cs` files into ~10 partial-class
-files each and had to add every new file to its `.csproj` by hand.
+This bit the project once already, when the three `*Tools.cs` files were split into
+~10 partial-class files each and every new file had to be added to its `.csproj` by
+hand.
 
 `tools/split-partial.py` exists for exactly this — it did that original split and can
 do further ones; it refuses to run unless every member is assigned to exactly one
@@ -58,12 +59,11 @@ logic belongs there by default; new logic that has to touch a COM type doesn't h
 that option here.
 
 This repo's convention is to **say so explicitly** rather than claim untested COM code
-works, and you should follow it: `docs/ai-tool-surface.md` and
-`docs/superpowers/verification/*.md` are full of precedent for the expected tone —
-e.g. "**NOT VERIFIED AGAINST LIVE POWERPOINT** — compiles clean in Debug and Release,
-but the SmartArt COM paths … were never exercised against a running instance" and
-"Manual verification matrix (none of this has been run — no interactive Word session
-reachable from this environment)". When you implement or change a COM-calling tool
+works, and you should follow it: the per-app docs under `docs/tools/` are full of
+precedent for the expected tone — e.g. "**NOT VERIFIED AGAINST LIVE POWERPOINT** —
+compiles clean in Debug and Release, but the SmartArt COM paths … were never exercised
+against a running instance" and `docs/tools/outlook.md`'s "Unproven at runtime" section.
+When you implement or change a COM-calling tool
 without being able to run it live, say what you verified (build clean, reflection
 against the referenced PIA to confirm a method signature/enum value exists, a
 cross-check against an equivalent working call elsewhere in the repo) and what you
@@ -72,23 +72,27 @@ more confidence than a build-clean compile actually gives you.
 
 ## Where to update docs after a change
 
-`docs/ai-tool-surface.md` is the current-state reference for every tool the AI can
-call — its per-app tables are meant to reflect the tool surface as it is *right now*,
-not as a growing sequence of dated patches layered on top of stale tables (that used to
-be this file's structure; it was reorganized specifically to stop that). If you add,
-remove, or change the behavior of a tool:
+`docs/tools/{word,excel,powerpoint,outlook}.md` are the current-state reference for
+every tool the AI can call in that app — each file's tables are meant to reflect the
+tool surface as it is *right now*, not a growing sequence of dated patches layered on
+top of stale tables. There is no separate changelog file for this — git history (commit
+messages, PR descriptions) is the record of *how* the tool surface got here; these docs
+only need to say what's true *now*. If you add, remove, or change the behavior of a
+tool:
 
-1. Update the relevant per-app table in `docs/ai-tool-surface.md` directly, in place —
-   don't just append a new dated note at the top or bottom and leave the table stale.
-2. If the change is worth a historical record (a bug fix, a phased rollout, a decision
-   that was made a specific way for a specific reason), add a dated entry to
-   `docs/ai-tool-surface-changelog.md` instead of to the main doc.
-3. If the change touches a tool tier list, update both the C# and `entry.ts` sides (see
+1. Update the relevant per-app table in `docs/tools/<app>.md` directly, in place —
+   don't append a dated note at the top or bottom and leave the table stale.
+2. If the change touches a tool tier list, update both the C# and `entry.ts` sides (see
    above) and double check the doc's tier description still matches.
+3. If the change affects something architectural (shared across apps — the transport,
+   editing-mode gating itself, provenance policy), update `docs/architecture.md`
+   instead of (or in addition to) the per-app file.
 
-Do not resurrect `docs/tool-surface-todo.md` as a place to track gaps — it's retired
-(see the changelog) specifically because a checklist like that drifted badly out of
-sync with actual implementation state in the past.
+Do not create a project-tracked TODO/checklist file for tool-surface gaps — one was
+tried in this repo's past and drifted badly out of sync with actual implementation
+state. Track gaps as issues/PRs, or as a prose note in the relevant per-app doc's
+"Missing entirely"/"Excluded" section if they're worth recording as a deliberate
+boundary.
 
 ## Long rationale comments live in a companion `<File>.md`, not inline
 
@@ -119,8 +123,7 @@ Outlook's read tools (`list_emails`, `search_emails`, `list_events`, etc.) must 
 Outlook's native query surfaces — `Folder.GetTable` (an in-memory rowset, no per-item
 COM object per row) or `Items.Restrict("@SQL=" + DASL)` — rather than iterating
 `Items` and inspecting each item in a loop. This isn't a style preference: a real
-performance incident (documented in `docs/ai-tool-surface-changelog.md`'s 2026-08-27
-entries) hit the same underlying problem in Word first — `find_text`/`get_headings`'s
+performance incident hit the same underlying problem in Word first — `find_text`/`get_headings`'s
 first cut used positional `Paragraphs[i]` indexing, which isn't a real array access in
 Word's COM object model, so each indexed read re-walked the document from the start,
 producing an effectively O(n²) scan. On a large document this froze Word visibly,

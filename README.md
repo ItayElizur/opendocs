@@ -13,8 +13,9 @@ in the repo, and every tool that touches a file (`add_image`, `replace_image`,
 
 For the full, current-state catalog of every tool the AI can call in each app — read
 tools, editing tools, editing-mode gating, known gaps — see
-**[`docs/ai-tool-surface.md`](docs/ai-tool-surface.md)**. If you're an AI coding agent
-working in this repo, also read **[`CLAUDE.md`](CLAUDE.md)** first.
+**[`docs/architecture.md`](docs/architecture.md)** and the per-app references under
+**[`docs/tools/`](docs/tools/)**. If you're an AI coding agent working in this repo,
+also read **[`CLAUDE.md`](CLAUDE.md)** first.
 
 ## Layout
 
@@ -26,7 +27,7 @@ working in this repo, also read **[`CLAUDE.md`](CLAUDE.md)** first.
 | `shared/chat-ui` | The chat panel's UI code (`chat-ui.ts` + CSS), shared by all four add-ins, with its own `vitest` suite. |
 | `shared/web-src` | `agent-core`/`ai-provider` (copied from the sibling `genoffice` project — same `AgentLoop`, same multi-provider transport types) and `app-shell` (the shared WebView2 bridge, settings screen, and provider transport wiring every `entry.ts` calls into via `startAddIn`). |
 | `deploy/` | `package.ps1` (build all four add-ins in Release, stage a signed, zippable package) and `install.ps1`/`uninstall.ps1` (run on a target machine to register/unregister the add-ins — no internet access required). |
-| `docs/` | `ai-tool-surface.md` (the tool reference), its changelog, and `superpowers/` (a dated archive of completed planning/verification work — see `docs/superpowers/README.md`). |
+| `docs/` | `architecture.md` (how the system is put together), `tools/` (one tool reference per app), and `comparison-with-genoffice.md` (high-level gaps/advantages vs. the sibling project). |
 | `tools/` | Small repo-maintenance scripts, e.g. `split-partial.py` (splits an oversized `*Tools.cs` file into partial-class files while preserving the exact member set). |
 
 There is no `.sln` file — each `.csproj` is built individually.
@@ -85,16 +86,17 @@ npx vitest run
 
 There is **no automated test coverage for the COM-calling code itself** (the
 `*Tools*.cs` handlers) — that layer can only really be exercised against a live Office
-application. See `docs/ai-tool-surface.md`'s per-app "unverified"/"not confirmed
-against live Office" notes, and `docs/superpowers/verification/` for the historical
-record of what has and hasn't been manually checked.
+application. See each per-app doc under `docs/tools/` for its "unverified"/"not
+confirmed against live Office" notes — Outlook's is the most extensive
+(`docs/tools/outlook.md`'s "Unproven at runtime" section).
 
 ## Further reading
 
-- **[`docs/ai-tool-surface.md`](docs/ai-tool-surface.md)** — the detailed, current-state
-  reference for every tool the AI can call in each app, including the `EditingMode`
-  gating tiers and known gaps vs. the sibling `genoffice` project.
-- **[`docs/ai-tool-surface-changelog.md`](docs/ai-tool-surface-changelog.md)** — the
-  dated history behind that reference.
-- **[`docs/superpowers/`](docs/superpowers/README.md)** — an archive of past planning
-  and verification documents for completed work, not live instructions.
+- **[`docs/architecture.md`](docs/architecture.md)** — how the system is put together:
+  the COM/WebView2 bridge, the shared provider/transport layer, and the editing-mode
+  gating that applies across all four apps.
+- **[`docs/tools/`](docs/tools/)** — the detailed, current-state reference for every
+  tool the AI can call, one file per app (`word.md`, `excel.md`, `powerpoint.md`,
+  `outlook.md`).
+- **[`docs/comparison-with-genoffice.md`](docs/comparison-with-genoffice.md)** — the
+  high-level gaps and advantages vs. the sibling `genoffice` project.

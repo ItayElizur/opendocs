@@ -11,7 +11,7 @@ import { startAddIn } from '@officeai/app-shell'
 // every provider enforces oneOf/const) - the actual guarantee is the
 // required-field precheck in WordTools.cs's ApplyCommands (PP-5 Task 4).
 // Every kind below matches WordTools.cs's ApplyCommands switch exactly
-// (cross-checked in docs/ai-tool-surface.md) - do not add a kind here
+// (cross-checked in docs/tools/word.md) - do not add a kind here
 // without a matching case there, or vice versa.
 
 const TARGET_SCHEMA = {

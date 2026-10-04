@@ -42,9 +42,8 @@ list_events' shared-calendar path (mailbox parameter): EWS CalendarView
 expands recurring appointments server-side within [start, end) - the EWS
 equivalent of the COM path's IncludeRecurrences=true, without that path's
 "expand everything, then filter" cost, and off the UI thread like every
-other EWS call in this file. See docs/superpowers/specs/
-2026-09-30-outlook-shared-calendar-ews-design.md for why this exists (the
-COM path froze Outlook, confirmed live even for a one-day range).
+other EWS call in this file. This exists because the COM path froze
+Outlook, confirmed live even for a one-day range.
 
 ## `GetSharedCalendarEvents` - convertIdBroken
 

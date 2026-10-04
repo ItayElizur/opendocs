@@ -6,7 +6,7 @@ undo_last_action / redo_last_action.
 
 PowerPoint's Application object has NO Undo()/Redo() method
 anywhere in the interop surface - confirmed absent (see
-docs/ai-tool-surface.md's PowerPoint section). That earlier finding
+docs/tools/powerpoint.md). That earlier finding
 still stands, but it missed a distinct mechanism this file uses:
 Application.CommandBars.ExecuteMso(string)/GetEnabledMso(string) -
 the generic Office-2007+ ribbon-command dispatch API

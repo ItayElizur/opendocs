@@ -8,11 +8,10 @@ COM enumeration against a shared, normally-not-cached-offline mailbox
 could mean a live round trip to Exchange per property per event. Now
 this call is ONLY used to read .Store.StoreID (get_event's own
 store_id parameter needs it - see its comment); the actual event data
-comes from EWS below, off the UI thread. See
-docs/superpowers/specs/2026-09-30-outlook-shared-calendar-ews-design.md's
-"Open question" section: if Outlook still freezes after this change,
-this GetSharedDefaultFolder call itself - not the enumeration it used
-to do - is the next thing to investigate.
+comes from EWS below, off the UI thread. Open question: if Outlook
+still freezes after this change, this GetSharedDefaultFolder call
+itself - not the enumeration it used to do - is the next thing to
+investigate.
 
 ## `ListEventsAsync` - StoreID read split from the GetSharedDefaultFolder try/catch
 

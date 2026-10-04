@@ -147,8 +147,7 @@ namespace OutlookAiAddIn
         // list_events' shared-calendar path: EWS CalendarView expands recurring
         // appointments server-side within [start, end), off the UI thread.
         // Replaces a COM path that froze Outlook (confirmed live) - see
-        // OutlookEws.cs.md and docs/superpowers/specs/
-        // 2026-09-30-outlook-shared-calendar-ews-design.md.
+        // OutlookEws.cs.md.
         public static Task<IReadOnlyList<SharedCalendarEventRow>> GetSharedCalendarEventsAsync(Uri url, string mailboxSmtp, DateTime start, DateTime end, int limit)
         {
             return Task.Run(() => GetSharedCalendarEvents(url, mailboxSmtp, start, end, limit));

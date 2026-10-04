@@ -29,7 +29,7 @@ a multi-result directory search, and running EWS off the UI thread
 (OutlookEws.ResolveNamesAsync -> Task.Run) is what keeps Outlook
 responsive during the call. The previous implementation walked every
 contact folder in every store on the UI thread and froze/crashed
-Outlook. See docs/ai-tool-surface.md and OutlookEws.cs.
+Outlook. See docs/tools/outlook.md and OutlookEws.cs.
 
 ## `_cachedWorkWeek` / `_workWeekResolved`
 

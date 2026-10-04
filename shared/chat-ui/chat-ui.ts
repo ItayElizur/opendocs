@@ -917,8 +917,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   }
 
   // Scoped to .ai-dock, never document.documentElement - same rule as
-  // setLang's dir/lang attributes above (docs/superpowers/plans/
-  // 2026-08-22-addin-ux-fixes.md). Light = absence of the attribute,
+  // setLang's dir/lang attributes above. Light = absence of the attribute,
   // matching how chat-ui.css is authored (only a [data-theme='dark']
   // override block exists). Takes the already-resolved binary value only -
   // resolving a 'default' preference against Office's real theme is the
