@@ -33,8 +33,8 @@ high-level summary.
 
 ## `apply_commands` command kinds (15)
 
-8 kinds with a genoffice equivalent, 2 officeoffice-only additions with no genoffice
-counterpart (`copyBlocks`, `copyFormat`), and 5 officeoffice-only shorthand aliases
+8 kinds with a genoffice equivalent, 2 OpenDocs-only additions with no genoffice
+counterpart (`copyBlocks`, `copyFormat`), and 5 OpenDocs-only shorthand aliases
 (`set_bold`, `set_italic`, `set_heading`, `find_replace`, `set_bullet`) — all cross-checked
 exhaustively against `WORD_COMMAND_SCHEMAS` in `entry.ts` (a structural per-kind schema;
 no bare `{type:'object'}` items left).

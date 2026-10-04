@@ -1,6 +1,6 @@
 # Comparison with genoffice
 
-"genoffice" is a sibling, from-scratch web-based Office clone suite that officeoffice's
+"genoffice" is a sibling, from-scratch web-based Office clone suite that OpenDocs's
 tool design was originally ported from (`Word`/`Excel`/`PowerPoint` only — Outlook has
 no genoffice counterpart at all, see [`docs/tools/outlook.md`](tools/outlook.md)). This
 page summarizes the high-level gaps and advantages; see each app's own doc under
@@ -12,12 +12,12 @@ page summarizes the high-level gaps and advantages; see each app's own doc under
   equivalent; air-gapped deployment target. (`get_attachment` is a partial exception
   for Outlook — it reads local + OpenXML attachment text, nothing remote, no
   PDF/images; see [`docs/tools/outlook.md`](tools/outlook.md).)
-- The PDF app and the Markdown app have no officeoffice counterpart (Markdown's
+- The PDF app and the Markdown app have no OpenDocs counterpart (Markdown's
   scope is folded into Word).
 - PowerPoint's `execute_slide_script` DSL and entire deck-generation pipeline (see
   [`docs/tools/powerpoint.md`](tools/powerpoint.md)'s "Missing entirely" list).
 
-## Summary: what genoffice has that officeoffice doesn't
+## Summary: what genoffice has that OpenDocs doesn't
 
 1. **Web-sourced content** — no search, no AI image generation, no media analysis,
    no chat-attachment reading, anywhere. Image tools are local-file-only by design.
@@ -26,12 +26,12 @@ page summarizes the high-level gaps and advantages; see each app's own doc under
    provenance enforcement on charts (Excel or PowerPoint).
 3. **Block-indexed document context** — genoffice's `get_document_context`/
    `get_deck_context` return structured per-block/per-element inventories; Word's and
-   PowerPoint's officeoffice equivalents return flat text previews only.
+   PowerPoint's OpenDocs equivalents return flat text previews only.
 4. **`add_shape`'s preset breadth** in Excel/PowerPoint (26 named presets each) is
    still narrower than genoffice's "full OOXML preset-geometry set", and
    `set_data_validation`'s `checkbox` kind is unsupported (no COM equivalent exists).
 
-## Summary: what officeoffice has that genoffice doesn't
+## Summary: what OpenDocs has that genoffice doesn't
 
 1. **Real Word comments** (`add_comment`) — anchored, native, available in every
    editing mode including Comment Only. genoffice's docs surface has no comment tool.

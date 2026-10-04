@@ -1,6 +1,6 @@
-# Architecture — officeoffice
+# Architecture — OpenDocs
 
-officeoffice drives the **real desktop Office applications** (Word, Excel, PowerPoint,
+OpenDocs drives the **real desktop Office applications** (Word, Excel, PowerPoint,
 Outlook) via VSTO + COM interop
 (`Microsoft.Office.Interop.{Word,Excel,PowerPoint,Outlook}`) — there is no web renderer
 or clone involved. The chat UI runs in a WebView2 page inside a CustomTaskPane; tool
@@ -45,7 +45,7 @@ and the rule to follow when touching either side.
 
 ## Provenance / data-source enforcement
 
-There is no `dataSource`/provenance-enforcement mechanism anywhere in officeoffice (a
+There is no `dataSource`/provenance-enforcement mechanism anywhere in OpenDocs (a
 chart tool could in principle let the model claim data came from somewhere it didn't). A
 product-owner decision opted for a prompt-only mitigation rather than a code-level
 guardrail, pending real sign-off.

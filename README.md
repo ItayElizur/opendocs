@@ -1,4 +1,4 @@
-# officeoffice (OpenDocs)
+# OpenDocs
 
 VSTO add-ins that put an LLM chat pane directly into Word, Excel, PowerPoint, and
 Outlook — Word/Excel/PowerPoint/Outlook run as real, already-installed desktop
