@@ -114,7 +114,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'list_events',
     description:
-      'Lists calendar events in a date range (expands recurring meetings). Returns event_id, subject, start/end, location, organizer, and your response status. Recurring instances share the master event_id. Pass mailbox to view someone else\'s calendar instead of your own, if they\'ve granted you access to it in Exchange - visibility depends on what sharing level they set (full details, free/busy only, or none); Outlook applies that automatically, but the exact behavior at each level hasn\'t been independently verified by this add-in. Shared-calendar results include a store_id field - pass it to get_event or any calendar-editing tool (edit_event, cancel_event, accept_meeting, decline_meeting, tentative_meeting, set_event_categories, set_event_availability, and their draft counterparts) to act on that specific event. Whether the action actually succeeds is governed entirely by your real Outlook/Exchange permissions on that calendar, the same as if you\'d done it through Outlook\'s own UI - this add-in does not add its own extra restriction on top of that.',
+      'Lists calendar events in a date range (expands recurring meetings). Returns event_id, subject, start/end, location, organizer, and your response status. Recurring instances share the master event_id. Pass mailbox to view someone else\'s calendar instead of your own, if they\'ve granted you access to it in Exchange - visibility depends on what sharing level they set (full details, free/busy only, or none); Outlook applies that automatically, but the exact behavior at each level hasn\'t been independently verified by this add-in. Shared-calendar results include a store_id field - pass it to get_event or any calendar-editing tool (edit_event, cancel_event, respond_meeting, draft_email with event_id, set_event_categories, set_event_availability, and their draft counterparts) to act on that specific event. Whether the action actually succeeds is governed entirely by your real Outlook/Exchange permissions on that calendar, the same as if you\'d done it through Outlook\'s own UI - this add-in does not add its own extra restriction on top of that.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -215,7 +215,7 @@ const ALL_OUTLOOK_TOOLS = [
     description:
       "Reverses YOUR most recent action in this chat (call repeatedly to step further back). Covers mark_email_read/unread, flag_email_important, move_email, " +
       'delete_email (non-permanent - moves it back out of Deleted Items), create_task, update_task, set_reminder, set_email_reminder, set_event_categories, ' +
-      'set_category_color, set_event_availability, edit_event on a plain (non-meeting) event that is not becoming a meeting in that call - a non-recurring event, a single occurrence, or a whole recurring series\' subject/body/location only (not a time change), cancel_event on a plain or already-canceled whole event (moved back out of Deleted Items), and create_event without attendees (moved to Deleted Items). Sends, meeting invites, accept/decline/tentative_meeting, cancel_event on a still-active organized meeting, cancel_event on any single occurrence (always, whether plain or meeting - Outlook has no API to restore a deleted occurrence), edit_event whenever it sends an update or changes a whole recurring series\' time, and permanent deletes ' +
+      'set_category_color, set_event_availability, edit_event on a plain (non-meeting) event that is not becoming a meeting in that call - a non-recurring event, a single occurrence, or a whole recurring series\' subject/body/location only (not a time change), cancel_event on a plain or already-canceled whole event (moved back out of Deleted Items), and create_event without attendees (moved to Deleted Items). Sends, meeting invites, respond_meeting, cancel_event on a still-active organized meeting, cancel_event on any single occurrence (always, whether plain or meeting - Outlook has no API to restore a deleted occurrence), edit_event whenever it sends an update or changes a whole recurring series\' time, and permanent deletes ' +
       "can't be reversed and block undo past them. Never touches changes the user made directly in Outlook, and refuses if the item was changed since. " +
       'A move changes message_id - use the one in the result.',
     inputSchema: { type: 'object', properties: {} },
@@ -227,83 +227,17 @@ const ALL_OUTLOOK_TOOLS = [
     inputSchema: { type: 'object', properties: {} },
   },
   {
-    name: 'accept_meeting',
-    description: 'Accepts a meeting invitation and notifies the organizer. Pass message to add a comment to the response.',
+    name: 'respond_meeting',
+    description: 'Responds to a meeting invitation - accept, tentative or decline - and notifies the organizer. Pass message to add a comment to the response. To write to the organizer or attendees instead of responding, use draft_email with event_id.',
     inputSchema: {
       type: 'object',
       properties: {
+        response: { type: 'string', enum: ['accept', 'tentative', 'decline'] },
         event_id: { type: 'string' },
         message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' },
         store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
       },
-      required: ['event_id'],
-    },
-  },
-  {
-    name: 'decline_meeting',
-    description: 'Declines a meeting invitation and notifies the organizer. Pass message to add a comment to the response.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        event_id: { type: 'string' },
-        message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' },
-        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
-      },
-      required: ['event_id'],
-    },
-  },
-  {
-    name: 'tentative_meeting',
-    description: 'Responds tentatively to a meeting invitation and notifies the organizer. Pass message to add a comment to the response.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        event_id: { type: 'string' },
-        message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' },
-        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
-      },
-      required: ['event_id'],
-    },
-  },
-  {
-    name: 'draft_respond_meeting',
-    description: 'Opens a meeting invitation in Outlook for the user to accept/decline/respond-tentatively themselves using Outlook\'s own buttons - never sends or changes anything itself. Pass message for a suggested comment the tool includes in its own reply text (Outlook\'s object model has no way to pre-fill this into the response the way the auto-send tools can).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        event_id: { type: 'string' },
-        message: { type: 'string', description: 'Optional suggested comment, returned in the tool result for the user to paste in themselves.' },
-        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
-      },
-      required: ['event_id'],
-    },
-  },
-  {
-    name: 'draft_reply_event',
-    description: 'Opens Outlook\'s own reply to a calendar meeting\'s invitation email, so it is threaded and quoted like a reply made by hand. The user reviews and sends it. Set reply_all to also write to the other attendees. Fails if the invitation email can no longer be found (deleted, archived, or you organize the event). This is a normal email about the meeting - it does not accept or decline it (use accept_meeting/decline_meeting/tentative_meeting or draft_respond_meeting for that).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        event_id: { type: 'string' },
-        body: { type: 'string', description: 'Message text placed above the quoted event details.' },
-        reply_all: { type: 'boolean', description: 'Also address the other required (To) and optional (Cc) attendees. Default false: organizer only.' },
-        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field).' },
-      },
-      required: ['event_id'],
-    },
-  },
-  {
-    name: 'draft_forward_event',
-    description: 'Opens Outlook\'s own forward of a calendar event\'s invitation email, pre-filled with the recipients you name. The user reviews and sends it; the recipients can add the event to their own calendar. Fails if the invitation email can no longer be found (deleted, archived, or you organize the event).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        event_id: { type: 'string' },
-        to: { type: 'string', description: 'Comma-separated recipient addresses.' },
-        body: { type: 'string', description: 'Optional note placed above the forwarded event.' },
-        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field).' },
-      },
-      required: ['event_id'],
+      required: ['response', 'event_id'],
     },
   },
   {
@@ -414,30 +348,21 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'draft_email',
-    description: 'Opens a new compose window in Outlook, pre-filled. The user reviews and sends it - this never sends directly.',
+    description:
+      'Opens an Outlook window, pre-filled, for the user to review and send - never sends anything itself. action "new" (default) starts a new email; "reply", "reply_all" and "forward" open Outlook\'s own reply, reply-all or forward of an existing email (message_id) or calendar meeting (event_id). For a forward, `to` is optional here - the user can fill it in.',
     inputSchema: {
       type: 'object',
-      properties: { to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } },
+      properties: {
+        action: { type: 'string', enum: ['new', 'reply', 'reply_all', 'forward'], description: 'Default "new" (a brand-new email). "reply", "reply_all" and "forward" act on an existing item: pass message_id for an email, or event_id for a calendar meeting (its invitation email).' },
+        message_id: MESSAGE_ID,
+        event_id: { type: 'string', description: 'For reply/reply_all/forward of a calendar meeting instead of an email. Fails if the meeting\'s invitation email is gone (deleted, archived) or the user organizes the meeting.' },
+        to: { type: 'string', description: 'Recipients, comma-separated. For new emails and forwards.' },
+        subject: { type: 'string', description: 'New emails only.' },
+        body: { type: 'string', description: 'Message text. For reply/forward it goes above the quoted original.' },
+        folder: FOLDER,
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field).' },
+      },
       required: [],
-    },
-  },
-  {
-    name: 'reply_email',
-    description: 'Opens a reply (to the sender only) in Outlook, pre-filled with your text above the quoted original. The user sends it.',
-    inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, body: { type: 'string' }, folder: FOLDER }, required: ['message_id'] },
-  },
-  {
-    name: 'reply_all_email',
-    description: 'Opens a reply-to-all in Outlook, pre-filled. The user reviews the full recipient list and sends it.',
-    inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, body: { type: 'string' }, folder: FOLDER }, required: ['message_id'] },
-  },
-  {
-    name: 'forward_email',
-    description: 'Opens a forward in Outlook, pre-filled. The user sends it.',
-    inputSchema: {
-      type: 'object',
-      properties: { message_id: MESSAGE_ID, to: { type: 'string' }, body: { type: 'string' }, folder: FOLDER },
-      required: ['message_id'],
     },
   },
   {
@@ -498,7 +423,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'draft_cancel_event',
     description:
-      'Opens an existing calendar event for the user to review before canceling it themselves - for a meeting the user organizes, via Outlook\'s own Cancel Meeting/Send Cancellation buttons; for a plain appointment, via Delete. Never sends, deletes, or changes anything itself. Only works on events the user organizes or a plain appointment - on a meeting the user only attends, use draft_respond_meeting (or decline_meeting, in Automate approvals or above) instead. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to preview canceling just that one occurrence instead.',
+      'Opens an existing calendar event for the user to review before canceling it themselves - for a meeting the user organizes, via Outlook\'s own Cancel Meeting/Send Cancellation buttons; for a plain appointment, via Delete. Never sends, deletes, or changes anything itself. Only works on events the user organizes or a plain appointment - on a meeting the user only attends, use respond_meeting with response decline (Automate approvals or above), or draft_email with event_id to write to the organizer, instead. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to preview canceling just that one occurrence instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -512,30 +437,20 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'send_email',
     description:
-      'Sends an email immediately - NO review window, no draft. Only available in Full autonomy. Prefer draft_email unless the user clearly wants this sent right now, with no chance to review it first.',
+      'Sends immediately - NO review window, no draft. Only available in Full autonomy. Same arguments as draft_email (action new/reply/reply_all/forward); `to` is required for new emails and forwards. Prefer draft_email unless the user clearly wants this sent right now, with no chance to review it first.',
     inputSchema: {
       type: 'object',
-      properties: { to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } },
-      required: ['to'],
-    },
-  },
-  {
-    name: 'send_reply',
-    description: 'Sends a reply (to the sender only) immediately - NO review window. Only available in Full autonomy. Prefer reply_email unless the user clearly wants this sent right now.',
-    inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, body: { type: 'string' }, folder: FOLDER }, required: ['message_id'] },
-  },
-  {
-    name: 'send_reply_all',
-    description: 'Sends a reply-to-all immediately - NO review window. Only available in Full autonomy. Prefer reply_all_email unless the user clearly wants this sent right now.',
-    inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, body: { type: 'string' }, folder: FOLDER }, required: ['message_id'] },
-  },
-  {
-    name: 'send_forward',
-    description: 'Forwards a message immediately - NO review window. Only available in Full autonomy. Prefer forward_email unless the user clearly wants this sent right now.',
-    inputSchema: {
-      type: 'object',
-      properties: { message_id: MESSAGE_ID, to: { type: 'string' }, body: { type: 'string' }, folder: FOLDER },
-      required: ['message_id', 'to'],
+      properties: {
+        action: { type: 'string', enum: ['new', 'reply', 'reply_all', 'forward'], description: 'Default "new" (a brand-new email). "reply", "reply_all" and "forward" act on an existing item: pass message_id for an email, or event_id for a calendar meeting (its invitation email).' },
+        message_id: MESSAGE_ID,
+        event_id: { type: 'string', description: 'For reply/reply_all/forward of a calendar meeting instead of an email. Fails if the meeting\'s invitation email is gone (deleted, archived) or the user organizes the meeting.' },
+        to: { type: 'string', description: 'Recipients, comma-separated. For new emails and forwards.' },
+        subject: { type: 'string', description: 'New emails only.' },
+        body: { type: 'string', description: 'Message text. For reply/forward it goes above the quoted original.' },
+        folder: FOLDER,
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field).' },
+      },
+      required: [],
     },
   },
   {
@@ -596,7 +511,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'cancel_event',
     description:
-      'Cancels an existing calendar event immediately - NO review window. If the user organizes it (has attendees), sends the cancellation notice to them right away, then removes it from the calendar; a plain appointment is just removed. An event that\'s already canceled is also just removed - nothing new to notify, this is the only way to dismiss one. Only available in Full autonomy. Prefer draft_cancel_event unless the user clearly wants this canceled right now, with no chance to review it first. Only refuses on a still-active meeting the user only attends (not the organizer) - use decline_meeting for those. Omit occurrence_date to cancel the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to cancel just that one occurrence instead - occurrence cancellation can NEVER be undone (unlike whole-series cancellation of a plain appointment), since Outlook has no API to restore a deleted occurrence.',
+      'Cancels an existing calendar event immediately - NO review window. If the user organizes it (has attendees), sends the cancellation notice to them right away, then removes it from the calendar; a plain appointment is just removed. An event that\'s already canceled is also just removed - nothing new to notify, this is the only way to dismiss one. Only available in Full autonomy. Prefer draft_cancel_event unless the user clearly wants this canceled right now, with no chance to review it first. Only refuses on a still-active meeting the user only attends (not the organizer) - use respond_meeting with response decline for those. Omit occurrence_date to cancel the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to cancel just that one occurrence instead - occurrence cancellation can NEVER be undone (unlike whole-series cancellation of a plain appointment), since Outlook has no API to restore a deleted occurrence.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -632,12 +547,7 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   delete_email: d('Delete email', 'מחיקת הודעה', 'Moves a message to Deleted Items, or permanently deletes it (Full autonomy only).', 'מעביר הודעה לפריטים שנמחקו, או מוחק אותה לצמיתות (רק במצב אוטונומיה מלאה).'),
   undo_last_action: d('Undo', 'ביטול', "Reverses the assistant's most recent action. Sent items can't be undone.", 'מבטל את הפעולה האחרונה של העוזר. לא ניתן לבטל פריטים שנשלחו.'),
   redo_last_action: d('Redo', 'ביצוע חוזר', 'Re-applies the action the assistant last undid.', 'מבצע מחדש את הפעולה שהעוזר ביטל לאחרונה.'),
-  accept_meeting: d('Accept meeting', 'אישור פגישה', 'Accepts a meeting invitation.', 'מאשר הזמנה לפגישה.'),
-  decline_meeting: d('Decline meeting', 'דחיית פגישה', 'Declines a meeting invitation.', 'דוחה הזמנה לפגישה.'),
-  tentative_meeting: d('Tentative response', 'תגובה זמנית', 'Responds tentatively to a meeting invitation.', 'משיב תשובה זמנית להזמנה לפגישה.'),
-  draft_reply_event: d('Draft event reply', 'טיוטת תשובה לאירוע', 'Opens a pre-filled email reply about a meeting to review and send.', 'פותח תשובה בדוא"ל על פגישה, מלאה מראש, לבדיקה ושליחה.'),
-  draft_forward_event: d('Draft event forward', 'טיוטת העברת אירוע', 'Opens a pre-filled forward of an event to review and send.', 'פותח העברה של אירוע, מלאה מראש, לבדיקה ושליחה.'),
-  draft_respond_meeting: d('Open to respond', 'פתיחה למענה', 'Opens a meeting invitation for the user to accept/decline/respond tentatively themselves.', 'פותח הזמנה לפגישה כדי שהמשתמש יאשר/ידחה/ישיב זמנית בעצמו.'),
+  respond_meeting: d('Respond to meeting', 'מענה להזמנה לפגישה', 'Accepts, tentatively accepts or declines a meeting invitation.', 'מאשר, מאשר זמנית או דוחה הזמנה לפגישה.'),
   set_event_categories: d('Color event', 'צביעת אירוע', 'Applies or clears color tags on a calendar event.', 'מחיל או מנקה תגיות צבע על אירוע יומן.'),
   set_category_color: d('Set tag color', 'הגדרת צבע תגית', 'Creates or recolors a color tag.', 'יוצר או משנה צבע של תגית.'),
   set_event_availability: d('Set availability', 'הגדרת זמינות', 'Sets an event\'s Free/Busy/Tentative/Out of Office status.', 'מגדיר את סטטוס הזמינות של אירוע (פנוי / עסוק / בעבודה במקום אחר / מחוץ למשרד).'),
@@ -645,17 +555,11 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   update_task: d('Update task', 'עדכון משימה', 'Updates or completes an existing task.', 'מעדכן או משלים משימה קיימת.'),
   set_reminder: d('Set reminder', 'הגדרת תזכורת', 'Sets a reminder on an appointment or task.', 'מגדיר תזכורת לפגישה או משימה.'),
   set_email_reminder: d('Flag with reminder', 'סימון עם תזכורת', 'Flags an email for follow-up with a reminder.', 'מסמן הודעה למעקב עם תזכורת.'),
-  draft_email: d('Draft email', 'טיוטת הודעה', 'Opens a pre-filled compose window to review and send.', 'פותח חלון חיבור מלא מראש לבדיקה ושליחה.'),
-  reply_email: d('Draft reply', 'טיוטת תשובה', 'Opens a pre-filled reply to review and send.', 'פותח תשובה מלאה מראש לבדיקה ושליחה.'),
-  reply_all_email: d('Draft reply all', 'טיוטת תשובה לכולם', 'Opens a pre-filled reply-to-all to review and send.', 'פותח תשובה-לכולם מלאה מראש לבדיקה ושליחה.'),
-  forward_email: d('Draft forward', 'טיוטת העברה', 'Opens a pre-filled forward to review and send.', 'פותח העברה מלאה מראש לבדיקה ושליחה.'),
+  draft_email: d('Draft email', 'טיוטת הודעה', 'Opens a pre-filled new email, reply or forward to review and send.', 'פותח הודעה חדשה, תשובה או העברה מלאה מראש לבדיקה ושליחה.'),
   draft_event: d('Draft event', 'טיוטת אירוע', 'Opens a pre-filled appointment/meeting to review and send.', 'פותח פגישה/אירוע מלא מראש לבדיקה ושליחה.'),
   draft_cancel_event: d('Draft cancellation', 'טיוטת ביטול', 'Opens an event to review before canceling it.', 'פותח אירוע לבדיקה לפני ביטולו.'),
   draft_edit_event: d('Draft event edit', 'טיוטת עריכת אירוע', 'Opens an event with the requested changes to review and save/send.', 'פותח אירוע עם השינויים המבוקשים לבדיקה ולשמירה/שליחה.'),
-  send_email: d('Send email (auto-send)', 'שליחת הודעה (שליחה אוטומטית)', 'Sends an email immediately, no review window.', 'שולח הודעה מיידית, ללא חלון בדיקה.'),
-  send_reply: d('Send reply (auto-send)', 'שליחת תשובה (שליחה אוטומטית)', 'Sends a reply immediately, no review window.', 'שולח תשובה מיידית, ללא חלון בדיקה.'),
-  send_reply_all: d('Send reply all (auto-send)', 'שליחת תשובה לכולם (שליחה אוטומטית)', 'Sends a reply-to-all immediately, no review window.', 'שולח תשובה-לכולם מיידית, ללא חלון בדיקה.'),
-  send_forward: d('Send forward (auto-send)', 'שליחת העברה (שליחה אוטומטית)', 'Forwards a message immediately, no review window.', 'מעביר הודעה מיידית, ללא חלון בדיקה.'),
+  send_email: d('Send email (auto-send)', 'שליחת הודעה (שליחה אוטומטית)', 'Sends a new email, reply or forward immediately, no review window.', 'שולח הודעה חדשה, תשובה או העברה מיידית, ללא חלון בדיקה.'),
   create_event: d('Create event (auto-send)', 'יצירת אירוע (שליחה אוטומטית)', 'Creates/sends a calendar event immediately, no review window.', 'יוצר/שולח אירוע יומן מיידית, ללא חלון בדיקה.'),
   cancel_event: d('Cancel event (auto-send)', 'ביטול אירוע (שליחה אוטומטית)', 'Cancels an event and notifies attendees immediately, no review window.', 'מבטל אירוע ומודיע למוזמנים מיידית, ללא חלון בדיקה.'),
   edit_event: d('Edit event (auto-send)', 'עריכת אירוע (שליחה אוטומטית)', 'Edits an event and sends the update immediately, no review window.', 'עורך אירוע ושולח עדכון מיידית, ללא חלון בדיקה.'),
@@ -669,15 +573,15 @@ startAddIn({
     'You are an AI assistant embedded in Microsoft Outlook via the OpenDocs add-in. You work from the main Outlook window (Explorer). ' +
     'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline/tentatively-respond to invitations, edit or cancel events, color events with tags via list_color_categories/set_event_categories/set_category_color, set an event\'s Free/Busy/Tentative/Out of Office/Working Elsewhere status via set_event_availability), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
-    'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event, draft_edit_event, draft_cancel_event, draft_respond_meeting, draft_reply_event, draft_forward_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. draft_respond_meeting is slightly different from the others: it opens the meeting unchanged and the user picks Accept/Tentative/Decline themselves from Outlook\'s own buttons, since Outlook has no way to pre-select a response type in a review window without already committing it. ' +
-    'send_email/send_reply/send_reply_all/send_forward/create_event/edit_event/cancel_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
+    'Drafting tools (draft_email, draft_event, draft_edit_event, draft_cancel_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. draft_email covers new emails, replies, reply-alls and forwards (action), of an email (message_id) or of a calendar meeting (event_id). Outlook has no way to pre-select Accept/Tentative/Decline in a review window without already committing it, so responding to an invitation is respond_meeting (Automate approvals or above); below that, offer draft_email with action reply and event_id to write to the organizer. ' +
+    'send_email/create_event/edit_event/cancel_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
     'edit_event/draft_edit_event can change start/end, subject, body, location, and/or attendees in one call (at least one field required) - only work on events the user organizes (or a plain appointment with no attendees); on a meeting the user only attends, they return an error instead of an unauthoritative change, point the user at Outlook\'s own "Propose New Time" for those. Recurring events share one event_id for the whole series - omit occurrence_date to act on the whole series, or pass one (a date from list_events\' start value) to target a single occurrence instead, for edit_event/draft_edit_event/cancel_event/draft_cancel_event; attendee changes only apply to the whole series, never a single occurrence. To add/remove specific attendees while keeping the rest, read the current list with get_event first and pass the full new list to edit_event/draft_edit_event. ' +
-    'cancel_event/draft_cancel_event have the same organizer-only restriction on a still-active meeting the user only attends - use draft_respond_meeting (Draft only) or decline_meeting (Automate approvals or above) instead. Canceling a meeting the user organizes sends a cancellation notice to attendees (Full autonomy for cancel_event, or reviewed first via draft_cancel_event); canceling a plain appointment, or any already-canceled event, just removes it from the calendar (moved to Deleted Items, recoverable), nobody to notify - cancel_event is the only way to dismiss an already-canceled event. ' +
+    'cancel_event/draft_cancel_event have the same organizer-only restriction on a still-active meeting the user only attends - use respond_meeting with response decline (Automate approvals or above) instead, or draft_email with event_id to tell the organizer. Canceling a meeting the user organizes sends a cancellation notice to attendees (Full autonomy for cancel_event, or reviewed first via draft_cancel_event); canceling a plain appointment, or any already-canceled event, just removes it from the calendar (moved to Deleted Items, recoverable), nobody to notify - cancel_event is the only way to dismiss an already-canceled event. ' +
     'message_id / event_id / task_id values are Outlook EntryIDs. When the user has one or more messages selected, that selection (with its message_id) is in your context - prefer it over searching. ' +
     'Prefer list_emails / search_emails / list_tasks (fast, server-side) over reading items one by one. ' +
     "Once you've found the relevant messages, apply_search can show the same results in the user's own Outlook window instead of only listing them in chat. " +
     "undo_last_action/redo_last_action step back and forward through your own actions in this chat (not the user's manual Outlook actions). Anything that sent something (emails, invites, meeting responses, cancellation notices) or a permanent delete can't be undone and blocks undo past it - say so rather than claim it was reversed. " +
-    "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events/edits/cancellations) -> Automate approvals (also auto-accept/decline/tentatively-respond to meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/send_reply/send_reply_all/send_forward/create_event/edit_event/cancel_event, which send/create immediately).",
+    "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events/edits/cancellations) -> Automate approvals (also respond_meeting to accept/tentatively accept/decline meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/create_event/edit_event/cancel_event, which send/create immediately).",
   starters: [
     { en: 'Summarize my unread emails', he: 'סכם את ההודעות שלא קראתי' },
     { en: 'Draft a reply to the selected email', he: 'נסח תשובה להודעה שנבחרה' },
@@ -715,15 +619,9 @@ startAddIn({
     'set_reminder',
     'set_email_reminder',
     'draft_email',
-    'reply_email',
-    'reply_all_email',
-    'forward_email',
     'draft_event',
     'draft_cancel_event',
     'draft_edit_event',
-    'draft_respond_meeting',
-    'draft_reply_event',
-    'draft_forward_event',
     'set_event_categories',
     'set_category_color',
     'set_event_availability',
@@ -731,12 +629,12 @@ startAddIn({
     'undo_last_action',
     'redo_last_action',
   ],
-  // Tier 3 ("Automate approvals"), on top of tier 2 - accept/decline/tentatively-respond
-  // already auto-notify the organizer via resp.Send(), so they get their
+  // Tier 3 ("Automate approvals"), on top of tier 2 - respond_meeting
+  // already auto-notifies the organizer via resp.Send(), so they get their
   // own tier rather than hiding in Draft only or Full autonomy. Must stay
   // in sync with OutlookTools.cs's ApprovalTierTools.
-  trackChangesExtraTools: ['accept_meeting', 'decline_meeting', 'tentative_meeting'],
-  // send_email/send_reply/send_reply_all/send_forward/create_event/
+  trackChangesExtraTools: ['respond_meeting'],
+  // send_email/create_event/
   // edit_event/cancel_event are deliberately in neither list above -
   // that omission alone confines them to tier 4 (Full autonomy), which shows
   // every tool.
@@ -758,5 +656,5 @@ startAddIn({
       description: { en: 'Everything above, plus sending emails and creating/sending/rescheduling calendar invites in your name.', he: 'כל מה שלמעלה, בתוספת שליחת הודעות ויצירה/שליחה/שינוי מועד של הזמנות יומן בשמך.' },
     },
   },
-  autoSendTools: ['send_email', 'send_reply', 'send_reply_all', 'send_forward', 'create_event', 'cancel_event', 'edit_event'],
+  autoSendTools: ['send_email', 'create_event', 'cancel_event', 'edit_event'],
 })

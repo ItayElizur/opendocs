@@ -37,7 +37,7 @@ second-guesses.
 
 ## Shared `store_id` parameter pattern
 
-Used by GetEvent, RespondMeeting, DraftRespondMeeting, EditEvent,
+Used by GetEvent, RespondMeeting, EditEvent,
 DraftEditEvent, DraftCancelEvent, and CancelEvent:
 
 Only needed for an event_id from someone else's shared calendar
@@ -58,30 +58,16 @@ one), then extend through the following contiguous run of work
 days (capped at a week) - correct for any shape, including a
 work week that wraps past a calendar-week boundary.
 
-## `DraftRespondMeeting`
+## Why there is no draft version of `respond_meeting`
 
-Draft-tier counterpart to RespondMeeting - redesigned after a code
-review confirmed (via Respond()'s documented behavior, and this
-project's own prior history with draft_cancel_event hitting the
-identical shape of bug) that calling appt.Respond() commits a real
-calendar change at call time - a new EntryID on accept/tentative,
-a move to Deleted Items on decline - independent of whether the
-resulting response is ever sent or the window ever closed with an
-action taken. That directly broke this codebase's "draft tools
-persist nothing until the user acts" guarantee, the same way an
-earlier version of draft_cancel_event did with an unsaved
-MeetingStatus change. Fixed the same way that was: never mutate
-the item at all here. Opens the original item completely
-unchanged; the user picks Accept/Tentative/Decline themselves
-from Outlook's own native ribbon buttons. Since this tool no
-longer calls Respond() with a specific response type, one unified
-tool replaces what used to be three separate ones
-(draft_accept_meeting/draft_decline_meeting/draft_tentative_meeting).
-message can no longer be pre-filled into a response body (that
-would require calling Respond() to get the MeetingItem, the exact
-call this redesign avoids) - it's returned in the output text
-instead, for the user to paste in themselves if they use
-Outlook's own "Edit response before sending" option.
+`appt.Respond()` commits a real calendar change at call time (a new
+EntryID on accept/tentative, a move to Deleted Items on decline),
+independent of whether the resulting response is ever sent. That breaks
+this codebase's "draft tools persist nothing until the user acts"
+guarantee - the same shape of bug an earlier draft_cancel_event had with
+an unsaved MeetingStatus change. So there is no draft counterpart that
+pre-selects a response. To write to the organizer instead of responding,
+use draft_email with event_id (Outlook's own reply on the invitation).
 
 ## `IsReceivedMeeting`
 
