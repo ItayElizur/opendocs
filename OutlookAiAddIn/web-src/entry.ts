@@ -280,7 +280,7 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'draft_reply_event',
-    description: 'Opens Outlook\'s own reply to a calendar meeting\'s invitation email, so it is threaded and quoted like a reply made by hand. The user reviews and sends it. Set reply_all to also write to the other attendees. If the invitation email can no longer be found (deleted, archived, or you organize the event) it opens a new email to the organizer instead. This is a normal email about the meeting - it does not accept or decline it (use accept_meeting/decline_meeting/tentative_meeting or draft_respond_meeting for that).',
+    description: 'Opens Outlook\'s own reply to a calendar meeting\'s invitation email, so it is threaded and quoted like a reply made by hand. The user reviews and sends it. Set reply_all to also write to the other attendees. Fails if the invitation email can no longer be found (deleted, archived, or you organize the event). This is a normal email about the meeting - it does not accept or decline it (use accept_meeting/decline_meeting/tentative_meeting or draft_respond_meeting for that).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -294,7 +294,7 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'draft_forward_event',
-    description: 'Opens Outlook\'s own forward of a calendar event\'s invitation email, pre-filled with the recipients you name. The user reviews and sends it; the recipients can add the event to their own calendar. If the invitation email can no longer be found it forwards the event as an .ics attachment instead.',
+    description: 'Opens Outlook\'s own forward of a calendar event\'s invitation email, pre-filled with the recipients you name. The user reviews and sends it; the recipients can add the event to their own calendar. Fails if the invitation email can no longer be found (deleted, archived, or you organize the event).',
     inputSchema: {
       type: 'object',
       properties: {

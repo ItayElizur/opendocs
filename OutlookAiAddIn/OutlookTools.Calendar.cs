@@ -515,11 +515,15 @@ namespace OutlookAiAddIn
             return null;
         }
 
+        private static string NoInviteError(Outlook.AppointmentItem appt)
+        {
+            return "Couldn't find the invitation email for \"" + (appt.Subject ?? "") + "\" - it may have been deleted or archived, or you organize this event (an organizer has no invitation to reply to or forward).";
+        }
+
         // Opens Outlook's own reply (or reply-all) on the event's invitation
-        // message when it can be found, so it is threaded and quoted exactly
-        // like a reply made by hand. Otherwise falls back to a plain mail
-        // built here (organizer / attendees, "RE: <subject>", event details
-        // quoted). Either way it is only opened for review, never sent.
+        // message, so it is threaded and quoted exactly like a reply made by
+        // hand. Only opened for review, never sent. Errors when the invitation
+        // message can't be found rather than building a lookalike.
         private static ToolResult DraftReplyEvent(JsonElement input)
         {
             string id = ReqStr(input, "event_id");
@@ -531,77 +535,23 @@ namespace OutlookAiAddIn
             Outlook.AppointmentItem appt = ResolveMeetingAppointment(ItemById(id, storeId));
             if (appt == null)
                 return new ToolResult { Output = "event_id does not resolve to a calendar event.", IsError = true, Summary = tool };
-            if (appt.MeetingStatus == Outlook.OlMeetingStatus.olNonMeeting)
-                return new ToolResult { Output = "\"" + (appt.Subject ?? "") + "\" is a plain appointment with no organizer or attendees - there's nobody to reply to.", IsError = true, Summary = tool };
-
-            string subject = appt.Subject ?? "";
-            string kind = all ? "reply-all" : "reply";
 
             Outlook.MeetingItem invite = FindInviteMessage(appt);
-            if (invite != null)
-            {
-                Outlook.MailItem native = all ? invite.ReplyAll() : invite.Reply();
-                if (!string.IsNullOrEmpty(body)) native.HTMLBody = PrependHtml(body, native.HTMLBody);
-                native.Display(false);
-                return new ToolResult
-                {
-                    Output = "Opened Outlook's own " + kind + " to the invitation for \"" + subject + "\" for the user to review and send.",
-                    Summary = tool,
-                };
-            }
+            if (invite == null)
+                return new ToolResult { Output = NoInviteError(appt), IsError = true, Summary = tool };
 
-            string meSmtp = "";
-            try { meSmtp = SmtpOf(Ns.CurrentUser.AddressEntry); } catch (Exception ex) { DebugLog.WriteException("DraftReplyEvent CurrentUser SMTP", ex); }
-
-            var to = new List<string>();
-            var cc = new List<string>();
-            Action<List<string>, string> add = (list, addr) =>
-            {
-                if (string.IsNullOrEmpty(addr)) return;
-                if (string.Equals(addr, meSmtp, StringComparison.OrdinalIgnoreCase)) return;
-                if (to.Exists(x => string.Equals(x, addr, StringComparison.OrdinalIgnoreCase)) || cc.Exists(x => string.Equals(x, addr, StringComparison.OrdinalIgnoreCase))) return;
-                list.Add(addr);
-            };
-
-            string organizer = appt.Organizer ?? "";
-            try { add(to, SmtpOf(appt.GetOrganizer())); } catch (Exception ex) { DebugLog.WriteException("DraftReplyEvent GetOrganizer", ex); }
-            if (all)
-            {
-                foreach (Outlook.Recipient r in appt.Recipients)
-                {
-                    string smtp = "";
-                    try { smtp = SmtpOf(r.AddressEntry); } catch { }
-                    if (string.IsNullOrEmpty(smtp)) smtp = r.Address ?? "";
-                    if (r.Type == (int)Outlook.OlMeetingRecipientType.olRequired) add(to, smtp);
-                    else if (r.Type == (int)Outlook.OlMeetingRecipientType.olOptional) add(cc, smtp);
-                }
-            }
-            if (to.Count == 0 && cc.Count == 0)
-                return new ToolResult { Output = "You organize \"" + subject + "\", so there is no invitation to reply to and no organizer to write to. Pass reply_all=true to write to the attendees, or use draft_forward_event.", IsError = true, Summary = tool };
-
-            string quoted = "-----Original event-----\n" +
-                            "Subject: " + subject + "\n" +
-                            "When: " + appt.Start.ToString("f", CultureInfo.CurrentCulture) + " - " + appt.End.ToString("t", CultureInfo.CurrentCulture) + "\n" +
-                            (string.IsNullOrEmpty(appt.Location) ? "" : "Where: " + appt.Location + "\n") +
-                            "Organizer: " + organizer;
-
-            Outlook.MailItem m = (Outlook.MailItem)App.CreateItem(Outlook.OlItemType.olMailItem);
-            m.To = string.Join("; ", to);
-            if (cc.Count > 0) m.CC = string.Join("; ", cc);
-            m.Subject = subject.StartsWith("RE:", StringComparison.OrdinalIgnoreCase) ? subject : "RE: " + subject;
-            m.Body = SeedSignature(body) + "\n\n" + quoted;
-            m.Display(false);
+            Outlook.MailItem reply = all ? invite.ReplyAll() : invite.Reply();
+            if (!string.IsNullOrEmpty(body)) reply.HTMLBody = PrependHtml(body, reply.HTMLBody);
+            reply.Display(false);
             return new ToolResult
             {
-                Output = "The invitation email for \"" + subject + "\" wasn't found (deleted, archived, or you organize it), so opened a new " + kind + " email in Outlook for the user to review and send.",
+                Output = "Opened Outlook's own " + (all ? "reply-all" : "reply") + " to the invitation for \"" + (appt.Subject ?? "") + "\" for the user to review and send.",
                 Summary = tool,
             };
         }
 
-        // Opens Outlook's own forward of the event's invitation message when
-        // it can be found (recipients get a normal meeting forward). Otherwise
-        // falls back to AppointmentItem.ForwardAsVcal(), which emails the event
-        // as an .ics attachment. Only opened for review, never sent.
+        // Opens Outlook's own meeting forward of the event's invitation
+        // message (not an .ics attachment). Only opened for review, never sent.
         private static ToolResult DraftForwardEvent(JsonElement input)
         {
             string id = ReqStr(input, "event_id");
@@ -613,45 +563,34 @@ namespace OutlookAiAddIn
             Outlook.AppointmentItem appt = ResolveMeetingAppointment(ItemById(id, storeId));
             if (appt == null)
                 return new ToolResult { Output = "event_id does not resolve to a calendar event.", IsError = true, Summary = tool };
-            string subject = appt.Subject ?? "";
 
             Outlook.MeetingItem invite = FindInviteMessage(appt);
-            if (invite != null)
-            {
-                // _MeetingItem: the plain interface name avoids the Forward
-                // method/event name clash on MeetingItem.
-                Outlook.MeetingItem fwd = ((Outlook._MeetingItem)invite).Forward();
-                var unresolved = new List<string>();
-                foreach (string part in to.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
-                {
-                    string addr = part.Trim();
-                    int lt = addr.LastIndexOf('<');
-                    if (lt >= 0 && addr.EndsWith(">")) addr = addr.Substring(lt + 1, addr.Length - lt - 2).Trim();
-                    if (addr.Length == 0) continue;
-                    Outlook.Recipient r = fwd.Recipients.Add(addr);
-                    try { r.Resolve(); } catch { }
-                    if (!r.Resolved) unresolved.Add(addr);
-                }
-                if (!string.IsNullOrEmpty(body))
-                {
-                    try { fwd.Body = SeedSignature(body) + "\n\n" + fwd.Body; }
-                    catch (Exception ex) { DebugLog.WriteException("DraftForwardEvent body", ex); }
-                }
-                fwd.Display(false);
-                return new ToolResult
-                {
-                    Output = "Opened Outlook's own forward of the invitation for \"" + subject + "\" for the user to review and send." + FormatUnresolvedAttendeesNote(unresolved),
-                    Summary = tool,
-                };
-            }
+            if (invite == null)
+                return new ToolResult { Output = NoInviteError(appt), IsError = true, Summary = tool };
 
-            Outlook.MailItem vcal = ((Outlook._AppointmentItem)appt).ForwardAsVcal();
-            if (!string.IsNullOrEmpty(to)) vcal.To = to;
-            if (!string.IsNullOrEmpty(body)) vcal.Body = SeedSignature(body) + "\n\n" + vcal.Body;
-            vcal.Display(false);
+            // _MeetingItem: the plain interface name avoids the Forward
+            // method/event name clash on MeetingItem.
+            Outlook.MeetingItem fwd = ((Outlook._MeetingItem)invite).Forward();
+            var unresolved = new List<string>();
+            foreach (string part in to.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string addr = part.Trim();
+                int lt = addr.LastIndexOf('<');
+                if (lt >= 0 && addr.EndsWith(">")) addr = addr.Substring(lt + 1, addr.Length - lt - 2).Trim();
+                if (addr.Length == 0) continue;
+                Outlook.Recipient r = fwd.Recipients.Add(addr);
+                try { r.Resolve(); } catch { }
+                if (!r.Resolved) unresolved.Add(addr);
+            }
+            if (!string.IsNullOrEmpty(body))
+            {
+                try { fwd.Body = SeedSignature(body) + "\n\n" + fwd.Body; }
+                catch (Exception ex) { DebugLog.WriteException("DraftForwardEvent body", ex); }
+            }
+            fwd.Display(false);
             return new ToolResult
             {
-                Output = "The invitation email for \"" + subject + "\" wasn't found (deleted, archived, or you organize it), so opened a forward with the event attached as an iCalendar (.ics) file for the user to review and send.",
+                Output = "Opened Outlook's own forward of the invitation for \"" + (appt.Subject ?? "") + "\" for the user to review and send." + FormatUnresolvedAttendeesNote(unresolved),
                 Summary = tool,
             };
         }
