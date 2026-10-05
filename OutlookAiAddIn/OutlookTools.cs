@@ -37,7 +37,7 @@ namespace OutlookAiAddIn
         // this escalation exactly - see OfficeAi.Shared.EditingMode.
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
-            "list_emails", "search_emails", "get_email", "list_folders", "search_contacts",
+            "search_emails", "get_email", "list_folders", "search_contacts",
             "list_events", "get_event", "list_tasks", "get_attachment", "find_meeting_slots", "open_email",
             "list_color_categories",
         };
@@ -52,7 +52,7 @@ namespace OutlookAiAddIn
         // commentOnlyExtraTools.
         private static readonly HashSet<string> DraftTierTools = new HashSet<string>
         {
-            "mark_email_read", "mark_email_unread", "flag_email_important", "move_email", "delete_email",
+            "mark_email_read", "flag_email_important", "move_email", "delete_email",
             "create_task", "update_task", "set_reminder", "set_email_reminder",
             "draft_email", "draft_event",
             "set_event_categories", "set_category_color", "set_event_availability", "apply_search",
@@ -130,8 +130,14 @@ namespace OutlookAiAddIn
 
                 switch (name)
                 {
-                    case "list_emails": return ListEmails(input);
-                    case "search_emails": return SearchEmails(input);
+                    case "search_emails":
+                    {
+                        // No filters = just list the newest messages (the fast table API);
+                        // any filter = a real search.
+                        ToolResult found = HasSearchFilters(input) ? SearchEmails(input) : ListEmails(input);
+                        found.Summary = "search_emails";
+                        return found;
+                    }
                     case "apply_search": return ApplySearch(input);
                     case "get_email": return GetEmail(input);
                     case "open_email": return OpenEmail(input);
@@ -144,8 +150,7 @@ namespace OutlookAiAddIn
                     case "get_attachment": return GetAttachment(input);
                     case "list_color_categories": return ListColorCategories(input);
 
-                    case "mark_email_read": return MarkEmail(mbxKey, input, false);
-                    case "mark_email_unread": return MarkEmail(mbxKey, input, true);
+                    case "mark_email_read": return MarkEmail(mbxKey, input, !Bool(input, "read", true));
                     case "flag_email_important": return FlagEmailImportant(mbxKey, input);
                     case "move_email": return MoveEmail(mbxKey, input);
                     case "delete_email": return DeleteEmail(mbxKey, input);

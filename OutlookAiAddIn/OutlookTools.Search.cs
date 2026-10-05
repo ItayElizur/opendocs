@@ -39,6 +39,15 @@ namespace OutlookAiAddIn
         // Native query first: Items.Sort then Items.Restrict("@SQL=" + DASL).
         // A capped linear scan is the fallback only when Restrict throws on a
         // filter it cannot parse - never the default path.
+        // True when the caller gave any search criterion. search_emails with none
+        // of these is a plain "newest messages in a folder" listing (ListEmails).
+        private static bool HasSearchFilters(JsonElement input)
+        {
+            SearchArgs a = ReadSearchArgs(input);
+            return !string.IsNullOrEmpty(a.Query) || a.Start.HasValue || a.End.HasValue ||
+                   !string.IsNullOrEmpty(a.Sender) || !string.IsNullOrEmpty(Str(input, "recipient", null));
+        }
+
         private static ToolResult SearchEmails(JsonElement input)
         {
             SearchArgs a = ReadSearchArgs(input);
@@ -104,7 +113,10 @@ namespace OutlookAiAddIn
                 sb.AppendLine("- message_id: " + m.EntryID);
                 sb.AppendLine("  subject: " + (m.Subject ?? ""));
                 sb.AppendLine("  from: " + (m.SenderName ?? ""));
-                try { sb.AppendLine("  received: " + Iso(m.ReceivedTime) + "  unread: " + m.UnRead); } catch { }
+                bool hasAtt = false;
+                try { hasAtt = Convert.ToBoolean(m.PropertyAccessor.GetProperty(PrHasAttach)); }
+                catch { try { hasAtt = m.Attachments.Count > 0; } catch { } }
+                try { sb.AppendLine("  received: " + Iso(m.ReceivedTime) + "  unread: " + m.UnRead + "  has_attachments: " + hasAtt); } catch { }
             }
             return new ToolResult { Output = sb.ToString(), Summary = "search_emails" };
         }

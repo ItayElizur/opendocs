@@ -9,7 +9,7 @@ const FOLDER = {
   description: 'Folder name: "inbox" (default), "sent", "drafts", "deleted", "junk", or any custom folder name from list_folders.',
 }
 
-const MESSAGE_ID = { type: 'string', description: 'Outlook EntryID from list_emails/search_emails or the current selection.' }
+const MESSAGE_ID = { type: 'string', description: 'Outlook EntryID from search_emails or the current selection.' }
 
 const EVENT_RECURRENCE = {
   type: 'object',
@@ -46,23 +46,9 @@ const EVENT_PROPS = {
 
 const ALL_OUTLOOK_TOOLS = [
   {
-    name: 'list_emails',
-    description:
-      'Lists recent emails (newest first) from a folder using Outlook\'s fast table API. unread_only limits to unread. Returns message_id (EntryID), subject, sender, received time, unread flag, and has_attachments.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        folder: FOLDER,
-        limit: { type: 'number', description: 'Max messages (default 20).' },
-        unread_only: { type: 'boolean' },
-      },
-      required: [],
-    },
-  },
-  {
     name: 'search_emails',
     description:
-      'Searches a folder server-side (Outlook Restrict/DASL) by text (subject+body), date range, and/or sender; falls back to a capped scan only if the filter cannot be pushed down. recipient is matched client-side. Newest first.',
+      'Lists or searches a folder, newest first. With no query/date/sender/recipient filter it simply lists the most recent messages using Outlook\'s fast table API (unread_only limits to unread). With filters it searches server-side (Outlook Restrict/DASL) by text (subject+body), date range, and/or sender, falling back to a capped scan only if the filter cannot be pushed down; recipient is matched client-side. Returns message_id (EntryID), subject, sender, received time, unread flag, and has_attachments.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -81,7 +67,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'apply_search',
     description:
-      "Applies a search to the user's actual Outlook window - navigates to the folder and runs the search there, so the user sees the same results you found. Use after search_emails/list_emails once you know what's relevant; reuses the same query/date/sender filters.",
+      "Applies a search to the user's actual Outlook window - navigates to the folder and runs the search there, so the user sees the same results you found. Use after search_emails once you know what's relevant; reuses the same query/date/sender filters.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -208,13 +194,16 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'mark_email_read',
-    description: 'Marks a message as read.',
-    inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, folder: FOLDER }, required: ['message_id'] },
-  },
-  {
-    name: 'mark_email_unread',
-    description: 'Marks a message as unread.',
-    inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, folder: FOLDER }, required: ['message_id'] },
+    description: 'Marks a message as read, or as unread with read: false.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        message_id: MESSAGE_ID,
+        read: { type: 'boolean', description: 'true (default) marks it read; false marks it unread.' },
+        folder: FOLDER,
+      },
+      required: ['message_id'],
+    },
   },
   {
     name: 'flag_email_important',
@@ -246,7 +235,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'undo_last_action',
     description:
-      "Reverses YOUR most recent action in this chat (call repeatedly to step further back). Covers mark_email_read/unread, flag_email_important, move_email, " +
+      "Reverses YOUR most recent action in this chat (call repeatedly to step further back). Covers mark_email_read (read or unread), flag_email_important, move_email, " +
       'delete_email (non-permanent - moves it back out of Deleted Items), create_task, update_task, set_reminder, set_email_reminder, set_event_categories, ' +
       'set_category_color, set_event_availability, send_event with action edit on a plain (non-meeting) event that is not becoming a meeting in that call - a non-recurring event, a single occurrence, or a whole recurring series\' subject/body/location only (not a time change), send_event with action cancel on a plain or already-canceled whole event (moved back out of Deleted Items), and send_event with action new without attendees (moved to Deleted Items). Sends, meeting invites, respond_meeting, send_event cancel on a still-active organized meeting, send_event cancel on any single occurrence (always, whether plain or meeting - Outlook has no API to restore a deleted occurrence), send_event edit whenever it sends an update or changes a whole recurring series\' time, and permanent deletes ' +
       "can't be reversed and block undo past them. Never touches changes the user made directly in Outlook, and refuses if the item was changed since. " +
@@ -434,8 +423,7 @@ const ALL_OUTLOOK_TOOLS = [
 const d = (en: string, he: string, den: string, dhe: string) => ({ label: { en, he }, description: { en: den, he: dhe } })
 
 const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
-  list_emails: d('List emails', 'רשימת הודעות', 'Lists recent messages from a folder.', 'מציג הודעות אחרונות מתיקייה.'),
-  search_emails: d('Search emails', 'חיפוש הודעות', 'Searches a folder by text, date, or sender.', 'מחפש בתיקייה לפי טקסט, תאריך או שולח.'),
+  search_emails: d('Search emails', 'חיפוש הודעות', 'Lists recent messages from a folder, or searches by text, date, or sender.', 'מציג הודעות אחרונות מתיקייה, או מחפש לפי טקסט, תאריך או שולח.'),
   apply_search: d('Show search in Outlook', 'הצגת חיפוש ב-Outlook', 'Applies the search to the Outlook window itself.', 'מיישם את החיפוש בחלון Outlook עצמו.'),
   get_email: d('Read email', 'קריאת הודעה', 'Reads one message in full, including its attachment list.', 'קורא הודעה אחת במלואה, כולל רשימת הקבצים המצורפים.'),
   open_email: d('Open email', 'פתיחת הודעה', 'Opens a message in Outlook.', 'פותח הודעה ב-Outlook.'),
@@ -447,8 +435,7 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   find_meeting_slots: d('Find meeting times', 'מציאת זמני פגישה', 'Finds open times for you and the attendees, ranked by availability.', 'מוצא זמנים פנויים עבורך והמוזמנים, מדורגים לפי זמינות.'),
   list_color_categories: d('List color tags', 'רשימת תגיות צבע', 'Lists the available color tags and their colors.', 'מציג את תגיות הצבע הזמינות והצבעים שלהן.'),
   list_tasks: d('List tasks', 'רשימת משימות', 'Lists tasks and their due dates.', 'מציג משימות ותאריכי יעד.'),
-  mark_email_read: d('Mark read', 'סימון כנקרא', 'Marks a message as read.', 'מסמן הודעה כנקראה.'),
-  mark_email_unread: d('Mark unread', 'סימון כלא נקרא', 'Marks a message as unread.', 'מסמן הודעה כלא נקראה.'),
+  mark_email_read: d('Mark read/unread', 'סימון כנקרא/כלא נקרא', 'Marks a message as read or unread.', 'מסמן הודעה כנקראה או כלא נקראה.'),
   flag_email_important: d('Flag importance', 'סימון חשיבות', 'Sets a message to High or Normal importance.', 'מגדיר חשיבות גבוהה או רגילה להודעה.'),
   move_email: d('Move email', 'העברת הודעה', 'Moves a message to another folder.', 'מעביר הודעה לתיקייה אחרת.'),
   delete_email: d('Delete email', 'מחיקת הודעה', 'Moves a message to Deleted Items, or permanently deletes it (Full autonomy only).', 'מעביר הודעה לפריטים שנמחקו, או מוחק אותה לצמיתות (רק במצב אוטונומיה מלאה).'),
@@ -481,7 +468,7 @@ startAddIn({
     'draft_event/send_event with action edit can change start/end, subject, body, location, and/or attendees in one call (at least one field required) - edit and cancel only work on events the user organizes (or a plain appointment with no attendees); on a meeting the user only attends, they return an error instead of an unauthoritative change, point the user at Outlook\'s own "Propose New Time" for those. Recurring events share one event_id for the whole series - omit occurrence_date to act on the whole series, or pass one (a date from list_events\' start value) to target a single occurrence instead, for action edit and cancel; attendee changes only apply to the whole series, never a single occurrence. To add/remove specific attendees while keeping the rest, read the current list with get_event first and pass the full new list with action edit. ' +
     'action cancel has the same organizer-only restriction on a still-active meeting the user only attends - use respond_meeting with response decline (Automate approvals or above) instead, or draft_email with event_id to tell the organizer. Canceling a meeting the user organizes sends a cancellation notice to attendees (Full autonomy for send_event, or reviewed first via draft_event with action cancel); canceling a plain appointment, or any already-canceled event, just removes it from the calendar (moved to Deleted Items, recoverable), nobody to notify - send_event with action cancel is the only way to dismiss an already-canceled event. ' +
     'message_id / event_id / task_id values are Outlook EntryIDs. When the user has one or more messages selected, that selection (with its message_id) is in your context - prefer it over searching. ' +
-    'Prefer list_emails / search_emails / list_tasks (fast, server-side) over reading items one by one. ' +
+    'Prefer search_emails / list_tasks (fast, server-side) over reading items one by one. ' +
     "Once you've found the relevant messages, apply_search can show the same results in the user's own Outlook window instead of only listing them in chat. " +
     "undo_last_action/redo_last_action step back and forward through your own actions in this chat (not the user's manual Outlook actions). Anything that sent something (emails, invites, meeting responses, cancellation notices) or a permanent delete can't be undone and blocks undo past it - say so rather than claim it was reversed. " +
     "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events/edits/cancellations) -> Automate approvals (also respond_meeting to accept/tentatively accept/decline meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/send_event, which send/create immediately).",
@@ -491,7 +478,6 @@ startAddIn({
     { en: "What's on my calendar this week?", he: 'מה יש ביומן שלי השבוע?' },
   ],
   readOnlyTools: [
-    'list_emails',
     'search_emails',
     'get_email',
     'open_email',
@@ -513,7 +499,6 @@ startAddIn({
   // DraftTierTools.
   commentOnlyExtraTools: [
     'mark_email_read',
-    'mark_email_unread',
     'flag_email_important',
     'move_email',
     'delete_email',

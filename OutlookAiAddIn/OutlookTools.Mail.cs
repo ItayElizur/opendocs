@@ -57,8 +57,8 @@ namespace OutlookAiAddIn
                 sb.AppendLine("  received: " + received + "  unread: " + unread + "  has_attachments: " + hasAtt);
             }
 
-            if (n == 0) return new ToolResult { Output = "No messages in " + folder.Name + (unreadOnly ? " (unread only)." : "."), Summary = "list_emails" };
-            return new ToolResult { Output = "Folder: " + folder.Name + "\n" + sb, Summary = "list_emails" };
+            if (n == 0) return new ToolResult { Output = "No messages in " + folder.Name + (unreadOnly ? " (unread only)." : "."), Summary = "search_emails" };
+            return new ToolResult { Output = "Folder: " + folder.Name + "\n" + sb, Summary = "search_emails" };
         }
 
         private static ToolResult GetEmail(JsonElement input)
@@ -154,8 +154,9 @@ namespace OutlookAiAddIn
             object[] before = ReadProps(mail, props);
             mail.UnRead = unread;
             mail.Save();
-            string toolName = unread ? "mark_email_unread" : "mark_email_read";
-            RecordSnapshot(mbxKey, toolName, mail, mail.Subject ?? "", props, before);
+            string toolName = "mark_email_read";
+            string undoLabel = unread ? "mark_email_read (as unread)" : "mark_email_read";
+            RecordSnapshot(mbxKey, undoLabel, mail, mail.Subject ?? "", props, before);
             return new ToolResult { Output = (unread ? "Marked unread: " : "Marked read: ") + (mail.Subject ?? ""), Mutated = true, Summary = toolName };
         }
 
