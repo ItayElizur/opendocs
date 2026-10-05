@@ -32,8 +32,8 @@ shared-calendar path — each because the COM object model either can't do the j
 
   | `EditingMode` | Outlook label | Adds |
   |---|---|---|
-  | `ReadOnly` | **Read only** | The 12 read tools (`readOnlyTools` in `entry.ts`, `AlwaysAllowedTools` in `OutlookTools.cs`). |
-  | `CommentOnly` | **Draft only** (the default for a fresh session) | 17 tools that mutate the mailbox or open a draft but never leave anything unreviewed: triage (`mark_email_read`/`mark_email_unread`, `flag_email_important`, `move_email`, `delete_email` — non-permanent only, see below), tasks/reminders (`create_task`, `update_task`, `set_reminder`, `set_email_reminder`), event tagging/status (`set_event_categories`, `set_category_color`, `set_event_availability`), `apply_search`, every draft tool (`draft_email`, `draft_event`), and `undo_last_action`/`redo_last_action` (`commentOnlyExtraTools` / `DraftTierTools`). |
+  | `ReadOnly` | **Read only** | The 11 read tools (`readOnlyTools` in `entry.ts`, `AlwaysAllowedTools` in `OutlookTools.cs`). |
+  | `CommentOnly` | **Draft only** (the default for a fresh session) | 16 tools that mutate the mailbox or open a draft but never leave anything unreviewed: triage (`mark_email_read` — read or unread via `read`, `flag_email_important`, `move_email`, `delete_email` — non-permanent only, see below), tasks/reminders (`create_task`, `update_task`, `set_reminder`, `set_email_reminder`), event tagging/status (`set_event_categories`, `set_category_color`, `set_event_availability`), `apply_search`, every draft tool (`draft_email`, `draft_event`), and `undo_last_action`/`redo_last_action` (`commentOnlyExtraTools` / `DraftTierTools`). |
   | `TrackChanges` | **Automate approvals** | `respond_meeting` — it calls `resp.Send()` to notify the organizer, so it gets its own explicit tier rather than hiding in Draft only or Full autonomy (`trackChangesExtraTools` / `ApprovalTierTools`). |
   | `FullAutonomy` | **Full autonomy** | The two auto-send tools — `send_email`, `send_event` (`SendTierTools`; on the `entry.ts` side, simply absent from every lower tier's list) — plus `delete_email` with `permanent: true`. |
 
@@ -99,12 +99,12 @@ shared-calendar path — each because the COM object model either can't do the j
   (`WebViewBridgeHost.OnWebMessageReceived` is `async`); every other tool in all four
   add-ins is still synchronous, wrapped in `Task.FromResult`.
 
-## Read tools (12 — always allowed, never gated)
+## Read tools (11 — always allowed, never gated)
 
 | Tool | Notes |
 |---|---|
-| `list_emails` | `Folder.GetTable`; columns EntryID/Subject/ReceivedTime/SenderName/UnRead + `PR_HASATTACH` proptag; `[UnRead] = true` restriction when `unread_only`; sorted newest-first; non-mail rows filtered by `MessageClass` not starting `IPM.Note`. Args: `folder`, `limit` (20), `unread_only`. |
-| `search_emails` | `Items.Sort("[ReceivedTime]")` then `Restrict("@SQL=" + BuildSearchFilter(...))`. `LIKE '%q%'` on subject + body; UTC-ISO date range; sender by `fromemail =` OR `fromname LIKE` (Exchange senders carry `legacyExchangeDN`, not SMTP — display-name fuzzy match). `ci_phrasematch`/`ci_startswith` are **not** usable via `Restrict` (they throw). `recipient` is a client-side filter, capped 500. Fallback: capped linear scan on a malformed filter. |
+| `search_emails` (no filters) | `Folder.GetTable`; columns EntryID/Subject/ReceivedTime/SenderName/UnRead + `PR_HASATTACH` proptag; `[UnRead] = true` restriction when `unread_only`; sorted newest-first; non-mail rows filtered by `MessageClass` not starting `IPM.Note`. Args: `folder`, `limit` (20), `unread_only`. | Used when none of `query`/`start_date`/`end_date`/`sender`/`recipient` is given.
+| `search_emails` (with filters) | `Items.Sort("[ReceivedTime]")` then `Restrict("@SQL=" + BuildSearchFilter(...))`. `LIKE '%q%'` on subject + body; UTC-ISO date range; sender by `fromemail =` OR `fromname LIKE` (Exchange senders carry `legacyExchangeDN`, not SMTP — display-name fuzzy match). `ci_phrasematch`/`ci_startswith` are **not** usable via `Restrict` (they throw). `recipient` is a client-side filter, capped 500. Fallback: capped linear scan on a malformed filter. |
 | `get_email` | Full `Body` (≤ 40k), To/CC via `Recipient.Type`, `ConversationID`/`ConversationTopic`, importance, unread, and an `attachments` array — `{index (1-based), name, type (byValue/embeddedItem/ole/reference), size}` — feed the index to `get_attachment`. |
 | `open_email` | `MailItem.Display(false)` on an existing item resolved via `ItemById` — opens the message in its own Outlook reading window, unmodified. `Mutated: false`. |
 | `get_attachment` | `Attachment.SaveAsFile` into `%LOCALAPPDATA%\OutlookAiAddIn\Attachments\`; returns the path. `extracted_text` (≤ 40k) is populated **only** for text-family extensions (`.txt .csv .tsv .md .json .xml .log`, `.html` tag-stripped) and OpenXML (`.docx .xlsx .pptx`), via the swappable `OfficeAi.Shared/AttachmentText/` module (`DocumentFormat.OpenXml` 2.20.0). **No PDF, no images, no vision** — those return the path + type only. `olOLE` throws (rejected); `olByReference` has no data (rejected); `olEmbeddedItem` saves as `.msg`. |
@@ -116,7 +116,7 @@ shared-calendar path — each because the COM object model either can't do the j
 | `list_tasks` | `Folder.GetTable` over the default Tasks folder; open tasks only unless `include_completed`. Columns EntryID/Subject/Due/Start/Status/PercentComplete/Complete/ReminderTime. |
 | `list_color_categories` | `Namespace.Categories` — the profile's master color-tag ("Category") list shared by mail/calendar/tasks, same list Outlook's Categorize picker shows. Each entry: `{name, color}`; color is one of the 26 `OlCategoryColor` values (None/Red/Orange/…/Dark Maroon), mapped to a friendly display name in `OutlookTools.Categories.cs` (not in `OfficeAi.Shared` — that project doesn't reference the Outlook PIA, same split as `ColorUtil`). |
 
-## Mailbox, task, and event actions (13 — Draft only or higher)
+## Mailbox, task, and event actions (12 — Draft only or higher)
 
 All of these act directly (no review window) but stay local to the mailbox — nothing is
 sent. All except `apply_search` set `Mutated = true` and record an undo entry (see
@@ -124,7 +124,7 @@ sent. All except `apply_search` set `Mutated = true` and record an undo entry (s
 
 | Tool | Notes |
 |---|---|
-| `mark_email_read` / `mark_email_unread` | `MailItem.UnRead` + `.Save()`. |
+| `mark_email_read` | `MailItem.UnRead` + `.Save()`; `read` (default `true`) false marks it unread, the same boolean pattern as `flag_email_important`'s `important`. |
 | `flag_email_important` | `Importance = olImportanceHigh/Normal` + `.Save()`. `important` defaults true. |
 | `move_email` | `MailItem.Move(ResolveFolder(destination))`; returns `{message_id: <new EntryID>, old_message_id}`. |
 | `delete_email` | Non-permanent (default) → `Move` to Deleted Items (returns new id) — Draft only, same risk class as `move_email`. `permanent: true` → then `.Delete()` from there (no single-call hard delete in the OM — documented as "may still be server-recoverable") — **requires Full autonomy**, via the input-aware check in `ExecuteAsync` described under "Editing modes" above; the tool description says so, so the model doesn't attempt it at a lower tier. |
@@ -392,7 +392,7 @@ IUnknown-identity keying, WebView2 rendering inside an Explorer task pane,
 several enum-name / method-signature assumptions (`olEmbeddeditem` casing,
 `AppointmentItem.Respond` argument types, `MailItem.MarkAsTask`) compiled against the
 interop assembly but are not yet confirmed live. Early manual testing via the mock
-server exercised `list_emails`, `search_emails`, `list_folders`, `list_events`, and
+server exercised `search_emails` (listing and filtered), `list_folders`, `list_events`, and
 `list_tasks` against a real mailbox successfully. **Verified live:** the color-tag
 tools (category enumeration, tag creation, event `Categories` round-trip),
 `set_event_availability` (all 5 values, no attendee notification on an organized

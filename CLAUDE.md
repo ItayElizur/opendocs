@@ -119,7 +119,7 @@ outlive the thing it used to say.
 
 ## Outlook specifically: native query APIs are mandatory, not a nice-to-have
 
-Outlook's read tools (`list_emails`, `search_emails`, `list_events`, etc.) must use
+Outlook's read tools (`search_emails`, `list_events`, etc.) must use
 Outlook's native query surfaces — `Folder.GetTable` (an in-memory rowset, no per-item
 COM object per row) or `Items.Restrict("@SQL=" + DASL)` — rather than iterating
 `Items` and inspecting each item in a loop. This isn't a style preference: a real
