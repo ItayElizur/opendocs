@@ -279,6 +279,34 @@ const ALL_OUTLOOK_TOOLS = [
     },
   },
   {
+    name: 'draft_reply_event',
+    description: 'Opens a reply email about a calendar meeting in Outlook, pre-filled (addressed to the organizer, with the event details quoted). The user reviews and sends it. Set reply_all to also write to the other attendees. This is a normal email about the meeting - it does not accept or decline it (use accept_meeting/decline_meeting/tentative_meeting or draft_respond_meeting for that).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        body: { type: 'string', description: 'Message text placed above the quoted event details.' },
+        reply_all: { type: 'boolean', description: 'Also address the other required (To) and optional (Cc) attendees. Default false: organizer only.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field).' },
+      },
+      required: ['event_id'],
+    },
+  },
+  {
+    name: 'draft_forward_event',
+    description: 'Opens a forward of a calendar event in Outlook, pre-filled with the recipients you name. The user reviews and sends it; the recipients get the event as an invitation they can add to their own calendar.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        event_id: { type: 'string' },
+        to: { type: 'string', description: 'Comma-separated recipient addresses.' },
+        body: { type: 'string', description: 'Optional note placed above the forwarded event.' },
+        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field).' },
+      },
+      required: ['event_id'],
+    },
+  },
+  {
     name: 'set_event_categories',
     description:
       'Colors a calendar event with one or more color tags (Outlook "Categories"), shown as a colored block on the event. Pass names from list_color_categories, comma-separated for more than one; an empty/omitted categories clears all tags from the event. A name not yet in the master list is auto-added with an arbitrary color - call set_category_color first to control it.',
@@ -607,6 +635,8 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   accept_meeting: d('Accept meeting', 'אישור פגישה', 'Accepts a meeting invitation.', 'מאשר הזמנה לפגישה.'),
   decline_meeting: d('Decline meeting', 'דחיית פגישה', 'Declines a meeting invitation.', 'דוחה הזמנה לפגישה.'),
   tentative_meeting: d('Tentative response', 'תגובה זמנית', 'Responds tentatively to a meeting invitation.', 'משיב תשובה זמנית להזמנה לפגישה.'),
+  draft_reply_event: d('Draft event reply', 'טיוטת תשובה לאירוע', 'Opens a pre-filled email reply about a meeting to review and send.', 'פותח תשובה בדוא"ל על פגישה, מלאה מראש, לבדיקה ושליחה.'),
+  draft_forward_event: d('Draft event forward', 'טיוטת העברת אירוע', 'Opens a pre-filled forward of an event to review and send.', 'פותח העברה של אירוע, מלאה מראש, לבדיקה ושליחה.'),
   draft_respond_meeting: d('Open to respond', 'פתיחה למענה', 'Opens a meeting invitation for the user to accept/decline/respond tentatively themselves.', 'פותח הזמנה לפגישה כדי שהמשתמש יאשר/ידחה/ישיב זמנית בעצמו.'),
   set_event_categories: d('Color event', 'צביעת אירוע', 'Applies or clears color tags on a calendar event.', 'מחיל או מנקה תגיות צבע על אירוע יומן.'),
   set_category_color: d('Set tag color', 'הגדרת צבע תגית', 'Creates or recolors a color tag.', 'יוצר או משנה צבע של תגית.'),
@@ -639,7 +669,7 @@ startAddIn({
     'You are an AI assistant embedded in Microsoft Outlook via the OpenDocs add-in. You work from the main Outlook window (Explorer). ' +
     'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline/tentatively-respond to invitations, edit or cancel events, color events with tags via list_color_categories/set_event_categories/set_category_color, set an event\'s Free/Busy/Tentative/Out of Office/Working Elsewhere status via set_event_availability), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
-    'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event, draft_edit_event, draft_cancel_event, draft_respond_meeting) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. draft_respond_meeting is slightly different from the others: it opens the meeting unchanged and the user picks Accept/Tentative/Decline themselves from Outlook\'s own buttons, since Outlook has no way to pre-select a response type in a review window without already committing it. ' +
+    'Drafting tools (draft_email, reply_email, reply_all_email, forward_email, draft_event, draft_edit_event, draft_cancel_event, draft_respond_meeting, draft_reply_event, draft_forward_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. draft_respond_meeting is slightly different from the others: it opens the meeting unchanged and the user picks Accept/Tentative/Decline themselves from Outlook\'s own buttons, since Outlook has no way to pre-select a response type in a review window without already committing it. ' +
     'send_email/send_reply/send_reply_all/send_forward/create_event/edit_event/cancel_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
     'edit_event/draft_edit_event can change start/end, subject, body, location, and/or attendees in one call (at least one field required) - only work on events the user organizes (or a plain appointment with no attendees); on a meeting the user only attends, they return an error instead of an unauthoritative change, point the user at Outlook\'s own "Propose New Time" for those. Recurring events share one event_id for the whole series - omit occurrence_date to act on the whole series, or pass one (a date from list_events\' start value) to target a single occurrence instead, for edit_event/draft_edit_event/cancel_event/draft_cancel_event; attendee changes only apply to the whole series, never a single occurrence. To add/remove specific attendees while keeping the rest, read the current list with get_event first and pass the full new list to edit_event/draft_edit_event. ' +
     'cancel_event/draft_cancel_event have the same organizer-only restriction on a still-active meeting the user only attends - use draft_respond_meeting (Draft only) or decline_meeting (Automate approvals or above) instead. Canceling a meeting the user organizes sends a cancellation notice to attendees (Full autonomy for cancel_event, or reviewed first via draft_cancel_event); canceling a plain appointment, or any already-canceled event, just removes it from the calendar (moved to Deleted Items, recoverable), nobody to notify - cancel_event is the only way to dismiss an already-canceled event. ' +
@@ -692,6 +722,8 @@ startAddIn({
     'draft_cancel_event',
     'draft_edit_event',
     'draft_respond_meeting',
+    'draft_reply_event',
+    'draft_forward_event',
     'set_event_categories',
     'set_category_color',
     'set_event_availability',
