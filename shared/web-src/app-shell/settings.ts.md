@@ -15,7 +15,7 @@ pre-existing gap now closed alongside adding the 'default' option.
 
 ```
 OpenDocs is an air-gapped/on-prem-oriented deployment; defaultAiSettings()
-alone would default to Genspark (a hosted proxy that needs a login), which
+alone would default to a hosted provider that needs an API key, which
 would silently change out-of-box behavior for this repo's test/mock-server
 flow. Override just the default provider + the custom slot's starting values, so a fresh
 profile behaves exactly as it did before PP-6.

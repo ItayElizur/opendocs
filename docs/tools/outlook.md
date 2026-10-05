@@ -2,9 +2,7 @@
 
 Current-state reference for every tool the AI can call in Outlook. See
 [`docs/architecture.md`](../architecture.md) for the shared editing-mode/transport
-architecture. Outlook has no counterpart in the sibling "genoffice" reference project
-(see [`docs/comparison-with-genoffice.md`](../comparison-with-genoffice.md)), so there
-is no "vs. genoffice" column here — the tool set instead mirrors a self-hostable EWS
+architecture. The tool set mirrors a self-hostable EWS
 MCP reference server as closely as the Outlook COM object model allows. This add-in
 drives the **already-running, already-authenticated desktop Outlook client** via
 `Microsoft.Office.Interop.Outlook`, not EWS. There is no `Namespace`/credential setup;

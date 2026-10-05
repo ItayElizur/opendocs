@@ -225,7 +225,7 @@ namespace PowerPointAiAddIn
                 existingNodes.Item(i).Delete();
             }
 
-            // genoffice's own version only ever produces a flat item list - maps
+            // A flat item list maps
             // 1:1 to sequential top-level nodes, no nested tree-building needed.
             foreach (JsonElement item in input.GetProperty("items").EnumerateArray())
             {
