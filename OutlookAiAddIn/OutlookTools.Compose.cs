@@ -83,7 +83,7 @@ namespace OutlookAiAddIn
         }
 
         // Reads and validates the optional "recurrence" object from
-        // create_event/draft_event's input. Returns null (with error left
+        // draft_event/send_event's input. Returns null (with error left
         // null) when the field is omitted entirely; returns a populated
         // RecurrenceSpec on success; returns null with error set to a
         // model-facing IsError message on any validation failure.
@@ -267,10 +267,30 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = "Sent " + kind + " to " + recipients + ": \"" + subject + "\".", Mutated = true, Summary = tool };
         }
 
-        private static ToolResult DraftEvent(JsonElement input)
+        private sealed class NewEvent
         {
+            public Outlook.AppointmentItem Appt;
+            public RecurrenceSpec Recurrence;
+            public string Required, Optional;
+            public bool IsMeeting;
+            public List<string> Unresolved = new List<string>();
+        }
+
+        // Builds a new appointment from the arguments: shared by draft_event
+        // (action new) and send_event (action new). When it will be sent,
+        // start/end are required - there's no review window to catch
+        // Outlook's own appointment defaults before a real, immediately-live
+        // calendar entry is created. See OutlookTools.Compose.cs.md.
+        private static ToolResult? BuildNewEvent(JsonElement input, bool send, string tool, out NewEvent ev)
+        {
+            ev = null;
             DateTime? start = DateArg(input, "start");
             DateTime? end = DateArg(input, "end");
+            if (send)
+            {
+                if (!start.HasValue) return new ToolResult { Output = "start is required.", IsError = true, Summary = tool };
+                if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = tool };
+            }
 
             JsonElement recField;
             bool hasRecurrenceField = input.ValueKind == JsonValueKind.Object && input.TryGetProperty("recurrence", out recField) && recField.ValueKind != JsonValueKind.Null;
@@ -279,34 +299,44 @@ namespace OutlookAiAddIn
             if (hasRecurrenceField)
             {
                 if (!start.HasValue)
-                    return new ToolResult { Output = "start is required when recurrence is specified, so defaults (day of week, day of month, etc.) can be derived from it.", IsError = true, Summary = "draft_event" };
+                    return new ToolResult { Output = "start is required when recurrence is specified, so defaults (day of week, day of month, etc.) can be derived from it.", IsError = true, Summary = tool };
                 string recurrenceError;
                 recurrence = ReadRecurrence(input, start.Value, out recurrenceError);
-                if (recurrenceError != null) return new ToolResult { Output = recurrenceError, IsError = true, Summary = "draft_event" };
+                if (recurrenceError != null) return new ToolResult { Output = recurrenceError, IsError = true, Summary = tool };
             }
 
             Outlook.AppointmentItem a = (Outlook.AppointmentItem)App.CreateItem(Outlook.OlItemType.olAppointmentItem);
             a.Subject = Str(input, "subject", "");
             a.Location = Str(input, "location", "");
             a.Body = SeedSignature(Str(input, "body", ""));
-
             if (start.HasValue) a.Start = start.Value;
             if (end.HasValue) a.End = end.Value;
 
             string req = Str(input, "required_attendees", "");
             string opt = Str(input, "optional_attendees", "");
-            var unresolvedAttendees = new List<string>();
-            if (!string.IsNullOrEmpty(req) || !string.IsNullOrEmpty(opt))
+            bool isMeeting = !string.IsNullOrEmpty(req) || !string.IsNullOrEmpty(opt);
+            var unresolved = new List<string>();
+            if (isMeeting)
             {
                 a.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
-                AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired, unresolvedAttendees);
-                AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional, unresolvedAttendees);
+                AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired, unresolved);
+                AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional, unresolved);
             }
             if (recurrence != null) ApplyRecurrence(a, recurrence);
-            a.Display(false);
+
+            ev = new NewEvent { Appt = a, Recurrence = recurrence, Required = req, Optional = opt, IsMeeting = isMeeting, Unresolved = unresolved };
+            return null;
+        }
+
+        private static ToolResult DraftEvent(JsonElement input)
+        {
+            NewEvent ev;
+            ToolResult? invalid = BuildNewEvent(input, false, "draft_event", out ev);
+            if (invalid != null) return invalid.Value;
+            ev.Appt.Display(false);
             return new ToolResult
             {
-                Output = "Opened an appointment draft in Outlook for the user to review and send." + (recurrence != null ? " Set to repeat " + recurrence.Type + ". Note: Outlook won't visually show the recurrence pattern in this review window until you save it once (a known Outlook limitation for brand-new unsaved items) - it applies correctly once saved or sent." : "") + FormatUnresolvedAttendeesNote(unresolvedAttendees),
+                Output = "Opened an appointment draft in Outlook for the user to review and send." + (ev.Recurrence != null ? " Set to repeat " + ev.Recurrence.Type + ". Note: Outlook won't visually show the recurrence pattern in this review window until you save it once (a known Outlook limitation for brand-new unsaved items) - it applies correctly once saved or sent." : "") + FormatUnresolvedAttendeesNote(ev.Unresolved),
                 Summary = "draft_event",
             };
         }
@@ -334,7 +364,7 @@ namespace OutlookAiAddIn
             }
         }
 
-        // Shared by create_event/draft_event/edit_event/draft_edit_event's
+        // Shared by the new/edit event handlers'
         // result text - see AddAttendees above.
         private static string FormatUnresolvedAttendeesNote(List<string> unresolved)
         {
@@ -354,42 +384,19 @@ namespace OutlookAiAddIn
         // exposes both Send() and Save()) before writing this branch.
         private static ToolResult CreateEvent(string mbxKey, JsonElement input)
         {
-            // start/end are required here, unlike draft_event: there's no
-            // review window to catch Outlook's own appointment defaults
-            // before a real, immediately-live calendar entry is created. See
-            // OutlookTools.Compose.cs.md.
-            DateTime? start = DateArg(input, "start");
-            DateTime? end = DateArg(input, "end");
-            if (!start.HasValue) return new ToolResult { Output = "start is required.", IsError = true, Summary = "create_event" };
-            if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = "create_event" };
-
-            string recurrenceError;
-            RecurrenceSpec recurrence = ReadRecurrence(input, start.Value, out recurrenceError);
-            if (recurrenceError != null) return new ToolResult { Output = recurrenceError, IsError = true, Summary = "create_event" };
-
-            Outlook.AppointmentItem a = (Outlook.AppointmentItem)App.CreateItem(Outlook.OlItemType.olAppointmentItem);
-            a.Subject = Str(input, "subject", "");
-            a.Location = Str(input, "location", "");
-            a.Body = SeedSignature(Str(input, "body", ""));
-            a.Start = start.Value;
-            a.End = end.Value;
-
-            string req = Str(input, "required_attendees", "");
-            string opt = Str(input, "optional_attendees", "");
-            bool isMeeting = !string.IsNullOrEmpty(req) || !string.IsNullOrEmpty(opt);
-            var unresolvedAttendees = new List<string>();
-            if (isMeeting)
-            {
-                a.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
-                AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired, unresolvedAttendees);
-                AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional, unresolvedAttendees);
-            }
-            if (recurrence != null) ApplyRecurrence(a, recurrence);
+            NewEvent ev;
+            ToolResult? invalid = BuildNewEvent(input, true, "send_event", out ev);
+            if (invalid != null) return invalid.Value;
+            Outlook.AppointmentItem a = ev.Appt;
+            bool isMeeting = ev.IsMeeting;
+            string req = ev.Required, opt = ev.Optional;
+            RecurrenceSpec recurrence = ev.Recurrence;
+            var unresolvedAttendees = ev.Unresolved;
 
             if (isMeeting)
             {
                 a.Send();
-                RecordIrreversible(mbxKey, "create_event invite for \"" + (a.Subject ?? "") + "\"");
+                RecordIrreversible(mbxKey, "send_event (new) invite for \"" + (a.Subject ?? "") + "\"");
                 // This confirmation line is the only place the user sees who
                 // an irreversible, unreviewed invite went to - do not let an
                 // empty req (optional_attendees-only) produce a malformed
@@ -404,7 +411,7 @@ namespace OutlookAiAddIn
             }
 
             a.Save();
-            RecordCreated(mbxKey, "create_event", "event_id", a, a.Subject ?? "");
+            RecordCreated(mbxKey, "send_event (new)", "event_id", a, a.Subject ?? "");
             return new ToolResult
             {
                 Output = "Created event: \"" + (a.Subject ?? "") + "\"." + (recurrence != null ? " Repeats " + recurrence.Type + "." : ""),

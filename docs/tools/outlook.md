@@ -33,9 +33,9 @@ shared-calendar path — each because the COM object model either can't do the j
   | `EditingMode` | Outlook label | Adds |
   |---|---|---|
   | `ReadOnly` | **Read only** | The 12 read tools (`readOnlyTools` in `entry.ts`, `AlwaysAllowedTools` in `OutlookTools.cs`). |
-  | `CommentOnly` | **Draft only** (the default for a fresh session) | 19 tools that mutate the mailbox or open a draft but never leave anything unreviewed: triage (`mark_email_read`/`mark_email_unread`, `flag_email_important`, `move_email`, `delete_email` — non-permanent only, see below), tasks/reminders (`create_task`, `update_task`, `set_reminder`, `set_email_reminder`), event tagging/status (`set_event_categories`, `set_category_color`, `set_event_availability`), `apply_search`, every draft tool (`draft_email`, `draft_event`, `draft_edit_event`, `draft_cancel_event`), and `undo_last_action`/`redo_last_action` (`commentOnlyExtraTools` / `DraftTierTools`). |
+  | `CommentOnly` | **Draft only** (the default for a fresh session) | 17 tools that mutate the mailbox or open a draft but never leave anything unreviewed: triage (`mark_email_read`/`mark_email_unread`, `flag_email_important`, `move_email`, `delete_email` — non-permanent only, see below), tasks/reminders (`create_task`, `update_task`, `set_reminder`, `set_email_reminder`), event tagging/status (`set_event_categories`, `set_category_color`, `set_event_availability`), `apply_search`, every draft tool (`draft_email`, `draft_event`), and `undo_last_action`/`redo_last_action` (`commentOnlyExtraTools` / `DraftTierTools`). |
   | `TrackChanges` | **Automate approvals** | `respond_meeting` — it calls `resp.Send()` to notify the organizer, so it gets its own explicit tier rather than hiding in Draft only or Full autonomy (`trackChangesExtraTools` / `ApprovalTierTools`). |
-  | `FullAutonomy` | **Full autonomy** | The four auto-send tools — `send_email`, `create_event`, `edit_event`, `cancel_event` (`SendTierTools`; on the `entry.ts` side, simply absent from every lower tier's list) — plus `delete_email` with `permanent: true`. |
+  | `FullAutonomy` | **Full autonomy** | The two auto-send tools — `send_email`, `send_event` (`SendTierTools`; on the `entry.ts` side, simply absent from every lower tier's list) — plus `delete_email` with `permanent: true`. |
 
   `entry.ts` passes `availableModes: ['readOnly','commentOnly','trackChanges',
   'fullAutonomy']` and a `modeOverrides` map so the mode menu shows Outlook's own
@@ -160,32 +160,32 @@ succeeds:
   `mark_email_read/unread` (`UnRead`), `flag_email_important` (full `Importance`, so Low
   is preserved), `set_event_categories`, `set_event_availability` (`BusyStatus`),
   `set_reminder`, `update_task` (task fields as a group, or the flagged-mail fields),
-  and `edit_event` whenever the call doesn't send or change a whole recurring series'
+  and `send_event` (edit) whenever the call doesn't send or change a whole recurring series'
   time — a snapshot of only the fields that call actually touched (`Start`/`End`,
   `Subject`, `Body`, `Location`). This includes an occurrence-level edit via
   `occurrence_date`: `RecurrencePattern.GetOccurrence()` returns a real item with its
   own `EntryID` once saved, so the same mechanism covers it.
 - **`set_email_reminder`**: if the message wasn't flagged before, undo calls
   `ClearTaskFlag()`, and redo calls `MarkAsTask` again.
-- **Moves**: `move_email`, non-permanent `delete_email`, and whole-event `cancel_event`
+- **Moves**: `move_email`, non-permanent `delete_email`, and whole-event `send_event` (cancel)
   on a plain appointment or an already-canceled event (nobody to notify, so canceling
   it is just a move to Deleted Items). The folder is resolved by its own
   EntryID/StoreID via `Namespace.GetFolderFromID`, and the new EntryID after each move
   is rewritten into every entry for that item.
-- **Created items**: `create_task`, and `create_event` without attendees (including a
+- **Created items**: `create_task`, and `send_event` (new) without attendees (including a
   recurring series — deleting the master deletes the whole series). Undo moves the item
   to Deleted Items (recoverable); redo moves it back.
 - **`set_category_color`**: undo restores the old color, or removes a tag the assistant
   created.
 - **Barriers** (recorded, but not reversible — undo reports it can't go past them):
-  every `send_email`; `create_event` with attendees; `respond_meeting`;
-  `delete_email permanent:true`; `edit_event` and `cancel_event` whenever they `.Send()`
-  a notice (a still-active meeting the user organizes, including `edit_event`
+  every `send_email`; `send_event` (new) with attendees; `respond_meeting`;
+  `delete_email permanent:true`; `send_event` (edit) and `send_event` (cancel) whenever they `.Send()`
+  a notice (a still-active meeting the user organizes, including `send_event` (edit)
   converting a plain event into a meeting by adding attendees for the first time);
-  **any occurrence-level cancellation** via `cancel_event`'s `occurrence_date`, plain
+  **any occurrence-level cancellation** via `send_event` (cancel)'s `occurrence_date`, plain
   appointment or meeting alike (`RecurrencePattern.Exceptions`/`Exception` are
   read-only via COM, confirmed by reflection — there is no API to restore a deleted
-  occurrence); and `edit_event` on a **whole recurring series whenever it includes a
+  occurrence); and `send_event` (edit) on a **whole recurring series whenever it includes a
   time change** (Outlook rejects `Start`/`End` on a recurring master, so that path
   writes `RecurrencePattern` fields, which the snapshot mechanism can't read/write — if
   the same call also changes other fields, the whole call stays a barrier; there is no
@@ -200,14 +200,14 @@ opened window. **Not verified against a live Outlook client**, except
 `set_event_availability`'s undo/redo round trip and occurrence-level reschedule/
 cancellation on a plain (non-meeting) recurring series — see "Unproven at runtime".
 
-## Draft-and-display tools (4 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
+## Draft-and-display tools (2 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
 
 | Tool | Notes |
 |---|---|
 | `draft_email` | One handler, `ComposeEmail(mbxKey, input, send: false)`, shared with `send_email`. `action` (default `new`): **`new`** — `CreateItem(olMailItem)`, set `To`/`Subject`/`Body`, `Display(false)`, `"— Created with OpenDocs"` appended to a non-empty body. **`reply` / `reply_all` / `forward`** — act on exactly one of `message_id` (an email; `orig.Reply()`/`ReplyAll()`/`Forward()`, `body` HTML-encoded and prepended above the quoted original, optional `to` on a forward) or `event_id` (a calendar meeting: see below). Never sends; the user sends from the opened window. |
-| `draft_event` | `CreateItem(olAppointmentItem)`; with `required_attendees`/`optional_attendees` → `MeetingStatus = olMeeting`, `Recipients.Add(...).Type`, each `Recipient` resolved individually via `r.Resolve()` right after it's added (the collection-level `Recipients.ResolveAll()` doesn't reliably resolve these — confirmed live); `Display(false)`. Same `"— Created with OpenDocs"` signature appended to a non-empty body, plus a trailing note naming any attendee address that failed to resolve (so the caller can flag a possible typo). Optional `recurrence` object — same shape and handling as `create_event`'s (see "Recurring events" below). |
-| `draft_edit_event` | Same inputs, refusals, and resolution as `edit_event` (below) — `event_id`, optional `occurrence_date`/`store_id`, at least one of `start`+`end` (together), `subject`, `body`, `location`, `required_attendees`, `optional_attendees` — but applies every change **unsaved** and ends in `appt.Display(false)` for the user to review. Never touches `ForceUpdateToAllAttendees`, never calls `.Send()`/`.Save()`, never records undo/redo. Runs the same `CheckOccurrenceReorderCollision` pre-check before an occurrence move. |
-| `draft_cancel_event` | Resolves `event_id` (optional `occurrence_date`/`store_id`) and `Display(false)`s it **unchanged** — never touches `MeetingStatus` or anything else, because Outlook persists an unsaved `MeetingStatus` change when the window closes, even without the user clicking Send Cancellation (confirmed live). The user cancels it themselves from the opened window (Cancel Meeting/Send Cancellation for a meeting they organize, Delete for a plain appointment). Refuses (`IsError`) on an already-canceled event (points at `cancel_event`, the only way to dismiss one) or a still-active meeting the user only attends (points at `draft_email` with `event_id` to write to the organizer, or `respond_meeting` with `response: decline` one tier up). |
+| `draft_event` · `action: new` (default) | `CreateItem(olAppointmentItem)`; with `required_attendees`/`optional_attendees` → `MeetingStatus = olMeeting`, `Recipients.Add(...).Type`, each `Recipient` resolved individually via `r.Resolve()` right after it's added (the collection-level `Recipients.ResolveAll()` doesn't reliably resolve these — confirmed live); `Display(false)`. Same `"— Created with OpenDocs"` signature appended to a non-empty body, plus a trailing note naming any attendee address that failed to resolve (so the caller can flag a possible typo). Optional `recurrence` object — same shape and handling as `send_event` (new)'s (see "Recurring events" below). |
+| `draft_event` · `action: edit` | Same inputs, refusals, and resolution as `send_event` edit (below) — `event_id`, optional `occurrence_date`/`store_id`, at least one of `start`+`end` (together), `subject`, `body`, `location`, `required_attendees`, `optional_attendees` — but applies every change **unsaved** and ends in `appt.Display(false)` for the user to review. Never touches `ForceUpdateToAllAttendees`, never calls `.Send()`/`.Save()`, never records undo/redo. Runs the same `CheckOccurrenceReorderCollision` pre-check before an occurrence move. |
+| `draft_event` · `action: cancel` | Resolves `event_id` (optional `occurrence_date`/`store_id`) and `Display(false)`s it **unchanged** — never touches `MeetingStatus` or anything else, because Outlook persists an unsaved `MeetingStatus` change when the window closes, even without the user clicking Send Cancellation (confirmed live). The user cancels it themselves from the opened window (Cancel Meeting/Send Cancellation for a meeting they organize, Delete for a plain appointment). Refuses (`IsError`) on an already-canceled event (points at `send_event` (cancel), the only way to dismiss one) or a still-active meeting the user only attends (points at `draft_email` with `event_id` to write to the organizer, or `respond_meeting` with `response: decline` one tier up). |
 
 **These never call `.Send()` (mail) or save a calendar event.** The user sends from the
 opened Outlook window.
@@ -237,7 +237,14 @@ There is no draft counterpart: `Respond()` commits a real calendar change at cal
 version that pre-selects a response would break the draft contract. To write to the organizer
 instead, use `draft_email` with `event_id`.
 
-## Auto-send tools (4 — Full autonomy only; send/create immediately, no review window; `Mutated = true`)
+## Auto-send tools (2 — Full autonomy only; send/create immediately, no review window; `Mutated = true`)
+
+`draft_event` and `send_event` take the same arguments; `action` (`new` default, `edit`, `cancel`) picks the
+operation. Each action has a draft tail (changes left unsaved, `Display(false)`, nothing persisted, no undo
+record) and a send tail (`Save`/`Send` plus the undo records described elsewhere in this file). What the two
+modes share is real code: `ResolveEventTarget` (event/occurrence lookup), `ParseEventEdit` (the refusals and
+validation for an edit), `ApplyEventFields` (time/subject/body/location) and `BuildNewEvent` (new-event
+construction). `EventAction` dispatches on `action`.
 
 Every draft/compose tool above stays draft-and-display-only in every mode; these are
 separate tools, reachable only at the top tier.
@@ -245,9 +252,9 @@ separate tools, reachable only at the top tier.
 | Tool | Notes |
 |---|---|
 | `send_email` | The same `ComposeEmail` handler as `draft_email` with `send: true`: `m.Send()` instead of `Display(false)`, and an undo barrier is recorded. Same `action` (`new`/`reply`/`reply_all`/`forward`) and same `message_id`/`event_id` targets. `to` is required for `new` and `forward` (there is no window for a human to fill it in); a meeting forward with an unresolvable recipient is discarded and returns `IsError` instead of sending. |
-| `create_event` | Same construction as `draft_event`. No attendees → `a.Save()` (a plain calendar entry, nobody to notify). Attendees present → `MeetingStatus = olMeeting` then `a.Send()`, dispatching the invite. Both `AppointmentItem.Send()`/`.Save()` confirmed present via .NET reflection against the referenced PIA. Optional `recurrence` object builds a repeating series (see "Recurring events" below). |
-| `edit_event` | General-purpose event edit. `event_id` (req), optional `occurrence_date` and `store_id`; at least one of `start`+`end` (required together), `subject`, `body`, `location`, `required_attendees`, `optional_attendees` — else a clean `IsError` naming all seven. **Organizer-only:** refuses (`IsError`) on a canceled event (`olMeetingCanceled`/`olMeetingReceivedAndCanceled` — nothing to edit) or a meeting the user only attends (`olMeetingReceived` — points at Outlook's own "Propose New Time", see "Excluded / deferred"); these checks run against the recurring **master**, since an occurrence item from `GetOccurrence()` doesn't reliably report `MeetingStatus`. Time changes: a whole recurring series is shifted via `RecurrencePattern.PatternStartDate`/`StartTime`/`EndTime` (Outlook throws `0xAF620009` on `Start`/`End` set directly on a recurring master — confirmed live); an occurrence or non-recurring event gets `appt.Start`/`.End` directly, after the `CheckOccurrenceReorderCollision` pre-check (below). `subject`/`body`/`location` are set directly (occurrence-level allowed). Attendee fields are whole-series/non-recurring only (`occurrence_date` + an attendee field is an `IsError`) and **replace the list wholesale per category** via `ReplaceAttendees` — `required_attendees` clears and re-adds only the required category, `optional_attendees` only the optional one, the organizer is never touched — re-adding via the same per-recipient `r.Resolve()` call `draft_event`/`create_event` use (not `Recipients.ResolveAll()`); read the current list with `get_event` first to keep anyone. The result text names any attendee address that failed to resolve. Adding attendees to a plain event flips it to `olMeeting`. `.Send()`s if the result is or becomes a meeting — setting `ForceUpdateToAllAttendees = false` explicitly first (Outlook's own default: notify only added/removed attendees) — else `.Save()`s. A `COMException` from an occurrence `.Save()` is re-verified via `ResolveOccurrenceTarget` before being reported as failure, since Outlook can throw "Cannot save this item." after the change has already persisted. Undo: barrier when it sends or shifts a whole series' time, else a snapshot of the touched fields. |
-| `cancel_event` | `event_id` (req), optional `occurrence_date` and `store_id`. Still-active organized meeting → `MeetingStatus = olMeetingCanceled` then `.Send()` (the cancellation notice), then moves the item to Deleted Items (best-effort — a failed move is reported, with the notice still sent; see "Unproven at runtime"). Plain appointment, or an **already-canceled event** (either status — the only way to dismiss one) → moves straight to Deleted Items (recoverable), nobody to notify. Refuses (`IsError`) only on a still-active meeting the user only attends (points at `respond_meeting` with `response: decline`, or `draft_email` with `event_id`). Same master-based organizer checks and false-negative `.Delete()` re-verification as `edit_event`. Undo: a move entry for a whole plain/already-canceled event; a barrier for a still-active meeting (the notice already went out) and for **every** occurrence-level cancellation. |
+| `send_event` · `action: new` | Same construction as `draft_event` (the shared `BuildNewEvent`), but `start`/`end` are required. No attendees → `a.Save()` (a plain calendar entry, nobody to notify). Attendees present → `MeetingStatus = olMeeting` then `a.Send()`, dispatching the invite. Both `AppointmentItem.Send()`/`.Save()` confirmed present via .NET reflection against the referenced PIA. Optional `recurrence` object builds a repeating series (see "Recurring events" below). |
+| `send_event` · `action: edit` | General-purpose event edit. `event_id` (req), optional `occurrence_date` and `store_id`; at least one of `start`+`end` (required together), `subject`, `body`, `location`, `required_attendees`, `optional_attendees` — else a clean `IsError` naming all seven. **Organizer-only:** refuses (`IsError`) on a canceled event (`olMeetingCanceled`/`olMeetingReceivedAndCanceled` — nothing to edit) or a meeting the user only attends (`olMeetingReceived` — points at Outlook's own "Propose New Time", see "Excluded / deferred"); these checks run against the recurring **master**, since an occurrence item from `GetOccurrence()` doesn't reliably report `MeetingStatus`. Time changes: a whole recurring series is shifted via `RecurrencePattern.PatternStartDate`/`StartTime`/`EndTime` (Outlook throws `0xAF620009` on `Start`/`End` set directly on a recurring master — confirmed live); an occurrence or non-recurring event gets `appt.Start`/`.End` directly, after the `CheckOccurrenceReorderCollision` pre-check (below). `subject`/`body`/`location` are set directly (occurrence-level allowed). Attendee fields are whole-series/non-recurring only (`occurrence_date` + an attendee field is an `IsError`) and **replace the list wholesale per category** via `ReplaceAttendees` — `required_attendees` clears and re-adds only the required category, `optional_attendees` only the optional one, the organizer is never touched — re-adding via the same per-recipient `r.Resolve()` call `draft_event`/`send_event` (new) use (not `Recipients.ResolveAll()`); read the current list with `get_event` first to keep anyone. The result text names any attendee address that failed to resolve. Adding attendees to a plain event flips it to `olMeeting`. `.Send()`s if the result is or becomes a meeting — setting `ForceUpdateToAllAttendees = false` explicitly first (Outlook's own default: notify only added/removed attendees) — else `.Save()`s. A `COMException` from an occurrence `.Save()` is re-verified via `ResolveOccurrenceTarget` before being reported as failure, since Outlook can throw "Cannot save this item." after the change has already persisted. Undo: barrier when it sends or shifts a whole series' time, else a snapshot of the touched fields. |
+| `send_event` · `action: cancel` | `event_id` (req), optional `occurrence_date` and `store_id`. Still-active organized meeting → `MeetingStatus = olMeetingCanceled` then `.Send()` (the cancellation notice), then moves the item to Deleted Items (best-effort — a failed move is reported, with the notice still sent; see "Unproven at runtime"). Plain appointment, or an **already-canceled event** (either status — the only way to dismiss one) → moves straight to Deleted Items (recoverable), nobody to notify. Refuses (`IsError`) only on a still-active meeting the user only attends (points at `respond_meeting` with `response: decline`, or `draft_email` with `event_id`). Same master-based organizer checks and false-negative `.Delete()` re-verification as `send_event` (edit). Undo: a move entry for a whole plain/already-canceled event; a barrier for a still-active meeting (the notice already went out) and for **every** occurrence-level cancellation. |
 
 Gated by `OutlookTools.cs`'s `SendTierTools` set, requiring `EditingMode.FullAutonomy`
 exactly (the ordinal check's top tier) — not reachable from Draft only or Automate
@@ -256,8 +263,7 @@ something to go out immediately.
 
 ## Recurring events
 
-- **Occurrence targeting.** `edit_event`/`draft_edit_event`/`cancel_event`/
-  `draft_cancel_event` take an optional `occurrence_date` (a date from `list_events`'
+- **Occurrence targeting.** `draft_event`/`send_event` (edit)/`draft_event`/`send_event` (cancel) take an optional `occurrence_date` (a date from `list_events`'
   per-row `start`). A shared `ResolveOccurrenceTarget` helper resolves it via
   `RecurrencePattern.GetOccurrence(DateTime)` (confirmed present by reflection) into
   that one occurrence; omitting it acts on the whole series (or a non-recurring event).
@@ -270,7 +276,7 @@ something to go out immediately.
   `CheckOccurrenceReorderCollision` queries the calendar for other occurrences between
   the original and target dates before `.Save()` and returns an exact error naming the
   valid range instead.
-- **Recurrence creation.** `create_event`/`draft_event` take an optional `recurrence`
+- **Recurrence creation.** `draft_event`/`send_event` (new) take an optional `recurrence`
   object: `type` (required — `daily`/`weekly`/`monthly`/`monthlyNth`/`yearly`/
   `yearlyNth`, all 6 `OlRecurrenceType` values), `interval` (default 1),
   `days_of_week`, `day_of_month`, `instance` (1-4, or 5 for "last"), `month_of_year`,
@@ -304,8 +310,8 @@ something to go out immediately.
   `response`/`meeting_status` show EWS's label names (`Accept`, `Meeting`,
   `Cancelled`) rather than the COM path's `Ol*` enum names — display text only,
   nothing parses it.
-- **Acting on a shared-calendar event.** `get_event`, `edit_event`/`draft_edit_event`,
-  `cancel_event`/`draft_cancel_event`, `respond_meeting`, `draft_email` (with `event_id`), `set_event_categories`, and
+- **Acting on a shared-calendar event.** `get_event`, `draft_event`/`send_event` (edit),
+  `draft_event`/`send_event` (cancel), `respond_meeting`, `draft_email` (with `event_id`), `set_event_categories`, and
   `set_event_availability` all take an optional `store_id`, passed straight through to
   `ItemById`/`GetItemFromID` — `ItemById` only searches the caller's own default store
   without it. This is a lookup aid only.
@@ -320,11 +326,11 @@ something to go out immediately.
 ## Excluded / deferred
 
 - **`update_event` / `delete_event`** — present in the reference EWS server's API but
-  not ported under those names. `edit_event` and `cancel_event` (plus their `draft_`
+  not ported under those names. `send_event` (edit) and `send_event` (cancel) (plus their `draft_`
   versions) cover the same ground.
 - **Proposing a new time on a meeting the user only attends** (`MeetingStatus ==
   olMeetingReceived`) — real Outlook's "Propose New Time" feature, deliberately
-  *not* implemented. `edit_event`/`draft_edit_event` refuse outright on a received
+  *not* implemented. `draft_event`/`send_event` (edit) refuse outright on a received
   meeting rather than attempt anything, because there's no clean way to honor the
   request: a plain `.Send()` here wouldn't be an authoritative reschedule Outlook
   actually honors (the user isn't the organizer), and .NET reflection against the
@@ -363,7 +369,7 @@ without it they too act on the whole series. `list_events` carries each occurren
 
 **Known limitation, confirmed live (Gmail-connected calendar):** on a mailbox connected
 via Google's Gmail/Google Workspace sync, moving a calendar item to Deleted Items does
-not appear to be durable the way it is on Exchange — a `cancel_event` call that
+not appear to be durable the way it is on Exchange — a `send_event` (cancel) call that
 reported success moving an item to Deleted Items was followed immediately (no other
 action in between) by that item relocating itself to a `Drafts` folder, with no code in
 this add-in touching it a second time. Most likely Google Calendar's own sync
@@ -373,7 +379,7 @@ mismatch and refused rather than guessing or overwriting — the designed safety
 worked, and no data was lost — but this means `RecordMove`'s core assumption (an item
 stays wherever the last recorded move put it, until this add-in moves it again) does
 not reliably hold for Gmail-connected calendars specifically. Treated as a known
-account-type-specific risk, not a code bug in `cancel_event`, `edit_event`, or the undo
+account-type-specific risk, not a code bug in `send_event` (cancel), `send_event` (edit), or the undo
 stack.
 
 ## Unproven at runtime
@@ -409,32 +415,32 @@ the next suspect.
 against a real second mailbox with different Exchange sharing levels (Full Access /
 Editor / Reviewer / free-busy only / titles+locations only / no access): neither the
 exact read-path error messages, nor whether partial-read tiers degrade gracefully, nor
-what a genuinely unpermitted cross-mailbox write (e.g. `edit_event` with a `store_id`
+what a genuinely unpermitted cross-mailbox write (e.g. `send_event` (edit) with a `store_id`
 from a Reviewer-only calendar) actually returns — assumed to be a `COMException` from
 `.Save()`/`.Send()`, untested.
 
-**`edit_event`/`draft_edit_event`** — compiled, not exercised live for their meeting
+**`draft_event`/`send_event` (edit)** — compiled, not exercised live for their meeting
 paths. Ranked by consequence of being wrong:
 
 1. **`ReplaceAttendees`'s recipient-clearing** — highest risk, since a wrong
    organizer-exclusion could drop the user's own organizer entry or fail to actually
    clear old attendees, feeding directly into a `.Send()` with real people.
-2. **Converting a plain event into a meeting via `edit_event`** — adding attendees to an
-   *existing*, previously-saved item (unlike `create_event`, which only ever adds
+2. **Converting a plain event into a meeting via `send_event` (edit)** — adding attendees to an
+   *existing*, previously-saved item (unlike `send_event` (new), which only ever adds
    attendees to a brand-new one) is an untested combination.
 3. **`subject`/`body`/`location` edits on a recurring master** — likely fine (none of
    these are part of `RecurrencePattern`), but unverified.
 
 Also unverified: whether Outlook accepts a plain `.Send()` on a modified organizer-owned
 meeting as a real update notice in every case (e.g. an all-day flag change). **Open
-question:** whether `draft_edit_event`'s unsaved changes (mutate an existing item,
+question:** whether `draft_event` (edit)'s unsaved changes (mutate an existing item,
 `Display(false)`, never `.Save()`/`.Send()`) have the same "persists on window-close
 without an explicit action" risk that `MeetingStatus` turned out to have for
-`draft_cancel_event`. If so, closing a `draft_edit_event` window on a meeting the user
+`draft_event` (cancel). If so, closing a `draft_event` (edit) window on a meeting the user
 organizes without clicking Send could silently move it in the organizer's own calendar
 while attendees still see the old time. Not confirmed either way.
 
-**`cancel_event`** — its organized-meeting branch calls `.Move()` immediately after
+**`send_event` (cancel)** — its organized-meeting branch calls `.Move()` immediately after
 `.Send()` on the same item, a sequence no other tool here performs. Whether Outlook still
 permits relocating a just-canceled-and-sent appointment is unconfirmed; the code catches
 a failure there and reports the (genuinely-sent) cancellation succeeded regardless,
@@ -463,7 +469,7 @@ cannot be set directly on a recurring master. Still unconfirmed:
 - **`CheckOccurrenceReorderCollision` may not cover every reason Outlook can reject an
   occurrence reorder** — any rejection reason it doesn't anticipate still reaches the
   model as the same generic "Cannot save this item."
-- **`recurrence` on `create_event`/`draft_event`**: `RecurrenceValidator`'s unit tests
+- **`recurrence` on `draft_event`/`send_event` (new)**: `RecurrenceValidator`'s unit tests
   cover only the pure validation logic. The COM application path —
   `GetRecurrencePattern()` after attendee/`MeetingStatus` setup, before
   `.Save()`/`.Send()` — is unverified live, as is whether that ordering matters.

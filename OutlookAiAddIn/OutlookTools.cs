@@ -55,7 +55,7 @@ namespace OutlookAiAddIn
             "mark_email_read", "mark_email_unread", "flag_email_important", "move_email", "delete_email",
             "create_task", "update_task", "set_reminder", "set_email_reminder",
             "draft_email", "draft_event",
-            "set_event_categories", "set_category_color", "set_event_availability", "apply_search", "draft_cancel_event", "draft_edit_event",
+            "set_event_categories", "set_category_color", "set_event_availability", "apply_search",
             // undo/redo only replay the assistant's own recorded actions (see
             // OutlookTools.Undo.cs) and never send anything - sends and
             // meeting responses are barriers, not replayable entries - so
@@ -75,7 +75,7 @@ namespace OutlookAiAddIn
         // content with no review step at all.
         private static readonly HashSet<string> SendTierTools = new HashSet<string>
         {
-            "send_email", "create_event", "cancel_event", "edit_event",
+            "send_email", "send_event",
         };
 
         private static string TierLabel(EditingMode mode)
@@ -161,14 +161,10 @@ namespace OutlookAiAddIn
                     case "set_email_reminder": return SetEmailReminder(mbxKey, input);
 
                     case "draft_email": return ComposeEmail(mbxKey, input, false);
-                    case "draft_event": return DraftEvent(input);
-                    case "draft_cancel_event": return DraftCancelEvent(input);
-                    case "draft_edit_event": return DraftEditEvent(input);
+                    case "draft_event": return EventAction(mbxKey, input, false);
 
                     case "send_email": return ComposeEmail(mbxKey, input, true);
-                    case "create_event": return CreateEvent(mbxKey, input);
-                    case "cancel_event": return CancelEvent(mbxKey, input);
-                    case "edit_event": return EditEvent(mbxKey, input);
+                    case "send_event": return EventAction(mbxKey, input, true);
 
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }

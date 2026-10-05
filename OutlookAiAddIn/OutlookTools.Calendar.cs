@@ -490,7 +490,7 @@ namespace OutlookAiAddIn
             return "Couldn't find the invitation email for \"" + (appt.Subject ?? "") + "\" - it may have been deleted or archived, or you organize this event (an organizer has no invitation to reply to or forward).";
         }
 
-        // Shared by draft_edit_event/edit_event: an olMeetingReceived (or
+        // Shared by draft_event/send_event (edit): an olMeetingReceived (or
         // olMeetingReceivedAndCanceled) appointment is one the user only
         // attends, not organizes - no COM API exists to honor a reschedule
         // request on it, so both tools refuse up front. Both "received"
@@ -600,7 +600,7 @@ namespace OutlookAiAddIn
             };
         }
 
-        // Shared by edit_event/draft_edit_event: replaces the required and/or
+        // Shared by edit and draft edit: replaces the required and/or
         // optional attendee list wholesale, not a diff/merge. A null argument
         // leaves that category untouched; non-null (including "") fully
         // replaces it. The organizer is never touched. See
@@ -629,7 +629,7 @@ namespace OutlookAiAddIn
             return count;
         }
 
-        // Shared by edit_event/draft_edit_event's result text: describes
+        // Shared by draft_event/send_event (edit)'s result text: describes
         // which of the seven optional fields were actually touched, so the
         // caller sees a precise summary instead of a generic "updated".
         private static string DescribeEditEventChanges(DateTime? start, DateTime? end, string subject, string body, string location, bool attendeesChanged, string oldStart, string oldEnd)
@@ -643,6 +643,135 @@ namespace OutlookAiAddIn
             return parts.Count > 0 ? " (" + string.Join(", ", parts) + ")" : "";
         }
 
+        // Resolves event_id (+ optional store_id / occurrence_date) to the
+        // recurring master and the item to act on - the master itself, or one
+        // occurrence. Shared by every event edit/cancel handler, draft and send.
+        // store_id is needed only for an event_id from someone else's shared
+        // calendar (list_events' mailbox parameter); see
+        // OutlookTools.Calendar.cs.md for the authorization-scope note.
+        private static ToolResult? ResolveEventTarget(JsonElement input, string tool, out Outlook.AppointmentItem master, out Outlook.AppointmentItem appt, out string occDate)
+        {
+            string id = ReqStr(input, "event_id");
+            string storeId = Str(input, "store_id", null);
+            occDate = Str(input, "occurrence_date", null);
+            appt = null;
+            master = ItemById(id, storeId) as Outlook.AppointmentItem;
+            if (master == null)
+                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = tool };
+            return ResolveOccurrenceTarget(master, occDate, tool, out appt);
+        }
+
+        private sealed class EventEdit
+        {
+            public Outlook.AppointmentItem Master, Appt;
+            public string OccDate, Subject, Body, Location, RequiredAttendees, OptionalAttendees;
+            public DateTime? Start, End;
+        }
+
+        // The validation shared by edit (send_event) and draft edit
+        // (draft_event): resolves the target, refuses canceled and
+        // attendee-only meetings, reads the seven optional fields, and checks
+        // them against each other and against sibling occurrences.
+        private static ToolResult? ParseEventEdit(JsonElement input, string tool, out EventEdit edit)
+        {
+            edit = null;
+            Outlook.AppointmentItem master, appt;
+            string occDate;
+            ToolResult? targetError = ResolveEventTarget(input, tool, out master, out appt, out occDate);
+            if (targetError != null) return targetError;
+
+            if (IsCanceledMeeting(master))
+                return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = tool };
+            if (IsReceivedMeeting(master))
+                return new ToolResult { Output = ReceivedMeetingError(appt), IsError = true, Summary = tool };
+
+            var e = new EventEdit
+            {
+                Master = master,
+                Appt = appt,
+                OccDate = occDate,
+                Start = DateArg(input, "start"),
+                End = DateArg(input, "end"),
+                Subject = Str(input, "subject", null),
+                Body = Str(input, "body", null),
+                Location = Str(input, "location", null),
+                RequiredAttendees = Str(input, "required_attendees", null),
+                OptionalAttendees = Str(input, "optional_attendees", null),
+            };
+
+            if (!e.Start.HasValue && !e.End.HasValue && e.Subject == null && e.Body == null && e.Location == null &&
+                e.RequiredAttendees == null && e.OptionalAttendees == null)
+                return new ToolResult { Output = "At least one of start, end, subject, body, location, required_attendees, optional_attendees must be provided.", IsError = true, Summary = tool };
+
+            if (e.Start.HasValue != e.End.HasValue)
+                return new ToolResult { Output = "start and end must be provided together.", IsError = true, Summary = tool };
+
+            if (e.Start.HasValue && e.End.Value <= e.Start.Value)
+                return new ToolResult { Output = "end must be after start.", IsError = true, Summary = tool };
+
+            if ((e.RequiredAttendees != null || e.OptionalAttendees != null) && occDate != null)
+                return new ToolResult { Output = "Attendee changes only apply to the whole series - omit occurrence_date.", IsError = true, Summary = tool };
+
+            if (occDate != null && e.Start.HasValue)
+            {
+                ToolResult? collision = CheckOccurrenceReorderCollision(master, appt.Start, e.Start.Value, appt.Subject ?? "", tool);
+                if (collision != null) return collision;
+            }
+
+            edit = e;
+            return null;
+        }
+
+        // Applies the time, subject, body and location parts of an edit.
+        // (Attendees differ between draft and send, so each handler does its own.)
+        // Outlook does not allow setting AppointmentItem.Start/.End directly
+        // on a recurring master (confirmed live 2026-09-28) -
+        // RecurrencePattern's fields are the correct mechanism, same as
+        // new events' recurrence support.
+        private static void ApplyEventFields(EventEdit e, bool wholeSeriesTimeChange)
+        {
+            if (wholeSeriesTimeChange)
+            {
+                Outlook.RecurrencePattern pattern = e.Master.GetRecurrencePattern();
+                pattern.PatternStartDate = e.Start.Value.Date;
+                pattern.StartTime = e.Start.Value;
+                pattern.EndTime = e.End.Value;
+            }
+            else if (e.Start.HasValue)
+            {
+                e.Appt.Start = e.Start.Value;
+                e.Appt.End = e.End.Value;
+            }
+
+            if (e.Subject != null) e.Appt.Subject = e.Subject;
+            if (e.Body != null) e.Appt.Body = e.Body;
+            if (e.Location != null) e.Appt.Location = e.Location;
+        }
+
+        // draft_event (send: false) and send_event (send: true) take the same
+        // arguments; action picks new / edit / cancel. Each action has a draft
+        // tail (leave unsaved + Display, nothing persisted) and a send tail
+        // (Save/Send + undo records); the validation and target resolution
+        // they share live in the helpers above and in BuildNewEvent.
+        // Each handler still sets its own Summary (its old tool name); the result's
+        // Summary is overwritten with the real tool name here.
+        private static ToolResult EventAction(string mbxKey, JsonElement input, bool send)
+        {
+            string tool = send ? "send_event" : "draft_event";
+            string action = Str(input, "action", "new");
+            ToolResult r;
+            switch (action)
+            {
+                case "new": r = send ? CreateEvent(mbxKey, input) : DraftEvent(input); break;
+                case "edit": r = send ? EditEvent(mbxKey, input) : DraftEditEvent(input); break;
+                case "cancel": r = send ? CancelEvent(mbxKey, input) : DraftCancelEvent(input); break;
+                default:
+                    return new ToolResult { Output = "action must be one of: new, edit, cancel.", IsError = true, Summary = tool };
+            }
+            r.Summary = tool;
+            return r;
+        }
+
         // Full-autonomy-only, general edit: unlike the retired per-field
         // reschedule tool (Start/End only), this can touch start/end, subject, body, location, and
         // attendees in one call. One unified mutation flow decides .Send() vs
@@ -650,51 +779,14 @@ namespace OutlookAiAddIn
         // per field - see the design's Section 2 for the reasoning.
         private static ToolResult EditEvent(string mbxKey, JsonElement input)
         {
-            string id = ReqStr(input, "event_id");
-            // Needed only for an event_id from someone else's shared calendar
-            // (list_events' mailbox parameter); omit for your own events. See
-            // OutlookTools.Calendar.cs.md for the authorization-scope note.
-            string storeId = Str(input, "store_id", null);
-            string occDate = Str(input, "occurrence_date", null);
-            Outlook.AppointmentItem master = ItemById(id, storeId) as Outlook.AppointmentItem;
-            if (master == null)
-                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "edit_event" };
-
-            Outlook.AppointmentItem appt;
-            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "edit_event", out appt);
-            if (occurrenceError != null) return occurrenceError.Value;
-
-            if (IsCanceledMeeting(master))
-                return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "edit_event" };
-            if (IsReceivedMeeting(master))
-                return new ToolResult { Output = ReceivedMeetingError(appt), IsError = true, Summary = "edit_event" };
-
-            DateTime? start = DateArg(input, "start");
-            DateTime? end = DateArg(input, "end");
-            string subject = Str(input, "subject", null);
-            string body = Str(input, "body", null);
-            string location = Str(input, "location", null);
-            string requiredAttendees = Str(input, "required_attendees", null);
-            string optionalAttendees = Str(input, "optional_attendees", null);
-
-            if (!start.HasValue && !end.HasValue && subject == null && body == null && location == null &&
-                requiredAttendees == null && optionalAttendees == null)
-                return new ToolResult { Output = "At least one of start, end, subject, body, location, required_attendees, optional_attendees must be provided.", IsError = true, Summary = "edit_event" };
-
-            if (start.HasValue != end.HasValue)
-                return new ToolResult { Output = "start and end must be provided together.", IsError = true, Summary = "edit_event" };
-
-            if (start.HasValue && end.Value <= start.Value)
-                return new ToolResult { Output = "end must be after start.", IsError = true, Summary = "edit_event" };
-
-            if ((requiredAttendees != null || optionalAttendees != null) && occDate != null)
-                return new ToolResult { Output = "Attendee changes only apply to the whole series - omit occurrence_date.", IsError = true, Summary = "edit_event" };
-
-            if (occDate != null && start.HasValue)
-            {
-                ToolResult? collision = CheckOccurrenceReorderCollision(master, appt.Start, start.Value, appt.Subject ?? "", "edit_event");
-                if (collision != null) return collision.Value;
-            }
+            EventEdit e;
+            ToolResult? invalid = ParseEventEdit(input, "edit_event", out e);
+            if (invalid != null) return invalid.Value;
+            Outlook.AppointmentItem master = e.Master, appt = e.Appt;
+            string occDate = e.OccDate;
+            DateTime? start = e.Start, end = e.End;
+            string subject = e.Subject, body = e.Body, location = e.Location;
+            string requiredAttendees = e.RequiredAttendees, optionalAttendees = e.OptionalAttendees;
 
             string scopeNote = occDate != null ? " (this occurrence only)" : "";
             bool wasMeetingBefore = master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
@@ -710,27 +802,7 @@ namespace OutlookAiAddIn
             string oldStart = Iso(appt.Start);
             string oldEnd = Iso(appt.End);
 
-            // Outlook does not allow setting AppointmentItem.Start/.End directly
-            // on a recurring master (confirmed live 2026-09-28, see the
-            // retired reschedule tool's own history) - RecurrencePattern's
-            // fields are the correct mechanism, same as create_event's
-            // recurrence support and that retired tool's whole-series fix.
-            if (isRecurringWholeSeriesTimeChange)
-            {
-                Outlook.RecurrencePattern pattern = master.GetRecurrencePattern();
-                pattern.PatternStartDate = start.Value.Date;
-                pattern.StartTime = start.Value;
-                pattern.EndTime = end.Value;
-            }
-            else if (start.HasValue)
-            {
-                appt.Start = start.Value;
-                appt.End = end.Value;
-            }
-
-            if (subject != null) appt.Subject = subject;
-            if (body != null) appt.Body = body;
-            if (location != null) appt.Location = location;
+            ApplyEventFields(e, isRecurringWholeSeriesTimeChange);
 
             bool attendeesChanged = false;
             bool revertToNonMeeting = false;
@@ -791,7 +863,7 @@ namespace OutlookAiAddIn
                 {
                     appt.Save();
                 }
-                RecordIrreversible(mbxKey, "edit_event of \"" + (appt.Subject ?? "") + "\"" + scopeNote +
+                RecordIrreversible(mbxKey, "send_event (edit) of \"" + (appt.Subject ?? "") + "\"" + scopeNote +
                                             (isMeetingNow ? " (update sent)" : "") +
                                             (isRecurringWholeSeriesTimeChange ? " (whole series time change)" : ""));
                 return new ToolResult
@@ -850,7 +922,7 @@ namespace OutlookAiAddIn
             // list and a whole-series recurring time change - see
             // OutlookTools.Calendar.cs.md for the full argument and for why
             // RecordSnapshot needs no new undo-entry type for an occurrence.
-            RecordSnapshot(mbxKey, "edit_event", appt, appt.Subject ?? "", props.ToArray(), before);
+            RecordSnapshot(mbxKey, "send_event (edit)", appt, appt.Subject ?? "", props.ToArray(), before);
             return new ToolResult
             {
                 Output = "Updated" + scopeNote + ": \"" + (appt.Subject ?? "") + "\"." + changeSummary + FormatUnresolvedAttendeesNote(unresolvedAttendees),
@@ -867,71 +939,18 @@ namespace OutlookAiAddIn
         // draft tools never persist anything, same contract as draft_event.
         private static ToolResult DraftEditEvent(JsonElement input)
         {
-            string id = ReqStr(input, "event_id");
-            // Needed only for an event_id from someone else's shared calendar
-            // (list_events' mailbox parameter); omit for your own events. See
-            // OutlookTools.Calendar.cs.md for the authorization-scope note.
-            string storeId = Str(input, "store_id", null);
-            string occDate = Str(input, "occurrence_date", null);
-            Outlook.AppointmentItem master = ItemById(id, storeId) as Outlook.AppointmentItem;
-            if (master == null)
-                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "draft_edit_event" };
-
-            Outlook.AppointmentItem appt;
-            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_edit_event", out appt);
-            if (occurrenceError != null) return occurrenceError.Value;
-
-            if (IsCanceledMeeting(master))
-                return new ToolResult { Output = CanceledMeetingError(appt), IsError = true, Summary = "draft_edit_event" };
-            if (IsReceivedMeeting(master))
-                return new ToolResult { Output = ReceivedMeetingError(appt), IsError = true, Summary = "draft_edit_event" };
-
-            DateTime? start = DateArg(input, "start");
-            DateTime? end = DateArg(input, "end");
-            string subject = Str(input, "subject", null);
-            string body = Str(input, "body", null);
-            string location = Str(input, "location", null);
-            string requiredAttendees = Str(input, "required_attendees", null);
-            string optionalAttendees = Str(input, "optional_attendees", null);
-
-            if (!start.HasValue && !end.HasValue && subject == null && body == null && location == null &&
-                requiredAttendees == null && optionalAttendees == null)
-                return new ToolResult { Output = "At least one of start, end, subject, body, location, required_attendees, optional_attendees must be provided.", IsError = true, Summary = "draft_edit_event" };
-
-            if (start.HasValue != end.HasValue)
-                return new ToolResult { Output = "start and end must be provided together.", IsError = true, Summary = "draft_edit_event" };
-
-            if (start.HasValue && end.Value <= start.Value)
-                return new ToolResult { Output = "end must be after start.", IsError = true, Summary = "draft_edit_event" };
-
-            if ((requiredAttendees != null || optionalAttendees != null) && occDate != null)
-                return new ToolResult { Output = "Attendee changes only apply to the whole series - omit occurrence_date.", IsError = true, Summary = "draft_edit_event" };
-
-            if (occDate != null && start.HasValue)
-            {
-                ToolResult? collision = CheckOccurrenceReorderCollision(master, appt.Start, start.Value, appt.Subject ?? "", "draft_edit_event");
-                if (collision != null) return collision.Value;
-            }
+            EventEdit e;
+            ToolResult? invalid = ParseEventEdit(input, "draft_edit_event", out e);
+            if (invalid != null) return invalid.Value;
+            Outlook.AppointmentItem master = e.Master, appt = e.Appt;
+            string occDate = e.OccDate;
+            DateTime? start = e.Start, end = e.End;
+            string requiredAttendees = e.RequiredAttendees, optionalAttendees = e.OptionalAttendees;
 
             string scopeNote = occDate != null ? " (just this occurrence, not the whole series)" : "";
             bool isMeeting = master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
 
-            if (occDate == null && master.IsRecurring && start.HasValue)
-            {
-                Outlook.RecurrencePattern pattern = master.GetRecurrencePattern();
-                pattern.PatternStartDate = start.Value.Date;
-                pattern.StartTime = start.Value;
-                pattern.EndTime = end.Value;
-            }
-            else if (start.HasValue)
-            {
-                appt.Start = start.Value;
-                appt.End = end.Value;
-            }
-
-            if (subject != null) appt.Subject = subject;
-            if (body != null) appt.Body = body;
-            if (location != null) appt.Location = location;
+            ApplyEventFields(e, occDate == null && master.IsRecurring && start.HasValue);
 
             bool attendeesChanged = false;
             var unresolvedAttendees = new List<string>();
@@ -967,7 +986,7 @@ namespace OutlookAiAddIn
             };
         }
 
-        // Shared by draft_cancel_event/cancel_event - same organizer-authority
+        // Shared by draft_event/send_event (cancel) - same organizer-authority
         // shape as edit_event above (IsCanceledMeeting/IsReceivedMeeting
         // reused, not duplicated), but an attendee's remedy for a meeting they
         // don't organize is respond_meeting (decline), not "Propose New Time".
@@ -984,7 +1003,7 @@ namespace OutlookAiAddIn
         // resend) rather than refusing, so it never needs this message.
         private static string AlreadyCanceledError(Outlook.AppointmentItem appt)
         {
-            return "\"" + (appt.Subject ?? "") + "\" has already been canceled - use cancel_event to remove it from your calendar.";
+            return "\"" + (appt.Subject ?? "") + "\" has already been canceled - use send_event with action cancel to remove it from your calendar.";
         }
 
         // Draft-tier: just opens the item unchanged, for both branches - the
@@ -994,19 +1013,10 @@ namespace OutlookAiAddIn
         // live incident that ruled out pre-setting MeetingStatus unsaved.
         private static ToolResult DraftCancelEvent(JsonElement input)
         {
-            string id = ReqStr(input, "event_id");
-            // Needed only for an event_id from someone else's shared calendar
-            // (list_events' mailbox parameter); omit for your own events. See
-            // OutlookTools.Calendar.cs.md for the authorization-scope note.
-            string storeId = Str(input, "store_id", null);
-            string occDate = Str(input, "occurrence_date", null);
-            Outlook.AppointmentItem master = ItemById(id, storeId) as Outlook.AppointmentItem;
-            if (master == null)
-                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "draft_cancel_event" };
-
-            Outlook.AppointmentItem appt;
-            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "draft_cancel_event", out appt);
-            if (occurrenceError != null) return occurrenceError.Value;
+            Outlook.AppointmentItem master, appt;
+            string occDate;
+            ToolResult? targetError = ResolveEventTarget(input, "draft_cancel_event", out master, out appt, out occDate);
+            if (targetError != null) return targetError.Value;
 
             if (IsCanceledMeeting(master))
                 return new ToolResult { Output = AlreadyCanceledError(appt), IsError = true, Summary = "draft_cancel_event" };
@@ -1033,19 +1043,10 @@ namespace OutlookAiAddIn
         // only way to dismiss one at all.
         private static ToolResult CancelEvent(string mbxKey, JsonElement input)
         {
-            string id = ReqStr(input, "event_id");
-            // Needed only for an event_id from someone else's shared calendar
-            // (list_events' mailbox parameter); omit for your own events. See
-            // OutlookTools.Calendar.cs.md for the authorization-scope note.
-            string storeId = Str(input, "store_id", null);
-            string occDate = Str(input, "occurrence_date", null);
-            Outlook.AppointmentItem master = ItemById(id, storeId) as Outlook.AppointmentItem;
-            if (master == null)
-                return new ToolResult { Output = "event_id does not resolve to an appointment.", IsError = true, Summary = "cancel_event" };
-
-            Outlook.AppointmentItem appt;
-            ToolResult? occurrenceError = ResolveOccurrenceTarget(master, occDate, "cancel_event", out appt);
-            if (occurrenceError != null) return occurrenceError.Value;
+            Outlook.AppointmentItem master, appt;
+            string occDate;
+            ToolResult? targetError = ResolveEventTarget(input, "cancel_event", out master, out appt, out occDate);
+            if (targetError != null) return targetError.Value;
 
             bool isOccurrence = occDate != null;
             // An occurrence has no "already canceled" state to clean up - a
@@ -1068,7 +1069,7 @@ namespace OutlookAiAddIn
                 // went out to attendees, so restoring this copy would only
                 // half-undo the action and misleadingly imply it was fully
                 // reversed.
-                RecordIrreversible(mbxKey, "cancel_event invite cancellation for \"" + subject + "\"" + scopeNote);
+                RecordIrreversible(mbxKey, "send_event (cancel) invite cancellation for \"" + subject + "\"" + scopeNote);
 
                 if (isOccurrence)
                 {
@@ -1138,7 +1139,7 @@ namespace OutlookAiAddIn
                     if (stillGone == null)
                         return new ToolResult { Output = "Could not cancel \"" + subject + "\": " + ex.Message, IsError = true, Summary = "cancel_event" };
                 }
-                RecordIrreversible(mbxKey, "cancel_event of \"" + subject + "\" occurrence");
+                RecordIrreversible(mbxKey, "send_event (cancel) of \"" + subject + "\" occurrence");
                 return new ToolResult { Output = "Canceled" + scopeNote + ": \"" + subject + "\". This occurrence cannot be undone.", Mutated = true, Summary = "cancel_event" };
             }
 
@@ -1148,7 +1149,7 @@ namespace OutlookAiAddIn
                 string oldId = appt.EntryID;
                 dynamic moved = appt.Move(deletedFolder);
                 string newId = moved.EntryID;
-                RecordMove(mbxKey, "cancel_event", "event_id", subject, oldId, newId, sourceFolder, deletedFolder);
+                RecordMove(mbxKey, "send_event (cancel)", "event_id", subject, oldId, newId, sourceFolder, deletedFolder);
                 return new ToolResult
                 {
                     Output = (alreadyCanceled

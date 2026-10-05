@@ -11,6 +11,39 @@ const FOLDER = {
 
 const MESSAGE_ID = { type: 'string', description: 'Outlook EntryID from list_emails/search_emails or the current selection.' }
 
+const EVENT_RECURRENCE = {
+  type: 'object',
+  description:
+    'New events only. Makes this a recurring series. type is required: "daily", "weekly", "monthly", "monthlyNth"/"yearlyNth", or "yearly". If you omit days_of_week/day_of_month/instance/month_of_year for the type you chose, they default from start\'s own date - e.g. weekly defaults to start\'s day of week, monthly to start\'s day of month, monthlyNth/yearlyNth to start\'s day of week and which occurrence of it in the month start falls on. Pass them explicitly to override. interval defaults to 1 (every N days/weeks/months/years). At most one of count (end after N occurrences) or until (end by date) - omit both for no end date.',
+  properties: {
+    type: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'monthlyNth', 'yearly', 'yearlyNth'] },
+    interval: { type: 'number', description: 'Every N days/weeks/months/years. Default 1.' },
+    days_of_week: { type: 'array', items: { type: 'string' }, description: 'e.g. ["monday","wednesday"] for weekly; exactly one day for monthlyNth/yearlyNth.' },
+    day_of_month: { type: 'number', description: '1-31. Required for monthly and yearly.' },
+    instance: { type: 'number', description: '1-4 for 1st-4th, 5 for "last". Required for monthlyNth/yearlyNth.' },
+    month_of_year: { type: 'number', description: '1-12. Required for yearly and yearlyNth.' },
+    count: { type: 'number', description: 'End after N occurrences. Mutually exclusive with until.' },
+    until: { type: 'string', description: 'End by this date. Mutually exclusive with count.' },
+  },
+  required: ['type'],
+}
+
+// draft_event and send_event take the same arguments; action picks new / edit / cancel.
+const EVENT_PROPS = {
+  action: { type: 'string', enum: ['new', 'edit', 'cancel'], description: 'Default "new". "edit" and "cancel" act on an existing event and need event_id.' },
+  event_id: { type: 'string', description: 'Required for edit and cancel (from list_events or get_event).' },
+  occurrence_date: { type: 'string', description: 'For edit/cancel of a recurring event: the date of the single occurrence to act on (from list_events\' start value). Omit to act on the whole series. Cannot be combined with required_attendees/optional_attendees. Cancelling one occurrence cannot be undone.' },
+  subject: { type: 'string' },
+  start: { type: 'string', description: 'Date-time, e.g. "2026-09-01T14:00". For edit, must be given together with end.' },
+  end: { type: 'string', description: 'Date-time. For edit, must be given together with start.' },
+  location: { type: 'string' },
+  body: { type: 'string' },
+  required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". New: attendees make it a meeting. Edit: replaces the whole required-attendee list, omit to leave it unchanged; whole-series/non-recurring only.' },
+  optional_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Same rules as required_attendees, for the optional list.' },
+  recurrence: EVENT_RECURRENCE,
+  store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
+}
+
 const ALL_OUTLOOK_TOOLS = [
   {
     name: 'list_emails',
@@ -114,7 +147,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'list_events',
     description:
-      'Lists calendar events in a date range (expands recurring meetings). Returns event_id, subject, start/end, location, organizer, and your response status. Recurring instances share the master event_id. Pass mailbox to view someone else\'s calendar instead of your own, if they\'ve granted you access to it in Exchange - visibility depends on what sharing level they set (full details, free/busy only, or none); Outlook applies that automatically, but the exact behavior at each level hasn\'t been independently verified by this add-in. Shared-calendar results include a store_id field - pass it to get_event or any calendar-editing tool (edit_event, cancel_event, respond_meeting, draft_email with event_id, set_event_categories, set_event_availability, and their draft counterparts) to act on that specific event. Whether the action actually succeeds is governed entirely by your real Outlook/Exchange permissions on that calendar, the same as if you\'d done it through Outlook\'s own UI - this add-in does not add its own extra restriction on top of that.',
+      'Lists calendar events in a date range (expands recurring meetings). Returns event_id, subject, start/end, location, organizer, and your response status. Recurring instances share the master event_id. Pass mailbox to view someone else\'s calendar instead of your own, if they\'ve granted you access to it in Exchange - visibility depends on what sharing level they set (full details, free/busy only, or none); Outlook applies that automatically, but the exact behavior at each level hasn\'t been independently verified by this add-in. Shared-calendar results include a store_id field - pass it to get_event or any calendar-editing tool (draft_event/send_event with action edit or cancel, respond_meeting, draft_email with event_id, set_event_categories, set_event_availability) to act on that specific event. Whether the action actually succeeds is governed entirely by your real Outlook/Exchange permissions on that calendar, the same as if you\'d done it through Outlook\'s own UI - this add-in does not add its own extra restriction on top of that.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -215,7 +248,7 @@ const ALL_OUTLOOK_TOOLS = [
     description:
       "Reverses YOUR most recent action in this chat (call repeatedly to step further back). Covers mark_email_read/unread, flag_email_important, move_email, " +
       'delete_email (non-permanent - moves it back out of Deleted Items), create_task, update_task, set_reminder, set_email_reminder, set_event_categories, ' +
-      'set_category_color, set_event_availability, edit_event on a plain (non-meeting) event that is not becoming a meeting in that call - a non-recurring event, a single occurrence, or a whole recurring series\' subject/body/location only (not a time change), cancel_event on a plain or already-canceled whole event (moved back out of Deleted Items), and create_event without attendees (moved to Deleted Items). Sends, meeting invites, respond_meeting, cancel_event on a still-active organized meeting, cancel_event on any single occurrence (always, whether plain or meeting - Outlook has no API to restore a deleted occurrence), edit_event whenever it sends an update or changes a whole recurring series\' time, and permanent deletes ' +
+      'set_category_color, set_event_availability, send_event with action edit on a plain (non-meeting) event that is not becoming a meeting in that call - a non-recurring event, a single occurrence, or a whole recurring series\' subject/body/location only (not a time change), send_event with action cancel on a plain or already-canceled whole event (moved back out of Deleted Items), and send_event with action new without attendees (moved to Deleted Items). Sends, meeting invites, respond_meeting, send_event cancel on a still-active organized meeting, send_event cancel on any single occurrence (always, whether plain or meeting - Outlook has no API to restore a deleted occurrence), send_event edit whenever it sends an update or changes a whole recurring series\' time, and permanent deletes ' +
       "can't be reversed and block undo past them. Never touches changes the user made directly in Outlook, and refuses if the item was changed since. " +
       'A move changes message_id - use the one in the result.',
     inputSchema: { type: 'object', properties: {} },
@@ -368,71 +401,8 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'draft_event',
     description:
-      'Opens a new appointment/meeting window in Outlook, pre-filled. With attendees it becomes a meeting request. The user reviews and sends/saves it. Pass recurrence to make it a repeating series.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        subject: { type: 'string' },
-        start: { type: 'string', description: 'Date-time, e.g. "2026-09-01T14:00".' },
-        end: { type: 'string', description: 'Date-time.' },
-        location: { type: 'string' },
-        body: { type: 'string' },
-        required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>".' },
-        optional_attendees: { type: 'string' },
-        recurrence: {
-          type: 'object',
-          description:
-            'Makes this a recurring series. type is required: "daily", "weekly", "monthly", "monthlyNth"/"yearlyNth", or "yearly". If you omit days_of_week/day_of_month/instance/month_of_year for the type you chose, they default from start\'s own date - e.g. weekly defaults to start\'s day of week, monthly to start\'s day of month, monthlyNth/yearlyNth to start\'s day of week and which occurrence of it in the month start falls on. Pass them explicitly to override. interval defaults to 1 (every N days/weeks/months/years). At most one of count (end after N occurrences) or until (end by date) - omit both for no end date.',
-          properties: {
-            type: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'monthlyNth', 'yearly', 'yearlyNth'] },
-            interval: { type: 'number', description: 'Every N days/weeks/months/years. Default 1.' },
-            days_of_week: { type: 'array', items: { type: 'string' }, description: 'e.g. ["monday","wednesday"] for weekly; exactly one day for monthlyNth/yearlyNth.' },
-            day_of_month: { type: 'number', description: '1-31. Required for monthly and yearly.' },
-            instance: { type: 'number', description: '1-4 for 1st-4th, 5 for "last". Required for monthlyNth/yearlyNth.' },
-            month_of_year: { type: 'number', description: '1-12. Required for yearly and yearlyNth.' },
-            count: { type: 'number', description: 'End after N occurrences. Mutually exclusive with until.' },
-            until: { type: 'string', description: 'End by this date. Mutually exclusive with count.' },
-          },
-          required: ['type'],
-        },
-      },
-      required: [],
-    },
-  },
-  {
-    name: 'draft_edit_event',
-    description:
-      'Opens an existing calendar event with requested changes already applied, unsaved, for the user to review and save/send. Any combination of start+end (together), subject, body, location, required_attendees, optional_attendees - at least one must be given. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to target one occurrence instead - occurrence-level edits can only change start/end/subject/body/location, not attendees. To add/remove specific attendees while keeping others, read the current list with get_event first and pass the full new list here.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        event_id: { type: 'string' },
-        occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to edit (from list_events\' start value). Omit to act on the whole series. Cannot be combined with required_attendees/optional_attendees.' },
-        start: { type: 'string', description: 'New start date-time, e.g. "2026-09-01T14:00". Must be given together with end.' },
-        end: { type: 'string', description: 'New end date-time. Must be given together with start.' },
-        subject: { type: 'string' },
-        body: { type: 'string' },
-        location: { type: 'string' },
-        required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole required-attendee list. Whole-series/non-recurring only.' },
-        optional_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole optional-attendee list. Whole-series/non-recurring only.' },
-        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
-      },
-      required: ['event_id'],
-    },
-  },
-  {
-    name: 'draft_cancel_event',
-    description:
-      'Opens an existing calendar event for the user to review before canceling it themselves - for a meeting the user organizes, via Outlook\'s own Cancel Meeting/Send Cancellation buttons; for a plain appointment, via Delete. Never sends, deletes, or changes anything itself. Only works on events the user organizes or a plain appointment - on a meeting the user only attends, use respond_meeting with response decline (Automate approvals or above), or draft_email with event_id to write to the organizer, instead. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to preview canceling just that one occurrence instead.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        event_id: { type: 'string' },
-        occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to preview canceling (from list_events\' start value). Omit to act on the whole series.' },
-        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
-      },
-      required: ['event_id'],
-    },
+      'Opens an Outlook calendar window for the user to review - never saves, sends or cancels anything itself. action "new" (default) opens a new appointment/meeting, pre-filled; with attendees it becomes a meeting request, and recurrence makes it a repeating series. action "edit" opens an existing event (event_id) with the requested changes already applied but unsaved - any combination of start+end (together), subject, body, location, required_attendees, optional_attendees, at least one. action "cancel" opens an existing event (event_id) unchanged, for the user to cancel it themselves (Cancel Meeting/Send Cancellation for a meeting they organize, Delete for a plain appointment). Edit and cancel only work on events the user organizes or plain appointments - for a meeting the user only attends, use respond_meeting (Automate approvals or above) or draft_email with event_id to write to the organizer. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date to target one occurrence - occurrence-level edits can only change start/end/subject/body/location, not attendees. To add/remove specific attendees while keeping others, read the current list with get_event first and pass the full new list.',
+    inputSchema: { type: 'object', properties: EVENT_PROPS, required: [] },
   },
   {
     name: 'send_email',
@@ -454,73 +424,10 @@ const ALL_OUTLOOK_TOOLS = [
     },
   },
   {
-    name: 'create_event',
+    name: 'send_event',
     description:
-      'Creates a calendar event immediately - NO review window, including for a recurring series. With attendees, sends the meeting invite right away (notifies them). Only available in Full autonomy. Prefer draft_event unless the user clearly wants this created/sent right now. Pass recurrence to make it a repeating series.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        subject: { type: 'string' },
-        start: { type: 'string', description: 'Date-time, e.g. "2026-09-01T14:00".' },
-        end: { type: 'string', description: 'Date-time.' },
-        location: { type: 'string' },
-        body: { type: 'string' },
-        required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Presence of attendees sends the invite instead of just saving the event.' },
-        optional_attendees: { type: 'string' },
-        recurrence: {
-          type: 'object',
-          description:
-            'Makes this a recurring series. type is required: "daily", "weekly", "monthly", "monthlyNth"/"yearlyNth", or "yearly". If you omit days_of_week/day_of_month/instance/month_of_year for the type you chose, they default from start\'s own date - e.g. weekly defaults to start\'s day of week, monthly to start\'s day of month, monthlyNth/yearlyNth to start\'s day of week and which occurrence of it in the month start falls on. Pass them explicitly to override. interval defaults to 1 (every N days/weeks/months/years). At most one of count (end after N occurrences) or until (end by date) - omit both for no end date.',
-          properties: {
-            type: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'monthlyNth', 'yearly', 'yearlyNth'] },
-            interval: { type: 'number', description: 'Every N days/weeks/months/years. Default 1.' },
-            days_of_week: { type: 'array', items: { type: 'string' }, description: 'e.g. ["monday","wednesday"] for weekly; exactly one day for monthlyNth/yearlyNth.' },
-            day_of_month: { type: 'number', description: '1-31. Required for monthly and yearly.' },
-            instance: { type: 'number', description: '1-4 for 1st-4th, 5 for "last". Required for monthlyNth/yearlyNth.' },
-            month_of_year: { type: 'number', description: '1-12. Required for yearly and yearlyNth.' },
-            count: { type: 'number', description: 'End after N occurrences. Mutually exclusive with until.' },
-            until: { type: 'string', description: 'End by this date. Mutually exclusive with count.' },
-          },
-          required: ['type'],
-        },
-      },
-      required: ['start', 'end'],
-    },
-  },
-  {
-    name: 'edit_event',
-    description:
-      'Edits an existing calendar event immediately - NO review window. Any combination of start+end (together), subject, body, location, required_attendees, optional_attendees - at least one must be given. If the result is (or becomes) a meeting, sends the update notice right away. Only available in Full autonomy. Prefer draft_edit_event unless the user clearly wants this applied right now, with no chance to review it first. Only works on events the user organizes or a plain appointment - if it\'s a meeting the user only attends (not the organizer), this returns an error instead of attempting an unauthoritative change; use Outlook\'s own "Propose New Time" for those. Omit occurrence_date to act on the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to target one occurrence instead - occurrence-level edits can only change start/end/subject/body/location, not attendees (attendee changes only apply to the whole series). To add/remove specific attendees while keeping others, read the current list with get_event first and pass the full new list here.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        event_id: { type: 'string' },
-        occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to edit (from list_events\' start value). Omit to act on the whole series. Cannot be combined with required_attendees/optional_attendees.' },
-        start: { type: 'string', description: 'New start date-time, e.g. "2026-09-01T14:00". Must be given together with end.' },
-        end: { type: 'string', description: 'New end date-time. Must be given together with start.' },
-        subject: { type: 'string' },
-        body: { type: 'string' },
-        location: { type: 'string' },
-        required_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole required-attendee list, omit to leave existing required attendees unchanged. Whole-series/non-recurring only.' },
-        optional_attendees: { type: 'string', description: 'Comma-separated emails or "Name <email>". Replaces the whole optional-attendee list, omit to leave existing optional attendees unchanged. Whole-series/non-recurring only.' },
-        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
-      },
-      required: ['event_id'],
-    },
-  },
-  {
-    name: 'cancel_event',
-    description:
-      'Cancels an existing calendar event immediately - NO review window. If the user organizes it (has attendees), sends the cancellation notice to them right away, then removes it from the calendar; a plain appointment is just removed. An event that\'s already canceled is also just removed - nothing new to notify, this is the only way to dismiss one. Only available in Full autonomy. Prefer draft_cancel_event unless the user clearly wants this canceled right now, with no chance to review it first. Only refuses on a still-active meeting the user only attends (not the organizer) - use respond_meeting with response decline for those. Omit occurrence_date to cancel the whole series (or a non-recurring event); pass occurrence_date (a date from list_events\' start value) to cancel just that one occurrence instead - occurrence cancellation can NEVER be undone (unlike whole-series cancellation of a plain appointment), since Outlook has no API to restore a deleted occurrence.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        event_id: { type: 'string' },
-        occurrence_date: { type: 'string', description: 'For a recurring event: the date of the single occurrence to cancel (from list_events\' start value). Omit to cancel the whole series. Cannot be undone.' },
-        store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
-      },
-      required: ['event_id'],
-    },
+      'Creates, edits or cancels a calendar event immediately - NO review window. Only available in Full autonomy. Same arguments as draft_event (action new/edit/cancel); start and end are required for new. A new event with attendees sends the invite right away; an edit that results in a meeting sends the update notice; cancelling a meeting the user organizes sends the cancellation notice, then removes it from the calendar. A plain appointment, or an already-canceled event, is just removed (nothing to notify) - cancel is the only way to dismiss an already-canceled event. Prefer draft_event unless the user clearly wants this done right now, with no chance to review it first. Edit and cancel refuse a meeting the user only attends (not the organizer) - use respond_meeting with response decline for those, or Outlook\'s own "Propose New Time" to suggest a new time. Cancelling a single occurrence can NEVER be undone, since Outlook has no API to restore a deleted occurrence.',
+    inputSchema: { type: 'object', properties: EVENT_PROPS, required: [] },
   },
 ]
 
@@ -556,13 +463,9 @@ const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   set_reminder: d('Set reminder', 'הגדרת תזכורת', 'Sets a reminder on an appointment or task.', 'מגדיר תזכורת לפגישה או משימה.'),
   set_email_reminder: d('Flag with reminder', 'סימון עם תזכורת', 'Flags an email for follow-up with a reminder.', 'מסמן הודעה למעקב עם תזכורת.'),
   draft_email: d('Draft email', 'טיוטת הודעה', 'Opens a pre-filled new email, reply or forward to review and send.', 'פותח הודעה חדשה, תשובה או העברה מלאה מראש לבדיקה ושליחה.'),
-  draft_event: d('Draft event', 'טיוטת אירוע', 'Opens a pre-filled appointment/meeting to review and send.', 'פותח פגישה/אירוע מלא מראש לבדיקה ושליחה.'),
-  draft_cancel_event: d('Draft cancellation', 'טיוטת ביטול', 'Opens an event to review before canceling it.', 'פותח אירוע לבדיקה לפני ביטולו.'),
-  draft_edit_event: d('Draft event edit', 'טיוטת עריכת אירוע', 'Opens an event with the requested changes to review and save/send.', 'פותח אירוע עם השינויים המבוקשים לבדיקה ולשמירה/שליחה.'),
+  draft_event: d('Draft event', 'טיוטת אירוע', 'Opens a pre-filled new event, or an existing event with edits or a cancellation, to review.', 'פותח אירוע חדש, או אירוע קיים עם עריכות או ביטול, לבדיקה.'),
   send_email: d('Send email (auto-send)', 'שליחת הודעה (שליחה אוטומטית)', 'Sends a new email, reply or forward immediately, no review window.', 'שולח הודעה חדשה, תשובה או העברה מיידית, ללא חלון בדיקה.'),
-  create_event: d('Create event (auto-send)', 'יצירת אירוע (שליחה אוטומטית)', 'Creates/sends a calendar event immediately, no review window.', 'יוצר/שולח אירוע יומן מיידית, ללא חלון בדיקה.'),
-  cancel_event: d('Cancel event (auto-send)', 'ביטול אירוע (שליחה אוטומטית)', 'Cancels an event and notifies attendees immediately, no review window.', 'מבטל אירוע ומודיע למוזמנים מיידית, ללא חלון בדיקה.'),
-  edit_event: d('Edit event (auto-send)', 'עריכת אירוע (שליחה אוטומטית)', 'Edits an event and sends the update immediately, no review window.', 'עורך אירוע ושולח עדכון מיידית, ללא חלון בדיקה.'),
+  send_event: d('Send event (auto-send)', 'שליחת אירוע (שליחה אוטומטית)', 'Creates, edits or cancels an event immediately, no review window.', 'יוצר, עורך או מבטל אירוע מיידית, ללא חלון בדיקה.'),
 }
 
 startAddIn({
@@ -573,15 +476,15 @@ startAddIn({
     'You are an AI assistant embedded in Microsoft Outlook via the OpenDocs add-in. You work from the main Outlook window (Explorer). ' +
     'You can read and search mail, open a specific message in its own Outlook window, read attachments, triage messages (mark read/unread, flag importance, move, delete), manage the calendar (list/read events, accept/decline/tentatively-respond to invitations, edit or cancel events, color events with tags via list_color_categories/set_event_categories/set_category_color, set an event\'s Free/Busy/Tentative/Out of Office/Working Elsewhere status via set_event_availability), ' +
     'manage tasks and reminders, and draft replies/forwards/new mail and calendar events. ' +
-    'Drafting tools (draft_email, draft_event, draft_edit_event, draft_cancel_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. draft_email covers new emails, replies, reply-alls and forwards (action), of an email (message_id) or of a calendar meeting (event_id). Outlook has no way to pre-select Accept/Tentative/Decline in a review window without already committing it, so responding to an invitation is respond_meeting (Automate approvals or above); below that, offer draft_email with action reply and event_id to write to the organizer. ' +
-    'send_email/create_event/edit_event/cancel_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
-    'edit_event/draft_edit_event can change start/end, subject, body, location, and/or attendees in one call (at least one field required) - only work on events the user organizes (or a plain appointment with no attendees); on a meeting the user only attends, they return an error instead of an unauthoritative change, point the user at Outlook\'s own "Propose New Time" for those. Recurring events share one event_id for the whole series - omit occurrence_date to act on the whole series, or pass one (a date from list_events\' start value) to target a single occurrence instead, for edit_event/draft_edit_event/cancel_event/draft_cancel_event; attendee changes only apply to the whole series, never a single occurrence. To add/remove specific attendees while keeping the rest, read the current list with get_event first and pass the full new list to edit_event/draft_edit_event. ' +
-    'cancel_event/draft_cancel_event have the same organizer-only restriction on a still-active meeting the user only attends - use respond_meeting with response decline (Automate approvals or above) instead, or draft_email with event_id to tell the organizer. Canceling a meeting the user organizes sends a cancellation notice to attendees (Full autonomy for cancel_event, or reviewed first via draft_cancel_event); canceling a plain appointment, or any already-canceled event, just removes it from the calendar (moved to Deleted Items, recoverable), nobody to notify - cancel_event is the only way to dismiss an already-canceled event. ' +
+    'Drafting tools (draft_email, draft_event) open a normal Outlook compose or appointment window pre-filled - they never send or create directly; the user reviews and sends. draft_email covers new emails, replies, reply-alls and forwards (action), of an email (message_id) or of a calendar meeting (event_id). draft_event covers a new event, an edit of an existing event, or a cancellation (action new/edit/cancel). Outlook has no way to pre-select Accept/Tentative/Decline in a review window without already committing it, so responding to an invitation is respond_meeting (Automate approvals or above); below that, offer draft_email with action reply and event_id to write to the organizer. ' +
+    'send_email/send_event are different: they send or create IMMEDIATELY, with no review window at all - only available in Full autonomy, and only worth using when the user has clearly asked for something to go out right now with no chance to check it first. Default to the drafting tools otherwise. ' +
+    'draft_event/send_event with action edit can change start/end, subject, body, location, and/or attendees in one call (at least one field required) - edit and cancel only work on events the user organizes (or a plain appointment with no attendees); on a meeting the user only attends, they return an error instead of an unauthoritative change, point the user at Outlook\'s own "Propose New Time" for those. Recurring events share one event_id for the whole series - omit occurrence_date to act on the whole series, or pass one (a date from list_events\' start value) to target a single occurrence instead, for action edit and cancel; attendee changes only apply to the whole series, never a single occurrence. To add/remove specific attendees while keeping the rest, read the current list with get_event first and pass the full new list with action edit. ' +
+    'action cancel has the same organizer-only restriction on a still-active meeting the user only attends - use respond_meeting with response decline (Automate approvals or above) instead, or draft_email with event_id to tell the organizer. Canceling a meeting the user organizes sends a cancellation notice to attendees (Full autonomy for send_event, or reviewed first via draft_event with action cancel); canceling a plain appointment, or any already-canceled event, just removes it from the calendar (moved to Deleted Items, recoverable), nobody to notify - send_event with action cancel is the only way to dismiss an already-canceled event. ' +
     'message_id / event_id / task_id values are Outlook EntryIDs. When the user has one or more messages selected, that selection (with its message_id) is in your context - prefer it over searching. ' +
     'Prefer list_emails / search_emails / list_tasks (fast, server-side) over reading items one by one. ' +
     "Once you've found the relevant messages, apply_search can show the same results in the user's own Outlook window instead of only listing them in chat. " +
     "undo_last_action/redo_last_action step back and forward through your own actions in this chat (not the user's manual Outlook actions). Anything that sent something (emails, invites, meeting responses, cancellation notices) or a permanent delete can't be undone and blocks undo past it - say so rather than claim it was reversed. " +
-    "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events/edits/cancellations) -> Automate approvals (also respond_meeting to accept/tentatively accept/decline meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/create_event/edit_event/cancel_event, which send/create immediately).",
+    "Your available tools depend on the user's editing mode, from least to most permissive: Read only (read/search only) -> Draft only (also triage, tasks, reminders, and drafting replies/forwards/new mail/events/edits/cancellations) -> Automate approvals (also respond_meeting to accept/tentatively accept/decline meeting invitations, which notifies the organizer) -> Full autonomy (also send_email/send_event, which send/create immediately).",
   starters: [
     { en: 'Summarize my unread emails', he: 'סכם את ההודעות שלא קראתי' },
     { en: 'Draft a reply to the selected email', he: 'נסח תשובה להודעה שנבחרה' },
@@ -620,8 +523,6 @@ startAddIn({
     'set_email_reminder',
     'draft_email',
     'draft_event',
-    'draft_cancel_event',
-    'draft_edit_event',
     'set_event_categories',
     'set_category_color',
     'set_event_availability',
@@ -634,8 +535,8 @@ startAddIn({
   // own tier rather than hiding in Draft only or Full autonomy. Must stay
   // in sync with OutlookTools.cs's ApprovalTierTools.
   trackChangesExtraTools: ['respond_meeting'],
-  // send_email/create_event/
-  // edit_event/cancel_event are deliberately in neither list above -
+  // send_email/send_event
+  // are deliberately in neither list above -
   // that omission alone confines them to tier 4 (Full autonomy), which shows
   // every tool.
   useSelectionContext: true,
@@ -656,5 +557,5 @@ startAddIn({
       description: { en: 'Everything above, plus sending emails and creating/sending/rescheduling calendar invites in your name.', he: 'כל מה שלמעלה, בתוספת שליחת הודעות ויצירה/שליחה/שינוי מועד של הזמנות יומן בשמך.' },
     },
   },
-  autoSendTools: ['send_email', 'create_event', 'cancel_event', 'edit_event'],
+  autoSendTools: ['send_email', 'send_event'],
 })
