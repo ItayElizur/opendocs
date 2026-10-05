@@ -33,9 +33,9 @@ shared-calendar path — each because the COM object model either can't do the j
   | `EditingMode` | Outlook label | Adds |
   |---|---|---|
   | `ReadOnly` | **Read only** | The 12 read tools (`readOnlyTools` in `entry.ts`, `AlwaysAllowedTools` in `OutlookTools.cs`). |
-  | `CommentOnly` | **Draft only** (the default for a fresh session) | 25 tools that mutate the mailbox or open a draft but never leave anything unreviewed: triage (`mark_email_read`/`mark_email_unread`, `flag_email_important`, `move_email`, `delete_email` — non-permanent only, see below), tasks/reminders (`create_task`, `update_task`, `set_reminder`, `set_email_reminder`), event tagging/status (`set_event_categories`, `set_category_color`, `set_event_availability`), `apply_search`, every draft tool (`draft_email`, `reply_email`, `reply_all_email`, `forward_email`, `draft_event`, `draft_edit_event`, `draft_cancel_event`, `draft_respond_meeting`, `draft_reply_event`, `draft_forward_event`), and `undo_last_action`/`redo_last_action` (`commentOnlyExtraTools` / `DraftTierTools`). |
-  | `TrackChanges` | **Automate approvals** | `accept_meeting`/`decline_meeting`/`tentative_meeting` — these call `resp.Send()` to notify the organizer, so they get their own explicit tier rather than hiding in Draft only or Full autonomy (`trackChangesExtraTools` / `ApprovalTierTools`). |
-  | `FullAutonomy` | **Full autonomy** | The seven auto-send tools — `send_email`, `send_reply`, `send_reply_all`, `send_forward`, `create_event`, `edit_event`, `cancel_event` (`SendTierTools`; on the `entry.ts` side, simply absent from every lower tier's list) — plus `delete_email` with `permanent: true`. |
+  | `CommentOnly` | **Draft only** (the default for a fresh session) | 19 tools that mutate the mailbox or open a draft but never leave anything unreviewed: triage (`mark_email_read`/`mark_email_unread`, `flag_email_important`, `move_email`, `delete_email` — non-permanent only, see below), tasks/reminders (`create_task`, `update_task`, `set_reminder`, `set_email_reminder`), event tagging/status (`set_event_categories`, `set_category_color`, `set_event_availability`), `apply_search`, every draft tool (`draft_email`, `draft_event`, `draft_edit_event`, `draft_cancel_event`), and `undo_last_action`/`redo_last_action` (`commentOnlyExtraTools` / `DraftTierTools`). |
+  | `TrackChanges` | **Automate approvals** | `respond_meeting` — it calls `resp.Send()` to notify the organizer, so it gets its own explicit tier rather than hiding in Draft only or Full autonomy (`trackChangesExtraTools` / `ApprovalTierTools`). |
+  | `FullAutonomy` | **Full autonomy** | The four auto-send tools — `send_email`, `create_event`, `edit_event`, `cancel_event` (`SendTierTools`; on the `entry.ts` side, simply absent from every lower tier's list) — plus `delete_email` with `permanent: true`. |
 
   `entry.ts` passes `availableModes: ['readOnly','commentOnly','trackChanges',
   'fullAutonomy']` and a `modeOverrides` map so the mode menu shows Outlook's own
@@ -178,7 +178,7 @@ succeeds:
 - **`set_category_color`**: undo restores the old color, or removes a tag the assistant
   created.
 - **Barriers** (recorded, but not reversible — undo reports it can't go past them):
-  every `send_*`; `create_event` with attendees; `accept/decline/tentative_meeting`;
+  every `send_email`; `create_event` with attendees; `respond_meeting`;
   `delete_email permanent:true`; `edit_event` and `cancel_event` whenever they `.Send()`
   a notice (a still-active meeting the user organizes, including `edit_event`
   converting a plain event into a meeting by adding attendees for the first time);
@@ -200,50 +200,54 @@ opened window. **Not verified against a live Outlook client**, except
 `set_event_availability`'s undo/redo round trip and occurrence-level reschedule/
 cancellation on a plain (non-meeting) recurring series — see "Unproven at runtime".
 
-## Draft-and-display tools (10 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
+## Draft-and-display tools (4 — Draft only or higher; open a native Outlook window for the user to review and send; `Mutated = false`)
 
 | Tool | Notes |
 |---|---|
-| `draft_email` | `CreateItem(olMailItem)` → set `To`/`Subject`/`Body` → `Display(false)`. `"— Created with OpenDocs"` appended to a non-empty body. |
-| `reply_email` | `orig.Reply()` (sender only); `body` HTML-encoded and prepended above the quoted original; `Display(false)`. |
-| `reply_all_email` | `orig.ReplyAll()`. A **distinct tool**, not a `reply_all` boolean on `reply_email` — clearer for the model, and the user sees the full recipient list before sending. |
-| `forward_email` | `orig.Forward()`, optional `To`, `body` prepended; `Display(false)`. |
+| `draft_email` | One handler, `ComposeEmail(mbxKey, input, send: false)`, shared with `send_email`. `action` (default `new`): **`new`** — `CreateItem(olMailItem)`, set `To`/`Subject`/`Body`, `Display(false)`, `"— Created with OpenDocs"` appended to a non-empty body. **`reply` / `reply_all` / `forward`** — act on exactly one of `message_id` (an email; `orig.Reply()`/`ReplyAll()`/`Forward()`, `body` HTML-encoded and prepended above the quoted original, optional `to` on a forward) or `event_id` (a calendar meeting: see below). Never sends; the user sends from the opened window. |
 | `draft_event` | `CreateItem(olAppointmentItem)`; with `required_attendees`/`optional_attendees` → `MeetingStatus = olMeeting`, `Recipients.Add(...).Type`, each `Recipient` resolved individually via `r.Resolve()` right after it's added (the collection-level `Recipients.ResolveAll()` doesn't reliably resolve these — confirmed live); `Display(false)`. Same `"— Created with OpenDocs"` signature appended to a non-empty body, plus a trailing note naming any attendee address that failed to resolve (so the caller can flag a possible typo). Optional `recurrence` object — same shape and handling as `create_event`'s (see "Recurring events" below). |
 | `draft_edit_event` | Same inputs, refusals, and resolution as `edit_event` (below) — `event_id`, optional `occurrence_date`/`store_id`, at least one of `start`+`end` (together), `subject`, `body`, `location`, `required_attendees`, `optional_attendees` — but applies every change **unsaved** and ends in `appt.Display(false)` for the user to review. Never touches `ForceUpdateToAllAttendees`, never calls `.Send()`/`.Save()`, never records undo/redo. Runs the same `CheckOccurrenceReorderCollision` pre-check before an occurrence move. |
-| `draft_cancel_event` | Resolves `event_id` (optional `occurrence_date`/`store_id`) and `Display(false)`s it **unchanged** — never touches `MeetingStatus` or anything else, because Outlook persists an unsaved `MeetingStatus` change when the window closes, even without the user clicking Send Cancellation (confirmed live). The user cancels it themselves from the opened window (Cancel Meeting/Send Cancellation for a meeting they organize, Delete for a plain appointment). Refuses (`IsError`) on an already-canceled event (points at `cancel_event`, the only way to dismiss one) or a still-active meeting the user only attends (points at `draft_respond_meeting`, the Draft-tier-reachable alternative, or `decline_meeting` one tier up). |
-| `draft_respond_meeting` | **Never calls `Respond()`.** Resolves `event_id` (optional `store_id`) via the shared `ResolveMeetingAppointment` helper, refuses (`IsError`) on an already-canceled meeting or one the user wasn't actually invited to (same `AlreadyCanceledRespondError`/`NotInvitedError` helpers `RespondMeeting` uses), then `appt.Display(false)`s the original item **completely unchanged** — the user picks Accept/Tentative/Decline from Outlook's own ribbon buttons. One tool rather than one per response type because it never picks an `OlMeetingResponse` up front: `AppointmentItem.Respond()` is known to commit a real calendar change at call time (a new EntryID on accept/tentative, a move to Deleted Items on decline) whether or not the response is ever sent, which would break the draft contract. Optional `message` is returned as suggested text in the tool's own output (for the user to paste via Outlook's "Edit response before sending") rather than pre-filled, since pre-filling would require calling `Respond()`. |
-| `draft_reply_event` | `AppointmentItem` has no `Reply`, so it finds the event's invitation `MeetingItem` (`IPM.Schedule.Meeting.Request`) via `appt.GetConversation().GetRootItems()`, then by matching `PidLidGlobalObjectId` against the Inbox (first 3000 items), and opens its native `Reply()`/`ReplyAll()` (`reply_all`) with `body` prepended to the HTML body. `IsError` when no invitation message exists (deleted/archived, or the user organizes the event) — there is deliberately no lookalike fallback. Does not respond to the invitation; that is `accept_meeting`/`decline_meeting`/`tentative_meeting`/`draft_respond_meeting`. Verified live that the lookup finds the invite and that `Reply`/`ReplyAll` return the expected recipients; opening the window from the add-in was not exercised. |
-| `draft_forward_event` | Same invitation lookup as `draft_reply_event`. Opens the native meeting forward (`((_MeetingItem)invite).Forward()`, cast to avoid the method/event name clash) — not an `.ics` attachment. `to` is added through `Recipients` (each resolved, unresolved ones reported), `body` prepended. `IsError` when no invitation message exists. `AppointmentItem` itself has no `Forward()`. Verified live that the forward can be created; whether prepending `body` keeps the invitation intact is untested. |
-| `draft_respond_meeting` | **Never calls `Respond()`.** Resolves `event_id` (optional `store_id`) via the shared `ResolveMeetingAppointment` helper, refuses (`IsError`) on an already-canceled meeting or one the user wasn't actually invited to (same `AlreadyCanceledRespondError`/`NotInvitedError` helpers `RespondMeeting` uses), then `appt.Display(false)`s the original item **completely unchanged** — the user picks Accept/Tentative/Decline from Outlook's own ribbon buttons. One tool rather than one per response type because it never picks an `OlMeetingResponse` up front: `AppointmentItem.Respond()` is known to commit a real calendar change at call time (a new EntryID on accept/tentative, a move to Deleted Items on decline) whether or not the response is ever sent, which would break the draft contract. Optional `message` is returned as suggested text in the tool's own output (for the user to paste via Outlook's "Edit response before sending") rather than pre-filled, since pre-filling would require calling `Respond()`. |
-| `draft_reply_event` | `AppointmentItem` has no `Reply`, so it first finds the event's invitation `MeetingItem` (`IPM.Schedule.Meeting.Request`) via `appt.GetConversation().GetRootItems()`, then by matching `PidLidGlobalObjectId` against the Inbox (first 3000 items), and opens its native `Reply()`/`ReplyAll()` (`reply_all`), with `body` prepended to the HTML body. If no invite exists (deleted/archived, or the user organizes the event) it opens a constructed `MailItem` instead: organizer (`GetOrganizer()`), plus attendees for `reply_all` (required in To, optional in Cc, self and duplicates dropped), subject `RE: <subject>`, and the event details quoted as plain text. Refuses (`IsError`) on a plain appointment, or when there is nobody to write to. Does not respond to the invitation — that is `accept_meeting`/`decline_meeting`/`tentative_meeting`/`draft_respond_meeting`. Verified live that `GetConversation` and the global-ID match both find the invite and that `Reply`/`ReplyAll` return the expected recipients; the opened window itself and the constructed-mail fallback were not exercised. |
-| `draft_forward_event` | Same invite lookup as `draft_reply_event`. Found: opens the native meeting forward (`((_MeetingItem)invite).Forward()`, cast to avoid the method/event name clash), `to` added through `Recipients` (each resolved, unresolved ones reported), `body` prepended. Not found: `AppointmentItem.ForwardAsVcal()` (event as an `.ics` attachment) with `To`/`body` set. `AppointmentItem` itself has no `Forward()` method. Verified live that both underlying forwards can be created; whether prepending `body` to the meeting forward keeps the invitation intact is untested. |
-| `draft_respond_meeting` | **Never calls `Respond()`.** Resolves `event_id` (optional `store_id`) via the shared `ResolveMeetingAppointment` helper, refuses (`IsError`) on an already-canceled meeting or one the user wasn't actually invited to (same `AlreadyCanceledRespondError`/`NotInvitedError` helpers `RespondMeeting` uses), then `appt.Display(false)`s the original item **completely unchanged** — the user picks Accept/Tentative/Decline from Outlook's own ribbon buttons. One tool rather than one per response type because it never picks an `OlMeetingResponse` up front: `AppointmentItem.Respond()` is known to commit a real calendar change at call time (a new EntryID on accept/tentative, a move to Deleted Items on decline) whether or not the response is ever sent, which would break the draft contract. Optional `message` is returned as suggested text in the tool's own output (for the user to paste via Outlook's "Edit response before sending") rather than pre-filled, since pre-filling would require calling `Respond()`. |
-| `draft_reply_event` | Resolves `event_id` (optional `store_id`) and opens a new `MailItem` addressed to the organizer (`GetOrganizer()` SMTP), subject `RE: <subject>`, the optional `body` above a quoted block with the event's subject/time/location/organizer. `reply_all=true` also adds required attendees to To and optional attendees to Cc (the current user and duplicates are dropped). Built as mail because `AppointmentItem` has no `Reply` in the object model. Refuses (`IsError`) on a plain appointment, or on an event the user organizes when `reply_all` is off. Does not respond to the invitation — that is `accept_meeting`/`decline_meeting`/`tentative_meeting`/`draft_respond_meeting`. **Unverified against live Outlook.** |
-| `draft_forward_event` | Resolves `event_id` (optional `store_id`) and opens the forward `AppointmentItem.Forward()` returns (a `MeetingItem`), with `to` added through its `Recipients` (each resolved; unresolved addresses are reported back) and an optional `body` prepended. `Forward` is called late-bound because the interop assembly exposes it only as an event on `AppointmentItem`. Works on meetings and plain appointments. **Unverified against live Outlook**, in particular whether prepending `body` to a `MeetingItem` keeps the invitation intact. |
+| `draft_cancel_event` | Resolves `event_id` (optional `occurrence_date`/`store_id`) and `Display(false)`s it **unchanged** — never touches `MeetingStatus` or anything else, because Outlook persists an unsaved `MeetingStatus` change when the window closes, even without the user clicking Send Cancellation (confirmed live). The user cancels it themselves from the opened window (Cancel Meeting/Send Cancellation for a meeting they organize, Delete for a plain appointment). Refuses (`IsError`) on an already-canceled event (points at `cancel_event`, the only way to dismiss one) or a still-active meeting the user only attends (points at `draft_email` with `event_id` to write to the organizer, or `respond_meeting` with `response: decline` one tier up). |
 
 **These never call `.Send()` (mail) or save a calendar event.** The user sends from the
 opened Outlook window.
 
-## Meeting-response tools (3 — Automate approvals or higher; `Mutated = true`)
+**Reply, reply-all and forward on a calendar event (`draft_email` / `send_email` with `event_id`).**
+`AppointmentItem` has no `Reply` or `Forward()` (confirmed against the live COM object — it only has
+`ForwardAsVcal()`); only the invitation `MeetingItem` in the Inbox does. `FindInviteMessage` finds it:
+first `appt.GetConversation().GetRootItems()` (the `IPM.Schedule.Meeting.Request` item), then by
+matching `PidLidGlobalObjectId` against the first 3000 Inbox items. Reply/reply-all open that
+message's native `Reply()`/`ReplyAll()` (a `MailItem`); forward opens its native meeting forward
+(`((_MeetingItem)invite).Forward()` — the cast avoids the method/event name clash), with `to` added
+through `Recipients` (each resolved; unresolved addresses are reported, and block a send). `body` is
+prepended to the forward's plain `Body`. When no invitation message exists (deleted/archived, or the
+user organizes the event — an organizer has none) the tool returns `IsError`; there is deliberately
+no lookalike fallback and no `.ics` attachment. This does not respond to the invitation — that is
+`respond_meeting`. Verified live against a received invite: the lookup finds the message and
+`Reply`/`ReplyAll`/`Forward` create the expected items. Opening the window from the add-in, sending,
+and whether prepending `body` keeps the forwarded invitation intact were not exercised.
+
+## Meeting-response tools (1 — Automate approvals or higher; `Mutated = true`)
 
 | Tool | Notes |
 |---|---|
-| `accept_meeting` / `decline_meeting` / `tentative_meeting` | One shared `RespondMeeting` helper, taking the actual `OlMeetingResponse` value. Resolves to `AppointmentItem` via `ResolveMeetingAppointment` (`MeetingItem.GetAssociatedAppointment(false)` when the id is a meeting request; optional `store_id` for shared calendars). Refuses (`IsError`) up front on an already-canceled meeting (`IsCanceledMeeting`) or an item that isn't a meeting the user was actually invited to (an organizer's own `olMeeting` copy, or a plain `olNonMeeting` appointment). Otherwise captures the subject, then `appt.Respond(olMeetingAccepted/Declined/Tentative, true, false)`, then `.Send()` on the response if non-null. Optional `message` sets `resp.Body` before `.Send()` — a short comment for the organizer (**unverified live** whether the organizer actually sees it). If `.Send()` fails, the result says so explicitly ("...but the response could not be sent to the organizer") — the local `Respond()` still went through, but the organizer was never notified. Recorded as undo barriers. Act on the whole series for a recurring meeting (no `occurrence_date`). |
+| `respond_meeting` | `response` (req): `accept`, `tentative` or `decline`, mapped to the `OlMeetingResponse` value by the one `RespondMeeting` helper. Resolves to `AppointmentItem` via `ResolveMeetingAppointment` (`MeetingItem.GetAssociatedAppointment(false)` when the id is a meeting request; optional `store_id` for shared calendars). Refuses (`IsError`) up front on an already-canceled meeting (`IsCanceledMeeting`) or an item that isn't a meeting the user was actually invited to (an organizer's own `olMeeting` copy, or a plain `olNonMeeting` appointment). Otherwise captures the subject, then `appt.Respond(olMeetingAccepted/Declined/Tentative, true, false)`, then `.Send()` on the response if non-null. Optional `message` sets `resp.Body` before `.Send()` — a short comment for the organizer (**unverified live** whether the organizer actually sees it). If `.Send()` fails, the result says so explicitly ("...but the response could not be sent to the organizer") — the local `Respond()` still went through, but the organizer was never notified. Recorded as undo barriers. Act on the whole series for a recurring meeting (no `occurrence_date`). |
 
-## Auto-send tools (7 — Full autonomy only; send/create immediately, no review window; `Mutated = true`)
+There is no draft counterpart: `Respond()` commits a real calendar change at call time, so a draft
+version that pre-selects a response would break the draft contract. To write to the organizer
+instead, use `draft_email` with `event_id`.
+
+## Auto-send tools (4 — Full autonomy only; send/create immediately, no review window; `Mutated = true`)
 
 Every draft/compose tool above stays draft-and-display-only in every mode; these are
 separate tools, reachable only at the top tier.
 
 | Tool | Notes |
 |---|---|
-| `send_email` | Same construction as `draft_email`, but `m.Send()` instead of `m.Display(false)`. |
-| `send_reply` | Same as `reply_email`, but `.Send()`. |
-| `send_reply_all` | Same as `reply_all_email`, but `.Send()`. |
-| `send_forward` | Same as `forward_email`, but `.Send()`; `to` is required (unlike `forward_email`, where it's optional). |
+| `send_email` | The same `ComposeEmail` handler as `draft_email` with `send: true`: `m.Send()` instead of `Display(false)`, and an undo barrier is recorded. Same `action` (`new`/`reply`/`reply_all`/`forward`) and same `message_id`/`event_id` targets. `to` is required for `new` and `forward` (there is no window for a human to fill it in); a meeting forward with an unresolvable recipient is discarded and returns `IsError` instead of sending. |
 | `create_event` | Same construction as `draft_event`. No attendees → `a.Save()` (a plain calendar entry, nobody to notify). Attendees present → `MeetingStatus = olMeeting` then `a.Send()`, dispatching the invite. Both `AppointmentItem.Send()`/`.Save()` confirmed present via .NET reflection against the referenced PIA. Optional `recurrence` object builds a repeating series (see "Recurring events" below). |
 | `edit_event` | General-purpose event edit. `event_id` (req), optional `occurrence_date` and `store_id`; at least one of `start`+`end` (required together), `subject`, `body`, `location`, `required_attendees`, `optional_attendees` — else a clean `IsError` naming all seven. **Organizer-only:** refuses (`IsError`) on a canceled event (`olMeetingCanceled`/`olMeetingReceivedAndCanceled` — nothing to edit) or a meeting the user only attends (`olMeetingReceived` — points at Outlook's own "Propose New Time", see "Excluded / deferred"); these checks run against the recurring **master**, since an occurrence item from `GetOccurrence()` doesn't reliably report `MeetingStatus`. Time changes: a whole recurring series is shifted via `RecurrencePattern.PatternStartDate`/`StartTime`/`EndTime` (Outlook throws `0xAF620009` on `Start`/`End` set directly on a recurring master — confirmed live); an occurrence or non-recurring event gets `appt.Start`/`.End` directly, after the `CheckOccurrenceReorderCollision` pre-check (below). `subject`/`body`/`location` are set directly (occurrence-level allowed). Attendee fields are whole-series/non-recurring only (`occurrence_date` + an attendee field is an `IsError`) and **replace the list wholesale per category** via `ReplaceAttendees` — `required_attendees` clears and re-adds only the required category, `optional_attendees` only the optional one, the organizer is never touched — re-adding via the same per-recipient `r.Resolve()` call `draft_event`/`create_event` use (not `Recipients.ResolveAll()`); read the current list with `get_event` first to keep anyone. The result text names any attendee address that failed to resolve. Adding attendees to a plain event flips it to `olMeeting`. `.Send()`s if the result is or becomes a meeting — setting `ForceUpdateToAllAttendees = false` explicitly first (Outlook's own default: notify only added/removed attendees) — else `.Save()`s. A `COMException` from an occurrence `.Save()` is re-verified via `ResolveOccurrenceTarget` before being reported as failure, since Outlook can throw "Cannot save this item." after the change has already persisted. Undo: barrier when it sends or shifts a whole series' time, else a snapshot of the touched fields. |
-| `cancel_event` | `event_id` (req), optional `occurrence_date` and `store_id`. Still-active organized meeting → `MeetingStatus = olMeetingCanceled` then `.Send()` (the cancellation notice), then moves the item to Deleted Items (best-effort — a failed move is reported, with the notice still sent; see "Unproven at runtime"). Plain appointment, or an **already-canceled event** (either status — the only way to dismiss one) → moves straight to Deleted Items (recoverable), nobody to notify. Refuses (`IsError`) only on a still-active meeting the user only attends (points at `draft_respond_meeting`/`decline_meeting`). Same master-based organizer checks and false-negative `.Delete()` re-verification as `edit_event`. Undo: a move entry for a whole plain/already-canceled event; a barrier for a still-active meeting (the notice already went out) and for **every** occurrence-level cancellation. |
+| `cancel_event` | `event_id` (req), optional `occurrence_date` and `store_id`. Still-active organized meeting → `MeetingStatus = olMeetingCanceled` then `.Send()` (the cancellation notice), then moves the item to Deleted Items (best-effort — a failed move is reported, with the notice still sent; see "Unproven at runtime"). Plain appointment, or an **already-canceled event** (either status — the only way to dismiss one) → moves straight to Deleted Items (recoverable), nobody to notify. Refuses (`IsError`) only on a still-active meeting the user only attends (points at `respond_meeting` with `response: decline`, or `draft_email` with `event_id`). Same master-based organizer checks and false-negative `.Delete()` re-verification as `edit_event`. Undo: a move entry for a whole plain/already-canceled event; a barrier for a still-active meeting (the notice already went out) and for **every** occurrence-level cancellation. |
 
 Gated by `OutlookTools.cs`'s `SendTierTools` set, requiring `EditingMode.FullAutonomy`
 exactly (the ordinal check's top tier) — not reachable from Draft only or Automate
@@ -301,8 +305,7 @@ something to go out immediately.
   `Cancelled`) rather than the COM path's `Ol*` enum names — display text only,
   nothing parses it.
 - **Acting on a shared-calendar event.** `get_event`, `edit_event`/`draft_edit_event`,
-  `cancel_event`/`draft_cancel_event`, `accept_meeting`/`decline_meeting`/
-  `tentative_meeting`/`draft_respond_meeting`, `set_event_categories`, and
+  `cancel_event`/`draft_cancel_event`, `respond_meeting`, `draft_email` (with `event_id`), `set_event_categories`, and
   `set_event_availability` all take an optional `store_id`, passed straight through to
   `ItemById`/`GetItemFromID` — `ItemById` only searches the caller's own default store
   without it. This is a lookup aid only.
@@ -343,8 +346,7 @@ by default — reading `Body` / `Recipients` / `SenderEmailAddress` /
 `Attachment.SaveAsFile` do **not** raise the "a program is trying to access…" prompt on
 default settings. Prompts appear only under Trust Center → Programmatic Access set to
 "Always warn", or an Exchange public-folder security form. `MailItem.Send` — the
-highest-risk call — is used only by the Full-autonomy auto-send tools (`send_email`/
-`send_reply`/`send_reply_all`/`send_forward`); whether it triggers a guard prompt
+highest-risk call — is used only by the Full-autonomy auto-send tools (`send_email`); whether it triggers a guard prompt
 under a stricter Trust Center setting has not been checked live.
 
 ## Structural fragility
@@ -353,8 +355,8 @@ Everything is addressed by `EntryID`. It is stable while an item stays put but c
 on `Move` and is store-specific; the mutating tools that move items return the new id,
 and every other tool re-resolves via `GetItemFromID` each call (with `store_id` for a
 shared-calendar item). All recurring occurrences of a calendar series **share one
-`EntryID`**, so `get_event` / `accept_meeting` / `decline_meeting` / `tentative_meeting`
-/ `draft_respond_meeting` cannot target a single occurrence — they act on the master
+`EntryID`**, so `get_event` / `respond_meeting`
+/ `draft_email` (with `event_id`) cannot target a single occurrence — they act on the master
 series. The calendar-editing tools can, via `occurrence_date` (see "Recurring events");
 without it they too act on the whole series. `list_events` carries each occurrence's
 `start` as the disambiguator.
@@ -466,10 +468,6 @@ cannot be set directly on a recurring master. Still unconfirmed:
   `GetRecurrencePattern()` after attendee/`MeetingStatus` setup, before
   `.Save()`/`.Send()` — is unverified live, as is whether that ordering matters.
 
-**Meeting responses.** Whether the organizer actually sees `accept_meeting`/
-`decline_meeting`/`tentative_meeting`'s `message` text on the delivered response (vs. it
-being dropped or overwritten by Outlook's own response template) has not been confirmed
-against a real received invite. `draft_respond_meeting`'s `message` has no such gap —
-it's plain suggested text in the tool output. Whether `AppointmentItem.Respond()` itself
-commits local calendar changes at call time remains formally unconfirmed, but is moot
-for the draft path, which never calls it.
+**Meeting responses.** Whether the organizer actually sees `respond_meeting`'s `message`
+text on the delivered response (vs. it being dropped or overwritten by Outlook's own
+response template) has not been confirmed against a real received invite.

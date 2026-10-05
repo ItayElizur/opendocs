@@ -200,7 +200,7 @@ function defaultDescribeSelection(ctx: SelectionContext): string {
           (ctx.senderName ? ` from ${ctx.senderName}` : '') +
           (ctx.folderName ? ` in the ${ctx.folderName} folder` : '') +
           `. Its message_id (Outlook EntryID) is ${ctx.entryIds[0]} - pass that straight to get_email, ` +
-          `reply_email, reply_all_email, forward_email, move_email, get_attachment, etc.`
+          `draft_email (action reply/reply_all/forward), move_email, get_attachment, etc.`
         )
       }
       return (

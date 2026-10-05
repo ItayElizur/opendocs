@@ -342,7 +342,7 @@ namespace OutlookAiAddIn
             return t.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
         }
 
-        // Shared by RespondMeeting/DraftRespondMeeting: resolves event_id's
+        // Used by RespondMeeting and the event reply/forward path: resolves event_id's
         // item to the underlying AppointmentItem, whether it's already one
         // or is a MeetingItem (a meeting request still sitting in the
         // Inbox) that needs GetAssociatedAppointment(false) first.
@@ -357,7 +357,7 @@ namespace OutlookAiAddIn
             return appt;
         }
 
-        // Shared by RespondMeeting/DraftRespondMeeting: Respond() only makes
+        // Used by RespondMeeting: Respond() only makes
         // sense on a meeting the user was actually invited to, not one they
         // organize themselves (olMeeting) or a plain appointment
         // (olNonMeeting) - "is not a meeting you were invited to" covers
@@ -368,7 +368,7 @@ namespace OutlookAiAddIn
             return "\"" + (appt.Subject ?? "") + "\" is not a meeting you were invited to - there's nothing to respond to.";
         }
 
-        // Shared by RespondMeeting/DraftRespondMeeting: distinct from
+        // Used by RespondMeeting: distinct from
         // NotInvitedError - this is a meeting the user WAS invited to, but
         // the organizer has since canceled it (olMeetingCanceled or
         // olMeetingReceivedAndCanceled).
@@ -377,13 +377,19 @@ namespace OutlookAiAddIn
             return "\"" + (appt.Subject ?? "") + "\" has already been canceled - there's nothing to respond to.";
         }
 
-        // response is the actual OlMeetingResponse to send, so this one
-        // helper covers all three: accept_meeting, decline_meeting,
-        // tentative_meeting. message is an optional comment attached before
+        // One helper covers accept, tentative and decline (respond_meeting's
+        // `response` argument). message is an optional comment attached before
         // sending - UNVERIFIED live whether the organizer actually sees it
         // on the delivered response.
-        private static ToolResult RespondMeeting(string mbxKey, JsonElement input, Outlook.OlMeetingResponse response, string toolName)
+        private static ToolResult RespondMeeting(string mbxKey, JsonElement input)
         {
+            const string toolName = "respond_meeting";
+            string responseName = ReqStr(input, "response").Trim().ToLowerInvariant();
+            Outlook.OlMeetingResponse response;
+            if (responseName == "accept") response = Outlook.OlMeetingResponse.olMeetingAccepted;
+            else if (responseName == "tentative") response = Outlook.OlMeetingResponse.olMeetingTentative;
+            else if (responseName == "decline") response = Outlook.OlMeetingResponse.olMeetingDeclined;
+            else return new ToolResult { Output = "response must be one of: accept, tentative, decline.", IsError = true, Summary = toolName };
             string id = ReqStr(input, "event_id");
             // Needed only for an event_id from someone else's shared calendar
             // (list_events' mailbox parameter); omit for your own events. See
@@ -416,7 +422,7 @@ namespace OutlookAiAddIn
                 try { resp.Send(); sendSucceeded = true; } catch (Exception ex) { DebugLog.WriteException(toolName + " Send", ex); }
             }
             bool commentSent = hasComment && sendSucceeded;
-            RecordIrreversible(mbxKey, toolName + " for \"" + subject + "\"" + (commentSent ? " with a comment" : ""));
+            RecordIrreversible(mbxKey, toolName + " (" + responseName + ") for \"" + subject + "\"" + (commentSent ? " with a comment" : ""));
             string verb = response == Outlook.OlMeetingResponse.olMeetingAccepted ? "Accepted"
                         : response == Outlook.OlMeetingResponse.olMeetingTentative ? "Responded tentatively to"
                         : "Declined";
@@ -429,42 +435,6 @@ namespace OutlookAiAddIn
                 Output = verb + ": " + subject + sendNote,
                 Mutated = true,
                 Summary = toolName,
-            };
-        }
-
-        // Draft-tier counterpart to RespondMeeting: never mutates the item.
-        // Opens it unchanged; the user picks Accept/Tentative/Decline from
-        // Outlook's own native ribbon buttons, and a suggested comment is
-        // returned in the output text instead of pre-filled. See
-        // OutlookTools.Calendar.cs.md for why appt.Respond() itself can't be
-        // called here (it was tried and broke the draft-tools contract).
-        private static ToolResult DraftRespondMeeting(JsonElement input)
-        {
-            string id = ReqStr(input, "event_id");
-            // Needed only for an event_id from someone else's shared calendar
-            // (list_events' mailbox parameter); omit for your own events. See
-            // OutlookTools.Calendar.cs.md for the authorization-scope note.
-            string storeId = Str(input, "store_id", null);
-            object item = ItemById(id, storeId);
-            Outlook.AppointmentItem appt = ResolveMeetingAppointment(item);
-            if (appt == null)
-                return new ToolResult { Output = "event_id does not resolve to a meeting.", IsError = true, Summary = "draft_respond_meeting" };
-
-            if (IsCanceledMeeting(appt))
-                return new ToolResult { Output = AlreadyCanceledRespondError(appt), IsError = true, Summary = "draft_respond_meeting" };
-            if (!IsReceivedMeeting(appt))
-                return new ToolResult { Output = NotInvitedError(appt), IsError = true, Summary = "draft_respond_meeting" };
-
-            string message = Str(input, "message", null);
-            bool hasComment = !string.IsNullOrWhiteSpace(message);
-
-            appt.Display(false);
-
-            return new ToolResult
-            {
-                Output = "Opened \"" + (appt.Subject ?? "") + "\" in Outlook - use the Accept/Tentative/Decline buttons there to respond." +
-                         (hasComment ? " Suggested comment: \"" + message + "\" - paste it in if you use Outlook's \"Edit response before sending\" option." : ""),
-                Summary = "draft_respond_meeting",
             };
         }
 
@@ -518,81 +488,6 @@ namespace OutlookAiAddIn
         private static string NoInviteError(Outlook.AppointmentItem appt)
         {
             return "Couldn't find the invitation email for \"" + (appt.Subject ?? "") + "\" - it may have been deleted or archived, or you organize this event (an organizer has no invitation to reply to or forward).";
-        }
-
-        // Opens Outlook's own reply (or reply-all) on the event's invitation
-        // message, so it is threaded and quoted exactly like a reply made by
-        // hand. Only opened for review, never sent. Errors when the invitation
-        // message can't be found rather than building a lookalike.
-        private static ToolResult DraftReplyEvent(JsonElement input)
-        {
-            string id = ReqStr(input, "event_id");
-            string storeId = Str(input, "store_id", null);
-            bool all = Bool(input, "reply_all", false);
-            string body = Str(input, "body", "");
-            const string tool = "draft_reply_event";
-
-            Outlook.AppointmentItem appt = ResolveMeetingAppointment(ItemById(id, storeId));
-            if (appt == null)
-                return new ToolResult { Output = "event_id does not resolve to a calendar event.", IsError = true, Summary = tool };
-
-            Outlook.MeetingItem invite = FindInviteMessage(appt);
-            if (invite == null)
-                return new ToolResult { Output = NoInviteError(appt), IsError = true, Summary = tool };
-
-            Outlook.MailItem reply = all ? invite.ReplyAll() : invite.Reply();
-            if (!string.IsNullOrEmpty(body)) reply.HTMLBody = PrependHtml(body, reply.HTMLBody);
-            reply.Display(false);
-            return new ToolResult
-            {
-                Output = "Opened Outlook's own " + (all ? "reply-all" : "reply") + " to the invitation for \"" + (appt.Subject ?? "") + "\" for the user to review and send.",
-                Summary = tool,
-            };
-        }
-
-        // Opens Outlook's own meeting forward of the event's invitation
-        // message (not an .ics attachment). Only opened for review, never sent.
-        private static ToolResult DraftForwardEvent(JsonElement input)
-        {
-            string id = ReqStr(input, "event_id");
-            string storeId = Str(input, "store_id", null);
-            string to = Str(input, "to", "");
-            string body = Str(input, "body", "");
-            const string tool = "draft_forward_event";
-
-            Outlook.AppointmentItem appt = ResolveMeetingAppointment(ItemById(id, storeId));
-            if (appt == null)
-                return new ToolResult { Output = "event_id does not resolve to a calendar event.", IsError = true, Summary = tool };
-
-            Outlook.MeetingItem invite = FindInviteMessage(appt);
-            if (invite == null)
-                return new ToolResult { Output = NoInviteError(appt), IsError = true, Summary = tool };
-
-            // _MeetingItem: the plain interface name avoids the Forward
-            // method/event name clash on MeetingItem.
-            Outlook.MeetingItem fwd = ((Outlook._MeetingItem)invite).Forward();
-            var unresolved = new List<string>();
-            foreach (string part in to.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                string addr = part.Trim();
-                int lt = addr.LastIndexOf('<');
-                if (lt >= 0 && addr.EndsWith(">")) addr = addr.Substring(lt + 1, addr.Length - lt - 2).Trim();
-                if (addr.Length == 0) continue;
-                Outlook.Recipient r = fwd.Recipients.Add(addr);
-                try { r.Resolve(); } catch { }
-                if (!r.Resolved) unresolved.Add(addr);
-            }
-            if (!string.IsNullOrEmpty(body))
-            {
-                try { fwd.Body = SeedSignature(body) + "\n\n" + fwd.Body; }
-                catch (Exception ex) { DebugLog.WriteException("DraftForwardEvent body", ex); }
-            }
-            fwd.Display(false);
-            return new ToolResult
-            {
-                Output = "Opened Outlook's own forward of the invitation for \"" + (appt.Subject ?? "") + "\" for the user to review and send." + FormatUnresolvedAttendeesNote(unresolved),
-                Summary = tool,
-            };
         }
 
         // Shared by draft_edit_event/edit_event: an olMeetingReceived (or
@@ -1075,13 +970,13 @@ namespace OutlookAiAddIn
         // Shared by draft_cancel_event/cancel_event - same organizer-authority
         // shape as edit_event above (IsCanceledMeeting/IsReceivedMeeting
         // reused, not duplicated), but an attendee's remedy for a meeting they
-        // don't organize is decline_meeting, not "Propose New Time".
+        // don't organize is respond_meeting (decline), not "Propose New Time".
         private static string ReceivedMeetingCancelError(Outlook.AppointmentItem appt)
         {
             return "\"" + (appt.Subject ?? "") + "\" is a meeting organized by " +
                    (string.IsNullOrEmpty(appt.Organizer) ? "someone else" : appt.Organizer) +
                    " - you're only an attendee, not the organizer, so this tool has no authority to cancel it. " +
-                   "Use draft_respond_meeting (or decline_meeting, in Automate approvals or above) instead.";
+                   "Use respond_meeting with response \"decline\" (Automate approvals or above), or draft_email with event_id to write to the organizer, instead.";
         }
 
         // Only used by draft_cancel_event now - cancel_event treats an
