@@ -74,7 +74,7 @@ set (not a replacement) - `null`/absent (every app but Outlook) keeps
 Track changes' original meaning: every tool, since Word/Excel/
 PowerPoint's real edit tools are legitimately usable under native
 track-changes recording. Outlook sets this to unlock
-accept_meeting/decline_meeting/tentative_meeting on top of its own
+respond_meeting on top of its own
 "Draft only" (commentOnly) tier - see availableForMode() below.
 ```
 

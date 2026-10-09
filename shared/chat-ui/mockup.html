@@ -115,22 +115,19 @@
   .ai-header-btn:active { filter: brightness(0.88); transform: scale(0.98); }
   .ai-header-btn.new-badge { background: var(--docs-brand-ghost); color: var(--color-brand-secondary); }
 
-  /* ---- "earlier conversation" divider: genoffice's real history model.
-     There is no multi-session browser in genoffice - "New chat" just resets
-     the AgentLoop's in-memory context (loop.reset()) and keeps writing to the
-     SAME per-document chat log; the old scrollback stays visible above a
-     divider, it is never archived/switchable. This mirrors that exactly. ---- */
+  /* ---- "earlier conversation" divider. There is no multi-session browser:
+     "New chat" just resets the AgentLoop's in-memory context (loop.reset())
+     and keeps writing to the SAME per-document chat log; the old scrollback
+     stays visible above a divider, it is never archived/switchable. ---- */
   .ai-history-sep {
     display: flex; align-items: center; gap: 10px; margin: 4px 0;
     color: var(--color-text-tertiary); font-size: 12px;
   }
   .ai-history-sep::before, .ai-history-sep::after { content: ''; flex: 1; height: 1px; background: var(--color-border-default); }
-  /* No fade: verified genoffice applies an .ai-msg-historic class to old
-     messages but there is NO CSS rule for it anywhere in the codebase - the
-     restored transcript renders at full, identical opacity to live messages,
-     distinguished only by the divider above. Matching that exactly. */
+  /* No fade: the restored transcript renders at full, identical opacity to
+     live messages, distinguished only by the divider above. */
 
-  /* ---- settings dropdown (NEW - genoffice has no equivalent UI yet). Anchored
+  /* ---- settings dropdown. Anchored
      under the gear icon, same pattern/positioning as a hypothetical history
      dropdown would use - not a centered modal dialog. Anchored to the
      physical right (not inset-inline-end) to match the header's fixed,
@@ -345,7 +342,7 @@
       <div class="group-label">Language / direction</div>
       <button onclick="setLang('en')" id="btn-lang-en" class="active">English</button>
       <button onclick="setLang('he')" id="btn-lang-he">עברית</button>
-      <div class="mockup-note">Toggling language also flips dir=rtl. Genoffice today translates strings but never sets dir/mirrors chrome - this is new.</div>
+      <div class="mockup-note">Toggling language also flips dir=rtl.</div>
     </div>
     <div class="group">
       <div class="group-label">Host app</div>
@@ -420,7 +417,7 @@
 
         <div class="ai-composer">
           <div class="ai-input-box">
-            <span class="ai-scope-hint" id="scopeHint" title="Shows what context THIS message will use once sent - the whole document, or (if you have text selected in Word) the selection, starting from where it begins. Mirrors genoffice's real per-turn context injection (protocol.ts buildDocContext), just made visible.">
+            <span class="ai-scope-hint" id="scopeHint" title="Shows what context THIS message will use once sent - the whole document, or (if you have text selected in Word) the selection, starting from where it begins. It mirrors the per-turn context injection, just made visible.">
               <span class="dot"></span> <span class="label" id="scopeHintLabel" data-t="scopeWholeDoc">Whole document</span>
             </span>
             <textarea class="ai-textarea" id="textarea" data-t-placeholder="inputPlaceholder" placeholder="Ask OpenDocs to edit this document..." rows="1"></textarea>
@@ -594,11 +591,10 @@
     render()
   }
 
-  // DELIBERATE DEPARTURE from genoffice, per chat feedback: genoffice's real
-  // "New chat" (AiPanel.tsx:775-781) clears the live screen but writes NO
-  // marker to disk, so re-opening the document loads the full unbounded
-  // history (up to a 200-message cap) with no way to know where a past
-  // "New chat" happened - confirmed bad UX. Our version instead writes a
+  // "New chat" clearing the screen without writing a marker to disk would mean
+  // re-opening the document loads the full unbounded history (up to a
+  // 200-message cap) with no way to know where a past "New chat" happened.
+  // So "New chat" writes a
   // divider record into the same per-document JSONL log at the moment "New
   // chat" is clicked. On next open, only messages AFTER the last divider are
   // loaded/shown/fed back to the model - i.e. exactly the last conversation,
@@ -647,8 +643,7 @@
   }
 
   // ---- selection-aware scope hint ----
-  // Mirrors genoffice's real per-turn context injection (protocol.ts
-  // buildDocContext/getSelectionScope): when there's an actual range
+  // Mirrors the per-turn context injection: when there's an actual range
   // selection, its content is what gets sent to the model, not just an index
   // range - so the hint shows a live preview of the selection's start,
   // matching what will actually be sent, not an abstract "selected" label.

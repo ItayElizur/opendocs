@@ -1,45 +1,6 @@
 import type { AiProviderId, AiProviderMeta, AiSettings, LegacyAiSettings } from './types'
 
-/**
- * Genspark server-side LLM proxy endpoints. All three protocols share the
- * api_key from the gsk login; model ids follow the proxy's own naming scheme,
- * which differs from the official vendor ids.
- */
-export const GENSPARK_LLM_BASE_URLS = {
-  anthropic: 'https://www.genspark.ai/api/anthropic',
-  gemini: 'https://www.genspark.ai/api/llm_proxy/gemini/v1beta',
-  openai: 'https://www.genspark.ai/api/llm_proxy/v1',
-} as const
-
-/**
- * Splits GenOffice usage out of the proxy's default "Claw" billing bucket
- * (the backend attributes gsk-key traffic by X-Agent-Type). Only sent to the
- * Genspark proxy — never to direct vendor APIs.
- */
-export const GENSPARK_AGENT_TYPE = 'genoffice'
-
-export function gensparkAttributionHeaders(baseUrl?: string): Record<string, string> {
-  return baseUrl?.startsWith('https://www.genspark.ai')
-    ? { 'X-Agent-Type': GENSPARK_AGENT_TYPE }
-    : {}
-}
-
 export const AI_PROVIDERS: AiProviderMeta[] = [
-  {
-    id: 'genspark',
-    label: 'Genspark',
-    models: [
-      'claude-opus-4-7',
-      'claude-opus-4-8',
-      'claude-sonnet-4-6',
-      'claude-haiku-4-5',
-      'gpt-5.2',
-      'gemini-3.1-pro-preview',
-      'gemini-3-flash-preview',
-    ],
-    defaultModel: 'claude-opus-4-7',
-    keyPlaceholder: 'Not required - sign in to Genspark',
-  },
   {
     id: 'anthropic',
     label: 'Claude',
@@ -104,7 +65,7 @@ export function defaultAiSettings(
       baseUrl: meta.needsBaseUrl ? '' : undefined,
     }
   }
-  return { provider: 'genspark', providers }
+  return { provider: 'anthropic', providers }
 }
 
 /**
@@ -127,8 +88,14 @@ export function resolveAiSettings(
     }
     return defaults
   }
+  // Drop provider ids that no longer exist (e.g. a removed provider saved by an older build).
+  const known = new Set<string>(AI_PROVIDERS.map((p) => p.id))
+  const providers = { ...defaults.providers }
+  for (const [id, cfg] of Object.entries(stored.providers)) {
+    if (known.has(id)) providers[id as AiProviderId] = cfg
+  }
   return {
-    provider: stored.provider ?? defaults.provider,
-    providers: { ...defaults.providers, ...stored.providers },
+    provider: stored.provider && known.has(stored.provider) ? stored.provider : defaults.provider,
+    providers,
   }
 }

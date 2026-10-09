@@ -83,7 +83,7 @@ namespace OutlookAiAddIn
         }
 
         // Reads and validates the optional "recurrence" object from
-        // create_event/draft_event's input. Returns null (with error left
+        // draft_event/send_event's input. Returns null (with error left
         // null) when the field is omitted entirely; returns a populated
         // RecurrenceSpec on success; returns null with error set to a
         // model-facing IsError message on any validation failure.
@@ -149,55 +149,148 @@ namespace OutlookAiAddIn
             return RecurrenceValidator.Parse(type, interval, days, dayOfMonth, instance, monthOfYear, count, until, out error);
         }
 
-        private static ToolResult DraftEmail(JsonElement input)
+        // One compose path for draft_email (opens a window, the user reviews and
+        // sends) and send_email (sends immediately, Full autonomy only).
+        // action picks a new email, reply, reply-all or forward. Reply and
+        // forward target either an email (message_id) or a calendar meeting
+        // (event_id), which goes through the meeting's invitation message -
+        // see FindInviteMessage.
+        private static ToolResult ComposeEmail(string mbxKey, JsonElement input, bool send)
         {
+            string tool = send ? "send_email" : "draft_email";
+            string action = Str(input, "action", "new");
             string to = Str(input, "to", "");
-            string subject = Str(input, "subject", "");
             string body = Str(input, "body", "");
 
-            Outlook.MailItem m = (Outlook.MailItem)App.CreateItem(Outlook.OlItemType.olMailItem);
-            if (!string.IsNullOrEmpty(to)) m.To = to;
-            m.Subject = subject;
-            m.Body = SeedSignature(body);
-            m.Display(false);
-            return new ToolResult { Output = "Opened a draft in Outlook for the user to review and send.", Summary = "draft_email" };
-        }
+            if (action == "new")
+            {
+                // to is required when sending: there's no compose window for a
+                // human to fill it in. See OutlookTools.Compose.cs.md for what
+                // an unset recipient risks.
+                if (send) to = ReqStr(input, "to");
+                string subject = Str(input, "subject", "");
+                Outlook.MailItem m = (Outlook.MailItem)App.CreateItem(Outlook.OlItemType.olMailItem);
+                if (!string.IsNullOrEmpty(to)) m.To = to;
+                m.Subject = subject;
+                m.Body = SeedSignature(body);
+                return FinishCompose(mbxKey, tool, send, "email", to, subject, () => m.Display(false), () => m.Send());
+            }
 
-        private static ToolResult ReplyEmail(JsonElement input, bool all)
-        {
-            string id = ReqStr(input, "message_id");
-            string body = Str(input, "body", "");
-            string tool = all ? "reply_all_email" : "reply_email";
+            if (action != "reply" && action != "reply_all" && action != "forward")
+                return new ToolResult { Output = "action must be one of: new, reply, reply_all, forward.", IsError = true, Summary = tool };
 
-            Outlook.MailItem orig = ItemById(id, StoreOf(input)) as Outlook.MailItem;
-            if (orig == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = tool };
+            string messageId = Str(input, "message_id", null);
+            string eventId = Str(input, "event_id", null);
+            if ((messageId == null) == (eventId == null))
+                return new ToolResult { Output = "Pass exactly one of message_id (an email) or event_id (a calendar meeting).", IsError = true, Summary = tool };
+            if (send && action == "forward") to = ReqStr(input, "to");
 
-            Outlook.MailItem reply = all ? orig.ReplyAll() : orig.Reply();
+            Outlook.MailItem orig = null;
+            Outlook.MeetingItem invite = null;
+            string origSubject;
+            if (messageId != null)
+            {
+                orig = ItemById(messageId, StoreOf(input)) as Outlook.MailItem;
+                if (orig == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = tool };
+                origSubject = orig.Subject ?? "";
+            }
+            else
+            {
+                Outlook.AppointmentItem appt = ResolveMeetingAppointment(ItemById(eventId, Str(input, "store_id", null)));
+                if (appt == null) return new ToolResult { Output = "event_id does not resolve to a calendar event.", IsError = true, Summary = tool };
+                invite = FindInviteMessage(appt);
+                if (invite == null) return new ToolResult { Output = NoInviteError(appt), IsError = true, Summary = tool };
+                origSubject = appt.Subject ?? "";
+            }
+
+            if (action == "forward")
+            {
+                if (orig != null)
+                {
+                    Outlook.MailItem fwd = orig.Forward();
+                    if (!string.IsNullOrEmpty(to)) fwd.To = to;
+                    if (!string.IsNullOrEmpty(body)) fwd.HTMLBody = PrependHtml(body, fwd.HTMLBody);
+                    return FinishCompose(mbxKey, tool, send, "forward", to, origSubject, () => fwd.Display(false), () => fwd.Send());
+                }
+
+                // A meeting forward is a MeetingItem, not a MailItem: recipients
+                // go through Recipients, and the cast avoids the Forward/Send/
+                // Close method-vs-event name clashes on the MeetingItem type.
+                Outlook._MeetingItem mfwd = (Outlook._MeetingItem)((Outlook._MeetingItem)invite).Forward();
+                var unresolved = new List<string>();
+                foreach (string part in to.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string addr = part.Trim();
+                    int lt = addr.LastIndexOf('<');
+                    if (lt >= 0 && addr.EndsWith(">")) addr = addr.Substring(lt + 1, addr.Length - lt - 2).Trim();
+                    if (addr.Length == 0) continue;
+                    Outlook.Recipient r = mfwd.Recipients.Add(addr);
+                    try { r.Resolve(); } catch { }
+                    if (!r.Resolved) unresolved.Add(addr);
+                }
+                if (send && unresolved.Count > 0)
+                {
+                    mfwd.Close(Outlook.OlInspectorClose.olDiscard);
+                    return new ToolResult { Output = "Not sent - couldn't resolve: " + string.Join(", ", unresolved) + ".", IsError = true, Summary = tool };
+                }
+                if (!string.IsNullOrEmpty(body))
+                {
+                    try { mfwd.Body = SeedSignature(body) + "\n\n" + mfwd.Body; }
+                    catch (Exception ex) { DebugLog.WriteException("ComposeEmail meeting forward body", ex); }
+                }
+                ToolResult fr = FinishCompose(mbxKey, tool, send, "forward", to, origSubject, () => mfwd.Display(false), () => mfwd.Send());
+                if (!send) fr.Output += FormatUnresolvedAttendeesNote(unresolved);
+                return fr;
+            }
+
+            bool all = action == "reply_all";
+            Outlook.MailItem reply = orig != null
+                ? (all ? orig.ReplyAll() : orig.Reply())
+                : (all ? invite.ReplyAll() : invite.Reply());
             if (!string.IsNullOrEmpty(body)) reply.HTMLBody = PrependHtml(body, reply.HTMLBody);
-            reply.Display(false);
-            return new ToolResult { Output = "Opened a " + (all ? "reply-all" : "reply") + " draft in Outlook for the user to review and send.", Summary = tool };
+            return FinishCompose(mbxKey, tool, send, all ? "reply-all" : "reply", reply.To, origSubject, () => reply.Display(false), () => reply.Send());
         }
 
-        private static ToolResult ForwardEmail(JsonElement input)
+        private static ToolResult FinishCompose(string mbxKey, string tool, bool send, string kind, string recipients, string subject, Action display, Action sendIt)
         {
-            string id = ReqStr(input, "message_id");
-            string to = Str(input, "to", "");
-            string body = Str(input, "body", "");
-
-            Outlook.MailItem orig = ItemById(id, StoreOf(input)) as Outlook.MailItem;
-            if (orig == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "forward_email" };
-
-            Outlook.MailItem fwd = orig.Forward();
-            if (!string.IsNullOrEmpty(to)) fwd.To = to;
-            if (!string.IsNullOrEmpty(body)) fwd.HTMLBody = PrependHtml(body, fwd.HTMLBody);
-            fwd.Display(false);
-            return new ToolResult { Output = "Opened a forward draft in Outlook for the user to review and send.", Summary = "forward_email" };
+            if (!send)
+            {
+                display();
+                return new ToolResult
+                {
+                    Output = "Opened " + (kind == "email" ? "a draft" : "a " + kind + " draft") + " in Outlook for the user to review and send.",
+                    Summary = tool,
+                };
+            }
+            sendIt();
+            RecordIrreversible(mbxKey, tool + " (" + kind + ") to " + recipients);
+            return new ToolResult { Output = "Sent " + kind + " to " + recipients + ": \"" + subject + "\".", Mutated = true, Summary = tool };
         }
 
-        private static ToolResult DraftEvent(JsonElement input)
+        private sealed class NewEvent
         {
+            public Outlook.AppointmentItem Appt;
+            public RecurrenceSpec Recurrence;
+            public string Required, Optional;
+            public bool IsMeeting;
+            public List<string> Unresolved = new List<string>();
+        }
+
+        // Builds a new appointment from the arguments: shared by draft_event
+        // (action new) and send_event (action new). When it will be sent,
+        // start/end are required - there's no review window to catch
+        // Outlook's own appointment defaults before a real, immediately-live
+        // calendar entry is created. See OutlookTools.Compose.cs.md.
+        private static ToolResult? BuildNewEvent(JsonElement input, bool send, string tool, out NewEvent ev)
+        {
+            ev = null;
             DateTime? start = DateArg(input, "start");
             DateTime? end = DateArg(input, "end");
+            if (send)
+            {
+                if (!start.HasValue) return new ToolResult { Output = "start is required.", IsError = true, Summary = tool };
+                if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = tool };
+            }
 
             JsonElement recField;
             bool hasRecurrenceField = input.ValueKind == JsonValueKind.Object && input.TryGetProperty("recurrence", out recField) && recField.ValueKind != JsonValueKind.Null;
@@ -206,34 +299,44 @@ namespace OutlookAiAddIn
             if (hasRecurrenceField)
             {
                 if (!start.HasValue)
-                    return new ToolResult { Output = "start is required when recurrence is specified, so defaults (day of week, day of month, etc.) can be derived from it.", IsError = true, Summary = "draft_event" };
+                    return new ToolResult { Output = "start is required when recurrence is specified, so defaults (day of week, day of month, etc.) can be derived from it.", IsError = true, Summary = tool };
                 string recurrenceError;
                 recurrence = ReadRecurrence(input, start.Value, out recurrenceError);
-                if (recurrenceError != null) return new ToolResult { Output = recurrenceError, IsError = true, Summary = "draft_event" };
+                if (recurrenceError != null) return new ToolResult { Output = recurrenceError, IsError = true, Summary = tool };
             }
 
             Outlook.AppointmentItem a = (Outlook.AppointmentItem)App.CreateItem(Outlook.OlItemType.olAppointmentItem);
             a.Subject = Str(input, "subject", "");
             a.Location = Str(input, "location", "");
             a.Body = SeedSignature(Str(input, "body", ""));
-
             if (start.HasValue) a.Start = start.Value;
             if (end.HasValue) a.End = end.Value;
 
             string req = Str(input, "required_attendees", "");
             string opt = Str(input, "optional_attendees", "");
-            var unresolvedAttendees = new List<string>();
-            if (!string.IsNullOrEmpty(req) || !string.IsNullOrEmpty(opt))
+            bool isMeeting = !string.IsNullOrEmpty(req) || !string.IsNullOrEmpty(opt);
+            var unresolved = new List<string>();
+            if (isMeeting)
             {
                 a.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
-                AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired, unresolvedAttendees);
-                AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional, unresolvedAttendees);
+                AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired, unresolved);
+                AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional, unresolved);
             }
             if (recurrence != null) ApplyRecurrence(a, recurrence);
-            a.Display(false);
+
+            ev = new NewEvent { Appt = a, Recurrence = recurrence, Required = req, Optional = opt, IsMeeting = isMeeting, Unresolved = unresolved };
+            return null;
+        }
+
+        private static ToolResult DraftEvent(JsonElement input)
+        {
+            NewEvent ev;
+            ToolResult? invalid = BuildNewEvent(input, false, "draft_event", out ev);
+            if (invalid != null) return invalid.Value;
+            ev.Appt.Display(false);
             return new ToolResult
             {
-                Output = "Opened an appointment draft in Outlook for the user to review and send." + (recurrence != null ? " Set to repeat " + recurrence.Type + ". Note: Outlook won't visually show the recurrence pattern in this review window until you save it once (a known Outlook limitation for brand-new unsaved items) - it applies correctly once saved or sent." : "") + FormatUnresolvedAttendeesNote(unresolvedAttendees),
+                Output = "Opened an appointment draft in Outlook for the user to review and send." + (ev.Recurrence != null ? " Set to repeat " + ev.Recurrence.Type + ". Note: Outlook won't visually show the recurrence pattern in this review window until you save it once (a known Outlook limitation for brand-new unsaved items) - it applies correctly once saved or sent." : "") + FormatUnresolvedAttendeesNote(ev.Unresolved),
                 Summary = "draft_event",
             };
         }
@@ -261,7 +364,7 @@ namespace OutlookAiAddIn
             }
         }
 
-        // Shared by create_event/draft_event/edit_event/draft_edit_event's
+        // Shared by the new/edit event handlers'
         // result text - see AddAttendees above.
         private static string FormatUnresolvedAttendeesNote(List<string> unresolved)
         {
@@ -273,58 +376,6 @@ namespace OutlookAiAddIn
         // .Save() instead of .Display(false) - no native window, no review
         // step. Gated in OutlookTools.cs's ExecuteAsync (SendTierTools),
         // never reachable below Full Autonomy.
-        private static ToolResult SendEmail(string mbxKey, JsonElement input)
-        {
-            // to is required here, unlike draft_email: there's no compose
-            // window for a human to fill it in before this sends. See
-            // OutlookTools.Compose.cs.md for what an unset recipient risks.
-            string to = ReqStr(input, "to");
-            string subject = Str(input, "subject", "");
-            string body = Str(input, "body", "");
-
-            Outlook.MailItem m = (Outlook.MailItem)App.CreateItem(Outlook.OlItemType.olMailItem);
-            m.To = to;
-            m.Subject = subject;
-            m.Body = SeedSignature(body);
-            m.Send();
-            RecordIrreversible(mbxKey, "send_email to " + to);
-            return new ToolResult { Output = "Sent to " + to + ": \"" + subject + "\".", Mutated = true, Summary = "send_email" };
-        }
-
-        private static ToolResult SendReply(string mbxKey, JsonElement input, bool all)
-        {
-            string id = ReqStr(input, "message_id");
-            string body = Str(input, "body", "");
-            string tool = all ? "send_reply_all" : "send_reply";
-
-            Outlook.MailItem orig = ItemById(id, StoreOf(input)) as Outlook.MailItem;
-            if (orig == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = tool };
-
-            Outlook.MailItem reply = all ? orig.ReplyAll() : orig.Reply();
-            if (!string.IsNullOrEmpty(body)) reply.HTMLBody = PrependHtml(body, reply.HTMLBody);
-            string to = reply.To;
-            reply.Send();
-            RecordIrreversible(mbxKey, tool + " to " + to);
-            return new ToolResult { Output = "Sent " + (all ? "reply-all" : "reply") + " to " + to + ": \"" + (orig.Subject ?? "") + "\".", Mutated = true, Summary = tool };
-        }
-
-        private static ToolResult SendForward(string mbxKey, JsonElement input)
-        {
-            string id = ReqStr(input, "message_id");
-            string to = ReqStr(input, "to");
-            string body = Str(input, "body", "");
-
-            Outlook.MailItem orig = ItemById(id, StoreOf(input)) as Outlook.MailItem;
-            if (orig == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "send_forward" };
-
-            Outlook.MailItem fwd = orig.Forward();
-            fwd.To = to;
-            if (!string.IsNullOrEmpty(body)) fwd.HTMLBody = PrependHtml(body, fwd.HTMLBody);
-            fwd.Send();
-            RecordIrreversible(mbxKey, "send_forward to " + to);
-            return new ToolResult { Output = "Forwarded to " + to + ": \"" + (orig.Subject ?? "") + "\".", Mutated = true, Summary = "send_forward" };
-        }
-
         // Non-meeting appointments only .Save() - Outlook has nobody to send
         // them to. A meeting (attendees present) must .Send() instead:
         // .Save() alone would leave it sitting unset on the organizer's
@@ -333,42 +384,19 @@ namespace OutlookAiAddIn
         // exposes both Send() and Save()) before writing this branch.
         private static ToolResult CreateEvent(string mbxKey, JsonElement input)
         {
-            // start/end are required here, unlike draft_event: there's no
-            // review window to catch Outlook's own appointment defaults
-            // before a real, immediately-live calendar entry is created. See
-            // OutlookTools.Compose.cs.md.
-            DateTime? start = DateArg(input, "start");
-            DateTime? end = DateArg(input, "end");
-            if (!start.HasValue) return new ToolResult { Output = "start is required.", IsError = true, Summary = "create_event" };
-            if (!end.HasValue) return new ToolResult { Output = "end is required.", IsError = true, Summary = "create_event" };
-
-            string recurrenceError;
-            RecurrenceSpec recurrence = ReadRecurrence(input, start.Value, out recurrenceError);
-            if (recurrenceError != null) return new ToolResult { Output = recurrenceError, IsError = true, Summary = "create_event" };
-
-            Outlook.AppointmentItem a = (Outlook.AppointmentItem)App.CreateItem(Outlook.OlItemType.olAppointmentItem);
-            a.Subject = Str(input, "subject", "");
-            a.Location = Str(input, "location", "");
-            a.Body = SeedSignature(Str(input, "body", ""));
-            a.Start = start.Value;
-            a.End = end.Value;
-
-            string req = Str(input, "required_attendees", "");
-            string opt = Str(input, "optional_attendees", "");
-            bool isMeeting = !string.IsNullOrEmpty(req) || !string.IsNullOrEmpty(opt);
-            var unresolvedAttendees = new List<string>();
-            if (isMeeting)
-            {
-                a.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
-                AddAttendees(a, req, Outlook.OlMeetingRecipientType.olRequired, unresolvedAttendees);
-                AddAttendees(a, opt, Outlook.OlMeetingRecipientType.olOptional, unresolvedAttendees);
-            }
-            if (recurrence != null) ApplyRecurrence(a, recurrence);
+            NewEvent ev;
+            ToolResult? invalid = BuildNewEvent(input, true, "send_event", out ev);
+            if (invalid != null) return invalid.Value;
+            Outlook.AppointmentItem a = ev.Appt;
+            bool isMeeting = ev.IsMeeting;
+            string req = ev.Required, opt = ev.Optional;
+            RecurrenceSpec recurrence = ev.Recurrence;
+            var unresolvedAttendees = ev.Unresolved;
 
             if (isMeeting)
             {
                 a.Send();
-                RecordIrreversible(mbxKey, "create_event invite for \"" + (a.Subject ?? "") + "\"");
+                RecordIrreversible(mbxKey, "send_event (new) invite for \"" + (a.Subject ?? "") + "\"");
                 // This confirmation line is the only place the user sees who
                 // an irreversible, unreviewed invite went to - do not let an
                 // empty req (optional_attendees-only) produce a malformed
@@ -383,7 +411,7 @@ namespace OutlookAiAddIn
             }
 
             a.Save();
-            RecordCreated(mbxKey, "create_event", "event_id", a, a.Subject ?? "");
+            RecordCreated(mbxKey, "send_event (new)", "event_id", a, a.Subject ?? "");
             return new ToolResult
             {
                 Output = "Created event: \"" + (a.Subject ?? "") + "\"." + (recurrence != null ? " Repeats " + recurrence.Type + "." : ""),

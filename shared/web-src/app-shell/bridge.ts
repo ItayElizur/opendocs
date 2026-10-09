@@ -1,5 +1,5 @@
-import type { ToolExecution } from '@genoffice/agent-core'
-import { randomId } from '@genoffice/agent-core'
+import type { ToolExecution } from '@officeai/agent-core'
+import { randomId } from '@officeai/agent-core'
 
 // WebView2 <-> .NET WebMessage bridge (chrome.webview.postMessage <->
 // CoreWebView2.PostWebMessageAsJson). This is the ONLY file in the app-shell

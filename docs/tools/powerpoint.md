@@ -2,10 +2,7 @@
 
 Current-state reference for every tool the AI can call in PowerPoint. See
 [`docs/architecture.md`](../architecture.md) for the shared editing-mode/transport
-architecture. "genoffice" below refers to a sibling from-scratch web-based Office clone
-project this tool design was originally ported from — see
-[`docs/comparison-with-genoffice.md`](../comparison-with-genoffice.md) for the
-high-level summary.
+architecture.
 
 ## Tools (51 total, all genuinely implemented)
 
@@ -16,7 +13,7 @@ flat table.
 
 | Tool | Notes |
 |---|---|
-| `get_deck_context` | One-line-per-slide outline: slide index + text preview of its shapes. No per-element type/id inventory like genoffice's version. |
+| `get_deck_context` | One-line-per-slide outline: slide index + text preview of its shapes. No per-element type/id inventory. |
 | `read_slide` | Full text of every shape on one slide, plus its layout, transition, animation count, and speaker notes. Shapes listed back-to-front (z-order). A group is shown as one line with a child count — see `read_group`. |
 | `read_group` | Lists a group's children recursively (nested groups expanded in place), each prefixed with a dotted path (e.g. `"3.1.0"`) usable as `shapeIndex` for `set_element_text`/`set_element_style`/`set_element_fill`/`set_element_stroke`. Positional/structural edits still require `ungroup_element` first. |
 | `read_animations` | A slide's animations in play order (shape, effect, entrance/exit, trigger, timing) — `animationIndex` in `edit_animation` addresses this same order. |
@@ -118,14 +115,13 @@ flat table.
 ## Missing entirely (confirmed absent from both the C# switch and the advertised tool list)
 
 - `execute_slide_script` — no scripting DSL; every multi-property/multi-element edit
-  must go tool-by-tool, rather than genoffice's atomic AST-interpreted batch script.
+  must go tool-by-tool, rather than as one atomic batch script.
   This remains a real gap today.
 - The entire deck-generation pipeline: `ask_clarification`, `plan_deck`,
   `generate_deck`, `regenerate_slide`, `save_style_template`, `list_style_templates`.
-- No automatic post-edit audit/QC pass — genoffice's `auditSlideLayout` (geometric
-  overflow/overlap/bounds check after every script run) and `slide-qc.ts` (vision-based
-  QC sub-loop after generated pages) have no counterpart; nothing here checks the
-  result of an edit automatically.
+- No automatic post-edit audit/QC pass (geometric overflow/overlap/bounds check, or a
+  vision-based review of generated slides); nothing here checks the result of an edit
+  automatically.
 - No `add_comment`-equivalent for PowerPoint (unlike Word), so Comment Only mode
   currently behaves identically to Read Only.
 
@@ -133,7 +129,6 @@ flat table.
 
 Shapes are addressed by **positional index** (`slideIndex`, `shapeIndex` into
 `slide.Shapes`, or a dotted path like `"3.1.0"` for a shape inside a group) rather than
-a stable id — indices shift whenever shapes are added/removed/reordered/grouped, unlike
-genoffice's `sourceId`-based addressing. Several tools' descriptions explicitly tell the
+a stable id — indices shift whenever shapes are added/removed/reordered/grouped, Several tools' descriptions explicitly tell the
 model to re-read the slide after a structural change, but there's no protection against
 acting on a stale index otherwise.

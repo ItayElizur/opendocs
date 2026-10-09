@@ -3,7 +3,7 @@ using System;
 namespace OfficeAi.Shared
 {
     /// <summary>
-    /// Pure validation for create_event/draft_event's optional "recurrence"
+    /// Pure validation for draft_event/send_event's optional "recurrence"
     /// object - every failure names the specific field and the fix, since
     /// this is the only feedback the calling model gets to correct its next
     /// call. Mirrors set_event_availability's TryParseBusyStatus pattern
