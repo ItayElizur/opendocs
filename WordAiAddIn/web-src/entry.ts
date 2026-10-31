@@ -512,6 +512,108 @@ const ALL_WORD_TOOLS = [
       },
     },
     {
+      name: 'edit_content_control',
+      description:
+        'Adds, edits or deletes a content control (a typed, optionally titled/tagged form field wrapped around content). action "add": type (rich_text|plain_text|dropdown|combo_box|date|checkbox) is required; ' +
+        'it is placed at the end of paragraph afterBlockIndex (omit = end of document); optional title, tag, text, entries (dropdown/combo choices), checked. ' +
+        'action "edit": index (read_object kind "content_control") plus any of title, tag, text, entries (REPLACES the choice list), checked. ' +
+        'action "delete": index; the content is kept as ordinary text unless deleteContents is true. Deleting shifts later indices.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['add', 'edit', 'delete'] },
+          index: { type: 'number' },
+          type: { type: 'string', enum: ['rich_text', 'plain_text', 'dropdown', 'combo_box', 'date', 'checkbox'] },
+          afterBlockIndex: { type: 'number' },
+          title: { type: 'string' },
+          tag: { type: 'string' },
+          text: { type: 'string' },
+          entries: { type: 'array', items: { type: 'string' } },
+          checked: { type: 'boolean' },
+          deleteContents: { type: 'boolean' },
+        },
+        required: ['action'],
+      },
+    },
+    {
+      name: 'edit_header_footer',
+      description:
+        'Sets or clears a section\'s header or footer. which: "header"|"footer"; type: "primary" (default) | "first_page" | "even_pages" (writing one of the last two switches that option on for the section); ' +
+        'section is 1-based (default 1). action "set" needs text (newlines make paragraphs); "clear" empties it. For section 2+, the part is unlinked from the previous section first so the edit stays in that section. ' +
+        'Use read_object kind "header_footer" to see what the document has now.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['set', 'clear'] },
+          which: { type: 'string', enum: ['header', 'footer'] },
+          type: { type: 'string', enum: ['primary', 'first_page', 'even_pages'] },
+          section: { type: 'number' },
+          text: { type: 'string' },
+        },
+        required: ['action', 'which'],
+      },
+    },
+    {
+      name: 'edit_note',
+      description:
+        'Adds, edits or deletes a footnote or endnote. noteKind: "footnote"|"endnote". action "add": text and afterBlockIndex (the paragraph that carries the reference mark) are required; ' +
+        'the mark goes at the end of that paragraph, or right after the first occurrence of afterText inside it. action "edit": index (read_object kind "footnote"/"endnote") and text. action "delete": index. ' +
+        'Add and delete shift later note indices.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['add', 'edit', 'delete'] },
+          noteKind: { type: 'string', enum: ['footnote', 'endnote'] },
+          index: { type: 'number' },
+          text: { type: 'string' },
+          afterBlockIndex: { type: 'number' },
+          afterText: { type: 'string' },
+        },
+        required: ['action', 'noteKind'],
+      },
+    },
+    {
+      name: 'edit_toc',
+      description:
+        'Adds, edits, refreshes or deletes a table of contents built from heading styles. action "add": inserted like insert_content at afterBlockIndex (-1 or omitted = start of the document), ' +
+        'upperLevel/lowerLevel default 1-3. action "edit": index (read_object kind "toc") plus upperLevel and/or lowerLevel; refreshes it. action "update": index; refreshes it (pageNumbersOnly:true keeps the entries and only renumbers pages). ' +
+        'action "delete": index. Adding, editing or deleting a TOC shifts paragraph indices - re-read before addressing later paragraphs.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['add', 'edit', 'update', 'delete'] },
+          index: { type: 'number' },
+          afterBlockIndex: { type: 'number' },
+          upperLevel: { type: 'number' },
+          lowerLevel: { type: 'number' },
+          pageNumbersOnly: { type: 'boolean' },
+        },
+        required: ['action'],
+      },
+    },
+    {
+      name: 'edit_textbox',
+      description:
+        'Adds, edits or deletes a floating text box. action "add": optional text, name, x/y/w/h in points (default 72,72,200,80 from the page corner) and afterBlockIndex to anchor it to that paragraph. ' +
+        'action "edit": index (read_object kind "shape" - the same shape index space) plus text and/or x, y, w, h. It cannot edit the text of a group or canvas (their text lives in child shapes). ' +
+        'action "delete": index; deleting shifts later shape indices.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['add', 'edit', 'delete'] },
+          index: { type: 'number' },
+          text: { type: 'string' },
+          name: { type: 'string' },
+          x: { type: 'number' },
+          y: { type: 'number' },
+          w: { type: 'number' },
+          h: { type: 'number' },
+          afterBlockIndex: { type: 'number' },
+        },
+        required: ['action'],
+      },
+    },
+    {
       name: 'undo_last_action',
       description:
         "Reverses the document's last action, exactly like Ctrl+Z - can undo an edit this assistant just made OR one the user made. " +
@@ -595,6 +697,26 @@ const WORD_TOOL_DISPLAY = {
     label: { en: 'Add comment', he: 'הוספת הערה' },
     description: { en: 'Adds a comment anchored to text in the document, without changing its content.', he: 'מוסיף הערה מעוגנת לטקסט במסמך, מבלי לשנות את תוכנו.' },
   },
+  edit_content_control: {
+    label: { en: 'Edit content controls', he: 'עריכת בקרי תוכן' },
+    description: { en: 'Adds, edits, or removes content controls such as text fields, dropdowns, checkboxes, and date pickers.', he: 'מוסיף, עורך או מסיר בקרי תוכן כגון שדות טקסט, רשימות נפתחות, תיבות סימון ובוחרי תאריך.' },
+  },
+  edit_header_footer: {
+    label: { en: 'Edit header/footer', he: 'עריכת כותרת עליונה/תחתונה' },
+    description: { en: 'Sets or clears the header or footer of a section.', he: 'קובע או מנקה את הכותרת העליונה או התחתונה של מקטע.' },
+  },
+  edit_note: {
+    label: { en: 'Edit footnotes/endnotes', he: 'עריכת הערות שוליים/סיום' },
+    description: { en: 'Adds, edits, or deletes footnotes and endnotes.', he: 'מוסיף, עורך או מוחק הערות שוליים והערות סיום.' },
+  },
+  edit_toc: {
+    label: { en: 'Edit table of contents', he: 'עריכת תוכן עניינים' },
+    description: { en: 'Adds, refreshes, adjusts, or removes a table of contents.', he: 'מוסיף, מרענן, מתאים או מסיר תוכן עניינים.' },
+  },
+  edit_textbox: {
+    label: { en: 'Edit text boxes', he: 'עריכת תיבות טקסט' },
+    description: { en: 'Adds, edits, moves, or deletes floating text boxes.', he: 'מוסיף, עורך, מזיז או מוחק תיבות טקסט צפות.' },
+  },
   undo_last_action: {
     label: { en: 'Undo', he: 'ביטול' },
     description: { en: "Reverses the document's last action, like Ctrl+Z.", he: 'מבטל את הפעולה האחרונה במסמך, כמו Ctrl+Z.' },
@@ -620,6 +742,7 @@ startAddIn({
     'Word documents can hold content outside the body text - text boxes, shapes, canvases, content controls, headers/footers, footnotes - that read_blocks does not return as text: ' +
     'get_document_context\'s "Objects:" line counts them, read_blocks marks the ones anchored next to each paragraph, and read_object lists or reads any of them. ' +
     'If the body looks empty but there are shapes with text, read them with read_object. ' +
+    'To change those objects use edit_content_control, edit_header_footer, edit_note (footnotes/endnotes), edit_toc and edit_textbox - their index is the read_object index of the same kind, and add/delete shift later indices, so re-read before a second edit. ' +
     'create, read, or edit a native Word chart with labeled categories and named multi-series, create/read/edit native Word tables, and create/read/edit SmartArt diagrams. ' +
     'edit_chart REPLACES the whole categories/series dataset when given, so before an incremental change to an existing chart (e.g. removing or renaming one category), call read_object (kind "chart") first to see the current data and resend everything you are keeping. ' +
     'edit_table\'s insert_row/delete_row/insert_col/delete_col and edit_smartart\'s delete_node shift later row/column/node indices - re-read (read_object kind "table"/"smartart") before a second structural edit to the same table or diagram in the same run. ' +
