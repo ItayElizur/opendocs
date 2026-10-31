@@ -57,3 +57,26 @@ separate, non-perf concern - context/token budget). Not
 independently benchmarked against a measured time budget the way
 read_formats' 200-cell cap or html mode's 100-paragraph cap were -
 chosen conservatively; raise it if real usage shows it's too tight.
+
+## `read_blocks` object annotations and `get_document_context` counts
+
+`read_blocks` and `get_document_context` only ever saw `doc.Content` and `doc.Paragraphs`, so a
+document built from text boxes, shapes or canvases looked empty (a floating shape is a single
+anchor character in the body). They now report non-body objects without changing what a
+paragraph index means:
+
+- `get_document_context` appends one counts-only "Objects: ..." line (tables, charts, SmartArt,
+  shapes with how many hold text, inline pictures, content controls, footnotes, endnotes,
+  header/footer parts, TOC). It is omitted when the document has none, so plain documents'
+  output is unchanged. No per-object list: the model has to call `read_object` anyway.
+- `read_blocks` appends "  {table#0, shape#2 "TextBox 3" textbox hasText, ...}" after each
+  paragraph that holds or anchors an object (capped at 8 labels per block). Anchors are
+  collected once (`CollectObjectAnchors`) and merged during the existing forward
+  `Paragraph.Next()` walk by `ObjectAnchors.LabelsFor` (OfficeAi.Shared, unit tested), so cost is
+  O(paragraphs + objects), never a per-paragraph search. The per-paragraph `Range.Start/End`
+  reads only happen when the document has at least one anchored object.
+- The suffix is not paragraph text. It is appended after the closing tag in `html` mode too.
+
+NOT VERIFIED AGAINST LIVE WORD: builds clean, but the anchor offsets (`Shape.Anchor.Start`,
+`Footnote.Reference.Start`, `Table.Range.Start`, `ContentControl.Range.Start`) were not
+checked against a real document, nor was timing on a large one.

@@ -52,7 +52,7 @@ export interface RawSelectionPayload {
   startBlockIndex?: number
   endBlockIndex?: number
   // Word: set when the selection is a table/chart/SmartArt object rather than
-  // plain text - the 0-based index read_table/read_chart/read_smartart would
+  // plain text - the 0-based index read_object (kind table/chart/smartart) would
   // use to address it.
   objectKind?: 'table' | 'chart' | 'smartart' | null
   objectIndex?: number

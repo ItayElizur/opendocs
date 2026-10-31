@@ -91,7 +91,7 @@ namespace WordAiAddIn
             }
 
             // Detects a selected table/chart/SmartArt and reports the same 0-based
-            // index used by read_table/read_chart/read_smartart. See TaskPaneHost.cs.md.
+            // index used by read_object (kind table/chart/smartart). See TaskPaneHost.cs.md.
             string objectKind = null;
             int objectIndex = -1;
             try

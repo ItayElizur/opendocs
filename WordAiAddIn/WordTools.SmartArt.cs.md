@@ -42,7 +42,7 @@ Post-hoc fix (2026-08-24, user-reported): HasSmartArt returns an
 MsoTriState, not a real bool, exactly like HasChart elsewhere in
 this file - a plain (bool) cast either throws (silently swallowed
 by the try/catch below) or never matches, so no shape was ever
-recognized as SmartArt and read_smartart/edit_smartart always
+recognized as SmartArt and read_object (kind smartart)/edit_smartart always
 reported "no SmartArt diagrams" even right after add_smartart had
 just created one. Fixed with the same (int)x == -1 comparison
 ListChartShapes already uses for HasChart.

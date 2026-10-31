@@ -73,8 +73,8 @@ Post-hoc addition (2026-08-24, user-reported: selecting a
 table/chart/SmartArt "doesn't appear under selection" -
 selection.Text for a shape selection is empty or a placeholder
 character, not a useful pointer. Detect these three object
-kinds and report the SAME 0-based index the read_table/
-read_chart/read_smartart tools use, so the UI and the model
+kinds and report the SAME 0-based index read_object
+(kind table/chart/smartart) uses, so the UI and the model
 both get an actionable pointer instead of nothing.
 
 ## `OnSelectionChanged` - Selection.Type diagnostic log

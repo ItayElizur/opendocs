@@ -153,6 +153,8 @@ namespace WordAiAddIn
             string preview = doc.Content.Text;
             if (preview.Length > 300) preview = preview.Substring(0, 300) + "...";
             string output = $"Paragraphs: {paraCount}, Words: {wordCount}\nPreview: {preview}";
+            string objects = ObjectCountsLine(doc);
+            if (objects.Length > 0) output += "\n" + objects;
             return new ToolResult { Output = output, Summary = "read document context" };
         }
 
@@ -232,6 +234,8 @@ namespace WordAiAddIn
         // See WordTools.Content.cs.md.
         private const int TextReadBlocksMaxParagraphs = 1000;
 
+        private const int MaxObjectLabelsPerBlock = 8;
+
         private static string ReadBlockAsHtml(Word.Paragraph p)
         {
             var sb = new System.Text.StringBuilder();
@@ -287,16 +291,29 @@ namespace WordAiAddIn
             Word.Paragraph p = paragraphs.First;
             for (int skip = 0; skip < startIndex && p != null; skip++) p = p.Next();
 
+            // Objects (tables, shapes, footnotes, ...) anchored in a block are listed after it as
+            // "{shape#2 ..., chart#0}". Anchors are collected once and merged during this forward walk;
+            // the per-paragraph Range reads are skipped entirely for documents with no such objects.
+            List<ObjectAnchor> anchors = CollectObjectAnchors(doc);
+            int nextAnchor = 0;
+
             for (int i = startIndex; i <= endIndex && p != null; i++)
             {
                 // finally guarantees p advances exactly once per iteration even
                 // though several branches `continue` early.
                 try
                 {
+                    string objs = "";
+                    if (anchors.Count > 0)
+                    {
+                        Word.Range pr = p.Range;
+                        objs = ObjectAnchors.LabelsFor(anchors, ref nextAnchor, pr.Start, pr.End, MaxObjectLabelsPerBlock);
+                    }
+
                     if (format != "html")
                     {
                         string plain = p.Range.Text.TrimEnd('\r', '\a', '\n');
-                        sb.AppendLine($"[{i}] {plain}");
+                        sb.AppendLine($"[{i}] {plain}{objs}");
                         continue;
                     }
 
@@ -314,7 +331,7 @@ namespace WordAiAddIn
                             sb.AppendLine($"<{wantList}>");
                             openList = wantList;
                         }
-                        sb.AppendLine($"[{i}] <li>{content}</li>");
+                        sb.AppendLine($"[{i}] <li>{content}</li>{objs}");
                         continue;
                     }
                     if (openList != null) { sb.AppendLine($"</{openList}>"); openList = null; }
@@ -326,7 +343,7 @@ namespace WordAiAddIn
                         if (int.TryParse(digits, out int lvl) && lvl >= 1 && lvl <= 3) headingLevel = lvl;
                     }
                     string tag = headingLevel > 0 ? "h" + headingLevel : "p";
-                    sb.AppendLine($"[{i}] <{tag}>{content}</{tag}>");
+                    sb.AppendLine($"[{i}] <{tag}>{content}</{tag}>{objs}");
                 }
                 finally
                 {

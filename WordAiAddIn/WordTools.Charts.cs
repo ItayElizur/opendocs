@@ -137,21 +137,15 @@ namespace WordAiAddIn
             return chartShapes;
         }
 
-        // Lets the model inspect a chart's current title/type/categories/series before
+        // Backs read_object kind "chart". Lets the model inspect a chart's current title/type/categories/series before
         // an incremental edit_chart call, since edit_chart replaces the whole dataset
         // rather than patching it. Reads via the embedded workbook's Cells/UsedRange/
         // .Value2 (same path WriteChartData writes through). See WordTools.Charts.cs.md.
-        private static ToolResult ReadChart(JsonElement input)
+        // Called by read_object (WordTools.Objects.cs), which has already bounds-checked chartIndex.
+        private static string ReadChart(int chartIndex)
         {
             dynamic doc = ActiveDoc;
             var chartShapes = ListChartShapes(doc);
-            if (chartShapes.Count == 0)
-                return new ToolResult { Output = "No charts in this document.", Summary = "read_chart" };
-
-            int chartIndex = input.TryGetProperty("chartIndex", out var ci) && ci.ValueKind == JsonValueKind.Number ? ci.GetInt32() : 0;
-            if (chartIndex < 0 || chartIndex >= chartShapes.Count)
-                throw new ArgumentOutOfRangeException("chartIndex",
-                    "chartIndex must be between 0 and " + (chartShapes.Count - 1) + " (" + chartShapes.Count + " chart(s) in the document).");
 
             dynamic chart = chartShapes[chartIndex].Chart;
 
@@ -224,7 +218,7 @@ namespace WordAiAddIn
             }
 
             DebugLog.Write("ReadChart: EXIT ok");
-            return new ToolResult { Output = sb.ToString().TrimEnd(), Summary = "read_chart" };
+            return sb.ToString().TrimEnd();
         }
 
         private static ToolResult EditChart(JsonElement input)

@@ -257,7 +257,10 @@ const WORD_COMMAND_SCHEMAS = [
 const ALL_WORD_TOOLS = [
     {
       name: 'get_document_context',
-      description: "Reads the active Word document's paragraph/word count and a text preview.",
+      description:
+        "Reads the active Word document's paragraph/word count and a text preview. If the document has non-body objects it adds one 'Objects:' line of counts " +
+        "(tables, charts, SmartArt, shapes with how many hold text, inline pictures, content controls, footnotes/endnotes, header/footer parts, TOC). " +
+        "A document built mostly from text boxes/shapes has an almost empty body, so when that line shows shapes, list them with read_object.",
       inputSchema: { type: 'object', properties: {} },
     },
     {
@@ -306,16 +309,20 @@ const ALL_WORD_TOOLS = [
       },
     },
     {
-      name: 'read_chart',
+      name: 'read_object',
       description:
-        'Reads an existing chart\'s current title, type, categories, and per-series names/values. ' +
-        'Call this before an incremental edit_chart change (e.g. removing or renaming one category or series) - ' +
-        'edit_chart REPLACES the whole dataset when categories/series is given, so you need the current data to correctly resend everything you are keeping. ' +
-        'chartIndex addresses an existing chart (0-based, inline shapes first then floating shapes, in document order); omit it to read the first chart.',
+        'Reads the non-body objects of the document. kind: "table" | "chart" | "smartart" | "shape" (text boxes, canvases, groups, floating pictures - reports hasText, and the text of each) | ' +
+        '"content_control" | "header_footer" | "footnote" | "endnote" | "toc". Each kind has its own 0-based index space (the same indices edit_table/edit_chart/edit_smartart use: ' +
+        'tables in document order, charts and SmartArt inline-first then floating). Omit index to list every object of that kind, one summary line each (with the paragraph it is anchored in); ' +
+        'pass index to read one in full. A "chart" read returns its title, type, categories and per-series values - call it before an incremental edit_chart change, ' +
+        'since edit_chart REPLACES the whole dataset when categories/series is given. read_blocks marks these objects next to the paragraph they sit in.',
       inputSchema: {
         type: 'object',
-        properties: { chartIndex: { type: 'number' } },
-        required: [],
+        properties: {
+          kind: { type: 'string', enum: ['table', 'chart', 'smartart', 'shape', 'content_control', 'header_footer', 'footnote', 'endnote', 'toc'] },
+          index: { type: 'number' },
+        },
+        required: ['kind'],
       },
     },
     {
@@ -350,6 +357,7 @@ const ALL_WORD_TOOLS = [
         'Reads paragraphs [startIndex, endIndex] (0-based, inclusive) of the active document, one per line prefixed with its index - capped at 1000 paragraphs per call. ' +
         'format:"html" emits the same restricted HTML subset insert_content/replace_blocks accept (headings/bold/italic/underline/list membership survive; ' +
         'anything outside that subset, e.g. font color, does not) - capped lower, at 100 paragraphs per call (per-paragraph formatting reads are slower); strip the leading "[i] " markers before feeding the fragment back into html. ' +
+        'A paragraph that holds or anchors a non-body object ends with "{table#0, shape#2 \"TextBox 3\" textbox hasText, chart#1, ...}" - that is not part of the paragraph text; pass the kind and number to read_object to read it. ' +
         'Prefer find_text to locate the paragraph indices you actually need instead of reading a large range blindly.',
       inputSchema: {
         type: 'object',
@@ -419,7 +427,7 @@ const ALL_WORD_TOOLS = [
         'set_shading scope: "cell" (needs row+col), "row" (needs row, fills the whole row), "col" (needs col, fills the whole column), "table" (fills every cell) - color is a required hex string, e.g. "#FFFF00". ' +
         'tableIndex addresses the table (0-based, document order); omit to target the first table. ' +
         'row/col are 0-based over every physical row/column, including row 0 even if it holds column headers - there is no separate header concept in the index space (set_style\'s headerRow only changes that row\'s visual style, not its index). ' +
-        'Structural edits shift later indices - re-read the table (read_table) before a second structural edit in the same run.',
+        'Structural edits shift later indices - re-read the table (read_object kind "table") before a second structural edit in the same run.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -440,11 +448,6 @@ const ALL_WORD_TOOLS = [
         },
         required: ['kind'],
       },
-    },
-    {
-      name: 'read_table',
-      description: 'Reads an existing table\'s cell contents, one row per line. tableIndex addresses the table (0-based, document order); omit to read the first table.',
-      inputSchema: { type: 'object', properties: { tableIndex: { type: 'number' } }, required: [] },
     },
     {
       name: 'add_smartart',
@@ -473,7 +476,7 @@ const ALL_WORD_TOOLS = [
         'an unmatched name errors listing the real available names to retry with, e.g. try "Colorful" or "Accent" for colorName, "Intense" or "Simple" for quickStyleName), ' +
         '"set_layout" (layout - same layout keys as add_smartart: list/process/cycle/hierarchy/pyramid/matrix/venn; changes an existing diagram\'s layout, keeping its current node text). ' +
         'smartArtIndex addresses the diagram (0-based, document order); omit to target the first one. ' +
-        'delete_node shifts later node indices - re-read (read_smartart) before another node edit in the same run.',
+        'delete_node shifts later node indices - re-read (read_object kind "smartart") before another node edit in the same run.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -487,11 +490,6 @@ const ALL_WORD_TOOLS = [
         },
         required: ['kind'],
       },
-    },
-    {
-      name: 'read_smartart',
-      description: 'Reads SmartArt diagram node texts, one per line. smartArtIndex addresses a specific diagram (0-based, document order); omit to read every diagram in the document in one call.',
-      inputSchema: { type: 'object', properties: { smartArtIndex: { type: 'number' } }, required: [] },
     },
     {
       name: 'apply_commands',
@@ -538,6 +536,13 @@ const WORD_TOOL_DISPLAY = {
     label: { en: 'Read document', he: 'קרא מסמך' },
     description: { en: "Reads the document's structure and a short preview of its text.", he: 'קורא את מבנה המסמך ותצוגה מקדימה קצרה של הטקסט.' },
   },
+  read_object: {
+    label: { en: 'Read document objects', he: 'קריאת אובייקטים במסמך' },
+    description: {
+      en: 'Reads tables, charts, SmartArt, text boxes and shapes, content controls, headers/footers, footnotes, and tables of contents.',
+      he: 'קורא טבלאות, תרשימים, SmartArt, תיבות טקסט וצורות, בקרי תוכן, כותרות עליונות/תחתונות, הערות שוליים ותוכן עניינים.',
+    },
+  },
   insert_content: {
     label: { en: 'Insert content', he: 'הוספת תוכן' },
     description: { en: 'Inserts new text or formatted content at a chosen position in the document.', he: 'מוסיף טקסט חדש או תוכן מעוצב במיקום נבחר במסמך.' },
@@ -545,10 +550,6 @@ const WORD_TOOL_DISPLAY = {
   edit_chart: {
     label: { en: 'Create or edit chart', he: 'יצירה/עריכת תרשים' },
     description: { en: 'Creates a new chart or edits an existing one, with categories and data series.', he: 'יוצר תרשים חדש או עורך תרשים קיים, כולל קטגוריות וסדרות נתונים.' },
-  },
-  read_chart: {
-    label: { en: 'Read chart data', he: 'קריאת נתוני תרשים' },
-    description: { en: 'Reads an existing chart\'s title, type, categories, and series values.', he: 'קורא את כותרת התרשים, סוגו, הקטגוריות וערכי הסדרות שלו.' },
   },
   find_text: {
     label: { en: 'Search document', he: 'חיפוש במסמך' },
@@ -578,10 +579,6 @@ const WORD_TOOL_DISPLAY = {
     label: { en: 'Edit table', he: 'עריכת טבלה' },
     description: { en: 'Edits an existing table\'s cells, rows/columns, or style.', he: 'עורך את התאים, השורות/העמודות או העיצוב של טבלה קיימת.' },
   },
-  read_table: {
-    label: { en: 'Read table', he: 'קריאת טבלה' },
-    description: { en: 'Reads an existing table\'s cell contents.', he: 'קורא את תוכן התאים של טבלה קיימת.' },
-  },
   add_smartart: {
     label: { en: 'Insert SmartArt', he: 'הוספת SmartArt' },
     description: { en: 'Adds a SmartArt diagram (list, process, cycle, hierarchy, pyramid, matrix, or Venn).', he: 'מוסיף דיאגרמת SmartArt (רשימה, תהליך, מעגל, היררכיה, פירמידה, מטריצה או ון).' },
@@ -589,10 +586,6 @@ const WORD_TOOL_DISPLAY = {
   edit_smartart: {
     label: { en: 'Edit SmartArt', he: 'עריכת SmartArt' },
     description: { en: 'Edits an existing SmartArt diagram\'s node text.', he: 'עורך את טקסט הצמתים של דיאגרמת SmartArt קיימת.' },
-  },
-  read_smartart: {
-    label: { en: 'Read SmartArt', he: 'קריאת SmartArt' },
-    description: { en: 'Reads an existing SmartArt diagram\'s node text.', he: 'קורא את טקסט הצמתים של דיאגרמת SmartArt קיימת.' },
   },
   apply_commands: {
     label: { en: 'Edit and format', he: 'עריכה ועיצוב' },
@@ -624,9 +617,12 @@ startAddIn({
     'When you need to find something in the document rather than read it start-to-finish, call find_text FIRST rather than reading a large range with ' +
     'read_blocks blindly (or worse, paging through the whole document) - the "[index]" it returns is the exact same paragraph index read_blocks/' +
     'replace_blocks\' startIndex/endIndex and apply_commands\' Target.blockIndexes use, so pass it straight through with no translation. ' +
+    'Word documents can hold content outside the body text - text boxes, shapes, canvases, content controls, headers/footers, footnotes - that read_blocks does not return as text: ' +
+    'get_document_context\'s "Objects:" line counts them, read_blocks marks the ones anchored next to each paragraph, and read_object lists or reads any of them. ' +
+    'If the body looks empty but there are shapes with text, read them with read_object. ' +
     'create, read, or edit a native Word chart with labeled categories and named multi-series, create/read/edit native Word tables, and create/read/edit SmartArt diagrams. ' +
-    'edit_chart REPLACES the whole categories/series dataset when given, so before an incremental change to an existing chart (e.g. removing or renaming one category), call read_chart first to see the current data and resend everything you are keeping. ' +
-    'edit_table\'s insert_row/delete_row/insert_col/delete_col and edit_smartart\'s delete_node shift later row/column/node indices - re-read (read_table/read_smartart) before a second structural edit to the same table or diagram in the same run. ' +
+    'edit_chart REPLACES the whole categories/series dataset when given, so before an incremental change to an existing chart (e.g. removing or renaming one category), call read_object (kind "chart") first to see the current data and resend everything you are keeping. ' +
+    'edit_table\'s insert_row/delete_row/insert_col/delete_col and edit_smartart\'s delete_node shift later row/column/node indices - re-read (read_object kind "table"/"smartart") before a second structural edit to the same table or diagram in the same run. ' +
     'apply_commands\' copyBlocks duplicates one or more paragraphs elsewhere in the document without removing the originals (unlike moveBlocks, which relocates them), and copyFormat copies one paragraph\'s complete formatting onto one or more others in a single call - like Format Painter, whole paragraphs only, and it never copies hyperlinks. ' +
     "Your available tools depend on the user's current editing mode (Read only, Comment only, Track changes, or Full autonomy); only call tools that are currently offered to you. " +
     'If the user has selected text in the document, it will be included in your context as "Content selected by the user." ' +
@@ -636,7 +632,7 @@ startAddIn({
     { en: 'Polish the whole document for a more professional tone', he: 'לטש את כל המסמך לטון מקצועי יותר' },
     { en: 'Continue writing from where the document leaves off', he: 'המשך לכתוב מהיכן שהמסמך מסתיים' },
   ],
-  readOnlyTools: ['get_document_context', 'read_blocks', 'find_text', 'get_headings', 'read_chart', 'read_table', 'read_smartart'],
+  readOnlyTools: ['get_document_context', 'read_blocks', 'find_text', 'get_headings', 'read_object'],
   commentOnlyExtraTools: ['add_comment'],
   useSelectionContext: true,
 })
