@@ -7,7 +7,7 @@ project this tool design was originally ported from — see
 [`docs/comparison-with-genoffice.md`](../comparison-with-genoffice.md) for the
 high-level summary.
 
-## Tools (51 total, all genuinely implemented)
+## Tools (52 total, all genuinely implemented)
 
 The largest tool surface of the four apps. Organized here by area rather than as one
 flat table.
@@ -114,6 +114,12 @@ flat table.
 | Tool | Notes |
 |---|---|
 | `undo_last_action` / `redo_last_action` | PowerPoint's own Ctrl+Z/Ctrl+Y. PowerPoint's object model has no Undo/Redo method, so these go through the generic ribbon-command dispatch, `Application.CommandBars.ExecuteMso("Undo"/"Redo")`, with a `GetEnabledMso` pre-check so an empty stack reports "Nothing to undo/redo" instead of a silent no-op (`PowerPointTools.History.cs`). `Application.StartNewUndoEntry()` runs before **every** non-read tool call — undo/redo included, an intentional difference from Word, whose `UndoRecord` wrapping excludes them — so one tool call = one undo step. Track Changes mode and up. |
+
+**File (1)**
+
+| Tool | Notes |
+|---|---|
+| `save` | Saves the open file in place, or opens the Save As file dialog (`Application.FileDialog[msoFileDialogSaveAs]` — PowerPoint has no `Dialogs` collection; `Show()` picks the target, `Execute()` saves) when `saveAs` is true (default false) or the file has never been saved. `saveAs` must be true whenever the user wants a copy, a new name, another location or another format. A cancelled dialog returns a non-error "cancelled" result with `Mutated: false`; the dialog is modal on PowerPoint's UI thread and Stop cannot dismiss it (`PowerPointTools.File.cs`). **NOT VERIFIED AGAINST LIVE POWERPOINT** — compiles clean in Debug and Release, dialog members confirmed by reflection against the PIA, never exercised against a running instance. Track Changes mode and up. |
 
 ## Missing entirely (confirmed absent from both the C# switch and the advertised tool list)
 

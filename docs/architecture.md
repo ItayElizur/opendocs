@@ -38,6 +38,11 @@ the model requests). Outlook repurposes all four tiers with its own meaning (Rea
 Draft only / Automate approvals / Full autonomy) rather than dropping two — see
 [`docs/tools/outlook.md`](tools/outlook.md) for the mapping.
 
+`save` (Word, Excel, PowerPoint) is the one tool defined once in `shared/web-src/app-shell/saveTool.ts` and
+imported by all three `entry.ts` files. It needs no tier-list entry: it is advertised from Track Changes up
+because it is not read-only, and each C# gate blocks it below that. Its Save As path is a modal dialog on the
+UI thread that Stop cannot cancel.
+
 These two enforcement points (client-side `entry.ts` tool lists, server-side C# gate
 sets) are maintained by hand in two different languages and **will silently drift** if a
 tool is added to one side and not the other — see `CLAUDE.md` for the concrete example

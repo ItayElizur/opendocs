@@ -8,7 +8,7 @@ where they explain a real scope or capability difference; see
 [`docs/comparison-with-genoffice.md`](../comparison-with-genoffice.md) for the
 high-level summary.
 
-## Top-level tools (19)
+## Top-level tools (20)
 
 | Tool | Kind | Notes |
 |---|---|---|
@@ -29,6 +29,7 @@ high-level summary.
 | `edit_chart` | Write — gateway | Creates or edits a native Word chart. Supports categories + one or more named series (multi-series, chart-type selection: column/columnStacked/bar/barStacked/line/area/pie/doughnut). `chartIndex` addresses an existing chart (0-based, inline then floating shapes, document order); `create:true` always adds a new one. `afterBlockIndex` anchors a new chart inline instead of floating at document origin. |
 | `apply_commands` | Write — gateway, see below | |
 | `add_comment` | Write (every mode) | Anchors a real Word comment to the first match of given text. **Not in genoffice's docs surface at all.** Available in every editing mode, including Comment Only. |
+| `save` | Write | Saves the open file in place, or opens Word's Save As dialog when `saveAs` is true (default false) or the file has never been saved. `saveAs` must be true whenever the user wants a copy, a new name, another location or another format. A cancelled dialog returns a non-error "cancelled" result with `Mutated: false`; the dialog is modal on Word's UI thread and Stop cannot dismiss it (`WordTools.File.cs`). **NOT VERIFIED AGAINST LIVE WORD** — compiles clean in Debug and Release, dialog members confirmed by reflection against the PIA, never exercised against a running instance. Track Changes mode and up. |
 | `undo_last_action` / `redo_last_action` | Write | Word's own Ctrl+Z/Ctrl+Y over the document's real undo history, via `Document.Undo()`/`Document.Redo()` (`WordTools.History.cs` — Word's `Application` has no Undo/Redo method); each returns a bool, so an empty stack reports "Nothing to undo/redo" with `Mutated: false`. Every other mutating tool call is wrapped in `Application.UndoRecord.StartCustomRecord`/`EndCustomRecord`, so **one tool call = one undo step** (a pre-filled `add_table` or a whole `apply_commands` batch backs out in a single undo). Read tools and undo/redo themselves are not wrapped. Track Changes mode and up. |
 
 ## `apply_commands` command kinds (15)
