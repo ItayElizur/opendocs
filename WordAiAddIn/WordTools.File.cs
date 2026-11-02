@@ -11,8 +11,7 @@ namespace WordAiAddIn
         // has never been saved. See WordTools.File.cs.md.
         private static ToolResult SaveDocument(JsonElement input)
         {
-            bool saveAs = input.ValueKind == JsonValueKind.Object
-                && input.TryGetProperty("saveAs", out var e) && e.ValueKind == JsonValueKind.True;
+            bool saveAs = ToolArgs.IsTrue(input, "saveAs");
             Word.Document doc = ActiveDoc;
 
             if (!saveAs && !string.IsNullOrEmpty(doc.Path))

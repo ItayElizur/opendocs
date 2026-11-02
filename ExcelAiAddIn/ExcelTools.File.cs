@@ -11,8 +11,7 @@ namespace ExcelAiAddIn
         // has never been saved. See ExcelTools.File.cs.md.
         private static ToolResult SaveWorkbook(JsonElement input)
         {
-            bool saveAs = input.ValueKind == JsonValueKind.Object
-                && input.TryGetProperty("saveAs", out var e) && e.ValueKind == JsonValueKind.True;
+            bool saveAs = ToolArgs.IsTrue(input, "saveAs");
             Excel.Application app = Globals.ThisAddIn.Application;
             Excel.Workbook wb = app.ActiveWorkbook;
 

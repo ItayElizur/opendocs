@@ -11,8 +11,7 @@ namespace PowerPointAiAddIn
         // has never been saved. See PowerPointTools.File.cs.md.
         private static ToolResult SavePresentation(JsonElement input)
         {
-            bool saveAs = input.ValueKind == JsonValueKind.Object
-                && input.TryGetProperty("saveAs", out var e) && e.ValueKind == JsonValueKind.True;
+            bool saveAs = ToolArgs.IsTrue(input, "saveAs");
             var pres = ActivePresentation;
 
             if (!saveAs && !string.IsNullOrEmpty(pres.Path))

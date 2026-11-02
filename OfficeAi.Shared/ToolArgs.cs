@@ -12,6 +12,25 @@ namespace OfficeAi.Shared
     /// </summary>
     public static class ToolArgs
     {
+        /// <summary>
+        /// Reads an optional boolean flag leniently: models sometimes send "true" or 1 instead of true. Only an
+        /// explicit yes counts (true, "true"/"yes"/"1" in any case, or a non-zero number); anything else, including a
+        /// missing property or a non-object input, is false.
+        /// </summary>
+        public static bool IsTrue(JsonElement input, string name)
+        {
+            if (input.ValueKind != JsonValueKind.Object || !input.TryGetProperty(name, out var e)) return false;
+            switch (e.ValueKind)
+            {
+                case JsonValueKind.True: return true;
+                case JsonValueKind.Number: return e.TryGetDouble(out var d) && d != 0;
+                case JsonValueKind.String:
+                    string s = (e.GetString() ?? "").Trim().ToLowerInvariant();
+                    return s == "true" || s == "yes" || s == "1";
+                default: return false;
+            }
+        }
+
         public static void ValidateRequired(string kind, JsonElement element, IReadOnlyDictionary<string, string[]> requiredFields, string noun,
             IReadOnlyDictionary<string, string[]> nonNullFields = null)
         {
