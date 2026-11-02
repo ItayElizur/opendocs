@@ -1,4 +1,4 @@
-import { startAddIn } from '@officeai/app-shell'
+import { startAddIn, SHARED_TOOLS, SHARED_TOOL_DISPLAY } from '@officeai/app-shell'
 
 // Word add-in: tool definitions, system prompt, and starters are the only
 // app-specific pieces left here - everything else (WebView2 bridge, settings,
@@ -607,8 +607,8 @@ const WORD_TOOL_DISPLAY = {
 
 startAddIn({
   skillId: 'word-tools',
-  tools: ALL_WORD_TOOLS,
-  toolDisplay: WORD_TOOL_DISPLAY,
+  tools: [...ALL_WORD_TOOLS, ...SHARED_TOOLS],
+  toolDisplay: { ...WORD_TOOL_DISPLAY, ...SHARED_TOOL_DISPLAY },
   systemPrompt:
     'You are an AI assistant embedded in Microsoft Word via the OpenDocs add-in. ' +
     'You can read the document, insert content at any position (plain text or a restricted HTML subset - headings, bold/italic/underline, bulleted/numbered lists), ' +
@@ -626,7 +626,8 @@ startAddIn({
     'apply_commands\' copyBlocks duplicates one or more paragraphs elsewhere in the document without removing the originals (unlike moveBlocks, which relocates them), and copyFormat copies one paragraph\'s complete formatting onto one or more others in a single call - like Format Painter, whole paragraphs only, and it never copies hyperlinks. ' +
     "Your available tools depend on the user's current editing mode (Read only, Comment only, Track changes, or Full autonomy); only call tools that are currently offered to you. " +
     'If the user has selected text in the document, it will be included in your context as "Content selected by the user." ' +
-    "undo_last_action/redo_last_action mirror Word's own Ctrl+Z/Ctrl+Y over the document's real undo history - use them if the user asks to undo/redo, or to back out a change you just made that turned out wrong.",
+    "undo_last_action/redo_last_action mirror Word's own Ctrl+Z/Ctrl+Y over the document's real undo history - use them if the user asks to undo/redo, or to back out a change you just made that turned out wrong." +
+    " save writes the open file in place; set saveAs=true when the user wants a copy, a new name or another location (it opens the Save As dialog and waits for them). Call it only when the user asks to save.",
   starters: [
     { en: 'Summarize the key points of this document', he: 'סכם את הנקודות העיקריות במסמך' },
     { en: 'Polish the whole document for a more professional tone', he: 'לטש את כל המסמך לטון מקצועי יותר' },
