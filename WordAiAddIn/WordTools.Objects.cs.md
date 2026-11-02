@@ -41,3 +41,26 @@ header/footer filtering, footnote/TOC reads, paragraph mapping). The enum values
 members used (Shape.Anchor/TextFrame/GroupItems/CanvasItems/AlternativeText, TextFrame.HasText/TextRange,
 HeaderFooter.LinkToPrevious, TableOfContents.UpperHeadingLevel) were confirmed by reflection against
 the referenced PIAs.
+
+## Cost of collecting objects, and long text (2026-11)
+
+Measured with a hidden Word instance driven over COM (late-bound, so comparable to this file's `dynamic` calls), on a
+generated document: 300 anchored text boxes, 3,261 paragraphs, 20 tables, 30 footnotes, 20 content controls.
+Best of 2-3 runs:
+
+- Classifying shapes the way `ListShapes` does (7 COM calls each): ~3,150 ms. Only `Anchor.Start` per shape: ~1,730 ms,
+  so the `Anchor` lookup (~5 ms each) is most of the cost and trimming the other calls barely helps.
+- Tables 182 ms (59 ms for `Range.Start` alone), content controls 100 ms (50), footnotes 143 ms (86), header/footer
+  parts 90 ms. The plain `.Count` properties together: 19 ms; `doc.Shapes.Count`: 3 ms.
+- Range-scoped alternative for a 5-paragraph range: `Range.ShapeRange.Count` ~4 ms, footnotes + controls + tables +
+  inline shapes counts ~11 ms, shape name + anchor through the range ~10 ms.
+
+So `read_blocks` as written (it collects every object in the document on every call) costs ~3.7 s on that document,
+~85% of it shapes. Not yet changed: asking Word for only the objects in the requested range would make it scale with
+the range instead of the document. The `Objects:` counts line, which is called once per conversation, now stops
+classifying shapes above `ShapeScanCap` (100, about 1 s) and reports just the total.
+
+Long text: `read_object` returns at most `ObjectTextCap` (4000) characters of a text box, note, header/footer or TOC,
+chosen by `offset`, and the reply names the offset for the next window (`OfficeAi.Shared/TextWindow.cs`, unit-tested).
+The old behaviour was a silent cut at 2000 characters with no way to read the rest. NOT VERIFIED AGAINST LIVE WORD
+beyond a clean build.

@@ -314,13 +314,14 @@ const ALL_WORD_TOOLS = [
         'Reads the non-body objects of the document. kind: "table" | "chart" | "smartart" | "shape" (text boxes, canvases, groups, floating pictures - reports hasText, and the text of each) | ' +
         '"content_control" | "header_footer" | "footnote" | "endnote" | "toc". Each kind has its own 0-based index space (the same indices edit_table/edit_chart/edit_smartart use: ' +
         'tables in document order, charts and SmartArt inline-first then floating). Omit index to list every object of that kind, one summary line each (with the paragraph it is anchored in); ' +
-        'pass index to read one in full. A "chart" read returns its title, type, categories and per-series values - call it before an incremental edit_chart change, ' +
+        'pass index to read one in full. Long text (a text box, note, header, TOC) comes back in parts of about 4000 characters; the reply ends with the offset to pass for the next part. A "chart" read returns its title, type, categories and per-series values - call it before an incremental edit_chart change, ' +
         'since edit_chart REPLACES the whole dataset when categories/series is given. read_blocks marks these objects next to the paragraph they sit in.',
       inputSchema: {
         type: 'object',
         properties: {
           kind: { type: 'string', enum: ['table', 'chart', 'smartart', 'shape', 'content_control', 'header_footer', 'footnote', 'endnote', 'toc'] },
           index: { type: 'number' },
+          offset: { type: 'number' },
         },
         required: ['kind'],
       },
