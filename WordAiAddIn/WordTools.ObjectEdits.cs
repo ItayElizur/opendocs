@@ -308,11 +308,14 @@ namespace WordAiAddIn
                         var shown = new List<string>();
                         for (int i = 0; i < matches.Count && i < 5; i++)
                         {
-                            string around = ActiveDoc.Range(Math.Max(paraStart, matches[i].Start - 20), Math.Min(paraEnd - 1, matches[i].End + 20)).Text;
-                            shown.Add((i + 1) + ") \"..." + around.Trim() + "...\"");
+                            // The match itself is marked [[like this]] so snippets of close-together matches stay distinguishable.
+                            Word.Range m = matches[i];
+                            string before = ActiveDoc.Range(Math.Max(paraStart, m.Start - 20), m.Start).Text;
+                            string after2 = ActiveDoc.Range(m.End, Math.Max(m.End, Math.Min(paraEnd - 1, m.End + 20))).Text;
+                            shown.Add((i + 1) + ") \"..." + before + "[[" + m.Text + "]]" + after2 + "...\"");
                         }
                         throw new ArgumentException("edit_note: afterText '" + afterText + "' matches " + matches.Count + " times in paragraph " + after.Value
-                            + " (" + string.Join("; ", shown) + "). Use a longer, unique phrase.");
+                            + " (" + string.Join("; ", shown) + "). Each match is marked [[like this]]. Use a longer, unique phrase.");
                     }
                     at = matches[0];
                     at.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
