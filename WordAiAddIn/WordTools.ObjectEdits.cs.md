@@ -61,6 +61,12 @@ calls go through `dynamic`, so a wrong argument shape surfaces only at runtime.
   count them, and it adds a parameter a weaker model can misuse). Instead a phrase that matches more than once is an
   error listing each match with ~20 characters of context (first 5), so the model retries with a longer phrase it
   can see is unique. No new parameter. NOT VERIFIED AGAINST LIVE WORD.
+  Matching does not use Word's `Find`: `Range.Text` contains control characters that are not visible words - a
+  footnote/endnote reference mark (0x02) between "the" and " mouse" made `Find` miss "the mouse" and showed up as a
+  square in the error snippets. The paragraph is read with field codes and hidden text included (so text index =
+  document offset, checked by length), cleaned by `OfficeAi.Shared/TextAnchors.cs` (unit-tested), searched
+  case-insensitively there, and the mark is inserted at the mapped document position right after the last matched
+  character (before a reference mark that already follows it).
 - **Headers/footers: fields.** `set`/`clear` assign `Range.Text`, which destroys fields. The result reports how many
   were replaced. `{PAGE}`, `{NUMPAGES}`, `{DATE}`, `{TIME}`, `{FILENAME}`, `{AUTHOR}` and `{TITLE}` in `text` are
   turned into real fields after the text is written (find the token, `Fields.Add` over it), and `read_object`

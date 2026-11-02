@@ -287,37 +287,29 @@ namespace WordAiAddIn
                 {
                     // Reference mark goes right after afterText, which must match exactly once in that paragraph;
                     // several matches are an error that shows each one, so the model picks a longer phrase.
+                    // The search runs on the paragraph text with footnote marks, field marks etc. removed
+                    // (TextAnchors), because those sit between words and break Word's own Find.
                     Word.Range para = ActiveDoc.Paragraphs[after.Value + 1].Range;
                     int paraStart = para.Start, paraEnd = para.End;
-                    Word.Range search = para.Duplicate;
-                    var matches = new List<Word.Range>();
-                    while (matches.Count < 20)
-                    {
-                        search.Find.ClearFormatting();
-                        search.Find.Text = afterText;
-                        search.Find.Forward = true;
-                        search.Find.Wrap = Word.WdFindWrap.wdFindStop;
-                        if (!search.Find.Execute() || search.End > paraEnd) break;
-                        matches.Add(search.Duplicate);
-                        search = ActiveDoc.Range(search.End, paraEnd);
-                    }
-                    if (matches.Count == 0)
+                    para.TextRetrievalMode.IncludeFieldCodes = true;
+                    para.TextRetrievalMode.IncludeHiddenText = true;
+                    string rawText = para.Text ?? "";
+                    if (rawText.Length != paraEnd - paraStart)
+                        throw new InvalidOperationException("edit_note: the text positions of paragraph " + after.Value + " cannot be mapped reliably; omit afterText to put the mark at the end of the paragraph.");
+                    CleanText clean = TextAnchors.Clean(rawText);
+                    List<int> starts = TextAnchors.FindAll(clean.Text, afterText, 20);
+                    if (starts.Count == 0)
                         throw new ArgumentException("edit_note: afterText '" + afterText + "' was not found in paragraph " + after.Value + ".");
-                    if (matches.Count > 1)
+                    if (starts.Count > 1)
                     {
                         var shown = new List<string>();
-                        for (int i = 0; i < matches.Count && i < 5; i++)
-                        {
-                            // The match itself is marked [[like this]] so snippets of close-together matches stay distinguishable.
-                            Word.Range m = matches[i];
-                            string before = ActiveDoc.Range(Math.Max(paraStart, m.Start - 20), m.Start).Text;
-                            string after2 = ActiveDoc.Range(m.End, Math.Max(m.End, Math.Min(paraEnd - 1, m.End + 20))).Text;
-                            shown.Add((i + 1) + ") \"..." + before + "[[" + m.Text + "]]" + after2 + "...\"");
-                        }
-                        throw new ArgumentException("edit_note: afterText '" + afterText + "' matches " + matches.Count + " times in paragraph " + after.Value
+                        for (int i = 0; i < starts.Count && i < 5; i++)
+                            shown.Add((i + 1) + ") \"" + TextAnchors.Snippet(clean.Text, starts[i], afterText.Length, 20) + "\"");
+                        throw new ArgumentException("edit_note: afterText '" + afterText + "' matches " + starts.Count + " times in paragraph " + after.Value
                             + " (" + string.Join("; ", shown) + "). Each match is marked [[like this]]. Use a longer, unique phrase.");
                     }
-                    at = matches[0];
+                    int markPos = paraStart + clean.Map[starts[0] + afterText.Length - 1] + 1;
+                    at = ActiveDoc.Range(markPos, markPos);
                     at.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
                 }
                 else
