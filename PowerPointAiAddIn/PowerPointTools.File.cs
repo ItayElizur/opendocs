@@ -14,7 +14,8 @@ namespace PowerPointAiAddIn
             return SaveTool.Run(input, pres.Path, () => pres.Save(), ShowSaveAsDialog, () => ActivePresentation.FullName);
         }
 
-        // PowerPoint has no Dialogs collection. FileDialog.Show() only picks the file (-1 confirmed, 0 cancelled);
+        // PowerPoint's Application.Dialogs is an untyped object with no built-in dialog list (Word and Excel have
+        // WdWordDialog / XlBuiltInDialog), so use FileDialog. Show() only picks the file (-1 confirmed, 0 cancelled);
         // Execute() performs the actual SaveAs with the chosen name and format.
         private static bool ShowSaveAsDialog()
         {

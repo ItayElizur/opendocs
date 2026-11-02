@@ -12,7 +12,8 @@ whenever the user wants a copy, a new name, another folder or another format - t
 schema text says so explicitly. A never-saved file (empty `Path`) goes to the Save As
 UI even when `saveAs` is false, because there is no path to save to.
 
-PowerPoint has no Dialogs collection, so the Save As path uses Application.FileDialog[msoFileDialogSaveAs]
+PowerPoint's Application.Dialogs exists in the PIA but is typed plain `object`, with no built-in dialog enum (Word has
+WdWordDialog, Excel XlBuiltInDialog), so there is no `Dialogs[...].Show()` to call; the Save As path uses Application.FileDialog[msoFileDialogSaveAs]
 (present on _Application in the referenced PIA). FileDialog.Show() only picks the target (-1 confirmed, 0 cancelled);
 the save itself happens in FileDialog.Execute(). `Execute` in PowerPointTools.cs skips
 StartNewUndoEntry() for `save` (nothing to undo).
