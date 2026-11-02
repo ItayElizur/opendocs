@@ -12,8 +12,14 @@ whenever the user wants a copy, a new name, another folder or another format - t
 schema text says so explicitly. A never-saved file (empty `Path`) goes to the Save As
 UI even when `saveAs` is false, because there is no path to save to.
 
-Excel's Application.Dialogs[xlDialogSaveAs].Show() returns a bool: true when the user confirmed (Excel
-has already saved by then), false on cancel. Excel's Track Changes tier behaves like Full
+The Save As step uses Application.GetSaveAsFilename (picks a name only; returns the path as a string, or the
+boolean false on cancel) followed by Workbook.SaveAs with a format taken from the extension
+(xlsx, xlsm, xlsb, xls, csv; anything else falls back to xlsx). It deliberately does NOT use
+Application.Dialogs[xlDialogSaveAs].Show(): with that legacy built-in dialog the mouse pointer vanished
+when the command was sent while the pointer was over the chat pane (hidden over the whole Excel window, and
+back only after the pointer re-entered the pane) - observed live, Excel only, and not fixed by running the
+dialog after WebView2's message callback returned. The GetSaveAsFilename change is NOT VERIFIED beyond a
+clean build until the pointer symptom is retested. Excel's Track Changes tier behaves like Full
 Autonomy (see ExcelTools.cs.md), so `save` is available from Track Changes up exactly like
 `propose_operations`.
 
