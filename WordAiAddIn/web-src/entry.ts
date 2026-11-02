@@ -540,7 +540,7 @@ const ALL_WORD_TOOLS = [
       description:
         'Sets or clears a section\'s header or footer. which: "header"|"footer"; type: "primary" (default) | "first_page" | "even_pages" (writing one of the last two switches that option on for the section); ' +
         'section is 1-based (default 1). action "set" needs text (newlines make paragraphs); "clear" empties it. For section 2+, the part is unlinked from the previous section first so the edit stays in that section. ' +
-        'Writes plain text only: it replaces the whole part, including any page-number/date field already in it, so avoid it on a footer that carries a page number unless asked. ' +
+        'Writes the whole part: anything already in it, page-number fields included, is replaced. To put a field in the text write {PAGE}, {NUMPAGES}, {DATE}, {TIME}, {FILENAME}, {AUTHOR} or {TITLE} (e.g. "Page {PAGE} of {NUMPAGES}"); read_object shows fields the same way. ' +
         'Use read_object kind "header_footer" to see what the document has now.',
       inputSchema: {
         type: 'object',

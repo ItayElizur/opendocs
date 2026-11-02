@@ -49,15 +49,19 @@ calls go through `dynamic`, so a wrong argument shape surfaces only at runtime.
 
 ## Found in first manual testing (2026-11)
 
-- **Content controls: placement.** `ContentControls.Add(type, range)` failed with "the current selection
-  partially covers a plain text content control" on the second add. The default position (end of the last
-  paragraph's text) is the edge of the control the previous call created. `OutsideContentControls` now steps the
-  insertion point past the end tag of any enclosing control (`ParentContentControl`) before adding. The exact
-  Word behaviour is a hypothesis from the error text, NOT VERIFIED AGAINST LIVE WORD after the change.
+- **Content controls: placement.** `doc.ContentControls.Add(type, range)` failed with "the current selection
+  partially covers a plain text content control" whenever the user's cursor was inside a content control, and
+  worked once the cursor was moved out (even right next to it). So Word consulted the selection, not the range we
+  passed. `AddContentControl` binds the add to the range (`range.ContentControls.Add(type)`), and if Word still
+  refuses it moves the selection to the range for the call and restores it. (An earlier attempt assumed the
+  trouble was the insertion point touching the previous control; the tester's result disproved that.)
+  NOT VERIFIED AGAINST LIVE WORD after the change.
 - **Notes: `afterText`.** Only the first match used to be reachable, which is the wrong anchor when the phrase
   repeats in the paragraph. `occurrence` (1-based, default 1) picks the Nth match; one past the number of
   matches is an error that reports how many exist, so the model can correct itself instead of mis-anchoring.
-- **Headers/footers: fields.** `set`/`clear` assign `Range.Text`, which destroys fields (PAGE, NUMPAGES, DATE...).
-  The result now reports how many were removed. Inserting fields is not supported yet; `read_object` shows a
-  field's displayed text, not the field itself. A token syntax (e.g. `{PAGE}` in `text` becoming a PAGE field,
-  and the same tokens in the read output) is the likely design if this is wanted.
+- **Headers/footers: fields.** `set`/`clear` assign `Range.Text`, which destroys fields. The result reports how many
+  were replaced. `{PAGE}`, `{NUMPAGES}`, `{DATE}`, `{TIME}`, `{FILENAME}`, `{AUTHOR}` and `{TITLE}` in `text` are
+  turned into real fields after the text is written (find the token, `Fields.Add` over it), and `read_object`
+  reads the part with field codes on and maps them back to the same tokens (`OfficeAi.Shared/FieldTokens.cs`,
+  unit-tested). Deliberately small: no format switches, no other field types; an unmapped field reads back as its
+  displayed result. NOT VERIFIED AGAINST LIVE WORD.

@@ -183,7 +183,10 @@ namespace WordAiAddIn
                         {
                             dynamic hf = parts.Item(t.Key);
                             if (sectionIndex > 1 && (bool)hf.LinkToPrevious) continue;
-                            string text = Truncate((string)hf.Range.Text, ObjectTextCap);
+                            // Field codes on, so a page number etc. reads back as {PAGE} rather than its current value.
+                            dynamic rng = hf.Range;
+                            rng.TextRetrievalMode.IncludeFieldCodes = true;
+                            string text = Truncate(FieldTokens.FromFieldCodes((string)rng.Text), ObjectTextCap);
                             if (text.Length == 0) continue;
                             list.Add(new HeaderFooterInfo { Section = sectionIndex, Which = which, Type = t.Value, Text = text });
                         }

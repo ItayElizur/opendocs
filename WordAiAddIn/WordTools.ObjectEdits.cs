@@ -65,23 +65,30 @@ namespace WordAiAddIn
             return r;
         }
 
-        // ContentControls.Add fails ("selection partially covers a plain text content control") when the target
-        // range sits inside or on the edge of an existing control, e.g. the end of the last paragraph right after a
-        // control added by the previous call. Step past the end tag of any enclosing control so the new one is placed
-        // beside it, never nested in it.
-        private static Word.Range OutsideContentControls(Word.Range at)
+        // doc.ContentControls.Add(type, range) failed while the user's cursor was inside a content control
+        // ("the selection partially covers a plain text content control") - Word consulted the selection, not the
+        // range. Bind the add to the range itself; if Word still refuses, move the selection to the range for the
+        // call and put it back afterwards. See WordTools.ObjectEdits.cs.md.
+        private static dynamic AddContentControl(Word.Range at, int code)
         {
-            Word.Document doc = ActiveDoc;
-            int limit = doc.Content.End - 1;
-            for (int guard = 0; guard < 16; guard++)
+            try
             {
-                Word.ContentControl parent = at.ParentContentControl;
-                if (parent == null) break;
-                int pos = Math.Min(parent.Range.End + 1, limit);
-                if (pos <= at.Start) break;
-                at = doc.Range(pos, pos);
+                return ((dynamic)at).ContentControls.Add(code);
             }
-            return at;
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                Word.Selection sel = Globals.ThisAddIn.Application.Selection;
+                int start = sel.Start, end = sel.End;
+                try
+                {
+                    at.Select();
+                    return ((dynamic)sel.Range).ContentControls.Add(code);
+                }
+                finally
+                {
+                    sel.SetRange(start, end);
+                }
+            }
         }
 
         // The last paragraph's text end - the default insertion point when no afterBlockIndex is given.
@@ -159,8 +166,8 @@ namespace WordAiAddIn
                 if (type == null || !ContentControlTypeCodes.TryGetValue(type, out code))
                     throw new ArgumentException("edit_content_control: type is required for add. Valid: " + string.Join(", ", ContentControlTypeCodes.Keys) + ".");
                 int? after = OptInt(input, "afterBlockIndex");
-                Word.Range at = OutsideContentControls(after.HasValue ? RangeAtEndOfBlockText(after.Value) : RangeAtEndOfDocumentText());
-                dynamic cc = ((dynamic)doc).ContentControls.Add(code, at);
+                Word.Range at = after.HasValue ? RangeAtEndOfBlockText(after.Value) : RangeAtEndOfDocumentText();
+                dynamic cc = AddContentControl(at, code);
                 ApplyContentControlFields(cc, input);
                 return new ToolResult
                 {
@@ -225,11 +232,28 @@ namespace WordAiAddIn
             if (section > 1 && (bool)hf.LinkToPrevious) hf.LinkToPrevious = false;
             int replacedFields = (int)hf.Range.Fields.Count;
             hf.Range.Text = action == "clear" ? "" : Paras(text);
+            // {PAGE}, {NUMPAGES}, {DATE}, {TIME}, {FILENAME}, {AUTHOR}, {TITLE} in the text become real fields.
+            int insertedFields = 0;
+            if (action == "set")
+            {
+                foreach (string fieldName in FieldTokens.Find(text))
+                {
+                    Word.Range r = hf.Range;
+                    r.Find.ClearFormatting();
+                    r.Find.Text = "{" + fieldName + "}";
+                    r.Find.Forward = true;
+                    r.Find.Wrap = Word.WdFindWrap.wdFindStop;
+                    if (!r.Find.Execute()) continue;
+                    ((dynamic)r).Fields.Add(r, -1, fieldName, false);
+                    insertedFields++;
+                }
+            }
 
             return new ToolResult
             {
                 Output = (action == "clear" ? "Cleared " : "Set ") + "section " + section + " " + which + " (" + type.Replace('_', ' ') + ")."
-                    + (replacedFields > 0 ? " Note: this removed " + replacedFields + " field(s) (page number, date, etc.) that were in it; this tool writes plain text only." : ""),
+                    + (insertedFields > 0 ? " Inserted " + insertedFields + " field(s)." : "")
+                    + (replacedFields > 0 ? " Replaced " + replacedFields + " field(s) that were in it." : ""),
                 Mutated = true, Summary = "edit_header_footer " + action,
             };
         }
