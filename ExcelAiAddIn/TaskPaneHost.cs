@@ -23,8 +23,6 @@ namespace ExcelAiAddIn
 
         protected override Task<ToolResult> ExecuteTool(string name, JsonElement input)
         {
-            // save opens a modal dialog - run it outside WebView2's callback (see PaneHostBase.cs.md).
-            if (name == "save") return RunAfterMessageHandler(() => ExcelTools.Execute(GetChatId(), name, input));
             return Task.FromResult(ExcelTools.Execute(GetChatId(), name, input));
         }
 

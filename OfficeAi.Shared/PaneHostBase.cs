@@ -99,21 +99,6 @@ namespace OfficeAi.Shared
         // without changing the shared ToolExecutor delegate's signature.
         protected abstract Task<ToolResult> ExecuteTool(string name, JsonElement input);
 
-        // Runs a tool from this control's message queue instead of inside WebView2's WebMessageReceived callback.
-        // For tools that open a modal dialog (save): the dialog's nested message loop must not spin while WebView2
-        // is still handling the input that sent the command, or the pointer stays hidden/stuck once the dialog
-        // opens. The returned task completes when the work has run on the UI thread. See PaneHostBase.cs.md.
-        protected Task<ToolResult> RunAfterMessageHandler(Func<ToolResult> work)
-        {
-            var tcs = new TaskCompletionSource<ToolResult>();
-            BeginInvoke((Action)(() =>
-            {
-                try { tcs.SetResult(work()); }
-                catch (Exception ex) { tcs.SetException(ex); }
-            }));
-            return tcs.Task;
-        }
-
         // The per-document chat-history/mode key, lazily computed and cached
         // by each subclass on first use (never in the constructor - see
         // above). Transparently migrates a still-provisional id onto the real

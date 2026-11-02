@@ -87,15 +87,3 @@
 // app's own VSTO-generated Globals class). See OfficeLanguage.cs
 // for how the returned LCID maps to a supported UI language.
 ```
-
-## RunAfterMessageHandler (modal dialogs)
-
-`ExecuteTool` is called synchronously from WebView2's `WebMessageReceived` callback (the apps return
-`Task.FromResult(Tools.Execute(...))`). A tool that opens a modal dialog therefore ran the dialog's nested
-message loop *inside* that callback, while WebView2 was still handling the click or keypress that sent the
-command. Observed in Excel with Save As: when the pointer was over the chat pane at send time, the pointer vanished
-for the rest of the dialog (it stayed gone over other windows, buttons still highlighted, Alt+Tab reset it); with the
-pointer over the sheet it was fine. `RunAfterMessageHandler` posts the work with `BeginInvoke` so it runs from the
-control's own message queue after the callback has returned, and completes a `TaskCompletionSource` with the
-result. Only `save` uses it; other tools are unchanged. The cause is inferred from the symptoms, NOT VERIFIED beyond
-the fix being built clean.
