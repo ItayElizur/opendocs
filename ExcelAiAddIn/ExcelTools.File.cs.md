@@ -34,3 +34,22 @@ NOT VERIFIED AGAINST LIVE EXCEL: compiles clean in Debug and Release, and the di
 members were confirmed to exist in the referenced PIA by reflection, but neither the
 in-place save nor the dialog (including cancel detection) was exercised against a
 running instance.
+
+## Hidden mouse pointer
+
+Symptom (Excel only): send `save` with `saveAs` while the mouse is over the chat pane and the pointer disappears
+over every Excel window when Save As opens; it comes back only after the pointer re-enters the pane (Alt+Tab also
+resets it). Word and PowerPoint do not do this. Not caused by the dialog API or by where the dialog is opened from:
+swapping Dialogs[xlDialogSaveAs] for GetSaveAsFilename + SaveAs, and running the dialog after WebView2's message
+callback returned, each changed nothing.
+
+Measured with GetCursorInfo/ShowCursor just before the dialog (three runs, pointer over the pane twice):
+over the pane the pointer was already invisible on Excel's UI thread before the dialog existed - `showing=False`,
+`hCursor=0` (a null cursor), and once also a ShowCursor display counter of -1. With the pointer over the sheet
+the state was normal. `ResetHiddenPointer` winds a negative counter back to 0 and replaces a null cursor with the
+arrow just before the dialog; after that the pointer stayed visible in all three runs. A line is written to
+%TEMP%\OpenDocsDebug.log only when it actually repaired something.
+
+Why the cursor is null is not established. Likely the chat pane's browser clearing the cursor (for example
+hide-while-typing) on the shared UI thread; not confirmed. Why Word/PowerPoint are unaffected is also unknown.
+NOT VERIFIED beyond those three manual runs.
