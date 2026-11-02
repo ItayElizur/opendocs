@@ -7,28 +7,21 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
-        // save: in-place Save(), or the Save As file dialog when saveAs is set or the presentation
-        // has never been saved. See PowerPointTools.File.cs.md.
+        // save: the flow lives in OfficeAi.Shared.SaveTool; this is PowerPoint's two steps. See PowerPointTools.File.cs.md.
         private static ToolResult SavePresentation(JsonElement input)
         {
-            bool saveAs = ToolArgs.IsTrue(input, "saveAs");
             var pres = ActivePresentation;
-
-            if (!saveAs && !string.IsNullOrEmpty(pres.Path))
-            {
-                pres.Save();
-                return new ToolResult { Output = "Saved " + pres.FullName + ".", Summary = "save" };
-            }
-
-            // PowerPoint has no Dialogs collection. FileDialog.Show() only picks the file (-1 confirmed,
-            // 0 cancelled); Execute() performs the actual SaveAs with the chosen name and format.
-            Office.FileDialog dlg = Globals.ThisAddIn.Application.FileDialog[Office.MsoFileDialogType.msoFileDialogSaveAs];
-            if (dlg.Show() == 0)
-            {
-                return new ToolResult { Output = "The user cancelled the Save As dialog; nothing was saved.", Summary = "save" };
-            }
-            dlg.Execute();
-            return new ToolResult { Output = "Saved as " + ActivePresentation.FullName + ".", Summary = "save" };
+            return SaveTool.Run(input, pres.Path,
+                () => { pres.Save(); return pres.FullName; },
+                () =>
+                {
+                    // PowerPoint has no Dialogs collection. FileDialog.Show() only picks the file (-1 confirmed,
+                    // 0 cancelled); Execute() performs the actual SaveAs with the chosen name and format.
+                    Office.FileDialog dlg = Globals.ThisAddIn.Application.FileDialog[Office.MsoFileDialogType.msoFileDialogSaveAs];
+                    if (dlg.Show() == 0) return null;
+                    dlg.Execute();
+                    return ActivePresentation.FullName;
+                });
         }
     }
 }

@@ -7,26 +7,18 @@ namespace WordAiAddIn
 {
     public static partial class WordTools
     {
-        // save: in-place Save(), or the modal Save As dialog when saveAs is set or the document
-        // has never been saved. See WordTools.File.cs.md.
+        // save: the flow lives in OfficeAi.Shared.SaveTool; this is Word's two steps. See WordTools.File.cs.md.
         private static ToolResult SaveDocument(JsonElement input)
         {
-            bool saveAs = ToolArgs.IsTrue(input, "saveAs");
             Word.Document doc = ActiveDoc;
-
-            if (!saveAs && !string.IsNullOrEmpty(doc.Path))
-            {
-                doc.Save();
-                return new ToolResult { Output = "Saved " + doc.FullName + ".", Summary = "save" };
-            }
-
-            // Dialog.Show() returns -1 when the user confirmed (Word has already saved) and 0 on cancel.
-            int result = Globals.ThisAddIn.Application.Dialogs[Word.WdWordDialog.wdDialogFileSaveAs].Show();
-            if (result == 0)
-            {
-                return new ToolResult { Output = "The user cancelled the Save As dialog; nothing was saved.", Summary = "save" };
-            }
-            return new ToolResult { Output = "Saved as " + ActiveDoc.FullName + ".", Summary = "save" };
+            return SaveTool.Run(input, doc.Path,
+                () => { doc.Save(); return doc.FullName; },
+                () =>
+                {
+                    // Dialog.Show() returns -1 when the user confirmed (Word has already saved) and 0 on cancel.
+                    int result = Globals.ThisAddIn.Application.Dialogs[Word.WdWordDialog.wdDialogFileSaveAs].Show();
+                    return result == 0 ? null : ActiveDoc.FullName;
+                });
         }
     }
 }

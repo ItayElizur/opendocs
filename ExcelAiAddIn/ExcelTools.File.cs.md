@@ -53,3 +53,11 @@ arrow just before the dialog; after that the pointer stayed visible in all three
 Why the cursor is null is not established. Likely the chat pane's browser clearing the cursor (for example
 hide-while-typing) on the shared UI thread; not confirmed. Why Word/PowerPoint are unaffected is also unknown.
 NOT VERIFIED beyond those three manual runs.
+
+## Shared flow and strict `saveAs`
+
+The flow (save in place, or Save As when `saveAs` is true or the file has never been saved) and the result messages
+live in `OfficeAi.Shared/SaveTool.cs`; this file only supplies Excel's two COM steps (`Workbook.Save` and the Save As picker). `saveAs` is parsed by `ToolArgs.OptionalFlag`:
+missing = false, `true`/`false` (or the numbers 1/0) accepted, anything else - a string like "true", another number,
+null - throws "saveAs must be true or false", so a mistyped flag is never guessed into an in-place overwrite.
+A read-only file is not special-cased: `Save()` behaves as the app itself does, and the user can ask for Save As.

@@ -28,3 +28,11 @@ NOT VERIFIED AGAINST LIVE POWERPOINT: compiles clean in Debug and Release, and t
 members were confirmed to exist in the referenced PIA by reflection, but neither the
 in-place save nor the dialog (including cancel detection) was exercised against a
 running instance.
+
+## Shared flow and strict `saveAs`
+
+The flow (save in place, or Save As when `saveAs` is true or the file has never been saved) and the result messages
+live in `OfficeAi.Shared/SaveTool.cs`; this file only supplies PowerPoint's two COM steps (`Presentation.Save` and the Save As file dialog). `saveAs` is parsed by `ToolArgs.OptionalFlag`:
+missing = false, `true`/`false` (or the numbers 1/0) accepted, anything else - a string like "true", another number,
+null - throws "saveAs must be true or false", so a mistyped flag is never guessed into an in-place overwrite.
+A read-only file is not special-cased: `Save()` behaves as the app itself does, and the user can ask for Save As.

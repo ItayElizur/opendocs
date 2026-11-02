@@ -8,33 +8,24 @@ namespace ExcelAiAddIn
 {
     public static partial class ExcelTools
     {
-        // save: in-place Save(), or the modal Save As dialog when saveAs is set or the workbook
-        // has never been saved. See ExcelTools.File.cs.md.
+        // save: the flow lives in OfficeAi.Shared.SaveTool; this is Excel's two steps. See ExcelTools.File.cs.md.
         private static ToolResult SaveWorkbook(JsonElement input)
         {
-            bool saveAs = ToolArgs.IsTrue(input, "saveAs");
             Excel.Application app = Globals.ThisAddIn.Application;
             Excel.Workbook wb = app.ActiveWorkbook;
-
-            if (!saveAs && !string.IsNullOrEmpty(wb.Path))
-            {
-                wb.Save();
-                return new ToolResult { Output = "Saved " + wb.FullName + ".", Summary = "save" };
-            }
-
-            // Not Dialogs[xlDialogSaveAs]: with that legacy dialog the mouse pointer vanished when the command was sent
-            // while the pointer was over the chat pane. GetSaveAsFilename only picks a name; SaveAs does the save.
-            // See ExcelTools.File.cs.md.
-            ResetHiddenPointer();
-            object picked = app.GetSaveAsFilename(wb.Name, SaveAsFilter, 1, "Save As", Type.Missing);
-            string path = picked as string;
-            if (string.IsNullOrEmpty(path))
-            {
-                return new ToolResult { Output = "The user cancelled the Save As dialog; nothing was saved.", Summary = "save" };
-            }
-            wb.SaveAs(path, FileFormatFor(path), Type.Missing, Type.Missing, Type.Missing, Type.Missing,
-                Excel.XlSaveAsAccessMode.xlNoChange, Type.Missing, Type.Missing, Type.Missing, Type.Missing, Type.Missing);
-            return new ToolResult { Output = "Saved as " + app.ActiveWorkbook.FullName + ".", Summary = "save" };
+            return SaveTool.Run(input, wb.Path,
+                () => { wb.Save(); return wb.FullName; },
+                () =>
+                {
+                    // Not Dialogs[xlDialogSaveAs]: with that legacy dialog the mouse pointer vanished when the command was
+                    // sent while the pointer was over the chat pane. GetSaveAsFilename only picks a name; SaveAs saves.
+                    ResetHiddenPointer();
+                    string path = app.GetSaveAsFilename(wb.Name, SaveAsFilter, 1, "Save As", Type.Missing) as string;
+                    if (string.IsNullOrEmpty(path)) return null;
+                    wb.SaveAs(path, FileFormatFor(path), Type.Missing, Type.Missing, Type.Missing, Type.Missing,
+                        Excel.XlSaveAsAccessMode.xlNoChange, Type.Missing, Type.Missing, Type.Missing, Type.Missing, Type.Missing);
+                    return app.ActiveWorkbook.FullName;
+                });
         }
 
         // When the command is sent with the mouse over the chat pane, the pointer is already invisible on Excel's UI
