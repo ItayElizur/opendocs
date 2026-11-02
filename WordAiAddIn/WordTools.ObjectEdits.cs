@@ -65,6 +65,25 @@ namespace WordAiAddIn
             return r;
         }
 
+        // ContentControls.Add fails ("selection partially covers a plain text content control") when the target
+        // range sits inside or on the edge of an existing control, e.g. the end of the last paragraph right after a
+        // control added by the previous call. Step past the end tag of any enclosing control so the new one is placed
+        // beside it, never nested in it.
+        private static Word.Range OutsideContentControls(Word.Range at)
+        {
+            Word.Document doc = ActiveDoc;
+            int limit = doc.Content.End - 1;
+            for (int guard = 0; guard < 16; guard++)
+            {
+                Word.ContentControl parent = at.ParentContentControl;
+                if (parent == null) break;
+                int pos = Math.Min(parent.Range.End + 1, limit);
+                if (pos <= at.Start) break;
+                at = doc.Range(pos, pos);
+            }
+            return at;
+        }
+
         // The last paragraph's text end - the default insertion point when no afterBlockIndex is given.
         private static Word.Range RangeAtEndOfDocumentText()
         {
@@ -140,7 +159,7 @@ namespace WordAiAddIn
                 if (type == null || !ContentControlTypeCodes.TryGetValue(type, out code))
                     throw new ArgumentException("edit_content_control: type is required for add. Valid: " + string.Join(", ", ContentControlTypeCodes.Keys) + ".");
                 int? after = OptInt(input, "afterBlockIndex");
-                Word.Range at = after.HasValue ? RangeAtEndOfBlockText(after.Value) : RangeAtEndOfDocumentText();
+                Word.Range at = OutsideContentControls(after.HasValue ? RangeAtEndOfBlockText(after.Value) : RangeAtEndOfDocumentText());
                 dynamic cc = ((dynamic)doc).ContentControls.Add(code, at);
                 ApplyContentControlFields(cc, input);
                 return new ToolResult
@@ -204,11 +223,13 @@ namespace WordAiAddIn
             // A part linked to the previous section would write through to the previous section; break the link so
             // the edit stays in the requested section.
             if (section > 1 && (bool)hf.LinkToPrevious) hf.LinkToPrevious = false;
+            int replacedFields = (int)hf.Range.Fields.Count;
             hf.Range.Text = action == "clear" ? "" : Paras(text);
 
             return new ToolResult
             {
-                Output = (action == "clear" ? "Cleared " : "Set ") + "section " + section + " " + which + " (" + type.Replace('_', ' ') + ").",
+                Output = (action == "clear" ? "Cleared " : "Set ") + "section " + section + " " + which + " (" + type.Replace('_', ' ') + ")."
+                    + (replacedFields > 0 ? " Note: this removed " + replacedFields + " field(s) (page number, date, etc.) that were in it; this tool writes plain text only." : ""),
                 Mutated = true, Summary = "edit_header_footer " + action,
             };
         }
@@ -240,12 +261,30 @@ namespace WordAiAddIn
                 string afterText = OptStr(input, "afterText");
                 if (afterText != null)
                 {
-                    // Reference mark goes right after the first occurrence of afterText inside that paragraph.
-                    at = ActiveDoc.Paragraphs[after.Value + 1].Range;
-                    at.Find.ClearFormatting();
-                    at.Find.Text = afterText;
-                    if (!at.Find.Execute())
+                    // Reference mark goes right after the Nth (default 1st) occurrence of afterText inside that paragraph.
+                    int occurrence = OptInt(input, "occurrence") ?? 1;
+                    if (occurrence < 1) throw new ArgumentException("edit_note: occurrence is 1-based.");
+                    Word.Range para = ActiveDoc.Paragraphs[after.Value + 1].Range;
+                    int paraEnd = para.End;
+                    Word.Range search = para.Duplicate;
+                    Word.Range nth = null;
+                    int found = 0;
+                    while (true)
+                    {
+                        search.Find.ClearFormatting();
+                        search.Find.Text = afterText;
+                        search.Find.Forward = true;
+                        search.Find.Wrap = Word.WdFindWrap.wdFindStop;
+                        if (!search.Find.Execute() || search.End > paraEnd) break;
+                        found++;
+                        if (found == occurrence) nth = search.Duplicate;
+                        search = ActiveDoc.Range(search.End, paraEnd);
+                    }
+                    if (found == 0)
                         throw new ArgumentException("edit_note: afterText '" + afterText + "' was not found in paragraph " + after.Value + ".");
+                    if (nth == null)
+                        throw new ArgumentException("edit_note: afterText '" + afterText + "' occurs " + found + " time(s) in paragraph " + after.Value + ", so occurrence " + occurrence + " does not exist.");
+                    at = nth;
                     at.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
                 }
                 else

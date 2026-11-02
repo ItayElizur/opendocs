@@ -540,6 +540,7 @@ const ALL_WORD_TOOLS = [
       description:
         'Sets or clears a section\'s header or footer. which: "header"|"footer"; type: "primary" (default) | "first_page" | "even_pages" (writing one of the last two switches that option on for the section); ' +
         'section is 1-based (default 1). action "set" needs text (newlines make paragraphs); "clear" empties it. For section 2+, the part is unlinked from the previous section first so the edit stays in that section. ' +
+        'Writes plain text only: it replaces the whole part, including any page-number/date field already in it, so avoid it on a footer that carries a page number unless asked. ' +
         'Use read_object kind "header_footer" to see what the document has now.',
       inputSchema: {
         type: 'object',
@@ -557,7 +558,7 @@ const ALL_WORD_TOOLS = [
       name: 'edit_note',
       description:
         'Adds, edits or deletes a footnote or endnote. noteKind: "footnote"|"endnote". action "add": text and afterBlockIndex (the paragraph that carries the reference mark) are required; ' +
-        'the mark goes at the end of that paragraph, or right after the first occurrence of afterText inside it. action "edit": index (read_object kind "footnote"/"endnote") and text. action "delete": index. ' +
+        'the mark goes at the end of that paragraph, or right after the Nth occurrence (occurrence, 1-based, default 1) of afterText inside it. action "edit": index (read_object kind "footnote"/"endnote") and text. action "delete": index. ' +
         'Add and delete shift later note indices.',
       inputSchema: {
         type: 'object',
@@ -568,6 +569,7 @@ const ALL_WORD_TOOLS = [
           text: { type: 'string' },
           afterBlockIndex: { type: 'number' },
           afterText: { type: 'string' },
+          occurrence: { type: 'number' },
         },
         required: ['action', 'noteKind'],
       },

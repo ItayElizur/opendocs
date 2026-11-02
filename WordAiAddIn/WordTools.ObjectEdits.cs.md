@@ -46,3 +46,18 @@ Footnote.Index, TablesOfContents.Add, TableOfContents.Update/UpdatePageNumbers/D
 PageSetup.DifferentFirstPageHeaderFooter/OddAndEvenPagesHeaderFooter, HeaderFooter.LinkToPrevious) was
 confirmed by reflection against the referenced PIA, but none of it was run against a real document. The
 calls go through `dynamic`, so a wrong argument shape surfaces only at runtime.
+
+## Found in first manual testing (2026-11)
+
+- **Content controls: placement.** `ContentControls.Add(type, range)` failed with "the current selection
+  partially covers a plain text content control" on the second add. The default position (end of the last
+  paragraph's text) is the edge of the control the previous call created. `OutsideContentControls` now steps the
+  insertion point past the end tag of any enclosing control (`ParentContentControl`) before adding. The exact
+  Word behaviour is a hypothesis from the error text, NOT VERIFIED AGAINST LIVE WORD after the change.
+- **Notes: `afterText`.** Only the first match used to be reachable, which is the wrong anchor when the phrase
+  repeats in the paragraph. `occurrence` (1-based, default 1) picks the Nth match; one past the number of
+  matches is an error that reports how many exist, so the model can correct itself instead of mis-anchoring.
+- **Headers/footers: fields.** `set`/`clear` assign `Range.Text`, which destroys fields (PAGE, NUMPAGES, DATE...).
+  The result now reports how many were removed. Inserting fields is not supported yet; `read_object` shows a
+  field's displayed text, not the field itself. A token syntax (e.g. `{PAGE}` in `text` becoming a PAGE field,
+  and the same tokens in the read output) is the likely design if this is wanted.
