@@ -42,7 +42,6 @@ namespace WordAiAddIn
             public string Name;
             public bool HasText;
             public int Start = -1;
-            public string Location = ""; // "" = in the body; otherwise "header", "footer", ... (see StoryLocation)
         }
 
         private static string ShapeTypeName(int msoShapeType)
@@ -86,42 +85,16 @@ namespace WordAiAddIn
             catch { return false; }
         }
 
-        // Where a floating shape is anchored: the story it lives in (-1 if unreadable) and, for the main story, the
-        // character offset (otherwise -1).
-        private static void ShapeAnchor(dynamic shp, out int story, out int start)
-        {
-            story = -1;
-            start = -1;
-            try
-            {
-                dynamic anchor = shp.Anchor;
-                story = (int)anchor.StoryType;
-                if (story == 1 /* wdMainTextStory */) start = (int)anchor.Start;
-            }
-            catch { }
-        }
-
         // Character offset of a floating shape's anchor in the MAIN story (-1 for header/footer shapes etc.).
         private static int ShapeAnchorStart(dynamic shp)
         {
-            int story, start;
-            ShapeAnchor(shp, out story, out start);
-            return start;
-        }
-
-        // "" for the body, otherwise where the shape lives. WdStoryType: 6/7/10 = even/primary/first-page header,
-        // 8/9/11 = even/primary/first-page footer. Such shapes (a watermark, say) are in doc.Shapes with the body's
-        // shapes but belong to no paragraph, so they are labelled and counted apart.
-        private static string StoryLocation(int story)
-        {
-            switch (story)
+            try
             {
-                case 1: return "";
-                case 6: case 7: case 10: return "header";
-                case 8: case 9: case 11: return "footer";
-                case -1: return "unknown";
-                default: return "another story";
+                dynamic anchor = shp.Anchor;
+                if ((int)anchor.StoryType == 1 /* wdMainTextStory */) return (int)anchor.Start;
             }
+            catch { }
+            return -1;
         }
 
         // Charts and SmartArt are excluded - they have their own kinds and index spaces. Uses HasChart/HasSmartArt
@@ -138,9 +111,7 @@ namespace WordAiAddIn
                 var info = new ShapeInfo { Shape = shp, Index = list.Count, Type = type, TypeName = ShapeTypeName(type) };
                 try { info.Name = (string)shp.Name; } catch { info.Name = ""; }
                 info.HasText = ShapeHasText(shp, type, 0);
-                int story;
-                ShapeAnchor(shp, out story, out info.Start);
-                info.Location = StoryLocation(story);
+                info.Start = ShapeAnchorStart(shp);
                 list.Add(info);
             }
             return list;
@@ -296,8 +267,7 @@ namespace WordAiAddIn
                     {
                         Kind = "shape", Index = s.Index, Name = s.Name, Start = s.Start,
                         Label = "shape#" + s.Index + " \"" + s.Name + "\" " + s.TypeName + (s.HasText ? " hasText" : ""),
-                        Summary = "\"" + s.Name + "\" " + s.TypeName + (s.HasText ? " hasText" : "")
-                            + (s.Location.Length > 0 ? " (in the " + s.Location + ")" : ""),
+                        Summary = "\"" + s.Name + "\" " + s.TypeName + (s.HasText ? " hasText" : ""),
                     });
                 }
             }
@@ -387,21 +357,18 @@ namespace WordAiAddIn
             if (shapeTotal > ShapeScanCap)
             {
                 // Too many to classify one by one (see ShapeScanCap). Charts and SmartArt are among them, uncounted.
-                parts.Add("shapes " + shapeTotal + " (not itemised, may include charts/SmartArt and shapes in headers/footers - list them with read_object kind \"shape\")");
+                parts.Add("shapes " + shapeTotal + " (not itemised, may include charts/SmartArt - list them with read_object kind \"shape\")");
             }
             else
             {
                 add("charts", ListChartShapes(doc).Count);
                 add("smartart", ListSmartArtShapes(doc).Count);
-                List<ShapeInfo> everyShape = ListShapes(doc);
-                List<ShapeInfo> shapes = everyShape.Where(s => s.Location.Length == 0).ToList();
+                List<ShapeInfo> shapes = ListShapes(doc);
                 if (shapes.Count > 0)
                 {
                     string breakdown = string.Join(", ", shapes.GroupBy(s => s.TypeName).Select(g => g.Key + " " + g.Count()));
                     parts.Add("shapes " + shapes.Count + " (" + shapes.Count(s => s.HasText) + " with text: " + breakdown + ")");
                 }
-                add("shapes in headers/footers", everyShape.Count(s => s.Location == "header" || s.Location == "footer"));
-                add("shapes in another story", everyShape.Count(s => s.Location.Length > 0 && s.Location != "header" && s.Location != "footer"));
             }
 
             int pictures = 0;
@@ -619,7 +586,6 @@ namespace WordAiAddIn
         {
             var sb = new StringBuilder();
             sb.AppendLine("Shape " + s.Index + " of " + total + ": \"" + s.Name + "\" " + s.TypeName + (s.HasText ? " hasText" : ""));
-            if (s.Location.Length > 0) sb.AppendLine("Location: in the " + s.Location + " (not part of the body text)");
             string alt = "";
             try { alt = (string)s.Shape.AlternativeText ?? ""; } catch { }
             if (alt.Length > 0) sb.AppendLine("Alt text: " + OneLine(alt, 200));

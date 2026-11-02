@@ -93,18 +93,3 @@ Long text: `read_object` returns at most `ObjectTextCap` (4000) characters of a 
 chosen by `offset`, and the reply names the offset for the next window (`OfficeAi.Shared/TextWindow.cs`, unit-tested).
 The old behaviour was a silent cut at 2000 characters with no way to read the rest. NOT VERIFIED AGAINST LIVE WORD
 beyond a clean build.
-
-## Shapes in headers and footers
-
-`doc.Shapes` also holds shapes that live in header/footer stories (a watermark is the usual one). They belong to no body
-paragraph, so counting them as body shapes in the `Objects:` line was misleading. `ListShapes` now reads the anchor's story
-once (`ShapeAnchor`: `StoryType` plus, for the main story only, the offset) and records a `Location` ("" for the body,
-"header", "footer", "another story", or "unknown" when the anchor could not be read). They stay in the list with their
-original indices, because `edit_textbox` and everything else that numbers `doc.Shapes` uses the same index space; only the
-presentation changes: `read_object` marks them "(in the header)", a single read says "Location: in the header (not part of
-the body text)", and the counts line reports body shapes as before plus "shapes in headers/footers N". `read_blocks`
-already skipped them (no main-story anchor). NOT VERIFIED AGAINST LIVE WORD beyond a clean build.
-
-Swallowed exceptions in the best-effort reads (`catch { }` returning an empty value) were reviewed and deliberately left as
-they are: they are optional details, and a logging/reporting layer around about forty read sites was judged not worth its
-weight.
