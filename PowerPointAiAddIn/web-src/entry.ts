@@ -1,4 +1,4 @@
-import { startAddIn, SAVE_TOOL, SAVE_TOOL_DISPLAY } from '@officeai/app-shell'
+import { startAddIn, SHARED_TOOLS, SHARED_TOOL_DISPLAY } from '@officeai/app-shell'
 
 // PowerPoint add-in: tool definitions, system prompt, and starters are the
 // only app-specific pieces left here - everything else (WebView2 bridge,
@@ -964,8 +964,8 @@ const POWERPOINT_TOOL_DISPLAY = {
 
 startAddIn({
   skillId: 'powerpoint-tools',
-  tools: [...ALL_TOOLS, SAVE_TOOL],
-  toolDisplay: { ...POWERPOINT_TOOL_DISPLAY, save: SAVE_TOOL_DISPLAY },
+  tools: [...ALL_TOOLS, ...SHARED_TOOLS],
+  toolDisplay: { ...POWERPOINT_TOOL_DISPLAY, ...SHARED_TOOL_DISPLAY },
   systemPrompt:
     'You are an AI assistant running inside a VSTO PowerPoint add-in. ' +
     'You can read the deck outline (get_deck_context) and the full text of any slide (read_slide). ' +

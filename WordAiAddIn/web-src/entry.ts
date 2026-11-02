@@ -1,4 +1,4 @@
-import { startAddIn, SAVE_TOOL, SAVE_TOOL_DISPLAY } from '@officeai/app-shell'
+import { startAddIn, SHARED_TOOLS, SHARED_TOOL_DISPLAY } from '@officeai/app-shell'
 
 // Word add-in: tool definitions, system prompt, and starters are the only
 // app-specific pieces left here - everything else (WebView2 bridge, settings,
@@ -614,8 +614,8 @@ const WORD_TOOL_DISPLAY = {
 
 startAddIn({
   skillId: 'word-tools',
-  tools: [...ALL_WORD_TOOLS, SAVE_TOOL],
-  toolDisplay: { ...WORD_TOOL_DISPLAY, save: SAVE_TOOL_DISPLAY },
+  tools: [...ALL_WORD_TOOLS, ...SHARED_TOOLS],
+  toolDisplay: { ...WORD_TOOL_DISPLAY, ...SHARED_TOOL_DISPLAY },
   systemPrompt:
     'You are an AI assistant embedded in Microsoft Word via the OpenDocs add-in. ' +
     'You can read the document, insert content at any position (plain text or a restricted HTML subset - headings, bold/italic/underline, bulleted/numbered lists), ' +
