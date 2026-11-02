@@ -7,15 +7,17 @@ namespace WordAiAddIn
 {
     public static partial class WordTools
     {
-        // save: the flow lives in OfficeAi.Shared.SaveTool; this is Word's three steps. See WordTools.File.cs.md.
+        // save: the flow lives in OfficeAi.Shared.SaveTool. See WordTools.File.cs.md.
         private static ToolResult SaveDocument(JsonElement input)
         {
             Word.Document doc = ActiveDoc;
-            return SaveTool.Run(input, doc.Path,
-                () => doc.Save(),
-                // Dialog.Show() returns -1 when the user confirmed (Word has already saved) and 0 on cancel.
-                () => Globals.ThisAddIn.Application.Dialogs[Word.WdWordDialog.wdDialogFileSaveAs].Show() != 0,
-                () => ActiveDoc.FullName);
+            return SaveTool.Run(input, doc.Path, () => doc.Save(), ShowSaveAsDialog, () => ActiveDoc.FullName);
+        }
+
+        // Dialog.Show() returns -1 when the user confirmed (Word has already saved) and 0 on cancel.
+        private static bool ShowSaveAsDialog()
+        {
+            return Globals.ThisAddIn.Application.Dialogs[Word.WdWordDialog.wdDialogFileSaveAs].Show() != 0;
         }
     }
 }
