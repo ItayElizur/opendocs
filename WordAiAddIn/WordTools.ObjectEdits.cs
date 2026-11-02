@@ -286,7 +286,8 @@ namespace WordAiAddIn
                 if (afterText != null)
                 {
                     // Reference mark goes right after afterText, which must match exactly once in that paragraph;
-                    // several matches are an error that shows each one, so the model picks a longer phrase.
+                    // several matches are an error that shows each one numbered, so the model picks a longer phrase or
+                    // passes match: N (only meaningful after seeing that list).
                     // The search runs on the paragraph text with footnote marks, field marks etc. removed
                     // (TextAnchors), because those sit between words and break Word's own Find.
                     Word.Range para = ActiveDoc.Paragraphs[after.Value + 1].Range;
@@ -300,15 +301,18 @@ namespace WordAiAddIn
                     List<int> starts = TextAnchors.FindAll(clean.Text, afterText, 20);
                     if (starts.Count == 0)
                         throw new ArgumentException("edit_note: afterText '" + afterText + "' was not found in paragraph " + after.Value + ".");
-                    if (starts.Count > 1)
+                    int? match = OptInt(input, "match");
+                    if (match.HasValue && (match.Value < 1 || match.Value > starts.Count))
+                        throw new ArgumentException("edit_note: match " + match.Value + " does not exist - afterText '" + afterText + "' matches " + starts.Count + " time(s) in paragraph " + after.Value + ".");
+                    if (starts.Count > 1 && !match.HasValue)
                     {
                         var shown = new List<string>();
                         for (int i = 0; i < starts.Count && i < 5; i++)
                             shown.Add((i + 1) + ") \"" + TextAnchors.Snippet(clean.Text, starts[i], afterText.Length, 20) + "\"");
                         throw new ArgumentException("edit_note: afterText '" + afterText + "' matches " + starts.Count + " times in paragraph " + after.Value
-                            + " (" + string.Join("; ", shown) + "). Each match is marked [[like this]]. Use a longer, unique phrase.");
+                            + " (" + string.Join("; ", shown) + "). Each match is marked [[like this]]. Retry with a longer, unique phrase, or pass match: N for the numbered match you want.");
                     }
-                    int markPos = paraStart + clean.Map[starts[0] + afterText.Length - 1] + 1;
+                    int markPos = paraStart + clean.Map[starts[(match ?? 1) - 1] + afterText.Length - 1] + 1;
                     at = ActiveDoc.Range(markPos, markPos);
                     at.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
                 }

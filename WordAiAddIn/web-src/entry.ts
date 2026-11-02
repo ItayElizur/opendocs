@@ -558,7 +558,7 @@ const ALL_WORD_TOOLS = [
       name: 'edit_note',
       description:
         'Adds, edits or deletes a footnote or endnote. noteKind: "footnote"|"endnote". action "add": text and afterBlockIndex (the paragraph that carries the reference mark) are required; ' +
-        'the mark goes at the end of that paragraph, or right after afterText inside it (afterText must match exactly once in that paragraph - if it matches several times the call fails and lists them, so retry with a longer phrase). action "edit": index (read_object kind "footnote"/"endnote") and text. action "delete": index. ' +
+        'the mark goes at the end of that paragraph, or right after afterText inside it (afterText must match exactly once in that paragraph - if it matches several times the call fails and lists them numbered, so retry with a longer phrase, or pass match = the number of the one you want). action "edit": index (read_object kind "footnote"/"endnote") and text. action "delete": index. ' +
         'Add and delete shift later note indices.',
       inputSchema: {
         type: 'object',
@@ -569,6 +569,7 @@ const ALL_WORD_TOOLS = [
           text: { type: 'string' },
           afterBlockIndex: { type: 'number' },
           afterText: { type: 'string' },
+          match: { type: 'number' },
         },
         required: ['action', 'noteKind'],
       },

@@ -60,7 +60,10 @@ calls go through `dynamic`, so a wrong argument shape surfaces only at runtime.
   repeats in the paragraph. Choosing the Nth match by number was rejected (the model cannot see the matches to
   count them, and it adds a parameter a weaker model can misuse). Instead a phrase that matches more than once is an
   error listing each match with ~20 characters of context (first 5), so the model retries with a longer phrase it
-  can see is unique. No new parameter. NOT VERIFIED AGAINST LIVE WORD.
+  can see is unique. NOT VERIFIED AGAINST LIVE WORD.
+  A phrase that cannot be made unique with context (the first word of a paragraph, or identical repeats like
+  "the the") is handled by the optional `match` (1-based) - the number printed in that error list. It is only useful
+  after the model has seen the list, so it is not blind counting like the rejected `occurrence` parameter.
   Matching does not use Word's `Find`: `Range.Text` contains control characters that are not visible words - a
   footnote/endnote reference mark (0x02) between "the" and " mouse" made `Find` miss "the mouse" and showed up as a
   square in the error snippets. The paragraph is read with field codes and hidden text included (so text index =
