@@ -128,6 +128,20 @@ about what's actually available before the user ever touches the mode
 menu.
 ```
 
+### The starting mode must be pushed to C# too
+
+`postMode(editingMode)` runs once right after `mountChatUI`, in addition to
+`onModeChange`. Before that line existed, C# only learned about a mode *change*:
+a pane that was never touched still showed "Track Changes" (the default) while every
+app's `*Tools.ModeFor(docKey)` found no entry and returned its Full Autonomy fallback.
+For Word that meant `TrackRevisions` was forced off, so edits were applied untracked
+until the user flipped the mode once; the server-side gate was also looser than the UI
+claimed. The C# fallback is left as FullAutonomy on purpose (unit/mock callers that
+never post a mode rely on it); the fix is making the client always say what it shows.
+Caveat: Word keys the mode by `GetChatId()`, which re-keys once when an unsaved document
+is first saved, so a mode set before that first save is not carried over by the key
+change (not addressed here).
+
 ## Document guidelines message (`savedDocMessage`/`activeDocMessage`)
 
 ```

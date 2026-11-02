@@ -604,6 +604,12 @@ export function startAddIn(config: AddInConfig): void {
     },
   })
 
+  // Tell C# the starting editing mode. Without this it only ever hears about a mode
+  // CHANGE, so until the user touched the menu each *Tools.ModeFor() fell back to its
+  // Full Autonomy default and e.g. Word never turned TrackRevisions on in the UI's
+  // default Track Changes mode (see `bootstrap.ts.md`).
+  postMode(editingMode)
+
   // Apply the persisted TLS-bypass preference on load too, not just after a
   // future Save - otherwise a user who enabled it last session would silently
   // go back to strict verification every time they reopen the document.
