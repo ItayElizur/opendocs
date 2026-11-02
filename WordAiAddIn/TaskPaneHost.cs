@@ -22,6 +22,8 @@ namespace WordAiAddIn
 
         protected override Task<ToolResult> ExecuteTool(string name, JsonElement input)
         {
+            // save opens a modal dialog - run it outside WebView2's callback (see PaneHostBase.cs.md).
+            if (name == "save") return RunAfterMessageHandler(() => WordTools.Execute(GetChatId(), name, input));
             return Task.FromResult(WordTools.Execute(GetChatId(), name, input));
         }
 

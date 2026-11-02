@@ -28,3 +28,10 @@ NOT VERIFIED AGAINST LIVE EXCEL: compiles clean in Debug and Release, and the di
 members were confirmed to exist in the referenced PIA by reflection, but neither the
 in-place save nor the dialog (including cancel detection) was exercised against a
 running instance.
+
+## Where the dialog runs
+
+`save` is executed through `PaneHostBase.RunAfterMessageHandler` (see TaskPaneHost.cs), not directly inside
+WebView2's message callback. Opening the Save As dialog inside that callback left the mouse pointer hidden when the
+pointer was over the chat pane at send time (observed in Excel). Running it from the host control's message queue
+avoids spinning the dialog's modal loop inside WebView2's input handling. NOT VERIFIED beyond a clean build.
