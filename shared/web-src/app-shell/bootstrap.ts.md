@@ -136,8 +136,10 @@ a pane that was never touched still showed "Track Changes" (the default) while e
 app's `*Tools.ModeFor(docKey)` found no entry and returned its Full Autonomy fallback.
 For Word that meant `TrackRevisions` was forced off, so edits were applied untracked
 until the user flipped the mode once; the server-side gate was also looser than the UI
-claimed. The C# fallback is left as FullAutonomy on purpose (unit/mock callers that
-never post a mode rely on it); the fix is making the client always say what it shows.
+claimed. The C# fallback is still FullAutonomy: this change makes the client always say what it
+shows, and leaves the fail-open default alone to stay minimal. Nothing in the repo's
+tests depends on it (the COM tool classes have no unit coverage), so failing closed would
+be a reasonable separate, behaviour-changing follow-up.
 Caveat: Word keys the mode by `GetChatId()`, which re-keys once when an unsaved document
 is first saved, so a mode set before that first save is not carried over by the key
 change (not addressed here).
