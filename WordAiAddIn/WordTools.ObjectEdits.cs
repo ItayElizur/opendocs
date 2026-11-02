@@ -285,30 +285,36 @@ namespace WordAiAddIn
                 string afterText = OptStr(input, "afterText");
                 if (afterText != null)
                 {
-                    // Reference mark goes right after the Nth (default 1st) occurrence of afterText inside that paragraph.
-                    int occurrence = OptInt(input, "occurrence") ?? 1;
-                    if (occurrence < 1) throw new ArgumentException("edit_note: occurrence is 1-based.");
+                    // Reference mark goes right after afterText, which must match exactly once in that paragraph;
+                    // several matches are an error that shows each one, so the model picks a longer phrase.
                     Word.Range para = ActiveDoc.Paragraphs[after.Value + 1].Range;
-                    int paraEnd = para.End;
+                    int paraStart = para.Start, paraEnd = para.End;
                     Word.Range search = para.Duplicate;
-                    Word.Range nth = null;
-                    int found = 0;
-                    while (true)
+                    var matches = new List<Word.Range>();
+                    while (matches.Count < 20)
                     {
                         search.Find.ClearFormatting();
                         search.Find.Text = afterText;
                         search.Find.Forward = true;
                         search.Find.Wrap = Word.WdFindWrap.wdFindStop;
                         if (!search.Find.Execute() || search.End > paraEnd) break;
-                        found++;
-                        if (found == occurrence) nth = search.Duplicate;
+                        matches.Add(search.Duplicate);
                         search = ActiveDoc.Range(search.End, paraEnd);
                     }
-                    if (found == 0)
+                    if (matches.Count == 0)
                         throw new ArgumentException("edit_note: afterText '" + afterText + "' was not found in paragraph " + after.Value + ".");
-                    if (nth == null)
-                        throw new ArgumentException("edit_note: afterText '" + afterText + "' occurs " + found + " time(s) in paragraph " + after.Value + ", so occurrence " + occurrence + " does not exist.");
-                    at = nth;
+                    if (matches.Count > 1)
+                    {
+                        var shown = new List<string>();
+                        for (int i = 0; i < matches.Count && i < 5; i++)
+                        {
+                            string around = ActiveDoc.Range(Math.Max(paraStart, matches[i].Start - 20), Math.Min(paraEnd - 1, matches[i].End + 20)).Text;
+                            shown.Add((i + 1) + ") \"..." + around.Trim() + "...\"");
+                        }
+                        throw new ArgumentException("edit_note: afterText '" + afterText + "' matches " + matches.Count + " times in paragraph " + after.Value
+                            + " (" + string.Join("; ", shown) + "). Use a longer, unique phrase.");
+                    }
+                    at = matches[0];
                     at.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
                 }
                 else

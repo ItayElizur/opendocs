@@ -57,8 +57,10 @@ calls go through `dynamic`, so a wrong argument shape surfaces only at runtime.
   trouble was the insertion point touching the previous control; the tester's result disproved that.)
   NOT VERIFIED AGAINST LIVE WORD after the change.
 - **Notes: `afterText`.** Only the first match used to be reachable, which is the wrong anchor when the phrase
-  repeats in the paragraph. `occurrence` (1-based, default 1) picks the Nth match; one past the number of
-  matches is an error that reports how many exist, so the model can correct itself instead of mis-anchoring.
+  repeats in the paragraph. Choosing the Nth match by number was rejected (the model cannot see the matches to
+  count them, and it adds a parameter a weaker model can misuse). Instead a phrase that matches more than once is an
+  error listing each match with ~20 characters of context (first 5), so the model retries with a longer phrase it
+  can see is unique. No new parameter. NOT VERIFIED AGAINST LIVE WORD.
 - **Headers/footers: fields.** `set`/`clear` assign `Range.Text`, which destroys fields. The result reports how many
   were replaced. `{PAGE}`, `{NUMPAGES}`, `{DATE}`, `{TIME}`, `{FILENAME}`, `{AUTHOR}` and `{TITLE}` in `text` are
   turned into real fields after the text is written (find the token, `Fields.Add` over it), and `read_object`
