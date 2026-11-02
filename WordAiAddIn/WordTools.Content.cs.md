@@ -69,12 +69,14 @@ paragraph index means:
   shapes with how many hold text, inline pictures, content controls, footnotes, endnotes,
   header/footer parts, TOC). It is omitted when the document has none, so plain documents'
   output is unchanged. No per-object list: the model has to call `read_object` anyway.
-- `read_blocks` appends "  {table#0, shape#2 "TextBox 3" textbox hasText, ...}" after each
-  paragraph that holds or anchors an object (capped at 8 labels per block). Anchors are
-  collected once (`CollectObjectAnchors`) and merged during the existing forward
-  `Paragraph.Next()` walk by `ObjectAnchors.LabelsFor` (OfficeAi.Shared, unit tested), so cost is
-  O(paragraphs + objects), never a per-paragraph search. The per-paragraph `Range.Start/End`
-  reads only happen when the document has at least one anchored object.
+- `read_blocks` appends "  {table#0, shape "TextBox 3" textbox hasText, ...}" after each
+  paragraph that holds or anchors an object (capped at 8 labels per block). Only the objects
+  anchored inside the requested paragraphs are collected (`CollectObjectAnchorsInRange`, using
+  Word's range-scoped collections) and merged during the existing forward `Paragraph.Next()` walk
+  by `ObjectAnchors.LabelsFor` (OfficeAi.Shared, unit tested). The end of the range is one
+  positional `Paragraphs[endIndex + 1]` lookup (about 4 ms on 3,000 paragraphs); the walk stays
+  forward-only. The per-paragraph `Range.Start/End` reads only happen when the range holds an object.
+  Floating shapes are tagged by name, not index: see WordTools.Objects.cs.md for why.
 - The suffix is not paragraph text. It is appended after the closing tag in `html` mode too.
 
 NOT VERIFIED AGAINST LIVE WORD: builds clean, but the anchor offsets (`Shape.Anchor.Start`,

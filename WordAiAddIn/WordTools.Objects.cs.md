@@ -55,10 +55,39 @@ Best of 2-3 runs:
 - Range-scoped alternative for a 5-paragraph range: `Range.ShapeRange.Count` ~4 ms, footnotes + controls + tables +
   inline shapes counts ~11 ms, shape name + anchor through the range ~10 ms.
 
-So `read_blocks` as written (it collects every object in the document on every call) costs ~3.7 s on that document,
-~85% of it shapes. Not yet changed: asking Word for only the objects in the requested range would make it scale with
-the range instead of the document. The `Objects:` counts line, which is called once per conversation, now stops
-classifying shapes above `ShapeScanCap` (100, about 1 s) and reports just the total.
+## read_blocks collects only the requested range (2026-11)
+
+The measurements above showed the problem: `read_blocks` collected every object in the document on every call,
+and every shape fetch costs ~3.6 ms whichever property is read (Name, Type, ID, HasChart: all ~1.1 s per 300 shapes;
+`Anchor.Start` 1.4 s; `Shapes.Item(i)` 2.4 s), so trimming calls per shape could never fix it. It now uses Word's
+range-scoped collections for just the paragraphs being read (`CollectObjectAnchorsInRange`):
+
+- Same document: the old document-wide collection measured **5,756 ms** per call (chart pass + SmartArt pass + shape
+  classification + tables + notes). The scoped version measured: no objects in range 24 ms; 5 paragraphs 47 ms;
+  50 paragraphs 85 ms; 200 paragraphs 339 ms; 1,000 paragraphs (the maximum, ~130 objects) 1,016 ms. It now scales
+  with what is in the range, not with the document.
+- The range end is one positional `Paragraphs[endIndex + 1]` lookup: 4 ms on 3,260 paragraphs (so it is not the
+  O(n^2) trap, which is a lookup per loop iteration). `Range.Paragraphs.Count` over 1,000 paragraphs: 15 ms.
+- Tables: index = `doc.Range(0, table.Start).Tables.Count`. Verified in Word, nested table included
+  (`doc.Tables` is top-level only).
+- Content controls: the same formula **minus 1**. `Range(0, start)` also overlaps the control's own opening tag, so it
+  counts itself; measured +1 for every control, nested ones too. Footnotes/endnotes: `Footnote.Index - 1`.
+- Floating shapes, charts and SmartArt are tagged by **name** (`shape "Text Box 3" textbox hasText`), not by index.
+  A shape's index is its position in `doc.Shapes` (charts/SmartArt excluded), and finding it means fetching every earlier
+  shape: ~3.6 ms each, i.e. the very cost being removed. `read_object` therefore accepts `name` for kinds shape,
+  chart and smartart (it resolves the name to the index from the same collection it already builds). Inline charts and
+  SmartArt keep `chart#N` / `smartart#N` (a scan of the inline shapes, only when the range holds one). Names are
+  Word's auto names ("Text Box 3") unless the user renamed shapes; two shapes with one name resolve to the first.
+- Shapes anchored outside the main story (headers, footers) are skipped; they still appear in `read_object` listings.
+
+The `Objects:` counts line, called once per conversation, stops classifying shapes above `ShapeScanCap` (100, ~1 s) and
+reports just the total.
+
+Test harness caveat: building the benchmark document with content controls made the hidden Word instance stall or crash
+(RPC 0x800706BE) in three separate runs when they were added to a 3,000-paragraph document, so the timings above were
+taken without them (their cost, measured earlier on a smaller document: 20 controls ~50-100 ms). The content-control
+index rule was verified on a 200-paragraph document with a nested pair. NOT VERIFIED AGAINST LIVE WORD end to end:
+the C# itself has only been built; the timings are of the equivalent COM calls driven from PowerShell.
 
 Long text: `read_object` returns at most `ObjectTextCap` (4000) characters of a text box, note, header/footer or TOC,
 chosen by `offset`, and the reply names the offset for the next window (`OfficeAi.Shared/TextWindow.cs`, unit-tested).

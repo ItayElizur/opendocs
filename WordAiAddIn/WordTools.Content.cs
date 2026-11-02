@@ -292,9 +292,13 @@ namespace WordAiAddIn
             for (int skip = 0; skip < startIndex && p != null; skip++) p = p.Next();
 
             // Objects (tables, shapes, footnotes, ...) anchored in a block are listed after it as
-            // "{shape#2 ..., chart#0}". Anchors are collected once and merged during this forward walk;
-            // the per-paragraph Range reads are skipped entirely for documents with no such objects.
-            List<ObjectAnchor> anchors = CollectObjectAnchors(doc);
+            // "{table#0, shape "Text Box 3" textbox hasText}". Only the objects inside the requested paragraphs are
+            // collected (Word's range-scoped collections, a few ms; a document-wide pass cost seconds on shape-heavy
+            // documents) and merged during this forward walk; the per-paragraph Range reads are skipped entirely when
+            // the range holds none. The end of the range is one positional lookup, the walk itself stays forward-only.
+            List<ObjectAnchor> anchors = p == null
+                ? new List<ObjectAnchor>()
+                : CollectObjectAnchorsInRange(doc, p.Range.Start, paragraphs[endIndex + 1].Range.End);
             int nextAnchor = 0;
 
             for (int i = startIndex; i <= endIndex && p != null; i++)

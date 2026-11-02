@@ -27,6 +27,7 @@ namespace WordAiAddIn
         {
             public string Kind;
             public int Index;
+            public string Name;          // shape / floating chart / floating SmartArt name, "" when it has none
             public int Start = -1;       // character offset in the main story, -1 when not anchored there
             public string Label;         // short tag shown next to a block in read_blocks
             public string Summary;       // one-line description used by read_object's list mode
@@ -122,6 +123,12 @@ namespace WordAiAddIn
         {
             try { return (int)shp.Range.Start; } catch { }
             return ShapeAnchorStart(shp);
+        }
+
+        // Name of a floating shape; InlineShape has none, so "" for inline charts/SmartArt.
+        private static string FloatingName(dynamic shp)
+        {
+            try { return (string)shp.Name ?? ""; } catch { return ""; }
         }
 
         private static string Truncate(string s, int cap)
@@ -231,7 +238,7 @@ namespace WordAiAddIn
                     try { dynamic c = charts[i].Chart; if ((bool)c.HasTitle) title = (string)c.ChartTitle.Text; } catch { }
                     all.Add(new WordObject
                     {
-                        Kind = "chart", Index = i, Start = InlineOrFloatingStart(charts[i]), Label = "chart#" + i,
+                        Kind = "chart", Index = i, Name = FloatingName(charts[i]), Start = InlineOrFloatingStart(charts[i]), Label = "chart#" + i,
                         Summary = title != null ? "title \"" + OneLine(title, 60) + "\"" : "no title",
                     });
                 }
@@ -246,7 +253,7 @@ namespace WordAiAddIn
                     try { nodes = (int)arts[i].SmartArt.Nodes.Count; } catch { }
                     all.Add(new WordObject
                     {
-                        Kind = "smartart", Index = i, Start = InlineOrFloatingStart(arts[i]), Label = "smartart#" + i,
+                        Kind = "smartart", Index = i, Name = FloatingName(arts[i]), Start = InlineOrFloatingStart(arts[i]), Label = "smartart#" + i,
                         Summary = nodes + " node(s)",
                     });
                 }
@@ -258,7 +265,7 @@ namespace WordAiAddIn
                 {
                     all.Add(new WordObject
                     {
-                        Kind = "shape", Index = s.Index, Start = s.Start,
+                        Kind = "shape", Index = s.Index, Name = s.Name, Start = s.Start,
                         Label = "shape#" + s.Index + " \"" + s.Name + "\" " + s.TypeName + (s.HasText ? " hasText" : ""),
                         Summary = "\"" + s.Name + "\" " + s.TypeName + (s.HasText ? " hasText" : ""),
                     });
@@ -379,14 +386,118 @@ namespace WordAiAddIn
             return parts.Count == 0 ? "" : "Objects: " + string.Join(", ", parts);
         }
 
-        // Anchors for read_blocks: every main-story object, sorted by character offset.
-        private static List<ObjectAnchor> CollectObjectAnchors(Word.Document doc)
+        // Anchors for read_blocks: the objects anchored inside the characters [spanStart, spanEnd) of the main story,
+        // sorted by offset. Scoped to the requested range on purpose: asking Word for every object in the document cost
+        // ~3.7 s per call on 300 text boxes (each shape fetch is ~3.6 ms), while the range-scoped collections take a few
+        // milliseconds. Tables, content controls and notes keep their document-wide index (table#0, footnote#2 ...);
+        // floating shapes/charts/SmartArt are tagged by NAME, because a shape's index would mean touching every shape
+        // before it. See WordTools.Objects.cs.md.
+        private static List<ObjectAnchor> CollectObjectAnchorsInRange(Word.Document doc, int spanStart, int spanEnd)
         {
-            return CollectObjects(doc, null)
-                .Where(o => o.Start >= 0 && o.Label != null)
-                .OrderBy(o => o.Start)
-                .Select(o => new ObjectAnchor(o.Start, o.Label))
-                .ToList();
+            var anchors = new List<ObjectAnchor>();
+            Word.Range span = doc.Range(spanStart, spanEnd);
+
+            if (span.Tables.Count > 0)
+            {
+                foreach (Word.Table table in span.Tables)
+                {
+                    int start = table.Range.Start;
+                    anchors.Add(new ObjectAnchor(start, "table#" + doc.Range(0, start).Tables.Count));
+                }
+            }
+
+            if (span.ContentControls.Count > 0)
+            {
+                foreach (dynamic cc in span.ContentControls)
+                {
+                    int start = -1;
+                    string title = "";
+                    try { start = (int)cc.Range.Start; } catch { }
+                    if (start < 0) continue;
+                    try { title = (string)cc.Title ?? ""; } catch { }
+                    // Range(0, start) also overlaps this control's own opening tag, so it counts itself: minus 1 (measured
+                    // in Word, nested controls included). Tables need no such correction.
+                    anchors.Add(new ObjectAnchor(start, "content_control#" + (doc.Range(0, start).ContentControls.Count - 1)
+                        + (title.Length > 0 ? " \"" + title + "\"" : "")));
+                }
+            }
+
+            if (span.Footnotes.Count > 0)
+            {
+                foreach (Word.Footnote note in span.Footnotes)
+                    anchors.Add(new ObjectAnchor(note.Reference.Start, "footnote#" + (note.Index - 1)));
+            }
+            if (span.Endnotes.Count > 0)
+            {
+                foreach (Word.Endnote note in span.Endnotes)
+                    anchors.Add(new ObjectAnchor(note.Reference.Start, "endnote#" + (note.Index - 1)));
+            }
+
+            if (doc.TablesOfContents.Count > 0) // a handful at most, so index them document-wide
+            {
+                int i = 0;
+                foreach (dynamic toc in doc.TablesOfContents)
+                {
+                    try
+                    {
+                        int start = (int)toc.Range.Start;
+                        if (start >= spanStart && start < spanEnd) anchors.Add(new ObjectAnchor(start, "toc#" + i));
+                    }
+                    catch { }
+                    i++;
+                }
+            }
+
+            dynamic floating = span.ShapeRange;
+            int floatingCount = (int)floating.Count;
+            for (int i = 1; i <= floatingCount; i++)
+            {
+                dynamic shp = floating.Item(i);
+                int start = ShapeAnchorStart(shp);
+                if (start < 0) continue; // anchored outside the main story
+                string name = FloatingName(shp);
+                bool isChart = false, isArt = false;
+                try { isChart = (int)shp.HasChart == -1; } catch { }
+                try { isArt = (int)shp.HasSmartArt == -1; } catch { }
+                int type = SafeShapeType(shp);
+                string label = isChart ? "chart \"" + name + "\""
+                    : isArt ? "smartart \"" + name + "\""
+                    : "shape \"" + name + "\" " + ShapeTypeName(type) + (ShapeHasText(shp, type, 0) ? " hasText" : "");
+                anchors.Add(new ObjectAnchor(start, label));
+            }
+
+            if (span.InlineShapes.Count > 0) // inline pictures are only counted; inline charts/SmartArt are tagged
+            {
+                foreach (dynamic inl in span.InlineShapes)
+                {
+                    bool isChart = false, isArt = false;
+                    try { isChart = (int)inl.HasChart == -1; } catch { }
+                    try { isArt = !isChart && (int)inl.HasSmartArt == -1; } catch { }
+                    if (!isChart && !isArt) continue;
+                    int start = -1;
+                    try { start = (int)inl.Range.Start; } catch { }
+                    if (start < 0) continue;
+                    anchors.Add(new ObjectAnchor(start, (isChart ? "chart#" : "smartart#") + InlineKindIndex(doc, isChart, start)));
+                }
+            }
+
+            return anchors.OrderBy(a => a.Start).ToList();
+        }
+
+        // Index of the inline chart (or SmartArt) starting at `start` among the document's inline charts (SmartArt):
+        // the same inline-first order ListChartShapes/ListSmartArtShapes use. Only reached when a range holds one.
+        private static int InlineKindIndex(Word.Document doc, bool chart, int start)
+        {
+            int index = 0;
+            foreach (dynamic inl in doc.InlineShapes)
+            {
+                bool match = false;
+                try { match = (int)(chart ? inl.HasChart : inl.HasSmartArt) == -1; } catch { }
+                if (!match) continue;
+                try { if ((int)inl.Range.Start == start) return index; } catch { }
+                index++;
+            }
+            return -1;
         }
 
         private static ToolResult ReadObject(JsonElement input)
@@ -402,6 +513,19 @@ namespace WordAiAddIn
             Word.Document doc = ActiveDoc;
             List<WordObject> objects = CollectObjects(doc, kind);
             string summary = "read_object " + kind;
+
+            // A floating shape/chart/SmartArt is tagged by name in read_blocks, so accept the name in place of an index.
+            string nameArg = input.TryGetProperty("name", out var nEl) && nEl.ValueKind == JsonValueKind.String ? nEl.GetString() : null;
+            if (!hasIndex && !string.IsNullOrEmpty(nameArg))
+            {
+                if (kind != "shape" && kind != "chart" && kind != "smartart")
+                    throw new ArgumentException("read_object: name only works with kind shape, chart or smartart; use index for " + kind + ".");
+                WordObject named = objects.FirstOrDefault(o => string.Equals(o.Name, nameArg, StringComparison.OrdinalIgnoreCase));
+                if (named == null)
+                    throw new ArgumentException("read_object: no " + kind + " named \"" + nameArg + "\" (inline charts/SmartArt have no name - use index; omit index and name to list them).");
+                hasIndex = true;
+                index = named.Index;
+            }
 
             if (!hasIndex)
             {
