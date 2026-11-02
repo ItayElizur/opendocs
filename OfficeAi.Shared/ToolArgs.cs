@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 
@@ -12,6 +13,20 @@ namespace OfficeAi.Shared
     /// </summary>
     public static class ToolArgs
     {
+        /// <summary>
+        /// Reads an optional boolean flag strictly. A missing property is false; true/false (or the numbers 1/0) are
+        /// accepted; anything else (a string, another number, null, an object) throws, so a mistyped flag can never be
+        /// guessed into the wrong behaviour.
+        /// </summary>
+        public static bool OptionalFlag(JsonElement input, string name)
+        {
+            if (input.ValueKind != JsonValueKind.Object || !input.TryGetProperty(name, out var e)) return false;
+            if (e.ValueKind == JsonValueKind.True) return true;
+            if (e.ValueKind == JsonValueKind.False) return false;
+            if (e.ValueKind == JsonValueKind.Number && e.TryGetInt32(out int n) && (n == 0 || n == 1)) return n == 1;
+            throw new ArgumentException(name + " must be true or false (got " + e.GetRawText() + ").");
+        }
+
         public static void ValidateRequired(string kind, JsonElement element, IReadOnlyDictionary<string, string[]> requiredFields, string noun,
             IReadOnlyDictionary<string, string[]> nonNullFields = null)
         {

@@ -62,6 +62,7 @@ namespace ExcelAiAddIn
                     case "trace_precedents": return TracePrecedents(input);
                     case "trace_dependents": return TraceDependents(input);
                     case "propose_operations": return ProposeOperations(input);
+                    case "save": return SaveWorkbook(input);
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }
             }

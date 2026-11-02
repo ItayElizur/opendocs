@@ -7,14 +7,16 @@ project this tool design was originally ported from — see
 [`docs/comparison-with-genoffice.md`](../comparison-with-genoffice.md) for the
 high-level summary.
 
-## Top-level tools (10)
+## Top-level tools (11)
 
-9 read/query tools plus `propose_operations` — full 1:1 parity with genoffice's naming
+9 read/query tools plus `propose_operations` and `save` — full 1:1 parity with genoffice's naming
 and shape for the read side (`get_workbook_context`, `read_range`, `read_cells`,
 `select_range`, `read_formats`, `read_sheet_features`, `find_cells`, `trace_precedents`,
 `trace_dependents`). `load_guide` has no equivalent (deliberately out of scope —
 genoffice's is an internal prompt-budget mechanism for managing its larger op count in
 context, not needed at OpenDocs's current scale).
+
+`save` (`ExcelTools.File.cs`) saves the workbook in place, or opens the modal Save As dialog (`Application.Dialogs[xlDialogSaveAs]`, after resetting a pointer the chat pane may have left hidden) when `saveAs` is true (default false — must be true whenever the user wants a copy, a new name, another location or another format) or the workbook has never been saved. A cancelled dialog returns a non-error "cancelled" result with `Mutated: false`. Track Changes mode and up. **NOT VERIFIED AGAINST LIVE EXCEL** — compiles clean in Debug and Release and it builds against the PIA and the earlier GetSaveAsFilename-based version was exercised by hand, but this exact dialog + pointer-reset combination has not been confirmed in a running instance.
 
 `find_cells` and `propose_operations`' `find_replace` op both default to **the active
 sheet only** (matching Ctrl+F/Ctrl+H's default "Within: Sheet"), with an `allSheets`

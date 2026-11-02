@@ -53,7 +53,7 @@ namespace WordAiAddIn
                 // decide whether TrackRevisions toggles. add_comment doesn't mutate
                 // content, so it's excluded here even though it's gated like a
                 // mutating tool below.
-                bool isContentMutating = !isAlwaysAllowed && !isAddComment;
+                bool isContentMutating = !isAlwaysAllowed && !isAddComment && name != "save";
 
                 if (mode == EditingMode.ReadOnly && !isAlwaysAllowed)
                 {
@@ -74,7 +74,7 @@ namespace WordAiAddIn
                 // tool call into one undo step. Skipped for always-allowed/undo/redo
                 // tools. Must run in try/finally - an uncaught throw mid-mutation would
                 // leave Word recording forever. See WordTools.cs.md.
-                bool shouldRecordUndo = !isAlwaysAllowed && name != "undo_last_action" && name != "redo_last_action";
+                bool shouldRecordUndo = !isAlwaysAllowed && name != "undo_last_action" && name != "redo_last_action" && name != "save";
                 if (shouldRecordUndo)
                 {
                     Globals.ThisAddIn.Application.UndoRecord.StartCustomRecord(name);
@@ -117,6 +117,8 @@ namespace WordAiAddIn
                             return AddComment(input);
                         case "add_image":
                             return AddImage(input);
+                        case "save":
+                            return SaveDocument(input);
                         case "undo_last_action":
                             return UndoLastAction();
                         case "redo_last_action":

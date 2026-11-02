@@ -1,4 +1,4 @@
-import { startAddIn } from '@officeai/app-shell'
+import { startAddIn, SHARED_TOOLS, SHARED_TOOL_DISPLAY } from '@officeai/app-shell'
 
 // PowerPoint add-in: tool definitions, system prompt, and starters are the
 // only app-specific pieces left here - everything else (WebView2 bridge,
@@ -964,8 +964,8 @@ const POWERPOINT_TOOL_DISPLAY = {
 
 startAddIn({
   skillId: 'powerpoint-tools',
-  tools: ALL_TOOLS,
-  toolDisplay: POWERPOINT_TOOL_DISPLAY,
+  tools: [...ALL_TOOLS, ...SHARED_TOOLS],
+  toolDisplay: { ...POWERPOINT_TOOL_DISPLAY, ...SHARED_TOOL_DISPLAY },
   systemPrompt:
     'You are an AI assistant running inside a VSTO PowerPoint add-in. ' +
     'You can read the deck outline (get_deck_context) and the full text of any slide (read_slide). ' +
@@ -988,7 +988,8 @@ startAddIn({
     'and add_master_element/read_master_elements/set_master_element_transform/remove_master_element to pin a logo, icon, or small text label to a corner of every slide via the Slide Master rather than editing each slide individually. ' +
     'Any of those four tools can also target one specific layout instead of the whole Slide Master, via an optional layoutName (matched across every design/theme in the deck) - call list_layouts first to see the real names, or check the selected slide\'s layoutName already given in your context. ' +
     'Your available tools depend on the current editing mode (Read Only, Comment Only, Track Changes, or Full Autonomy) - only call tools that are currently offered to you. ' +
-    'undo_last_action/redo_last_action mirror PowerPoint\'s own Ctrl+Z/Ctrl+Y - use them if the user asks to undo/redo, or to back out a change you just made that turned out wrong.',
+    'undo_last_action/redo_last_action mirror PowerPoint\'s own Ctrl+Z/Ctrl+Y - use them if the user asks to undo/redo, or to back out a change you just made that turned out wrong. ' +
+    'save writes the open file in place; set saveAs=true when the user wants a copy, a new name or another location (it opens the Save As dialog and waits for them). Call it only when the user asks to save.',
   starters: [
     { en: "Improve this slide's title and copy", he: 'שפר את הכותרת והטקסט של השקופית' },
     { en: "Make this slide's bullets more concise", he: 'קצר את התבליטים בשקופית' },

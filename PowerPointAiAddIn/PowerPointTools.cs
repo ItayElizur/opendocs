@@ -52,7 +52,7 @@ namespace PowerPointAiAddIn
                 // before each mutating call so one tool call = one undo step; unlike
                 // Word's equivalent fix, undo_last_action/redo_last_action are NOT
                 // excluded here - live-tested harmless against an empty redo stack.
-                if (!isAlwaysAllowed)
+                if (!isAlwaysAllowed && name != "save")
                 {
                     Globals.ThisAddIn.Application.StartNewUndoEntry();
                 }
@@ -108,6 +108,7 @@ namespace PowerPointAiAddIn
                     case "remove_master_element": return RemoveMasterElement(input);
                     case "read_master_elements": return ReadMasterElements(input);
                     case "list_layouts": return ListLayouts(input);
+                    case "save": return SavePresentation(input);
                     case "undo_last_action": return UndoLastAction();
                     case "redo_last_action": return RedoLastAction();
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
