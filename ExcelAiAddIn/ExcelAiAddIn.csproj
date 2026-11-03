@@ -129,6 +129,10 @@
     <Compile Include="ExcelTools.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="ExcelTools.File.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>ExcelTools.cs</DependentUpon>
+    </Compile>
     <Compile Include="ExcelTools.Read.cs">
       <SubType>Code</SubType>
       <DependentUpon>ExcelTools.cs</DependentUpon>

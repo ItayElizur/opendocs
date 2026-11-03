@@ -16,12 +16,18 @@ namespace WordAiAddIn
         private static readonly string[] ObjectKinds =
             { "table", "chart", "smartart", "shape", "content_control", "header_footer", "footnote", "endnote", "toc" };
 
-        private const int ObjectTextCap = 2000;
+        // read_object returns long text in windows of this many characters; offset continues (see TextWindow).
+        private const int ObjectTextCap = TextWindow.DefaultCap;
+
+        // Above this many floating shapes the counts line stops itemising them: classifying a shape costs ~10 ms of COM
+        // calls (measured: 300 shapes ~3 s), so get_document_context would stall on shape-heavy documents.
+        private const int ShapeScanCap = 100;
 
         private sealed class WordObject
         {
             public string Kind;
             public int Index;
+            public string Name;          // shape / floating chart / floating SmartArt name, "" when it has none
             public int Start = -1;       // character offset in the main story, -1 when not anchored there
             public string Label;         // short tag shown next to a block in read_blocks
             public string Summary;       // one-line description used by read_object's list mode
@@ -119,6 +125,12 @@ namespace WordAiAddIn
             return ShapeAnchorStart(shp);
         }
 
+        // Name of a floating shape; InlineShape has none, so "" for inline charts/SmartArt.
+        private static string FloatingName(dynamic shp)
+        {
+            try { return (string)shp.Name ?? ""; } catch { return ""; }
+        }
+
         private static string Truncate(string s, int cap)
         {
             if (s == null) return "";
@@ -186,7 +198,7 @@ namespace WordAiAddIn
                             // Field codes on, so a page number etc. reads back as {PAGE} rather than its current value.
                             dynamic rng = hf.Range;
                             rng.TextRetrievalMode.IncludeFieldCodes = true;
-                            string text = Truncate(FieldTokens.FromFieldCodes((string)rng.Text), ObjectTextCap);
+                            string text = (FieldTokens.FromFieldCodes((string)rng.Text) ?? "").Trim('\r', '\a', '\n', ' ');
                             if (text.Length == 0) continue;
                             list.Add(new HeaderFooterInfo { Section = sectionIndex, Which = which, Type = t.Value, Text = text });
                         }
@@ -229,7 +241,7 @@ namespace WordAiAddIn
                     try { dynamic c = charts[i].Chart; if ((bool)c.HasTitle) title = (string)c.ChartTitle.Text; } catch { }
                     all.Add(new WordObject
                     {
-                        Kind = "chart", Index = i, Start = InlineOrFloatingStart(charts[i]), Label = "chart#" + i,
+                        Kind = "chart", Index = i, Name = FloatingName(charts[i]), Start = InlineOrFloatingStart(charts[i]), Label = "chart#" + i,
                         Summary = title != null ? "title \"" + OneLine(title, 60) + "\"" : "no title",
                     });
                 }
@@ -244,7 +256,7 @@ namespace WordAiAddIn
                     try { nodes = (int)arts[i].SmartArt.Nodes.Count; } catch { }
                     all.Add(new WordObject
                     {
-                        Kind = "smartart", Index = i, Start = InlineOrFloatingStart(arts[i]), Label = "smartart#" + i,
+                        Kind = "smartart", Index = i, Name = FloatingName(arts[i]), Start = InlineOrFloatingStart(arts[i]), Label = "smartart#" + i,
                         Summary = nodes + " node(s)",
                     });
                 }
@@ -256,7 +268,7 @@ namespace WordAiAddIn
                 {
                     all.Add(new WordObject
                     {
-                        Kind = "shape", Index = s.Index, Start = s.Start,
+                        Kind = "shape", Index = s.Index, Name = s.Name, Start = s.Start,
                         Label = "shape#" + s.Index + " \"" + s.Name + "\" " + s.TypeName + (s.HasText ? " hasText" : ""),
                         Summary = "\"" + s.Name + "\" " + s.TypeName + (s.HasText ? " hasText" : ""),
                     });
@@ -343,14 +355,23 @@ namespace WordAiAddIn
             Action<string, int> add = (name, n) => { if (n > 0) parts.Add(name + " " + n); };
 
             add("tables", doc.Tables.Count);
-            add("charts", ListChartShapes(doc).Count);
-            add("smartart", ListSmartArtShapes(doc).Count);
 
-            List<ShapeInfo> shapes = ListShapes(doc);
-            if (shapes.Count > 0)
+            int shapeTotal = doc.Shapes.Count; // a plain property: cheap however many shapes there are
+            if (shapeTotal > ShapeScanCap)
             {
-                string breakdown = string.Join(", ", shapes.GroupBy(s => s.TypeName).Select(g => g.Key + " " + g.Count()));
-                parts.Add("shapes " + shapes.Count + " (" + shapes.Count(s => s.HasText) + " with text: " + breakdown + ")");
+                // Too many to classify one by one (see ShapeScanCap). Charts and SmartArt are among them, uncounted.
+                parts.Add("shapes " + shapeTotal + " (not itemised, may include charts/SmartArt - list them with read_object kind \"shape\")");
+            }
+            else
+            {
+                add("charts", ListChartShapes(doc).Count);
+                add("smartart", ListSmartArtShapes(doc).Count);
+                List<ShapeInfo> shapes = ListShapes(doc);
+                if (shapes.Count > 0)
+                {
+                    string breakdown = string.Join(", ", shapes.GroupBy(s => s.TypeName).Select(g => g.Key + " " + g.Count()));
+                    parts.Add("shapes " + shapes.Count + " (" + shapes.Count(s => s.HasText) + " with text: " + breakdown + ")");
+                }
             }
 
             int pictures = 0;
@@ -368,14 +389,118 @@ namespace WordAiAddIn
             return parts.Count == 0 ? "" : "Objects: " + string.Join(", ", parts);
         }
 
-        // Anchors for read_blocks: every main-story object, sorted by character offset.
-        private static List<ObjectAnchor> CollectObjectAnchors(Word.Document doc)
+        // Anchors for read_blocks: the objects anchored inside the characters [spanStart, spanEnd) of the main story,
+        // sorted by offset. Scoped to the requested range on purpose: asking Word for every object in the document cost
+        // ~3.7 s per call on 300 text boxes (each shape fetch is ~3.6 ms), while the range-scoped collections take a few
+        // milliseconds. Tables, content controls and notes keep their document-wide index (table#0, footnote#2 ...);
+        // floating shapes/charts/SmartArt are tagged by NAME, because a shape's index would mean touching every shape
+        // before it. See WordTools.Objects.cs.md.
+        private static List<ObjectAnchor> CollectObjectAnchorsInRange(Word.Document doc, int spanStart, int spanEnd)
         {
-            return CollectObjects(doc, null)
-                .Where(o => o.Start >= 0 && o.Label != null)
-                .OrderBy(o => o.Start)
-                .Select(o => new ObjectAnchor(o.Start, o.Label))
-                .ToList();
+            var anchors = new List<ObjectAnchor>();
+            Word.Range span = doc.Range(spanStart, spanEnd);
+
+            if (span.Tables.Count > 0)
+            {
+                foreach (Word.Table table in span.Tables)
+                {
+                    int start = table.Range.Start;
+                    anchors.Add(new ObjectAnchor(start, "table#" + doc.Range(0, start).Tables.Count));
+                }
+            }
+
+            if (span.ContentControls.Count > 0)
+            {
+                foreach (dynamic cc in span.ContentControls)
+                {
+                    int start = -1;
+                    string title = "";
+                    try { start = (int)cc.Range.Start; } catch { }
+                    if (start < 0) continue;
+                    try { title = (string)cc.Title ?? ""; } catch { }
+                    // Range(0, start) also overlaps this control's own opening tag, so it counts itself: minus 1 (measured
+                    // in Word, nested controls included). Tables need no such correction.
+                    anchors.Add(new ObjectAnchor(start, "content_control#" + (doc.Range(0, start).ContentControls.Count - 1)
+                        + (title.Length > 0 ? " \"" + title + "\"" : "")));
+                }
+            }
+
+            if (span.Footnotes.Count > 0)
+            {
+                foreach (Word.Footnote note in span.Footnotes)
+                    anchors.Add(new ObjectAnchor(note.Reference.Start, "footnote#" + (note.Index - 1)));
+            }
+            if (span.Endnotes.Count > 0)
+            {
+                foreach (Word.Endnote note in span.Endnotes)
+                    anchors.Add(new ObjectAnchor(note.Reference.Start, "endnote#" + (note.Index - 1)));
+            }
+
+            if (doc.TablesOfContents.Count > 0) // a handful at most, so index them document-wide
+            {
+                int i = 0;
+                foreach (dynamic toc in doc.TablesOfContents)
+                {
+                    try
+                    {
+                        int start = (int)toc.Range.Start;
+                        if (start >= spanStart && start < spanEnd) anchors.Add(new ObjectAnchor(start, "toc#" + i));
+                    }
+                    catch { }
+                    i++;
+                }
+            }
+
+            dynamic floating = span.ShapeRange;
+            int floatingCount = (int)floating.Count;
+            for (int i = 1; i <= floatingCount; i++)
+            {
+                dynamic shp = floating.Item(i);
+                int start = ShapeAnchorStart(shp);
+                if (start < 0) continue; // anchored outside the main story
+                string name = FloatingName(shp);
+                bool isChart = false, isArt = false;
+                try { isChart = (int)shp.HasChart == -1; } catch { }
+                try { isArt = (int)shp.HasSmartArt == -1; } catch { }
+                int type = SafeShapeType(shp);
+                string label = isChart ? "chart \"" + name + "\""
+                    : isArt ? "smartart \"" + name + "\""
+                    : "shape \"" + name + "\" " + ShapeTypeName(type) + (ShapeHasText(shp, type, 0) ? " hasText" : "");
+                anchors.Add(new ObjectAnchor(start, label));
+            }
+
+            if (span.InlineShapes.Count > 0) // inline pictures are only counted; inline charts/SmartArt are tagged
+            {
+                foreach (dynamic inl in span.InlineShapes)
+                {
+                    bool isChart = false, isArt = false;
+                    try { isChart = (int)inl.HasChart == -1; } catch { }
+                    try { isArt = !isChart && (int)inl.HasSmartArt == -1; } catch { }
+                    if (!isChart && !isArt) continue;
+                    int start = -1;
+                    try { start = (int)inl.Range.Start; } catch { }
+                    if (start < 0) continue;
+                    anchors.Add(new ObjectAnchor(start, (isChart ? "chart#" : "smartart#") + InlineKindIndex(doc, isChart, start)));
+                }
+            }
+
+            return anchors.OrderBy(a => a.Start).ToList();
+        }
+
+        // Index of the inline chart (or SmartArt) starting at `start` among the document's inline charts (SmartArt):
+        // the same inline-first order ListChartShapes/ListSmartArtShapes use. Only reached when a range holds one.
+        private static int InlineKindIndex(Word.Document doc, bool chart, int start)
+        {
+            int index = 0;
+            foreach (dynamic inl in doc.InlineShapes)
+            {
+                bool match = false;
+                try { match = (int)(chart ? inl.HasChart : inl.HasSmartArt) == -1; } catch { }
+                if (!match) continue;
+                try { if ((int)inl.Range.Start == start) return index; } catch { }
+                index++;
+            }
+            return -1;
         }
 
         private static ToolResult ReadObject(JsonElement input)
@@ -385,10 +510,25 @@ namespace WordAiAddIn
                 throw new ArgumentException("read_object: kind is required. Valid: " + string.Join(", ", ObjectKinds) + ".");
             bool hasIndex = input.TryGetProperty("index", out var iEl) && iEl.ValueKind == JsonValueKind.Number;
             int index = hasIndex ? iEl.GetInt32() : -1;
+            // Long text comes back in windows; offset (characters, default 0) asks for a later one.
+            int offset = input.TryGetProperty("offset", out var oEl) && oEl.ValueKind == JsonValueKind.Number ? (int)oEl.GetDouble() : 0;
 
             Word.Document doc = ActiveDoc;
             List<WordObject> objects = CollectObjects(doc, kind);
             string summary = "read_object " + kind;
+
+            // A floating shape/chart/SmartArt is tagged by name in read_blocks, so accept the name in place of an index.
+            string nameArg = input.TryGetProperty("name", out var nEl) && nEl.ValueKind == JsonValueKind.String ? nEl.GetString() : null;
+            if (!hasIndex && !string.IsNullOrEmpty(nameArg))
+            {
+                if (kind != "shape" && kind != "chart" && kind != "smartart")
+                    throw new ArgumentException("read_object: name only works with kind shape, chart or smartart; use index for " + kind + ".");
+                WordObject named = objects.FirstOrDefault(o => string.Equals(o.Name, nameArg, StringComparison.OrdinalIgnoreCase));
+                if (named == null)
+                    throw new ArgumentException("read_object: no " + kind + " named \"" + nameArg + "\" (inline charts/SmartArt have no name - use index; omit index and name to list them).");
+                hasIndex = true;
+                index = named.Index;
+            }
 
             if (!hasIndex)
             {
@@ -426,17 +566,17 @@ namespace WordAiAddIn
                 case "table": output = ReadTable(index); break;
                 case "chart": output = ReadChart(index); break;
                 case "smartart": output = ReadOneSmartArt(ListSmartArtShapes(doc)[index], index, objects.Count); break;
-                case "shape": output = ReadShape(ListShapes(doc)[index], objects.Count); break;
-                case "content_control": output = ReadContentControl(doc, index, objects.Count); break;
+                case "shape": output = ReadShape(ListShapes(doc)[index], objects.Count, offset); break;
+                case "content_control": output = ReadContentControl(doc, index, objects.Count, offset); break;
                 case "header_footer":
                 {
                     HeaderFooterInfo h = ListHeaderFooters(doc)[index];
-                    output = "Header/footer " + index + " of " + objects.Count + " - section " + h.Section + " " + h.Which + " (" + h.Type + "):\n" + h.Text;
+                    output = "Header/footer " + index + " of " + objects.Count + " - section " + h.Section + " " + h.Which + " (" + h.Type + "):\n" + TextWindow.Slice(h.Text, offset, ObjectTextCap);
                     break;
                 }
                 case "footnote":
-                case "endnote": output = ReadNote(doc, kind, index, objects.Count); break;
-                default: output = ReadToc(doc, index, objects.Count); break;
+                case "endnote": output = ReadNote(doc, kind, index, objects.Count, offset); break;
+                default: output = ReadToc(doc, index, objects.Count, offset); break;
             }
 
             WordObject picked = objects[index];
@@ -445,14 +585,16 @@ namespace WordAiAddIn
             return new ToolResult { Output = output, Summary = summary };
         }
 
-        private static string ReadShape(ShapeInfo s, int total)
+        private static string ReadShape(ShapeInfo s, int total, int offset)
         {
             var sb = new StringBuilder();
             sb.AppendLine("Shape " + s.Index + " of " + total + ": \"" + s.Name + "\" " + s.TypeName + (s.HasText ? " hasText" : ""));
             string alt = "";
             try { alt = (string)s.Shape.AlternativeText ?? ""; } catch { }
             if (alt.Length > 0) sb.AppendLine("Alt text: " + OneLine(alt, 200));
-            AppendShapeText(sb, s.Shape, s.Type, 0, "");
+            var body = new StringBuilder();
+            AppendShapeText(body, s.Shape, s.Type, 0, "");
+            sb.Append(TextWindow.Slice(body.ToString().TrimEnd(), offset, ObjectTextCap));
             return sb.ToString().TrimEnd();
         }
 
@@ -482,12 +624,12 @@ namespace WordAiAddIn
             try
             {
                 if ((int)shp.TextFrame.HasText == 0) return;
-                sb.AppendLine(indent + Truncate((string)shp.TextFrame.TextRange.Text, ObjectTextCap));
+                sb.AppendLine(indent + ((string)shp.TextFrame.TextRange.Text ?? "").Trim('\r', '\a', '\n', ' '));
             }
             catch { }
         }
 
-        private static string ReadContentControl(Word.Document doc, int index, int total)
+        private static string ReadContentControl(Word.Document doc, int index, int total, int offset)
         {
             int i = 0;
             foreach (dynamic cc in doc.ContentControls)
@@ -500,7 +642,7 @@ namespace WordAiAddIn
                 try { tag = (string)cc.Tag ?? ""; } catch { }
                 try { type = (int)cc.Type; } catch { }
                 try { placeholder = (bool)cc.ShowingPlaceholderText; } catch { }
-                try { text = Truncate((string)cc.Range.Text, ObjectTextCap); } catch { }
+                try { text = TextWindow.Slice(((string)cc.Range.Text ?? "").Trim('\r', '\a', '\n', ' '), offset, ObjectTextCap); } catch { }
                 var sb = new StringBuilder();
                 sb.AppendLine("Content control " + index + " of " + total + ": " + ContentControlTypeName(type) +
                     (title.Length > 0 ? ", title \"" + title + "\"" : "") + (tag.Length > 0 ? ", tag \"" + tag + "\"" : "") +
@@ -511,7 +653,7 @@ namespace WordAiAddIn
             throw new ArgumentOutOfRangeException("index");
         }
 
-        private static string ReadNote(Word.Document doc, string kind, int index, int total)
+        private static string ReadNote(Word.Document doc, string kind, int index, int total, int offset)
         {
             dynamic notes = kind == "footnote" ? (dynamic)doc.Footnotes : doc.Endnotes;
             int i = 0;
@@ -519,13 +661,13 @@ namespace WordAiAddIn
             {
                 if (i++ != index) continue;
                 string text = "";
-                try { text = Truncate((string)note.Range.Text, ObjectTextCap); } catch { }
+                try { text = TextWindow.Slice(((string)note.Range.Text ?? "").Trim('\r', '\a', '\n', ' '), offset, ObjectTextCap); } catch { }
                 return char.ToUpper(kind[0]) + kind.Substring(1) + " " + index + " of " + total + ":\n" + text;
             }
             throw new ArgumentOutOfRangeException("index");
         }
 
-        private static string ReadToc(Word.Document doc, int index, int total)
+        private static string ReadToc(Word.Document doc, int index, int total, int offset)
         {
             int i = 0;
             foreach (dynamic toc in doc.TablesOfContents)
@@ -534,7 +676,7 @@ namespace WordAiAddIn
                 int upper = 0, lower = 0;
                 string text = "";
                 try { upper = (int)toc.UpperHeadingLevel; lower = (int)toc.LowerHeadingLevel; } catch { }
-                try { text = Truncate((string)toc.Range.Text, ObjectTextCap); } catch { }
+                try { text = TextWindow.Slice(((string)toc.Range.Text ?? "").Trim('\r', '\a', '\n', ' '), offset, ObjectTextCap); } catch { }
                 return "TOC " + index + " of " + total + " (heading levels " + upper + "-" + lower + "):\n" + text;
             }
             throw new ArgumentOutOfRangeException("index");

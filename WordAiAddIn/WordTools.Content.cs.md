@@ -46,6 +46,20 @@ which lands directly on each heading without ever touching a
 non-heading paragraph, instead of scanning every paragraph's style
 name to find the ones that are headings.
 
+`ReadHeadings` is the one implementation, shared by `get_headings` (no cap) and the outline in `get_document_context` (first 25;
+`more` says there are further ones). Two corrections made when the outline was added, both measured in Word on a
+3,009-paragraph document with 14 headings, a table (with a heading inside a cell), floating text boxes and footnotes:
+
+- Numbering. A heading's index used to come from `ParagraphIndexResolver`, a forward `Paragraph.Next()` march from the top of the
+  document: 16,257 ms for the 13 headings it found. It is now the previous heading's index plus
+  `doc.Range(previousStart, start).Paragraphs.Count` (and `Range(0, start)` for the first jump): 467 ms for all 14, with every
+  index and offset identical to Word's own positional lookup (0 mismatches).
+- The first paragraph. `wdGoToHeading` only finds headings after the cursor, so a heading at offset 0 was never returned. It is now
+  added separately when the first paragraph's `OutlineLevel` is not body text (1-9 means a heading, 10 body text).
+
+The level is the paragraph's `OutlineLevel`, falling back to the digits in the style name. NOT VERIFIED AGAINST LIVE WORD beyond
+those measurements.
+
 ## `TextReadBlocksMaxParagraphs`
 
 Post-hoc addition (2026-08-27, user-reported): 'text' mode (the
@@ -69,12 +83,14 @@ paragraph index means:
   shapes with how many hold text, inline pictures, content controls, footnotes, endnotes,
   header/footer parts, TOC). It is omitted when the document has none, so plain documents'
   output is unchanged. No per-object list: the model has to call `read_object` anyway.
-- `read_blocks` appends "  {table#0, shape#2 "TextBox 3" textbox hasText, ...}" after each
-  paragraph that holds or anchors an object (capped at 8 labels per block). Anchors are
-  collected once (`CollectObjectAnchors`) and merged during the existing forward
-  `Paragraph.Next()` walk by `ObjectAnchors.LabelsFor` (OfficeAi.Shared, unit tested), so cost is
-  O(paragraphs + objects), never a per-paragraph search. The per-paragraph `Range.Start/End`
-  reads only happen when the document has at least one anchored object.
+- `read_blocks` appends "  {table#0, shape "TextBox 3" textbox hasText, ...}" after each
+  paragraph that holds or anchors an object (capped at 8 labels per block). Only the objects
+  anchored inside the requested paragraphs are collected (`CollectObjectAnchorsInRange`, using
+  Word's range-scoped collections) and merged during the existing forward `Paragraph.Next()` walk
+  by `ObjectAnchors.LabelsFor` (OfficeAi.Shared, unit tested). The end of the range is one
+  positional `Paragraphs[endIndex + 1]` lookup (about 4 ms on 3,000 paragraphs); the walk stays
+  forward-only. The per-paragraph `Range.Start/End` reads only happen when the range holds an object.
+  Floating shapes are tagged by name, not index: see WordTools.Objects.cs.md for why.
 - The suffix is not paragraph text. It is appended after the closing tag in `html` mode too.
 
 NOT VERIFIED AGAINST LIVE WORD: builds clean, but the anchor offsets (`Shape.Anchor.Start`,

@@ -1,4 +1,4 @@
-import { startAddIn } from '@officeai/app-shell'
+import { startAddIn, SHARED_TOOLS, SHARED_TOOL_DISPLAY } from '@officeai/app-shell'
 
 // Word add-in: tool definitions, system prompt, and starters are the only
 // app-specific pieces left here - everything else (WebView2 bridge, settings,
@@ -258,7 +258,8 @@ const ALL_WORD_TOOLS = [
     {
       name: 'get_document_context',
       description:
-        "Reads the active Word document's paragraph/word count and a text preview. If the document has non-body objects it adds one 'Objects:' line of counts " +
+        "Reads the active Word document's paragraph/word count, a short text preview and an outline of its first 25 headings (\"[index] H<level>: text\"; get_headings lists all of them). " +
+        "If the document has non-body objects it adds one 'Objects:' line of counts " +
         "(tables, charts, SmartArt, shapes with how many hold text, inline pictures, content controls, footnotes/endnotes, header/footer parts, TOC). " +
         "A document built mostly from text boxes/shapes has an almost empty body, so when that line shows shapes, list them with read_object.",
       inputSchema: { type: 'object', properties: {} },
@@ -314,13 +315,15 @@ const ALL_WORD_TOOLS = [
         'Reads the non-body objects of the document. kind: "table" | "chart" | "smartart" | "shape" (text boxes, canvases, groups, floating pictures - reports hasText, and the text of each) | ' +
         '"content_control" | "header_footer" | "footnote" | "endnote" | "toc". Each kind has its own 0-based index space (the same indices edit_table/edit_chart/edit_smartart use: ' +
         'tables in document order, charts and SmartArt inline-first then floating). Omit index to list every object of that kind, one summary line each (with the paragraph it is anchored in); ' +
-        'pass index to read one in full. A "chart" read returns its title, type, categories and per-series values - call it before an incremental edit_chart change, ' +
+        'pass index to read one in full (for kind "shape"/"chart"/"smartart" you may pass name instead - the name read_blocks shows). Long text (a text box, note, header, TOC) comes back in parts of about 4000 characters; the reply ends with the offset to pass for the next part. A "chart" read returns its title, type, categories and per-series values - call it before an incremental edit_chart change, ' +
         'since edit_chart REPLACES the whole dataset when categories/series is given. read_blocks marks these objects next to the paragraph they sit in.',
       inputSchema: {
         type: 'object',
         properties: {
           kind: { type: 'string', enum: ['table', 'chart', 'smartart', 'shape', 'content_control', 'header_footer', 'footnote', 'endnote', 'toc'] },
           index: { type: 'number' },
+          name: { type: 'string' },
+          offset: { type: 'number' },
         },
         required: ['kind'],
       },
@@ -357,7 +360,8 @@ const ALL_WORD_TOOLS = [
         'Reads paragraphs [startIndex, endIndex] (0-based, inclusive) of the active document, one per line prefixed with its index - capped at 1000 paragraphs per call. ' +
         'format:"html" emits the same restricted HTML subset insert_content/replace_blocks accept (headings/bold/italic/underline/list membership survive; ' +
         'anything outside that subset, e.g. font color, does not) - capped lower, at 100 paragraphs per call (per-paragraph formatting reads are slower); strip the leading "[i] " markers before feeding the fragment back into html. ' +
-        'A paragraph that holds or anchors a non-body object ends with "{table#0, shape#2 \"TextBox 3\" textbox hasText, chart#1, ...}" - that is not part of the paragraph text; pass the kind and number to read_object to read it. ' +
+        'A paragraph that holds or anchors a non-body object ends with "{table#0, shape \"TextBox 3\" textbox hasText, footnote#2, ...}" - that is not part of the paragraph text. ' +
+        'To read one with read_object: a tag with a number (table#0, content_control#1, footnote#2, endnote#0, toc#0, chart#1 or smartart#0 for inline ones) is kind#index; a tag with a quoted name (shape, chart or smartart) is read with kind and name. ' +
         'Prefer find_text to locate the paragraph indices you actually need instead of reading a large range blindly.',
       inputSchema: {
         type: 'object',
@@ -731,8 +735,8 @@ const WORD_TOOL_DISPLAY = {
 
 startAddIn({
   skillId: 'word-tools',
-  tools: ALL_WORD_TOOLS,
-  toolDisplay: WORD_TOOL_DISPLAY,
+  tools: [...ALL_WORD_TOOLS, ...SHARED_TOOLS],
+  toolDisplay: { ...WORD_TOOL_DISPLAY, ...SHARED_TOOL_DISPLAY },
   systemPrompt:
     'You are an AI assistant embedded in Microsoft Word via the OpenDocs add-in. ' +
     'You can read the document, insert content at any position (plain text or a restricted HTML subset - headings, bold/italic/underline, bulleted/numbered lists), ' +
@@ -751,7 +755,8 @@ startAddIn({
     'apply_commands\' copyBlocks duplicates one or more paragraphs elsewhere in the document without removing the originals (unlike moveBlocks, which relocates them), and copyFormat copies one paragraph\'s complete formatting onto one or more others in a single call - like Format Painter, whole paragraphs only, and it never copies hyperlinks. ' +
     "Your available tools depend on the user's current editing mode (Read only, Comment only, Track changes, or Full autonomy); only call tools that are currently offered to you. " +
     'If the user has selected text in the document, it will be included in your context as "Content selected by the user." ' +
-    "undo_last_action/redo_last_action mirror Word's own Ctrl+Z/Ctrl+Y over the document's real undo history - use them if the user asks to undo/redo, or to back out a change you just made that turned out wrong.",
+    "undo_last_action/redo_last_action mirror Word's own Ctrl+Z/Ctrl+Y over the document's real undo history - use them if the user asks to undo/redo, or to back out a change you just made that turned out wrong." +
+    " save writes the open file in place; set saveAs=true when the user wants a copy, a new name or another location (it opens the Save As dialog and waits for them). Call it only when the user asks to save.",
   starters: [
     { en: 'Summarize the key points of this document', he: 'סכם את הנקודות העיקריות במסמך' },
     { en: 'Polish the whole document for a more professional tone', he: 'לטש את כל המסמך לטון מקצועי יותר' },
