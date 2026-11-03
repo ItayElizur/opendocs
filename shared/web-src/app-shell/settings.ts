@@ -41,11 +41,10 @@ interface LegacyStoredSettings {
   skipTlsVerify?: boolean
 }
 
-// Overrides defaultAiSettings()'s default provider with this repo's own
-// test/mock-server provider + starting values (see `settings.ts.md`).
+// Fills in the custom provider slot (the default) with this repo's own
+// test/mock-server starting values (see `settings.ts.md`).
 function defaultsForThisRepo(): AiSettings {
   const defaults = defaultAiSettings()
-  defaults.provider = 'custom'
   defaults.providers.custom = { baseUrl: 'http://127.0.0.1:9000/v1', apiKey: 'test', model: 'test-model' }
   return defaults
 }

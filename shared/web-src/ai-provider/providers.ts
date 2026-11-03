@@ -65,7 +65,7 @@ export function defaultAiSettings(
       baseUrl: meta.needsBaseUrl ? '' : undefined,
     }
   }
-  return { provider: 'anthropic', providers }
+  return { provider: 'custom', providers }
 }
 
 /**
