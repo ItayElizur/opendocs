@@ -2,22 +2,87 @@
 # by package.ps1 (it must sit alongside OpenDocsDevCert.cer and the
 # per-app WordAiAddIn/ExcelAiAddIn/PowerPointAiAddIn build-output folders).
 #
-# Usage:
-#   .\install.ps1                  # installs Word, Excel, PowerPoint, and Outlook
-#   .\install.ps1 -App Word        # installs just Word
+# Usage (default: for every user of this computer, from an ELEVATED PowerShell):
+#   .\install.ps1                      # installs Word, Excel, PowerPoint, and Outlook for all users
+#   .\install.ps1 -App Word            # installs just Word
+#   .\install.ps1 -CurrentUser         # this user only; no admin needed
+#   .\install.ps1 -WhatIf              # list what it would change and change nothing (works without elevation)
+#
+# All users (default): files in Program Files\OpenDocs (everyone can run them, only administrators can change them),
+#   registered under HKLM, signing certificate trusted for the computer.
+# -CurrentUser: files in %LOCALAPPDATA%\OpenDocs, registered under HKCU, certificate trusted for the current user.
+# Run uninstall.ps1 with the same switch to remove it.
 #
 # No internet access is required or used by this script.
 
+[CmdletBinding(SupportsShouldProcess)]
 param(
     [ValidateSet('Word', 'Excel', 'PowerPoint', 'Outlook', 'All')]
     [string]$App = 'All',
-    [string]$InstallRoot = "$env:LOCALAPPDATA\OpenDocs"
+    [string]$InstallRoot,
+    [switch]$CurrentUser
 )
 
 $ErrorActionPreference = 'Stop'
+$AllUsers = -not $CurrentUser
 $PackageDir = $PSScriptRoot
 $Apps = if ($App -eq 'All') { @('Word', 'Excel', 'PowerPoint', 'Outlook') } else { @($App) }
 $OfficeApps = @{ Word = 'Word'; Excel = 'Excel'; PowerPoint = 'PowerPoint'; Outlook = 'Outlook' }
+$ProcessNames = @{ Word = 'WINWORD'; Excel = 'EXCEL'; PowerPoint = 'POWERPNT'; Outlook = 'OUTLOOK' }
+
+function Test-Administrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    return ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# 'x64' or 'x86' for the installed Office, or $null when it cannot be told. A 32-bit Office on 64-bit Windows reads
+# add-in registrations from HKLM\SOFTWARE\WOW6432Node, a 64-bit Office from HKLM\SOFTWARE.
+function Get-OfficeBitness {
+    $c2r = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration' -Name Platform -ErrorAction SilentlyContinue
+    if ($c2r -and $c2r.Platform) { return $c2r.Platform }
+    foreach ($ver in @('16.0', '15.0')) {
+        foreach ($root in @('HKLM:\SOFTWARE\Microsoft\Office', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Office')) {
+            $outlook = Get-ItemProperty -Path "$root\$ver\Outlook" -Name Bitness -ErrorAction SilentlyContinue
+            if ($outlook -and $outlook.Bitness) { return $outlook.Bitness }
+        }
+    }
+    return $null
+}
+
+# The registry roots the add-ins are registered under: HKCU for a per-user install; for all users HKLM, in the view(s)
+# Office reads (both when the bitness cannot be determined - the unused one is harmless).
+function Get-OfficeRegistryRoots {
+    if (-not $AllUsers) { return @('HKCU:\Software\Microsoft\Office') }
+    if (-not [Environment]::Is64BitOperatingSystem) { return @('HKLM:\SOFTWARE\Microsoft\Office') }
+    $bitness = Get-OfficeBitness
+    if ($bitness -eq 'x64') { return @('HKLM:\SOFTWARE\Microsoft\Office') }
+    if ($bitness -eq 'x86') { return @('HKLM:\SOFTWARE\WOW6432Node\Microsoft\Office') }
+    return @('HKLM:\SOFTWARE\Microsoft\Office', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Office')
+}
+
+function Test-CertTrusted {
+    param([string]$Thumbprint, [string[]]$Locations)
+    foreach ($location in $Locations) {
+        if (Test-Path "Cert:\$location\TrustedPublisher\$Thumbprint") { return $true }
+    }
+    return $false
+}
+
+if ($AllUsers -and -not (Test-Administrator)) {
+    $needAdmin = "A machine-wide install writes to Program Files, HKLM and the computer's certificate store, so it needs an elevated PowerShell (right-click PowerShell, Run as administrator). Use -CurrentUser to install for the current user only, without admin."
+    if ($WhatIfPreference) { Write-Host "NOTE: $needAdmin (continuing only because of -WhatIf; nothing will be changed)." -ForegroundColor Yellow }
+    else { throw $needAdmin }
+}
+
+if (-not $InstallRoot) {
+    if ($AllUsers) {
+        $programFiles = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+        $InstallRoot = Join-Path $programFiles 'OpenDocs'
+    }
+    else {
+        $InstallRoot = "$env:LOCALAPPDATA\OpenDocs"
+    }
+}
 
 function Test-Prerequisites {
     $problems = @()
@@ -66,6 +131,21 @@ if ($problems.Count -gt 0) {
     Write-Host ""
 }
 
+# Office keeps an installed add-in's files locked while it runs, so replacing them would fail half way through. For an
+# all-users install any user's session counts; otherwise only this user's.
+$mySession = (Get-Process -Id $PID).SessionId
+$running = @()
+foreach ($appName in $Apps) {
+    $procs = @(Get-Process -Name $ProcessNames[$appName] -ErrorAction SilentlyContinue)
+    if (-not $AllUsers) { $procs = @($procs | Where-Object { $_.SessionId -eq $mySession }) }
+    if ($procs.Count -gt 0) { $running += $appName }
+}
+if ($running.Count -gt 0) {
+    $closeFirst = "Close " + ($running -join ', ') + " first: Office keeps the add-in's files locked while it is running."
+    if ($WhatIfPreference) { Write-Host "NOTE: $closeFirst" -ForegroundColor Yellow }
+    else { throw $closeFirst }
+}
+
 # Files that arrive via a zip transfer from another machine are commonly
 # flagged with a "Mark of the Web" (Zone.Identifier) by Windows, which can
 # make .NET/Office refuse to load the assemblies with a generic "runtime
@@ -76,14 +156,42 @@ Get-ChildItem -Path $PackageDir -Recurse | Unblock-File -ErrorAction SilentlyCon
 
 $certPath = Join-Path $PackageDir 'OpenDocsDevCert.cer'
 if (-not (Test-Path $certPath)) { throw "Certificate file not found next to install.ps1: $certPath" }
+$thumbprint = (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath)).Thumbprint
 
-Write-Host "Trusting the add-in's signing certificate (current user only, no admin needed)..."
-Import-Certificate -FilePath $certPath -CertStoreLocation 'Cert:\CurrentUser\TrustedPublisher' | Out-Null
+# A certificate trusted for the whole computer also covers a per-user install; the reverse is not true, because
+# CurrentUser belongs to whichever account ran this script.
+$certLocation = if ($AllUsers) { 'LocalMachine' } else { 'CurrentUser' }
+$coveredBy = if ($AllUsers) { @('LocalMachine') } else { @('CurrentUser', 'LocalMachine') }
+if (Test-CertTrusted -Thumbprint $thumbprint -Locations $coveredBy) {
+    Write-Host "The add-in's signing certificate is already trusted - skipping the import."
+}
+else {
+    $who = if ($AllUsers) { "this computer, all users" } else { "the current user only, no admin needed" }
+    Write-Host "Trusting the add-in's signing certificate ($who)..."
+    try {
+        Import-Certificate -FilePath $certPath -CertStoreLocation "Cert:\$certLocation\TrustedPublisher" | Out-Null
+    }
+    catch {
+        if (Test-CertTrusted -Thumbprint $thumbprint -Locations $coveredBy) {
+            Write-Host "WARNING: importing the certificate reported '$($_.Exception.Message)', but it is trusted now - continuing." -ForegroundColor Yellow
+        }
+        else {
+            throw ("Could not add the signing certificate to Cert:\$certLocation\TrustedPublisher: $($_.Exception.Message)`n" +
+                "'Access denied' on one machine while others work usually means a Group Policy or permission restriction on Trusted Publishers " +
+                "(run 'gpresult /h gp.html' to see which policies apply). Options: run this script from an elevated PowerShell without -CurrentUser " +
+                "(trusts the certificate for the whole computer); or have IT deploy OpenDocsDevCert.cer to Trusted Publishers through Group Policy. If you import it by hand from an elevated " +
+                "shell, it only lands in the store of the account running that shell, not necessarily yours.")
+        }
+    }
+}
+
+$registryRoots = Get-OfficeRegistryRoots
 
 foreach ($appName in $Apps) {
     $projName = "${appName}AiAddIn"
     $srcDir = Join-Path $PackageDir $projName
     if (-not (Test-Path $srcDir)) { throw "Package is missing $projName - re-run package.ps1 with -App $appName or -App All." }
+    if (-not (Test-Path (Join-Path $srcDir "$projName.vsto"))) { throw "$projName.vsto not found in the package - package looks incomplete." }
 
     $destDir = Join-Path $InstallRoot $projName
     Write-Host "Installing $projName to $destDir ..."
@@ -92,26 +200,41 @@ foreach ($appName in $Apps) {
     Copy-Item "$srcDir\*" $destDir -Recurse -Force
 
     $vstoPath = Join-Path $destDir "$projName.vsto"
-    if (-not (Test-Path $vstoPath)) { throw "$vstoPath not found after copy - package looks incomplete." }
     $manifestUri = "file:///" + ($vstoPath -replace '\\', '/') + "|vstolocal"
 
-    $regKey = "HKCU:\Software\Microsoft\Office\$($OfficeApps[$appName])\Addins\$projName"
-    Write-Host "Registering $projName at $regKey ..."
-    New-Item -Path $regKey -Force | Out-Null
-    Set-ItemProperty -Path $regKey -Name 'Description' -Value $projName
-    Set-ItemProperty -Path $regKey -Name 'FriendlyName' -Value $projName
-    Set-ItemProperty -Path $regKey -Name 'LoadBehavior' -Value 3 -Type DWord
-    Set-ItemProperty -Path $regKey -Name 'Manifest' -Value $manifestUri
+    foreach ($officeRoot in $registryRoots) {
+        $regKey = "$officeRoot\$($OfficeApps[$appName])\Addins\$projName"
+        Write-Host "Registering $projName at $regKey ..."
+        New-Item -Path $regKey -Force | Out-Null
+        if ($WhatIfPreference) {
+            # the key was not really created, so setting values on it would fail
+            Write-Host "What if: setting Description, FriendlyName, LoadBehavior=3 and Manifest=$manifestUri on $regKey"
+        }
+        else {
+            Set-ItemProperty -Path $regKey -Name 'Description' -Value $projName
+            Set-ItemProperty -Path $regKey -Name 'FriendlyName' -Value $projName
+            Set-ItemProperty -Path $regKey -Name 'LoadBehavior' -Value 3 -Type DWord
+            Set-ItemProperty -Path $regKey -Name 'Manifest' -Value $manifestUri
+        }
+    }
+
+    # Two registrations of the same add-in (this account's own plus the machine-wide one) would load it twice.
+    if ($AllUsers -and (Test-Path "HKCU:\Software\Microsoft\Office\$($OfficeApps[$appName])\Addins\$projName")) {
+        Write-Host "NOTE: this account also has a per-user registration of $projName. Run uninstall.ps1 -CurrentUser so it is not registered twice." -ForegroundColor Yellow
+    }
 
     # Outlook (2013+) auto-disables add-ins it deems slow to start or that
     # threw during a previous load. Whitelist this one and clear any stale
     # disabled/crashing entries so a single bad dev launch doesn't stick.
-    if ($appName -eq 'Outlook') {
+    # That list lives in each user's own HKCU hive, which an elevated machine-wide
+    # install cannot reach, so it is only done for -CurrentUser.
+    if ($appName -eq 'Outlook' -and -not $AllUsers) {
         foreach ($ver in @('16.0', '15.0')) {
             $res = "HKCU:\Software\Microsoft\Office\$ver\Outlook\Resiliency"
             $dna = "$res\DoNotDisableAddinList"
             New-Item -Path $dna -Force | Out-Null
-            Set-ItemProperty -Path $dna -Name $projName -Value 1 -Type DWord
+            if ($WhatIfPreference) { Write-Host "What if: whitelisting $projName in $dna" }
+            else { Set-ItemProperty -Path $dna -Name $projName -Value 1 -Type DWord }
             foreach ($bucket in @('DisabledItems', 'CrashingAddinList')) {
                 $bpath = "$res\$bucket"
                 if (Test-Path $bpath) {
@@ -123,12 +246,18 @@ foreach ($appName in $Apps) {
         }
         Write-Host "Whitelisted $projName against Outlook's slow/crashing add-in resiliency."
     }
+    elseif ($appName -eq 'Outlook') {
+        Write-Host "NOTE: Outlook's per-user 'slow add-in' resiliency list is not set by a machine-wide install. If Outlook disables $projName after a slow start or crash, re-enable it under File > Options > Add-ins > Manage: Disabled Items."
+    }
 
     Write-Host "$projName installed and registered."
 }
 
 Write-Host ""
 Write-Host "Done. Start (or restart) the corresponding Office application(s) to load the add-in(s)."
+if ($AllUsers) {
+    Write-Host "Installed for every user of this computer; each user gets the add-in the next time they start Office."
+}
 Write-Host "If an app doesn't show the panel: File > Options > Add-ins > Manage: COM Add-ins > Go,"
 Write-Host "and confirm the add-in is checked and not listed under Disabled Items."
 Write-Host ""
