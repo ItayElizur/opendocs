@@ -88,7 +88,7 @@ Shared by EditChart and ReadChart so both address charts identically.
 internal (not private): post-hoc fix (2026-08-24, user-reported)
 needs this same addressing from TaskPaneHost.OnSelectionChanged, so
 a selected chart shape can be reported with the SAME chartIndex
-edit_chart/read_chart would use, rather than a second, possibly
+edit_chart/read_object (kind chart) would use, rather than a second, possibly
 drifting copy of this resolution logic.
 
 ## `ReadChart`

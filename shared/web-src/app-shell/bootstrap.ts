@@ -133,11 +133,9 @@ function defaultDescribeSelection(ctx: SelectionContext): string {
       // check below, or an object selection would always fall through to "no
       // selection" (see `bootstrap.ts.md`).
       if (ctx.objectKind) {
-        const readTool = ctx.objectKind === 'table' ? 'read_table' : ctx.objectKind === 'chart' ? 'read_chart' : 'read_smartart'
-        const indexField = ctx.objectKind === 'table' ? 'tableIndex' : ctx.objectKind === 'chart' ? 'chartIndex' : 'smartArtIndex'
         return (
           `The user has selected ${ctx.objectKind} ${ctx.objectIndex} (0-based) in the document. ` +
-          `Use ${readTool} {${indexField}:${ctx.objectIndex}} to see its current content before editing it.`
+          `Use read_object {kind:"${ctx.objectKind}", index:${ctx.objectIndex}} to see its current content before editing it.`
         )
       }
       // States the 0-based paragraph range explicitly so a request to transform

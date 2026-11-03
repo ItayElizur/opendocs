@@ -116,8 +116,7 @@ namespace WordAiAddIn
             return shapes;
         }
 
-        // Extracted so ReadSmartArt can read every diagram in one call when
-        // smartArtIndex is omitted, instead of one call per diagram.
+        // Backs read_object kind "smartart" (WordTools.Objects.cs).
         private static string ReadOneSmartArt(dynamic shape, int index, int total)
         {
             dynamic smartArt = shape.SmartArt;
@@ -133,29 +132,6 @@ namespace WordAiAddIn
                 sb.AppendLine("[" + (i - 1) + "] " + text);
             }
             return sb.ToString().TrimEnd();
-        }
-
-        private static ToolResult ReadSmartArt(JsonElement input)
-        {
-            dynamic doc = ActiveDoc;
-            var shapes = ListSmartArtShapes(doc);
-            if (shapes.Count == 0)
-                return new ToolResult { Output = "No SmartArt diagrams in this document.", Summary = "read_smartart" };
-
-            bool hasIndex = input.TryGetProperty("smartArtIndex", out var si) && si.ValueKind == JsonValueKind.Number;
-            if (!hasIndex)
-            {
-                // No index given: read every diagram in one call rather than
-                // forcing one call per diagram.
-                var all = new List<string>();
-                for (int i = 0; i < shapes.Count; i++) all.Add(ReadOneSmartArt(shapes[i], i, shapes.Count));
-                return new ToolResult { Output = string.Join("\n\n", all), Summary = "read_smartart" };
-            }
-
-            int index = si.GetInt32();
-            if (index < 0 || index >= shapes.Count)
-                throw new ArgumentOutOfRangeException("smartArtIndex", "smartArtIndex must be between 0 and " + (shapes.Count - 1) + " (" + shapes.Count + " diagram(s) in the document).");
-            return new ToolResult { Output = ReadOneSmartArt(shapes[index], index, shapes.Count), Summary = "read_smartart" };
         }
 
         private static ToolResult EditSmartArt(JsonElement input)

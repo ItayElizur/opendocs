@@ -97,26 +97,40 @@ namespace WordAiAddIn
             return new ToolResult { Output = found > 0 ? sb.ToString() : "No matches.", Summary = "find_text" };
         }
 
-        // Navigation-Pane-style outline of every Heading-styled paragraph, found via
-        // Word's own wdGoToHeading jump (same index that powers the Navigation Pane)
-        // rather than scanning every paragraph's style name. See WordTools.Content.cs.md.
-        private static ToolResult GetHeadings()
+        private sealed class HeadingInfo
         {
-            Word.Document doc = ActiveDoc;
-            var sb = new System.Text.StringBuilder();
-            int found = 0;
-            var resolver = new ParagraphIndexResolver(doc);
+            public int Index;   // 0-based paragraph index - the same one read_blocks uses
+            public int Level;   // 1-9
+            public string Text;
+        }
 
+        // Navigation-Pane-style outline of the Heading-styled paragraphs, found via Word's own wdGoToHeading jump (the
+        // index behind the Navigation Pane) rather than by scanning every paragraph's style. Returns at most `cap`
+        // headings (0 = all); `more` says the document has further ones. Used by get_headings and by the outline in
+        // get_document_context. See WordTools.Content.cs.md.
+        private static List<HeadingInfo> ReadHeadings(Word.Document doc, int cap, out bool more)
+        {
+            var list = new List<HeadingInfo>();
+            more = false;
+
+            // The jump below only finds headings AFTER the cursor, so a heading in the very first paragraph has to be
+            // picked up separately (a document that opens with its title heading is the usual case).
+            Word.Paragraph first = doc.Paragraphs.First;
+            if (first.OutlineLevel != Word.WdOutlineLevel.wdOutlineLevelBodyText) list.Add(HeadingOf(first, 0));
+
+            // A heading's paragraph index is the previous heading's index plus the paragraphs in between. Counting a
+            // range's paragraphs is one cheap call; the earlier approach marched Paragraph.Next() from the top of the
+            // document to each heading (about 3-4 ms per paragraph passed).
+            int prevStart = 0, prevIndex = 0;
             Word.Range cursor = doc.Content;
             cursor.Collapse(Word.WdCollapseDirection.wdCollapseStart);
 
-            // wdGoToHeading wraps back to the first heading once it runs out, rather
-            // than signaling "no more" (detected via next.Start <= cursor.Start below).
-            // safetyLimit is a defensive backstop against an uncaught wrap becoming
-            // an infinite loop.
+            // wdGoToHeading wraps back to the first heading once it runs out, rather than signaling "no more" (detected
+            // via next.Start <= cursor.Start below). safetyLimit is a defensive backstop against an uncaught wrap.
             int safetyLimit = doc.Paragraphs.Count + 1;
             for (int i = 0; i < safetyLimit; i++)
             {
+                if (cap > 0 && list.Count > cap) break; // one past the cap is enough to know there is more
                 Word.Range next;
                 try
                 {
@@ -128,31 +142,78 @@ namespace WordAiAddIn
                 }
                 if (next.Start <= cursor.Start) break; // wrapped back to the start - no more headings ahead
 
-                Word.Paragraph headingPara = next.Paragraphs[1];
-                int index = resolver.IndexAt(headingPara.Range.Start);
-                string styleName = headingPara.Range.get_Style().NameLocal;
-                string digits = new string(styleName.Where(char.IsDigit).ToArray());
-                int level = int.TryParse(digits, out int lvl) ? lvl : 1;
-                string text = headingPara.Range.Text.TrimEnd('\r', '\a', '\n');
-                sb.AppendLine($"[{index}] H{level}: {text}");
-                found++;
+                int start = next.Start;
+                int index = prevIndex + doc.Range(prevStart, start).Paragraphs.Count;
+                list.Add(HeadingOf(next.Paragraphs[1], index));
+                prevStart = start;
+                prevIndex = index;
 
                 cursor = next.Duplicate;
                 cursor.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
                 cursor.Move(Word.WdUnits.wdCharacter, 1);
             }
 
-            return new ToolResult { Output = found > 0 ? sb.ToString() : "No headings in this document.", Summary = "get_headings" };
+            if (cap > 0 && list.Count > cap)
+            {
+                more = true;
+                list.RemoveRange(cap, list.Count - cap);
+            }
+            return list;
         }
+
+        private static HeadingInfo HeadingOf(Word.Paragraph para, int index)
+        {
+            int level = (int)para.OutlineLevel;
+            if (level < 1 || level > 9)
+            {
+                // Not an outline-level paragraph after all: fall back to the digits in the style name ("Heading 3").
+                string styleName = para.Range.get_Style().NameLocal;
+                string digits = new string(styleName.Where(char.IsDigit).ToArray());
+                level = int.TryParse(digits, out int lvl) && lvl >= 1 && lvl <= 9 ? lvl : 1;
+            }
+            return new HeadingInfo { Index = index, Level = level, Text = para.Range.Text.TrimEnd('\r', '\a', '\n') };
+        }
+
+        private static ToolResult GetHeadings()
+        {
+            bool more;
+            List<HeadingInfo> headings = ReadHeadings(ActiveDoc, 0, out more);
+            var sb = new System.Text.StringBuilder();
+            foreach (HeadingInfo h in headings) sb.AppendLine($"[{h.Index}] H{h.Level}: {h.Text}");
+            return new ToolResult { Output = headings.Count > 0 ? sb.ToString() : "No headings in this document.", Summary = "get_headings" };
+        }
+
+        // Shorter than it used to be (the opening text is the least useful part); the outline below it is the map.
+        private const int ContextPreviewChars = 150;
+        private const int ContextOutlineHeadings = 25;
+        private const int ContextOutlineTextChars = 80;
 
         private static ToolResult GetDocumentContext()
         {
             Word.Document doc = ActiveDoc;
             int paraCount = doc.Paragraphs.Count;
             int wordCount = doc.Words.Count;
-            string preview = doc.Content.Text;
-            if (preview.Length > 300) preview = preview.Substring(0, 300) + "...";
+            // Only the opening characters are needed - not the whole document's text.
+            string preview = doc.Range(0, Math.Min(doc.Content.End, ContextPreviewChars + 1)).Text ?? "";
+            if (preview.Length > ContextPreviewChars) preview = preview.Substring(0, ContextPreviewChars) + "...";
             string output = $"Paragraphs: {paraCount}, Words: {wordCount}\nPreview: {preview}";
+
+            bool more;
+            List<HeadingInfo> headings = ReadHeadings(doc, ContextOutlineHeadings, out more);
+            if (headings.Count > 0)
+            {
+                var outline = new System.Text.StringBuilder();
+                outline.Append("Outline (" + (more ? "first " + headings.Count + " headings; get_headings lists all" : "all headings") + "):");
+                foreach (HeadingInfo h in headings)
+                {
+                    string text = h.Text.Length > ContextOutlineTextChars ? h.Text.Substring(0, ContextOutlineTextChars) + "..." : h.Text;
+                    outline.Append("\n[" + h.Index + "] H" + h.Level + ": " + text);
+                }
+                output += "\n" + outline;
+            }
+
+            string objects = ObjectCountsLine(doc);
+            if (objects.Length > 0) output += "\n" + objects;
             return new ToolResult { Output = output, Summary = "read document context" };
         }
 
@@ -232,6 +293,8 @@ namespace WordAiAddIn
         // See WordTools.Content.cs.md.
         private const int TextReadBlocksMaxParagraphs = 1000;
 
+        private const int MaxObjectLabelsPerBlock = 8;
+
         private static string ReadBlockAsHtml(Word.Paragraph p)
         {
             var sb = new System.Text.StringBuilder();
@@ -287,16 +350,33 @@ namespace WordAiAddIn
             Word.Paragraph p = paragraphs.First;
             for (int skip = 0; skip < startIndex && p != null; skip++) p = p.Next();
 
+            // Objects (tables, shapes, footnotes, ...) anchored in a block are listed after it as
+            // "{table#0, shape "Text Box 3" textbox hasText}". Only the objects inside the requested paragraphs are
+            // collected (Word's range-scoped collections, a few ms; a document-wide pass cost seconds on shape-heavy
+            // documents) and merged during this forward walk; the per-paragraph Range reads are skipped entirely when
+            // the range holds none. The end of the range is one positional lookup, the walk itself stays forward-only.
+            List<ObjectAnchor> anchors = p == null
+                ? new List<ObjectAnchor>()
+                : CollectObjectAnchorsInRange(doc, p.Range.Start, paragraphs[endIndex + 1].Range.End);
+            int nextAnchor = 0;
+
             for (int i = startIndex; i <= endIndex && p != null; i++)
             {
                 // finally guarantees p advances exactly once per iteration even
                 // though several branches `continue` early.
                 try
                 {
+                    string objs = "";
+                    if (anchors.Count > 0)
+                    {
+                        Word.Range pr = p.Range;
+                        objs = ObjectAnchors.LabelsFor(anchors, ref nextAnchor, pr.Start, pr.End, MaxObjectLabelsPerBlock);
+                    }
+
                     if (format != "html")
                     {
                         string plain = p.Range.Text.TrimEnd('\r', '\a', '\n');
-                        sb.AppendLine($"[{i}] {plain}");
+                        sb.AppendLine($"[{i}] {plain}{objs}");
                         continue;
                     }
 
@@ -314,7 +394,7 @@ namespace WordAiAddIn
                             sb.AppendLine($"<{wantList}>");
                             openList = wantList;
                         }
-                        sb.AppendLine($"[{i}] <li>{content}</li>");
+                        sb.AppendLine($"[{i}] <li>{content}</li>{objs}");
                         continue;
                     }
                     if (openList != null) { sb.AppendLine($"</{openList}>"); openList = null; }
@@ -326,7 +406,7 @@ namespace WordAiAddIn
                         if (int.TryParse(digits, out int lvl) && lvl >= 1 && lvl <= 3) headingLevel = lvl;
                     }
                     string tag = headingLevel > 0 ? "h" + headingLevel : "p";
-                    sb.AppendLine($"[{i}] <{tag}>{content}</{tag}>");
+                    sb.AppendLine($"[{i}] <{tag}>{content}</{tag}>{objs}");
                 }
                 finally
                 {

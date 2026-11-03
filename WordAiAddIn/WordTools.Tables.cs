@@ -219,15 +219,10 @@ namespace WordAiAddIn
             }
         }
 
-        private static ToolResult ReadTable(JsonElement input)
+        // Backs read_object kind "table"; read_object has already bounds-checked tableIndex.
+        private static string ReadTable(int tableIndex)
         {
             Word.Tables tables = ActiveDoc.Tables;
-            if (tables.Count == 0)
-                return new ToolResult { Output = "No tables in this document.", Summary = "read_table" };
-
-            int tableIndex = input.TryGetProperty("tableIndex", out var ti) && ti.ValueKind == JsonValueKind.Number ? ti.GetInt32() : 0;
-            if (tableIndex < 0 || tableIndex >= tables.Count)
-                throw new ArgumentOutOfRangeException("tableIndex", "tableIndex must be between 0 and " + (tables.Count - 1) + " (" + tables.Count + " table(s) in the document).");
             Word.Table table = tables[tableIndex + 1];
 
             var sb = new System.Text.StringBuilder();
@@ -245,7 +240,7 @@ namespace WordAiAddIn
                 }
                 sb.AppendLine("[" + r + "] " + string.Join(" | ", cellsOut));
             }
-            return new ToolResult { Output = sb.ToString().TrimEnd(), Summary = "read_table" };
+            return sb.ToString().TrimEnd();
         }
 
         // See WordTools.Tables.cs.md for a historical note on SmartArtLayouts.ByName.

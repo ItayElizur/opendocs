@@ -31,7 +31,7 @@ namespace WordAiAddIn
         // never touch document content. Everything else is gated below.
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
-            "get_document_context", "read_blocks", "read_chart", "read_table", "read_smartart",
+            "get_document_context", "read_blocks", "read_object",
             // find_text/get_headings are read-only too - were previously missing here,
             // which both blocked them in Read Only mode and wrapped them in a
             // pointless undo custom record.
@@ -89,20 +89,16 @@ namespace WordAiAddIn
                             return InsertContent(input);
                         case "edit_chart":
                             return EditChart(input);
-                        case "read_chart":
-                            return ReadChart(input);
+                        case "read_object":
+                            return ReadObject(input);
                         case "add_table":
                             return AddTable(input);
                         case "edit_table":
                             return EditTable(input);
-                        case "read_table":
-                            return ReadTable(input);
                         case "add_smartart":
                             return AddSmartArt(input);
                         case "edit_smartart":
                             return EditSmartArt(input);
-                        case "read_smartart":
-                            return ReadSmartArt(input);
                         case "read_blocks":
                             return ReadBlocks(input);
                         case "find_text":
