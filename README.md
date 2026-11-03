@@ -161,7 +161,6 @@ It supports providers including:
 * OpenAI
 * Gemini
 * DeepSeek
-* Genspark
 * OpenAI-compatible endpoints
 * Self-hosted models such as **vLLM**
 

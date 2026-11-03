@@ -41,7 +41,7 @@ interface LegacyStoredSettings {
   skipTlsVerify?: boolean
 }
 
-// Overrides defaultAiSettings()'s Genspark default with this repo's own
+// Overrides defaultAiSettings()'s default provider with this repo's own
 // test/mock-server provider + starting values (see `settings.ts.md`).
 function defaultsForThisRepo(): AiSettings {
   const defaults = defaultAiSettings()
