@@ -1,5 +1,5 @@
-import { AgentLoop, type AgentSkill } from '@genoffice/agent-core'
-import { streamForProvider, type AiProviderConfig } from '@genoffice/ai-provider'
+import { AgentLoop, type AgentSkill } from '@officeai/agent-core'
+import { streamForProvider, type AiProviderConfig } from '@officeai/ai-provider'
 import { defaultModeFor, mountChatUI, resolveModes, type EditingMode, type ModeOverrides, type SelectionExtent, type ToolDisplayEntry } from '@officeai/chat-ui'
 import {
   callDotNetTool,

@@ -306,8 +306,8 @@ namespace WordAiAddIn
                 case "NUMBERED_DECIMAL_ALPHA_ROMAN":
                     // Alpha/roman sub-levels need real multi-level nesting, which this
                     // flat per-paragraph model has none of, so level 1 stays plain decimal -
-                    // narrower than genoffice's version, but honestly so (documented in the
-                    // schema description).
+                    // a known limitation, documented in the
+                    // schema description.
                     range.ListFormat.ApplyNumberDefault();
                     break;
                 case "NUMBERED_UPPERALPHA":
@@ -341,7 +341,7 @@ namespace WordAiAddIn
             {
                 Word.Range range = p.Range;
                 string styleName = range.get_Style().NameLocal;
-                if (styleName.StartsWith("Heading", StringComparison.OrdinalIgnoreCase)) { skippedHeadings++; continue; } // headings are matched but left unchanged, mirrors genoffice
+                if (styleName.StartsWith("Heading", StringComparison.OrdinalIgnoreCase)) { skippedHeadings++; continue; } // headings are matched but left unchanged
                 if (preset != null) ApplyBulletPreset(range, preset);
                 else range.ListFormat.ApplyBulletDefault(); // absent bulletPreset keeps the pre-existing default behavior
                 applied++;
@@ -363,7 +363,7 @@ namespace WordAiAddIn
             foreach (var (_, p) in matches)
             {
                 Word.Range range = p.Range;
-                if (range.ListFormat.ListType == Word.WdListType.wdListNoNumbering) { skippedNonList++; continue; } // non-list-item matches silently skipped, mirrors genoffice
+                if (range.ListFormat.ListType == Word.WdListType.wdListNoNumbering) { skippedNonList++; continue; } // non-list-item matches silently skipped
                 range.ListFormat.RemoveNumbers();
                 removed++;
             }

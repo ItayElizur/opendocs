@@ -161,7 +161,6 @@ It supports providers including:
 * OpenAI
 * Gemini
 * DeepSeek
-* Genspark
 * OpenAI-compatible endpoints
 * Self-hosted models such as **vLLM**
 
@@ -343,8 +342,8 @@ cd WordAiAddIn
 node_modules/.bin/esbuild web-src/entry.ts `
     --bundle `
     --outfile=web/bundle.js `
-    --alias:@genoffice/agent-core=../shared/web-src/agent-core/index.ts `
-    --alias:@genoffice/ai-provider=../shared/web-src/ai-provider/index.ts `
+    --alias:@officeai/agent-core=../shared/web-src/agent-core/index.ts `
+    --alias:@officeai/ai-provider=../shared/web-src/ai-provider/index.ts `
     --alias:@officeai/chat-ui=../shared/chat-ui/chat-ui.ts `
     --alias:@officeai/app-shell=../shared/web-src/app-shell/index.ts `
     --target=chrome100 `
@@ -413,7 +412,6 @@ That layer needs to be exercised against a live Office application. The individu
 
 * **[`docs/architecture.md`](docs/architecture.md)** — how the COM/WebView2 bridge, shared provider/transport layer, and editing-mode gating work.
 * **[`docs/tools/`](docs/tools/)** — detailed reference for the AI tools available in Word, Excel, PowerPoint, and Outlook.
-* **[`docs/comparison-with-genoffice.md`](docs/comparison-with-genoffice.md)** — high-level gaps and advantages compared with the sibling `genoffice` project.
 * **[`CLAUDE.md`](CLAUDE.md)** — guidance for AI coding agents working in this repository.
 
 ---

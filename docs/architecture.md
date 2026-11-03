@@ -12,7 +12,7 @@ document window (keyed by `Hwnd`); Outlook attaches one pane per `Explorer` wind
 [`docs/tools/outlook.md`](tools/outlook.md).
 
 `shared/web-src/{agent-core,ai-provider}` provide the agent loop and multi-provider
-transport (`genspark`/`anthropic`/`gemini`/`deepseek`/`openai`/`custom`), `maxTurns`
+transport (`anthropic`/`gemini`/`deepseek`/`openai`/`custom`), `maxTurns`
 default of 8. Provider/model/key selection, the settings screen, and the transport live
 once in `shared/web-src/app-shell/` (`getSettings` / `makeTransport` / `onSettingsSave`,
 persisted in WebView `localStorage`), shared by all four add-ins including Outlook —

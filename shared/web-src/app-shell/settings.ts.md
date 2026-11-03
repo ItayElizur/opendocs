@@ -14,11 +14,10 @@ pre-existing gap now closed alongside adding the 'default' option.
 ## `defaultsForThisRepo`
 
 ```
-OpenDocs is an air-gapped/on-prem-oriented deployment; defaultAiSettings()
-alone would default to Genspark (a hosted proxy that needs a login), which
-would silently change out-of-box behavior for this repo's test/mock-server
-flow. Override just the default provider + the custom slot's starting values, so a fresh
-profile behaves exactly as it did before PP-6.
+OpenDocs is an air-gapped/on-prem-oriented deployment. defaultAiSettings()
+already defaults to the `custom` provider, but with empty base URL/key/model;
+override just the custom slot's starting values (the test/mock-server
+endpoint), so a fresh profile behaves exactly as it did before PP-6.
 ```
 
 ## `MAX_TOKENS`

@@ -1,17 +1,11 @@
-import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
+import type { AgentMessage, AgentToolCall, AgentToolDef } from '@officeai/agent-core'
 
-export type AiProviderId = 'genspark' | 'anthropic' | 'gemini' | 'deepseek' | 'openai' | 'custom'
+export type AiProviderId = 'anthropic' | 'gemini' | 'deepseek' | 'openai' | 'custom'
 
 /** 'default' sends no reasoning-related parameter; 'off' actively asks the
  * provider to suppress reasoning. Not every provider/model honors every tier -
  * unsupported combinations are silently ignored, not an error here (see `types.ts.md`). */
 export type ReasoningEffort = 'default' | 'off' | 'low' | 'medium' | 'high' | 'xhigh'
-
-/** Genspark account status (gsk login state; the sole auth source for AI features) */
-export interface GenSparkAccountStatus {
-  loggedIn: boolean
-  email?: string
-}
 
 export interface AiProviderConfig {
   apiKey: string

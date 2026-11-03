@@ -21,7 +21,7 @@ namespace WordAiAddIn
             if (matches.Count >= ActiveDoc.Paragraphs.Count)
             {
                 // Deleting every paragraph would leave zero - clear content instead,
-                // leaving one empty paragraph (mirrors genoffice's own guard).
+                // leaving one empty paragraph (Word requires at least one paragraph).
                 ActiveDoc.Content.Text = "";
                 return;
             }
@@ -135,7 +135,7 @@ namespace WordAiAddIn
             HashSet<string> fields = new HashSet<string>();
             foreach (JsonElement f in cmd.GetProperty("fields").EnumerateArray()) fields.Add(f.GetString());
 
-            const float pxToPoints = 0.75f; // 96dpi px -> points, matches genoffice's own pixel model
+            const float pxToPoints = 0.75f; // 96dpi px -> points
             float? newWidth = null, newHeight = null;
             if (fields.Contains("widthPx") && properties.TryGetProperty("widthPx", out var w) && w.ValueKind == JsonValueKind.Number)
                 newWidth = (float)w.GetDouble() * pxToPoints;

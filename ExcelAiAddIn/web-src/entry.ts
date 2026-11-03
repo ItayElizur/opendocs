@@ -156,8 +156,8 @@ const EXCEL_OPS: OpSpec[] = [
   },
 
   // --- Formatting ---
-  // PP-13: widened from bold/italic/numberFormat/fillColor to full parity
-  // with genoffice's format_range. Every property is optional and additive -
+  // PP-13: widened from bold/italic/numberFormat/fillColor to the full
+  // set of format properties. Every property is optional and additive -
   // an absent property leaves the cell's current value alone.
   {
     kind: 'format_range', group: 'Formatting',

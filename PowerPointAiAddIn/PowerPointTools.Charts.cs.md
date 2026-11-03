@@ -56,8 +56,7 @@ already in flight.
 
 ## `PptLegendPositions`
 
-PP-21: legendPos's natural names (a model will say "right", not the
-genoffice-ism "r") plus the original short aliases for back-compat.
+PP-21: legendPos's natural names (a model will say "right", not "r") plus the original short aliases for back-compat.
 xlLegendPositionCorner was considered and dropped - its code could not
 be verified against a live Office install (no interactive GUI access
 in this environment), and guessing it wrong would just replace one
