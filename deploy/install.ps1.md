@@ -65,7 +65,12 @@ session that wrote it cannot elevate. What was checked, on one Windows 11 machin
   the right manifest URI, and Program Files, the `HKLM` key and the machine certificate store were confirmed untouched;
 - `-CurrentUser -WhatIf` recognises the already-trusted certificate and skips the import;
 - the "Office is running" guard stops a real run while Word is open;
-- Office bitness is detected as x64 here.
+- Office bitness is detected as x64 here;
+- real `-CurrentUser` runs (Word closed): `install.ps1 -CurrentUser -App Word` skipped the already-trusted certificate, copied the
+  files, and re-pointed the `HKCU` registration at the installed copy (a VSTO build re-registers the add-in at the repo's
+  `bin\Release` on every MSBuild run, so before the install Word's `Manifest` pointed there); a hidden Word then listed the
+  add-in with `Connect = True`. `uninstall.ps1 -CurrentUser -App Word` removed the key and the folder and left the other
+  apps' folders alone, and a reinstall restored the working state.
 
 Still to test, on a machine where an administrator can run it:
 
