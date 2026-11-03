@@ -258,7 +258,8 @@ const ALL_WORD_TOOLS = [
     {
       name: 'get_document_context',
       description:
-        "Reads the active Word document's paragraph/word count and a text preview. If the document has non-body objects it adds one 'Objects:' line of counts " +
+        "Reads the active Word document's paragraph/word count, a short text preview and an outline of its first 25 headings (\"[index] H<level>: text\"; get_headings lists all of them). " +
+        "If the document has non-body objects it adds one 'Objects:' line of counts " +
         "(tables, charts, SmartArt, shapes with how many hold text, inline pictures, content controls, footnotes/endnotes, header/footer parts, TOC). " +
         "A document built mostly from text boxes/shapes has an almost empty body, so when that line shows shapes, list them with read_object.",
       inputSchema: { type: 'object', properties: {} },
