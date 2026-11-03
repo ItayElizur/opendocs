@@ -72,12 +72,26 @@ session that wrote it cannot elevate. What was checked, on one Windows 11 machin
   add-in with `Connect = True`. `uninstall.ps1 -CurrentUser -App Word` removed the key and the folder and left the other
   apps' folders alone, and a reinstall restored the working state.
 
-Still to test, on a machine where an administrator can run it:
+Machine-wide install, run for real by the repository owner from an elevated PowerShell (Windows 11, Office x64, one user
+account on the machine): `uninstall.ps1 -CurrentUser -App Word`, then `install.ps1 -App Word` completed without errors. Afterwards
+the files were in `C:\Program Files\OpenDocs\WordAiAddIn`, `HKLM\SOFTWARE\Microsoft\Office\Word\Addins\WordAiAddIn` had
+`LoadBehavior` 3 and the Program Files manifest (the `WOW6432Node` view was correctly not written for x64 Office), no per-user key
+was left, `CN=WordAiAddIn Temporary Key` was in `LocalMachine\TrustedPublisher`, and Word started and worked with the add-in. A
+`Get-ChildItem Cert:\...` check pasted after a formatted `Get-ItemProperty ... | Select` printed nothing in that session; that
+is PowerShell's display of a second object type after a formatted table, not a missing certificate (a separate read showed it).
+That also settles item 3 below: Office resolved the manifest path with a space.
 
-1. Elevated `install.ps1` then, as a standard user (and as a user created after the install), start Word: does the add-in load?
-2. Does the VSTO runtime accept `LocalMachine\TrustedPublisher` as publisher trust for the signed manifest? If not, the
-   machine-wide per-machine inclusion list (`HKLM\SOFTWARE\Microsoft\VSTO\Security\Inclusion`) is the documented alternative.
-3. `Manifest` contains a path with a space (`file:///C:/Program Files/OpenDocs/...|vstolocal`); confirm Office resolves it.
+Caveat that matters: that account ALSO has the certificate in its own `CurrentUser\TrustedPublisher`, so that run does not prove
+the VSTO runtime accepts the `LocalMachine` copy by itself.
+
+Still to test:
+
+1. As a standard user, and as a user created after the install (neither has the certificate in its own store), start Word: does
+   the add-in load? Quicker on one account: delete this account's own `CurrentUser\TrustedPublisher` copy and start Word.
+2. If item 1 fails, the machine-wide per-machine inclusion list (`HKLM\SOFTWARE\Microsoft\VSTO\Security\Inclusion`) is the
+   documented alternative to relying on the certificate store.
+3. (Done above: the `Manifest` path containing a space resolves.)
 4. An `HKLM` add-in shows in Office as not user-manageable (expected for a machine-wide add-in).
 5. On a managed machine, whether Group Policy blocks the `LocalMachine\TrustedPublisher` import (then deploy it through GPO).
 6. 32-bit Office on 64-bit Windows: the `WOW6432Node` view is the one written.
+7. `uninstall.ps1` (machine-wide) run for real, with and without `-RemoveTrustedCert`.
