@@ -52,8 +52,8 @@ foreach ($appName in $Apps) {
     Push-Location $appDir
     try {
         & $esbuild web-src/entry.ts --bundle --outfile=web/bundle.js `
-            --alias:@genoffice/agent-core=../shared/web-src/agent-core/index.ts `
-            --alias:@genoffice/ai-provider=../shared/web-src/ai-provider/index.ts `
+            --alias:@officeai/agent-core=../shared/web-src/agent-core/index.ts `
+            --alias:@officeai/ai-provider=../shared/web-src/ai-provider/index.ts `
             --alias:@officeai/chat-ui=../shared/chat-ui/chat-ui.ts `
             --alias:@officeai/app-shell=../shared/web-src/app-shell/index.ts `
             --target=chrome100 --format=iife --sourcemap

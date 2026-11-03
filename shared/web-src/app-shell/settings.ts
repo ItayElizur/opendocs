@@ -1,4 +1,4 @@
-import type { AgentStreamHandle, AgentTransport } from '@genoffice/agent-core'
+import type { AgentStreamHandle, AgentTransport } from '@officeai/agent-core'
 import {
   defaultAiSettings,
   resolveAiSettings,
@@ -6,7 +6,7 @@ import {
   type AiProviderConfig,
   type AiSettings,
   type ReasoningEffort,
-} from '@genoffice/ai-provider'
+} from '@officeai/ai-provider'
 
 // Connection settings are user-editable via the panel's Settings dropdown
 // (onSettingsSave, see bootstrap.ts) and persisted in this WebView2 profile's

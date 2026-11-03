@@ -1,5 +1,5 @@
-import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
-import { randomId } from '@genoffice/agent-core'
+import type { AgentMessage, AgentToolCall, AgentToolDef } from '@officeai/agent-core'
+import { randomId } from '@officeai/agent-core'
 import { aiFetch } from './fetch'
 import { httpBodyDetail } from './http-error'
 import type { AiProviderConfig, AiProviderId, ReasoningEffort } from './types'

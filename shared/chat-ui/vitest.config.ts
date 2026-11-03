@@ -9,8 +9,8 @@ export default defineConfig({
   test: { environment: 'jsdom' },
   resolve: {
     alias: [
-      { find: '@genoffice/ai-provider', replacement: fileURLToPath(new URL('../web-src/ai-provider/index.ts', import.meta.url)) },
-      { find: '@genoffice/agent-core', replacement: fileURLToPath(new URL('../web-src/agent-core/index.ts', import.meta.url)) },
+      { find: '@officeai/ai-provider', replacement: fileURLToPath(new URL('../web-src/ai-provider/index.ts', import.meta.url)) },
+      { find: '@officeai/agent-core', replacement: fileURLToPath(new URL('../web-src/agent-core/index.ts', import.meta.url)) },
     ],
   },
 })
