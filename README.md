@@ -192,12 +192,11 @@ OpenDocs is distributed as a signed package with a PowerShell installer.
 
 Installation is:
 
-* **Per-user**
-* **No administrator privileges required**
+* **Machine-wide by default**, so every user of the computer gets the add-ins (one administrator-elevated install), with a **per-user, no-administrator** option
 * **No internet connection required**
 * **No server to operate**
 
-The installer checks for the required Office/.NET/WebView2 components, registers the add-ins, and configures the signing certificate for the current user.
+The installer checks for the required Office/.NET/WebView2 components, registers the add-ins, and trusts the signing certificate, for the whole computer or just the current user.
 
 ---
 
@@ -375,9 +374,23 @@ The packaging script builds the Release configuration, signs the manifests, and 
 * VSTO 2010 Runtime
 * WebView2 Runtime
 
-It then trusts the signing certificate for the current user and registers the add-ins.
+It then trusts the signing certificate and registers the add-ins. **No internet access is required.**
 
-**No administrator privileges or internet access are required.**
+| Command | Scope | Needs admin |
+|---|---|---|
+| `.\install.ps1` | **Every user of the computer** (default): files in `C:\Program Files\OpenDocs`, registered under `HKLM`, certificate trusted for the computer | Yes - an elevated PowerShell |
+| `.\install.ps1 -CurrentUser` | The current user only: files in `%LOCALAPPDATA%\OpenDocs`, registered under `HKCU`, certificate trusted for the current user | No |
+| `.\install.ps1 -WhatIf` | Prints everything it would change and changes nothing (works without elevation) | No |
+
+`-App Word` (or `Excel`, `PowerPoint`, `Outlook`) installs a single application. `uninstall.ps1` takes the same switches (`-CurrentUser`, `-App`, `-WhatIf`) plus `-RemoveTrustedCert`.
+
+Things worth knowing:
+
+* **Close the Office applications being installed first.** Office keeps the add-in's files locked while it runs; the script stops with a message instead of failing half way.
+* **Machine-wide files live in Program Files** (not a user-writable folder) so one user cannot alter the add-in code that other users' Office will load.
+* **The certificate step cannot fail the install.** The installer trusts `OpenDocsDevCert.cer` in the store that matches the scope (computer, or current user with `-CurrentUser`), but in the configurations tested (default Office, and Office set to require signed add-ins) the add-ins load without it. If the import is refused - "Trusted Publishers: access denied" on a single machine is usually a Group Policy or permission restriction (`gpresult /h gp.html` shows which) - the script warns, says what to do, and carries on. If a policy on your machine does block the add-ins, have IT deploy `OpenDocsDevCert.cer` to Trusted Publishers through Group Policy, or run the elevated machine-wide install. A certificate imported by hand from an elevated shell only lands in the store of the account running that shell.
+* **Users created after a machine-wide install** should get the add-in the first time they start Office, because the registration, files and certificate are all machine-level. This has not been tested on a second user account yet. Per-user data (chat history, settings) is created on first use in that user's own profile.
+* **Switching scope:** run `uninstall.ps1` (with `-CurrentUser` if that is what you installed) first, so the add-in is not registered twice.
 
 ---
 
