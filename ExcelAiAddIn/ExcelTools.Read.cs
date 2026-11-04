@@ -119,7 +119,7 @@ namespace ExcelAiAddIn
                     && (numberFormat == "General" || numberFormat == null)
                     && hAlign == Excel.XlHAlign.xlHAlignGeneral && vAlign == Excel.XlVAlign.xlVAlignBottom
                     && !wrapText && rotation == 0 && indent == 0 && !hasBorder;
-                if (hasDefaultFormat) continue; // only explicitly-formatted cells, matches genoffice
+                if (hasDefaultFormat) continue; // only explicitly-formatted cells
 
                 sb.AppendLine($"{cell.Address[false, false]}: bold={bold}, italic={italic}, underline={underline}, " +
                     $"strikethrough={strikethrough}, fontName={fontName}, fontSize={fontSize}, numberFormat={numberFormat}, " +

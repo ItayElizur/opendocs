@@ -1,5 +1,5 @@
 import './chat-ui.css'
-import { AI_PROVIDERS, type AiProviderId, type ReasoningEffort } from '@genoffice/ai-provider'
+import { AI_PROVIDERS, type AiProviderId, type ReasoningEffort } from '@officeai/ai-provider'
 
 export type EditingMode = 'readOnly' | 'commentOnly' | 'trackChanges' | 'fullAutonomy'
 

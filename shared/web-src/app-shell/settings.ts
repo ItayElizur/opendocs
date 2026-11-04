@@ -1,4 +1,4 @@
-import type { AgentStreamHandle, AgentTransport } from '@genoffice/agent-core'
+import type { AgentStreamHandle, AgentTransport } from '@officeai/agent-core'
 import {
   defaultAiSettings,
   resolveAiSettings,
@@ -6,7 +6,7 @@ import {
   type AiProviderConfig,
   type AiSettings,
   type ReasoningEffort,
-} from '@genoffice/ai-provider'
+} from '@officeai/ai-provider'
 
 // Connection settings are user-editable via the panel's Settings dropdown
 // (onSettingsSave, see bootstrap.ts) and persisted in this WebView2 profile's
@@ -41,11 +41,10 @@ interface LegacyStoredSettings {
   skipTlsVerify?: boolean
 }
 
-// Overrides defaultAiSettings()'s Genspark default with this repo's own
-// test/mock-server provider + starting values (see `settings.ts.md`).
+// Fills in the custom provider slot (the default) with this repo's own
+// test/mock-server starting values (see `settings.ts.md`).
 function defaultsForThisRepo(): AiSettings {
   const defaults = defaultAiSettings()
-  defaults.provider = 'custom'
   defaults.providers.custom = { baseUrl: 'http://127.0.0.1:9000/v1', apiKey: 'test', model: 'test-model' }
   return defaults
 }

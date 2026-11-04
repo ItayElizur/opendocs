@@ -100,11 +100,10 @@
   .ai-header-btn:active { filter: brightness(0.88); transform: scale(0.98); }
   .ai-header-btn.new-badge { background: var(--docs-brand-ghost); color: var(--color-brand-secondary); }
 
-  /* ---- "earlier conversation" divider: genoffice's real history model.
-     There is no multi-session browser in genoffice - "New chat" just resets
-     the AgentLoop's in-memory context (loop.reset()) and keeps writing to the
-     SAME per-document chat log; the old scrollback stays visible above a
-     divider, it is never archived/switchable. This mirrors that exactly. ---- */
+  /* ---- "earlier conversation" divider. There is no multi-session browser:
+     "New chat" just resets the AgentLoop's in-memory context (loop.reset())
+     and keeps writing to the SAME per-document chat log; the old scrollback
+     stays visible above a divider, it is never archived/switchable. ---- */
   .ai-history-sep {
     display: flex; align-items: center; gap: 10px; margin: 4px 0;
     color: var(--color-text-tertiary); font-size: 12px;
@@ -130,12 +129,10 @@
      accurate. */
   .ai-chat-end-buffer { height: 0; flex-shrink: 0; }
   .ai-chat-end-buffer.active { height: 64px; }
-  /* No fade: verified genoffice applies an .ai-msg-historic class to old
-     messages but there is NO CSS rule for it anywhere in the codebase - the
-     restored transcript renders at full, identical opacity to live messages,
-     distinguished only by the divider above. Matching that exactly. */
+  /* No fade: the restored transcript renders at full, identical opacity to
+     live messages, distinguished only by the divider above. */
 
-  /* ---- settings dropdown (NEW - genoffice has no equivalent UI yet). Anchored
+  /* ---- settings dropdown. Anchored
      under the gear icon, same pattern/positioning as a hypothetical history
      dropdown would use - not a centered modal dialog. Anchored to the
      physical right (not inset-inline-end) to match the header's fixed,

@@ -2,6 +2,5 @@
 
 ## TOC field insertion (`InsertTocCmd`)
 
-This is a more direct, simpler native equivalent than genoffice's own
-hand-built TOC field-XML workaround (real Word already paginates;
-genoffice's web renderer doesn't).
+This inserts a native Word TOC field directly instead of hand-building TOC
+field XML (real Word already paginates).
