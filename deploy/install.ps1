@@ -177,7 +177,7 @@ else {
         }
         else {
             # Not fatal: in the configurations tested (default Office, and Office set to require signed add-ins) the add-in
-            # loads without the certificate being trusted, so a refused import should not stop the install. See install.ps1.md.
+            # loads without the certificate being trusted, so a refused import should not stop the install.
             Write-Host ("WARNING: could not add the signing certificate to Cert:\$certLocation\TrustedPublisher: $($_.Exception.Message)") -ForegroundColor Yellow
             Write-Host "Continuing - the add-in normally loads without it. If a security policy on this machine does block the add-in, trust OpenDocsDevCert.cer:" -ForegroundColor Yellow
             Write-Host "  - 'Access denied' on one machine while others work usually means a Group Policy or permission restriction on Trusted Publishers" -ForegroundColor Yellow
