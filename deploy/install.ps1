@@ -176,11 +176,14 @@ else {
             Write-Host "WARNING: importing the certificate reported '$($_.Exception.Message)', but it is trusted now - continuing." -ForegroundColor Yellow
         }
         else {
-            throw ("Could not add the signing certificate to Cert:\$certLocation\TrustedPublisher: $($_.Exception.Message)`n" +
-                "'Access denied' on one machine while others work usually means a Group Policy or permission restriction on Trusted Publishers " +
-                "(run 'gpresult /h gp.html' to see which policies apply). Options: run this script from an elevated PowerShell without -CurrentUser " +
-                "(trusts the certificate for the whole computer); or have IT deploy OpenDocsDevCert.cer to Trusted Publishers through Group Policy. If you import it by hand from an elevated " +
-                "shell, it only lands in the store of the account running that shell, not necessarily yours.")
+            # Not fatal: in the configurations tested (default Office, and Office set to require signed add-ins) the add-in
+            # loads without the certificate being trusted, so a refused import should not stop the install. See install.ps1.md.
+            Write-Host ("WARNING: could not add the signing certificate to Cert:\$certLocation\TrustedPublisher: $($_.Exception.Message)") -ForegroundColor Yellow
+            Write-Host "Continuing - the add-in normally loads without it. If a security policy on this machine does block the add-in, trust OpenDocsDevCert.cer:" -ForegroundColor Yellow
+            Write-Host "  - 'Access denied' on one machine while others work usually means a Group Policy or permission restriction on Trusted Publishers" -ForegroundColor Yellow
+            Write-Host "    (run 'gpresult /h gp.html' to see which policies apply); IT can deploy the certificate through Group Policy," -ForegroundColor Yellow
+            Write-Host "  - or run this script from an elevated PowerShell without -CurrentUser to trust it for the whole computer." -ForegroundColor Yellow
+            Write-Host "  - A certificate imported by hand from an elevated shell only lands in the store of the account running that shell." -ForegroundColor Yellow
         }
     }
 }

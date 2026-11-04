@@ -37,9 +37,12 @@ the one Office does not read is harmless. `HKCU` has no such split, so per-user 
 - It is only imported when it is not already trusted. A machine-wide trust also covers a per-user install; the reverse is not
   true, because `CurrentUser` belongs to whichever account ran the script (an elevated shell run as a different administrator
   puts the certificate in that administrator's store, not the user's).
-- A failed import is not fatal if the certificate turns out to be trusted afterwards. Otherwise the error names the likely cause
-  (a Group Policy or permission restriction on Trusted Publishers; `gpresult /h gp.html` shows which) and the options: the
-  elevated machine-wide install, or having IT deploy `OpenDocsDevCert.cer` through Group Policy.
+- A failed import is a WARNING, never a stop. It names the likely cause (a Group Policy or permission restriction on Trusted
+  Publishers; `gpresult /h gp.html` shows which) and the options (the elevated machine-wide install, or having IT deploy
+  `OpenDocsDevCert.cer` through Group Policy), then the install continues. It used to throw, which on the machine that first
+  showed "access denied" turned a certificate problem into a failed install, although the add-in loads without the certificate
+  (see "What the certificate is for" below). The `E_ACCESSDENIED` path was reproduced by running the certificate block
+  non-elevated against the machine store: it warned and continued.
 - It is NOT added to `LocalMachine\Root`. The per-user install has always worked with `TrustedPublisher` alone, and trusting a
   self-signed certificate as a root for the whole computer is a bigger security decision than this installer should take. If
   a machine turns out to need it, that should be an explicit, separate step.
@@ -81,8 +84,32 @@ was left, `CN=WordAiAddIn Temporary Key` was in `LocalMachine\TrustedPublisher`,
 is PowerShell's display of a second object type after a formatted table, not a missing certificate (a separate read showed it).
 That also settles item 3 below: Office resolved the manifest path with a space.
 
-Caveat that matters: that account ALSO has the certificate in its own `CurrentUser\TrustedPublisher`, so that run does not prove
-the VSTO runtime accepts the `LocalMachine` copy by itself.
+Caveat that mattered: that account ALSO had the certificate in its own `CurrentUser\TrustedPublisher`, so that run alone did not
+show whether the `LocalMachine` copy suffices. The later runs under "What the certificate is for" answer a different question:
+whether the certificate is needed at all (no, in the configurations tried).
+
+## What the certificate is for (measured)
+
+Run on one Windows 11 machine, Office x64, Word, with the add-in registered machine-wide (`|vstolocal` manifest in Program Files),
+always from a fresh Word start:
+
+1. Certificate in neither `CurrentUser\TrustedPublisher` nor `LocalMachine\TrustedPublisher`: the add-in loads, with no security
+   prompt and nothing logged.
+2. The same, with this account's per-user VSTO trust data (`HKCU\Software\Microsoft\VSTO\Security\Inclusion` and
+   `SolutionMetadata`) backed up and cleared, which makes the account look like a brand-new user: still loads, no prompt; VSTO
+   recorded only a `SolutionMetadata` entry and wrote nothing to the inclusion list (which is what an accepted trust prompt writes).
+3. The same, with Word's Trust Center option "Require that application add-ins are signed by Trusted Publisher" on
+   (`HKCU\Software\Microsoft\Office\16.0\Word\Security\RequireAddinSig` = 1): Word showed a yellow "Some active content has
+   been disabled" bar listing two COM add-ins, but ours was not among the disabled ones and still loaded. The two that were
+   disabled are almost certainly the other add-ins registered for Word on that machine (Adobe `PDFMaker.OfficeAddin` and the
+   Visual Studio design-time adaptor `VS15WordAdaptor`).
+
+So, in the default configuration and with the "require signed add-ins" option on, the certificate was not needed. The test values
+were removed and the trust data restored from the backup afterwards. What this does NOT cover: a machine whose Group Policy
+enforces publisher trust some other way (for instance the VSTO runtime's own policies), which is the situation the original
+"access denied" machine may be in; there the certificate has to be trusted, by an elevated machine-wide install or by deploying
+`OpenDocsDevCert.cer` through Group Policy. The installer still imports the certificate when it can, because on such machines it
+is what makes the add-in load.
 
 Still to test:
 
