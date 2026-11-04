@@ -168,7 +168,16 @@ namespace WordAiAddIn
                 int? after = OptInt(input, "afterBlockIndex");
                 Word.Range at = after.HasValue ? RangeAtEndOfBlockText(after.Value) : RangeAtEndOfDocumentText();
                 dynamic cc = AddContentControl(at, code);
-                ApplyContentControlFields(cc, input);
+                try
+                {
+                    ApplyContentControlFields(cc, input);
+                }
+                catch
+                {
+                    // Otherwise the control exists, the call reports an error, and a retry adds a duplicate.
+                    try { cc.Delete(true); } catch { }
+                    throw;
+                }
                 return new ToolResult
                 {
                     Output = "Added " + type + " content control (index " + ContentControlIndexOf(doc, cc) + "). Indices of later content controls may have shifted.",
@@ -229,23 +238,32 @@ namespace WordAiAddIn
             dynamic hf = (which == "header" ? sec.Headers : sec.Footers).Item(typeCode);
             // A part linked to the previous section would write through to the previous section; break the link so
             // the edit stays in the requested section.
-            if (section > 1 && (bool)hf.LinkToPrevious) hf.LinkToPrevious = false;
+            bool unlinked = false;
+            if (section > 1 && (bool)hf.LinkToPrevious) { hf.LinkToPrevious = false; unlinked = true; }
             int replacedFields = (int)hf.Range.Fields.Count;
-            hf.Range.Text = action == "clear" ? "" : Paras(text);
-            // {PAGE}, {NUMPAGES}, {DATE}, {TIME}, {FILENAME}, {AUTHOR}, {TITLE} in the text become real fields.
+
+            // The old content goes out first (a tracked deletion under Track Changes), then the new content is built left to
+            // right before the part's final paragraph mark: text, a field for each {PAGE}-style token, more text, and so on.
+            // Nothing is searched for afterwards, so deleted text that is still in the range under Track Changes can never be
+            // matched a second time.
+            hf.Range.Text = "";
             int insertedFields = 0;
             if (action == "set")
             {
-                foreach (string fieldName in FieldTokens.Find(text))
+                foreach (FieldSegment part in FieldTokens.Split(Paras(text)))
                 {
                     Word.Range r = hf.Range;
-                    r.Find.ClearFormatting();
-                    r.Find.Text = "{" + fieldName + "}";
-                    r.Find.Forward = true;
-                    r.Find.Wrap = Word.WdFindWrap.wdFindStop;
-                    if (!r.Find.Execute()) continue;
-                    ((dynamic)r).Fields.Add(r, -1, fieldName, false);
-                    insertedFields++;
+                    int pos = r.End - 1;
+                    r.SetRange(pos, pos);
+                    if (part.Field == null)
+                    {
+                        r.InsertAfter(part.Text);
+                    }
+                    else
+                    {
+                        ((dynamic)r).Fields.Add(r, -1, part.Field, false);
+                        insertedFields++;
+                    }
                 }
             }
 
@@ -253,7 +271,10 @@ namespace WordAiAddIn
             {
                 Output = (action == "clear" ? "Cleared " : "Set ") + "section " + section + " " + which + " (" + type.Replace('_', ' ') + ")."
                     + (insertedFields > 0 ? " Inserted " + insertedFields + " field(s)." : "")
-                    + (replacedFields > 0 ? " Replaced " + replacedFields + " field(s) that were in it." : ""),
+                    + (replacedFields > 0 ? " Replaced " + replacedFields + " field(s) that were in it." : "")
+                    + (unlinked ? " It was linked to the previous section; the link is now broken so the edit stays in this section." : "")
+                    + (action == "set" && typeCode == 3 ? " Even-page headers/footers are now switched on for the whole document." : "")
+                    + (action == "set" && typeCode == 2 ? " A different first page is now switched on for this section." : ""),
                 Mutated = true, Summary = "edit_header_footer " + action,
             };
         }
@@ -290,12 +311,13 @@ namespace WordAiAddIn
                     // passes match: N (only meaningful after seeing that list).
                     // The search runs on the paragraph text with footnote marks, field marks etc. removed
                     // (TextAnchors), because those sit between words and break Word's own Find.
+                    RangeAtEndOfBlockText(after.Value); // validates afterBlockIndex, same error as the branch below
                     Word.Range para = ActiveDoc.Paragraphs[after.Value + 1].Range;
                     int paraStart = para.Start, paraEnd = para.End;
                     para.TextRetrievalMode.IncludeFieldCodes = true;
                     para.TextRetrievalMode.IncludeHiddenText = true;
                     string rawText = para.Text ?? "";
-                    if (rawText.Length != paraEnd - paraStart)
+                    if (!TextAnchors.PositionsAlign(rawText, paraEnd - paraStart))
                         throw new InvalidOperationException("edit_note: the text positions of paragraph " + after.Value + " cannot be mapped reliably; omit afterText to put the mark at the end of the paragraph.");
                     CleanText clean = TextAnchors.Clean(rawText);
                     List<int> starts = TextAnchors.FindAll(clean.Text, afterText, 20);
@@ -360,9 +382,11 @@ namespace WordAiAddIn
 
             if (action == "add")
             {
+                if ((upper ?? 1) > (lower ?? 3))
+                    throw new ArgumentException("edit_toc: upperLevel (" + (upper ?? 1) + ") must not be greater than lowerLevel (" + (lower ?? 3) + ").");
                 // Same convention as insert_content: afterBlockIndex -1 / omitted = start of the document.
                 Word.Range at = RangeAfterBlock(OptInt(input, "afterBlockIndex") ?? -1);
-                dynamic toc = doc.TablesOfContents.Add(at, true, upper ?? 1, lower ?? 3);
+                doc.TablesOfContents.Add(at, true, upper ?? 1, lower ?? 3);
                 return new ToolResult
                 {
                     Output = "Added a table of contents (headings " + (upper ?? 1) + "-" + (lower ?? 3) + "). Paragraph indices after this point have shifted - re-read before addressing them.",
@@ -381,8 +405,13 @@ namespace WordAiAddIn
                 case "edit":
                     if (!upper.HasValue && !lower.HasValue)
                         throw new ArgumentException("edit_toc: pass upperLevel and/or lowerLevel for edit.");
-                    if (upper.HasValue) target.UpperHeadingLevel = upper.Value;
-                    if (lower.HasValue) target.LowerHeadingLevel = lower.Value;
+                    int newUpper = upper ?? (int)target.UpperHeadingLevel;
+                    int newLower = lower ?? (int)target.LowerHeadingLevel;
+                    if (newUpper > newLower)
+                        throw new ArgumentException("edit_toc: upperLevel (" + newUpper + ") must not be greater than lowerLevel (" + newLower + ").");
+                    // Word refuses an upper level below the current lower one, so write the pair in an order that stays valid.
+                    if (newUpper > (int)target.LowerHeadingLevel) { target.LowerHeadingLevel = newLower; target.UpperHeadingLevel = newUpper; }
+                    else { target.UpperHeadingLevel = newUpper; target.LowerHeadingLevel = newLower; }
                     target.Update();
                     return new ToolResult { Output = "Updated TOC " + index + " heading levels and refreshed it. Paragraph indices after it may have shifted.", Mutated = true, Summary = "edit_toc edit" };
                 case "update":
@@ -408,15 +437,30 @@ namespace WordAiAddIn
                 int? after = OptInt(input, "afterBlockIndex");
                 dynamic anchor = after.HasValue ? (dynamic)RangeAtEndOfBlockText(after.Value) : Type.Missing;
                 dynamic shape = ((dynamic)doc).Shapes.AddTextbox(1 /* wdTextOrientationHorizontal */, x ?? 72f, y ?? 72f, w ?? 200f, h ?? 80f, anchor);
-                string name = OptStr(input, "name");
-                if (name != null) shape.Name = name;
-                if (text != null) shape.TextFrame.TextRange.Text = text;
+                try
+                {
+                    string name = OptStr(input, "name");
+                    if (name != null) shape.Name = name;
+                    if (text != null) shape.TextFrame.TextRange.Text = text;
+                    // AddTextbox positions are relative to the anchor paragraph; x/y are documented as points from the page corner.
+                    shape.RelativeHorizontalPosition = 1; // wdRelativeHorizontalPositionPage
+                    shape.RelativeVerticalPosition = 1;   // wdRelativeVerticalPositionPage
+                    shape.Left = x ?? 72f;
+                    shape.Top = y ?? 72f;
+                }
+                catch
+                {
+                    // Otherwise the box exists, the call reports an error, and a retry adds a duplicate.
+                    try { shape.Delete(); } catch { }
+                    throw;
+                }
 
                 string finalName = (string)shape.Name;
-                int index = ListShapes(doc).FindIndex(s => s.Name == finalName);
+                int newId = (int)shape.ID; // names can repeat, the ID cannot
+                int index = ListShapes(doc).FindIndex(si => { try { return (int)si.Shape.ID == newId; } catch { return false; } });
                 return new ToolResult
                 {
-                    Output = "Added text box \"" + finalName + "\" (shape index " + index + ").",
+                    Output = "Added text box \"" + finalName + "\"" + (index >= 0 ? " (shape index " + index + ")." : " (list the shapes with read_object kind \"shape\" to find its index)."),
                     Mutated = true, Summary = "edit_textbox add",
                 };
             }
@@ -426,6 +470,10 @@ namespace WordAiAddIn
             if (target < 0 || target >= shapes.Count)
                 throw new ArgumentOutOfRangeException("index", "index must be between 0 and " + (shapes.Count - 1) + " (" + shapes.Count + " shape(s) in the document; indices are read_object kind \"shape\").");
             ShapeInfo info = shapes[target];
+            // The index space is every shape in the document, pictures and lines included; a wrong index must not delete or
+            // move one of those through a tool named for text boxes.
+            if (info.Type != 17 && info.Type != 1)
+                throw new ArgumentException("edit_textbox: shape " + target + " \"" + info.Name + "\" is a " + info.TypeName + ", not a text box or autoshape - this tool only edits and deletes those.");
 
             if (action == "delete")
             {
@@ -437,13 +485,11 @@ namespace WordAiAddIn
                 throw new ArgumentException("edit_textbox: pass text and/or x, y, w, h for edit.");
             if (text != null)
             {
-                if (info.Type == 6 || info.Type == 20)
-                    throw new ArgumentException("edit_textbox: shape " + target + " is a " + info.TypeName + ", not a text box - its text lives in child shapes, which this tool cannot address.");
                 try { info.Shape.TextFrame.TextRange.Text = text; }
                 catch (Exception ex) { throw new ArgumentException("edit_textbox: shape " + target + " (" + info.TypeName + ") has no editable text frame: " + ex.Message); }
             }
-            if (x.HasValue) info.Shape.Left = x.Value;
-            if (y.HasValue) info.Shape.Top = y.Value;
+            if (x.HasValue) { info.Shape.RelativeHorizontalPosition = 1; info.Shape.Left = x.Value; } // points from the page corner
+            if (y.HasValue) { info.Shape.RelativeVerticalPosition = 1; info.Shape.Top = y.Value; }
             if (w.HasValue) info.Shape.Width = w.Value;
             if (h.HasValue) info.Shape.Height = h.Value;
             return new ToolResult { Output = "Updated shape " + target + " \"" + info.Name + "\".", Mutated = true, Summary = "edit_textbox edit" };

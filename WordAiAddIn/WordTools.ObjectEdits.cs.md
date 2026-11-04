@@ -72,7 +72,28 @@ calls go through `dynamic`, so a wrong argument shape surfaces only at runtime.
   character (before a reference mark that already follows it).
 - **Headers/footers: fields.** `set`/`clear` assign `Range.Text`, which destroys fields. The result reports how many
   were replaced. `{PAGE}`, `{NUMPAGES}`, `{DATE}`, `{TIME}`, `{FILENAME}`, `{AUTHOR}` and `{TITLE}` in `text` are
-  turned into real fields after the text is written (find the token, `Fields.Add` over it), and `read_object`
+  inserted left to right (text, `Fields.Add` for each token, more text) after the old content is cleared, and `read_object`
   reads the part with field codes on and maps them back to the same tokens (`OfficeAi.Shared/FieldTokens.cs`,
   unit-tested). Deliberately small: no format switches, no other field types; an unmapped field reads back as its
   displayed result. NOT VERIFIED AGAINST LIVE WORD.
+
+## Code review fixes (2026-11)
+
+Checked in a separate Word instance (the COM calls, not through the add-in):
+
+- **Header/footer fields under Track Changes.** The old content is cleared (a tracked deletion in the header's own story) and the new
+  content is appended before the part's final paragraph mark, so nothing is searched for afterwards. Result after accepting the
+  header's revisions: `Page 1 of 1 / 1` with 3 fields. (The earlier Find-based approach also came out right for the input tried,
+  so the reviewer's double-`{PAGE}` failure was not reproduced; the new build simply does not depend on where Word puts tracked
+  text.) Header and footer revisions live in `HeaderFooter.Range.Revisions`, not `Document.Revisions`.
+- **TOC levels.** Assigning `UpperHeadingLevel` above the current lower level fails with "Command failed" AND leaves the document
+  without the table of contents. `edit_toc` therefore checks `upper <= lower` first and writes the lower level first when the new
+  upper level exceeds the current lower one (1-3 -> 4-6 worked in that order).
+- **`add` that fails half way.** Setting `Checked` on a plain-text control throws; the new control used to stay behind. Content
+  controls and text boxes now delete what they just created before rethrowing.
+- **Text box position.** `AddTextbox` positions were relative to the anchor paragraph (2/2 = column/paragraph); the code now sets
+  page-relative (1/1) before `Left`/`Top`, matching "from the page corner".
+- **Text box index.** Found by the shape's `ID` instead of its name (names can repeat).
+
+Not run in Word: the `afterText` changes (the displayed-text matching and the end-of-cell guard are unit-tested in
+`OfficeAi.Shared.Tests`), and the `edit_textbox` type restriction.

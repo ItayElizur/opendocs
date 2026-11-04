@@ -42,5 +42,52 @@ namespace OfficeAi.Shared.Tests
         {
             Assert.Equal("no fields", FieldTokens.FromFieldCodes("no fields"));
         }
+
+        [Fact]
+        public void FromFieldCodes_NameIsTheLeadingLettersSoASwitchWithoutASpaceStillReadsAsDate()
+        {
+            Assert.Equal("{DATE}", FieldTokens.FromFieldCodes("\u0013 DATE\\@ \"d/M\" \u0014 5/11\u0015"));
+            Assert.Equal("{PAGE}", FieldTokens.FromFieldCodes("\u0013PAGE\u00143\u0015"));
+        }
+
+        [Fact]
+        public void FromFieldCodes_NestedFieldsLeaveNoControlCharacters()
+        {
+            string nested = "a\u0013 IF \u0013 PAGE \u0014 3\u0015 > 1 \u0014later\u0015b";
+            string read = FieldTokens.FromFieldCodes(nested);
+            Assert.Equal("alaterb", read);
+            Assert.DoesNotContain("\u0013", read);
+            Assert.DoesNotContain("\u0014", read);
+            Assert.DoesNotContain("\u0015", read);
+        }
+
+        [Fact]
+        public void Split_CutsPlainTextAndFieldsInOrder()
+        {
+            var parts = FieldTokens.Split("Page {PAGE} of {NUMPAGES} / {PAGE}");
+            Assert.Equal(new[] { "Page ", "", " of ", "", " / ", "" }, parts.Select(p => p.Text).ToArray());
+            Assert.Equal(new string[] { null, "PAGE", null, "NUMPAGES", null, "PAGE" }, parts.Select(p => p.Field).ToArray());
+        }
+
+        [Fact]
+        public void Split_AdjacentTokensAndEdgeCases()
+        {
+            var parts = FieldTokens.Split("{AUTHOR}{DATE}");
+            Assert.Equal(new string[] { "AUTHOR", "DATE" }, parts.Select(p => p.Field).ToArray());
+            Assert.Single(FieldTokens.Split("no tokens"));
+            Assert.Equal("no tokens", FieldTokens.Split("no tokens")[0].Text);
+            Assert.Empty(FieldTokens.Split(""));
+            Assert.Empty(FieldTokens.Split(null));
+            // an unknown token stays plain text
+            Assert.Equal("{FOO} x", FieldTokens.Split("{FOO} x").Single().Text);
+        }
+
+        [Fact]
+        public void Split_ConcatenatingThePartsRebuildsTheText()
+        {
+            string text = "L {PAGE}\r{DATE} R";
+            string rebuilt = string.Concat(FieldTokens.Split(text).Select(p => p.Field == null ? p.Text : "{" + p.Field + "}"));
+            Assert.Equal(text, rebuilt);
+        }
     }
 }

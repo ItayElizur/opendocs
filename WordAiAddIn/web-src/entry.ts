@@ -544,7 +544,7 @@ const ALL_WORD_TOOLS = [
       description:
         'Sets or clears a section\'s header or footer. which: "header"|"footer"; type: "primary" (default) | "first_page" | "even_pages" (writing one of the last two switches that option on for the section); ' +
         'section is 1-based (default 1). action "set" needs text (newlines make paragraphs); "clear" empties it. For section 2+, the part is unlinked from the previous section first so the edit stays in that section. ' +
-        'Writes the whole part: anything already in it, page-number fields included, is replaced. To put a field in the text write {PAGE}, {NUMPAGES}, {DATE}, {TIME}, {FILENAME}, {AUTHOR} or {TITLE} (e.g. "Page {PAGE} of {NUMPAGES}"); read_object shows fields the same way. ' +
+        'Writes the whole part: anything already in it, page-number fields included, is replaced. To put a field in the text write {PAGE}, {NUMPAGES}, {DATE}, {TIME}, {FILENAME}, {AUTHOR} or {TITLE} (e.g. "Page {PAGE} of {NUMPAGES}"); read_object shows fields the same way (format switches such as a date format are not kept when you rewrite a field). ' +
         'Use read_object kind "header_footer" to see what the document has now.',
       inputSchema: {
         type: 'object',
@@ -582,7 +582,7 @@ const ALL_WORD_TOOLS = [
       name: 'edit_toc',
       description:
         'Adds, edits, refreshes or deletes a table of contents built from heading styles. action "add": inserted like insert_content at afterBlockIndex (-1 or omitted = start of the document), ' +
-        'upperLevel/lowerLevel default 1-3. action "edit": index (read_object kind "toc") plus upperLevel and/or lowerLevel; refreshes it. action "update": index; refreshes it (pageNumbersOnly:true keeps the entries and only renumbers pages). ' +
+        'upperLevel/lowerLevel default 1-3 (upperLevel must not be greater than lowerLevel). action "edit": index (read_object kind "toc") plus upperLevel and/or lowerLevel; refreshes it. action "update": index; refreshes it (pageNumbersOnly:true keeps the entries and only renumbers pages). ' +
         'action "delete": index. Adding, editing or deleting a TOC shifts paragraph indices - re-read before addressing later paragraphs.',
       inputSchema: {
         type: 'object',
@@ -601,7 +601,7 @@ const ALL_WORD_TOOLS = [
       name: 'edit_textbox',
       description:
         'Adds, edits or deletes a floating text box. action "add": optional text, name, x/y/w/h in points (default 72,72,200,80 from the page corner) and afterBlockIndex to anchor it to that paragraph. ' +
-        'action "edit": index (read_object kind "shape" - the same shape index space) plus text and/or x, y, w, h. It cannot edit the text of a group or canvas (their text lives in child shapes). ' +
+        'action "edit": index (read_object kind "shape" - the same shape index space) plus text and/or x, y, w, h. Only text boxes and autoshapes can be edited or deleted here - an index that is a picture, chart, line, group or canvas is rejected. x/y are measured from the page corner. ' +
         'action "delete": index; deleting shifts later shape indices.',
       inputSchema: {
         type: 'object',
