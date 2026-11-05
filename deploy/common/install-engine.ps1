@@ -13,19 +13,23 @@
 # -CurrentUser: files in %LOCALAPPDATA%\OpenDocs, registered under HKCU, certificate trusted for the current user.
 # Run uninstall.ps1 with the same switch to remove it.
 #
-# No internet access is required or used by this script.
+# Missing runtimes are installed silently from prerequisites\ in the package. No internet is used.
+# Missing runtimes need elevation even with -CurrentUser. Exit 3010 means restart and rerun.
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [ValidateSet('Word', 'Excel', 'PowerPoint', 'Outlook', 'All')]
     [string]$App = 'All',
     [string]$InstallRoot,
+    [string]$PackageDirectory = $PSScriptRoot,
     [switch]$CurrentUser
 )
 
 $ErrorActionPreference = 'Stop'
 $AllUsers = -not $CurrentUser
-$PackageDir = $PSScriptRoot
+$PackageDir = $PackageDirectory
+. (Join-Path $PSScriptRoot 'prerequisites.ps1')
+. (Join-Path $PSScriptRoot 'paths.ps1')
 $Apps = if ($App -eq 'All') { @('Word', 'Excel', 'PowerPoint', 'Outlook') } else { @($App) }
 $OfficeApps = @{ Word = 'Word'; Excel = 'Excel'; PowerPoint = 'PowerPoint'; Outlook = 'Outlook' }
 $ProcessNames = @{ Word = 'WINWORD'; Excel = 'EXCEL'; PowerPoint = 'POWERPNT'; Outlook = 'OUTLOOK' }
@@ -84,53 +88,6 @@ if (-not $InstallRoot) {
     }
 }
 
-function Test-Prerequisites {
-    $problems = @()
-
-    # .NET Framework 4.8 = release key >= 528040 (528449 for 4.8.1, also fine).
-    $ndpKey = 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full'
-    $release = (Get-ItemProperty -Path $ndpKey -Name Release -ErrorAction SilentlyContinue).Release
-    if (-not $release -or $release -lt 528040) {
-        $problems += ".NET Framework 4.8 (or later) does not appear to be installed (found release key: $release). Install the offline .NET Framework 4.8 redistributable before continuing."
-    }
-
-    # VSTO Runtime - presence of its registry uninstall/setup key is a reasonable proxy.
-    $vstoKeyPaths = @(
-        'HKLM:\SOFTWARE\Microsoft\VSTO Runtime Setup\v4R',
-        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\VSTO Runtime Setup\v4R'
-    )
-    $vstoFound = $false
-    foreach ($p in $vstoKeyPaths) { if (Test-Path $p) { $vstoFound = $true } }
-    if (-not $vstoFound) {
-        $problems += "VSTO 2010 Runtime does not appear to be installed. Install the offline vstor_redist.exe before continuing - without it, Office will not load any VSTO add-in."
-    }
-
-    # WebView2 Runtime - the well-known Edge WebView2 client GUID's registry key.
-    $webview2KeyPaths = @(
-        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
-        'HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
-        'HKCU:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
-    )
-    $webview2Found = $false
-    foreach ($p in $webview2KeyPaths) { if (Test-Path $p) { $webview2Found = $true } }
-    if (-not $webview2Found) {
-        $problems += "WebView2 Runtime does not appear to be installed. Install the WebView2 Evergreen Standalone (or Fixed Version) installer before continuing - the add-in's whole chat panel is a WebView2 control and will fail to load without it."
-    }
-
-    return $problems
-}
-
-Write-Host "Checking prerequisites..."
-$problems = Test-Prerequisites
-if ($problems.Count -gt 0) {
-    Write-Host ""
-    Write-Host "WARNING: potential missing prerequisites detected:" -ForegroundColor Yellow
-    foreach ($p in $problems) { Write-Host "  - $p" -ForegroundColor Yellow }
-    Write-Host ""
-    Write-Host "Continuing with installation anyway - these checks can have false positives on some Windows/Office builds - but if the add-in fails to load afterward, install the flagged prerequisite(s) first." -ForegroundColor Yellow
-    Write-Host ""
-}
-
 # Office keeps an installed add-in's files locked while it runs, so replacing them would fail half way through. For an
 # all-users install any user's session counts; otherwise only this user's.
 $mySession = (Get-Process -Id $PID).SessionId
@@ -143,8 +100,19 @@ foreach ($appName in $Apps) {
 if ($running.Count -gt 0) {
     $closeFirst = "Close " + ($running -join ', ') + " first: Office keeps the add-in's files locked while it is running."
     if ($WhatIfPreference) { Write-Host "NOTE: $closeFirst" -ForegroundColor Yellow }
-    else { throw $closeFirst }
+    else { Write-Host $closeFirst; exit 1618 }
 }
+
+# Check package completeness before installing machine-wide prerequisites or changing the add-in.
+if (-not $WhatIfPreference) {
+    if (-not (Test-Path (Join-Path $PackageDir 'OpenDocsDevCert.cer'))) { throw 'OpenDocsDevCert.cer is missing. Run install.ps1 from the package produced by package.ps1.' }
+    foreach ($appName in $Apps) {
+        $projName = "${appName}AiAddIn"
+        if (-not (Test-Path (Join-Path $PackageDir "$projName\$projName.vsto"))) { throw "Package is missing $projName\$projName.vsto." }
+    }
+}
+$prerequisiteExitCode = Install-OpenDocsPrerequisites -Directory (Join-Path $PackageDir 'prerequisites') -AllUsers $AllUsers -IsAdministrator (Test-Administrator) -WhatIf:$WhatIfPreference
+if ($prerequisiteExitCode -eq 3010) { exit 3010 }
 
 # Files that arrive via a zip transfer from another machine are commonly
 # flagged with a "Mark of the Web" (Zone.Identifier) by Windows, which can
@@ -154,8 +122,9 @@ if ($running.Count -gt 0) {
 Write-Host "Unblocking package files (clears any Mark-of-the-Web from a zip transfer)..."
 Get-ChildItem -Path $PackageDir -Recurse | Unblock-File -ErrorAction SilentlyContinue
 
+if (Test-Path (Join-Path $PackageDir 'OpenDocsDevCert.cer')) {
 $certPath = Join-Path $PackageDir 'OpenDocsDevCert.cer'
-if (-not (Test-Path $certPath)) { throw "Certificate file not found next to install.ps1: $certPath" }
+
 $thumbprint = (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath)).Thumbprint
 
 # A certificate trusted for the whole computer also covers a per-user install; the reverse is not true, because
@@ -188,19 +157,21 @@ else {
     }
 }
 
+} elseif ($WhatIfPreference) { Write-Host 'What if: trust the public certificate supplied by the product package.' } else { throw 'Public certificate missing from the product package.' }
+
 $registryRoots = Get-OfficeRegistryRoots
 
 foreach ($appName in $Apps) {
     $projName = "${appName}AiAddIn"
     $srcDir = Join-Path $PackageDir $projName
-    if (-not (Test-Path $srcDir)) { throw "Package is missing $projName - re-run package.ps1 with -App $appName or -App All." }
-    if (-not (Test-Path (Join-Path $srcDir "$projName.vsto"))) { throw "$projName.vsto not found in the package - package looks incomplete." }
+    if (-not (Test-Path $srcDir) -and -not $WhatIfPreference) { throw "Package is missing $projName." }
+    if (-not $WhatIfPreference -and -not (Test-Path (Join-Path $srcDir "$projName.vsto"))) { throw "$projName.vsto missing from package." }
 
-    $destDir = Join-Path $InstallRoot $projName
+    $destDir = Assert-OpenDocsProductDirectory -Root $InstallRoot -ProductName $projName
     Write-Host "Installing $projName to $destDir ..."
     if (Test-Path $destDir) { Remove-Item $destDir -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-    Copy-Item "$srcDir\*" $destDir -Recurse -Force
+    if (Test-Path $srcDir) { Copy-Item "$srcDir\*" $destDir -Recurse -Force } elseif ($WhatIfPreference) { Write-Host "What if: copy $projName payload to $destDir" }
 
     $vstoPath = Join-Path $destDir "$projName.vsto"
     $manifestUri = "file:///" + ($vstoPath -replace '\\', '/') + "|vstolocal"
@@ -238,14 +209,8 @@ foreach ($appName in $Apps) {
             New-Item -Path $dna -Force | Out-Null
             if ($WhatIfPreference) { Write-Host "What if: whitelisting $projName in $dna" }
             else { Set-ItemProperty -Path $dna -Name $projName -Value 1 -Type DWord }
-            foreach ($bucket in @('DisabledItems', 'CrashingAddinList')) {
-                $bpath = "$res\$bucket"
-                if (Test-Path $bpath) {
-                    Get-Item $bpath | Select-Object -ExpandProperty Property | ForEach-Object {
-                        Remove-ItemProperty -Path $bpath -Name $_ -ErrorAction SilentlyContinue
-                    }
-                }
-            }
+            # Preserve other add-ins' DisabledItems/CrashingAddinList entries.
+
         }
         Write-Host "Whitelisted $projName against Outlook's slow/crashing add-in resiliency."
     }
@@ -268,3 +233,5 @@ Write-Host "If LoadBehavior shows 'Not Loaded' with a runtime error: this script
 Write-Host "unblocked the files, so if it still fails, get the real exception from"
 Write-Host "Event Viewer > Windows Logs > Application (look for a '.NET Runtime' or"
 Write-Host "'Application Error' entry timestamped right when you opened the Office app)."
+
+exit 0

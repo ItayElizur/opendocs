@@ -13,11 +13,13 @@ param(
     [ValidateSet('Word', 'Excel', 'PowerPoint', 'Outlook', 'All')]
     [string]$App = 'All',
     [string]$InstallRoot,
+    [string]$PackageDirectory = $PSScriptRoot,
     [switch]$RemoveTrustedCert,
     [switch]$CurrentUser
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'paths.ps1')
 $AllUsers = -not $CurrentUser
 $Apps = if ($App -eq 'All') { @('Word', 'Excel', 'PowerPoint', 'Outlook') } else { @($App) }
 $OfficeApps = @{ Word = 'Word'; Excel = 'Excel'; PowerPoint = 'PowerPoint'; Outlook = 'Outlook' }
@@ -40,6 +42,15 @@ if (-not $InstallRoot) {
         $InstallRoot = "$env:LOCALAPPDATA\OpenDocs"
     }
 }
+# Refuse removal while Office holds this product's files open.
+$processNames = @{Word='WINWORD';Excel='EXCEL';PowerPoint='POWERPNT';Outlook='OUTLOOK'}
+$session = (Get-Process -Id $PID).SessionId
+foreach ($appName in $Apps) {
+    $running = @(Get-Process -Name $processNames[$appName] -ErrorAction SilentlyContinue)
+    if (-not $AllUsers) { $running = @($running | Where-Object { $_.SessionId -eq $session }) }
+    if ($running.Count -gt 0 -and -not $WhatIfPreference) { Write-Host "Close $appName before uninstalling."; exit 1618 }
+    [void](Assert-OpenDocsProductDirectory -Root $InstallRoot -ProductName "${appName}AiAddIn")
+}
 $registryRoots = if ($AllUsers) { @('HKLM:\SOFTWARE\Microsoft\Office', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Office') } else { @('HKCU:\Software\Microsoft\Office') }
 $removed = if ($WhatIfPreference) { 'Would remove' } else { 'Removed' }
 
@@ -52,7 +63,7 @@ foreach ($appName in $Apps) {
             Write-Host "$removed registration for $projName ($regKey)."
         }
     }
-    $destDir = Join-Path $InstallRoot $projName
+    $destDir = Assert-OpenDocsProductDirectory -Root $InstallRoot -ProductName $projName
     if (Test-Path $destDir) {
         Remove-Item $destDir -Recurse -Force
         Write-Host "$removed installed files at $destDir."
@@ -67,7 +78,9 @@ foreach ($appName in $Apps) {
 }
 
 if ($RemoveTrustedCert) {
-    $Thumbprint = 'D7C0D2DECAE0E7D967DE0A2C1B5DBFF185A932FD'
+    $certificateFile = Join-Path $PackageDirectory 'OpenDocsDevCert.cer'
+    if (-not (Test-Path -LiteralPath $certificateFile)) { throw 'The package public certificate is required for explicit certificate removal.' }
+    $Thumbprint = (New-Object Security.Cryptography.X509Certificates.X509Certificate2($certificateFile)).Thumbprint
     $location = if ($AllUsers) { 'LocalMachine' } else { 'CurrentUser' }
     $cert = Get-ChildItem "Cert:\$location\TrustedPublisher\$Thumbprint" -ErrorAction SilentlyContinue
     if ($cert) {
@@ -77,3 +90,5 @@ if ($RemoveTrustedCert) {
 }
 
 Write-Host "Uninstall complete. Restart Office applications for changes to take effect."
+
+exit 0

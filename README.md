@@ -350,50 +350,15 @@ node_modules/.bin/esbuild web-src/entry.ts `
     --sourcemap
 ```
 
-### Create a distributable package
+### Product deployment
 
-Build and stage all four add-ins:
+Use the independent product folders under `deploy/Word`, `deploy/Excel`, `deploy/PowerPoint` and `deploy/Outlook`. Prepare offline runtimes with that product's `Get-Prerequisites.ps1`, then build its signed Release distribution with `Package.ps1 -CertificateThumbprint YOUR_THUMBPRINT`. The generated directory includes the add-in, public certificate, scripts and offline runtime installers.
 
-```powershell
-deploy\package.ps1
-```
+Run `Install.ps1`, `Test-Installed.ps1` and `Uninstall.ps1` from the generated package. Machine-wide deployment requires administrator/SYSTEM. Office must already be installed and closed. Exit 3010 requires reboot and rerunning installation before the add-in is installed. Source folders and `-ScriptsOnly` output are not full deployable releases.
 
-Or package a single application:
-
-```powershell
-deploy\package.ps1 -App Word
-```
-
-The packaging script builds the Release configuration, signs the manifests, and prepares the distributable package.
-
-### Install
-
-`deploy\install.ps1`, run from the resulting package on the target machine, checks for:
-
-* .NET Framework 4.8
-* VSTO 2010 Runtime
-* WebView2 Runtime
-
-It then trusts the signing certificate and registers the add-ins. **No internet access is required.**
-
-| Command | Scope | Needs admin |
-|---|---|---|
-| `.\install.ps1` | **Every user of the computer** (default): files in `C:\Program Files\OpenDocs`, registered under `HKLM`, certificate trusted for the computer | Yes - an elevated PowerShell |
-| `.\install.ps1 -CurrentUser` | The current user only: files in `%LOCALAPPDATA%\OpenDocs`, registered under `HKCU`, certificate trusted for the current user | No |
-| `.\install.ps1 -WhatIf` | Prints everything it would change and changes nothing (works without elevation) | No |
-
-`-App Word` (or `Excel`, `PowerPoint`, `Outlook`) installs a single application. `uninstall.ps1` takes the same switches (`-CurrentUser`, `-App`, `-WhatIf`) plus `-RemoveTrustedCert`.
-
-Things worth knowing:
-
-* **Close the Office applications being installed first.** Office keeps the add-in's files locked while it runs; the script stops with a message instead of failing half way.
-* **Machine-wide files live in Program Files** (not a user-writable folder) so one user cannot alter the add-in code that other users' Office will load.
-* **The certificate step cannot fail the install.** The installer trusts `OpenDocsDevCert.cer` in the store that matches the scope (computer, or current user with `-CurrentUser`), but in the configurations tested (default Office, and Office set to require signed add-ins) the add-ins load without it. If the import is refused - "Trusted Publishers: access denied" on a single machine is usually a Group Policy or permission restriction (`gpresult /h gp.html` shows which) - the script warns, says what to do, and carries on. If a policy on your machine does block the add-ins, have IT deploy `OpenDocsDevCert.cer` to Trusted Publishers through Group Policy, or run the elevated machine-wide install. A certificate imported by hand from an elevated shell only lands in the store of the account running that shell.
-* **Users created after a machine-wide install** should get the add-in the first time they start Office, because the registration, files and certificate are all machine-level. This has not been tested on a second user account yet. Per-user data (chat history, settings) is created on first use in that user's own profile.
-* **Switching scope:** run `uninstall.ps1` (with `-CurrentUser` if that is what you installed) first, so the add-in is not registered twice.
+See [deployment documentation](deploy/README.md) and [air-gapped deployment](deploy/docs/AIR-GAPPED.md) for SCCM, certificate trust and offline setup. Legacy root installation scripts were removed.
 
 ---
-
 ## Testing
 
 ### C# unit tests
@@ -434,3 +399,9 @@ That layer needs to be exercised against a live Office application. The individu
 OpenDocs is an active project. The COM tool layer is continuously being expanded and validated against live Office applications.
 
 If you are interested in **AI that operates the real desktop Office environment rather than approximating it through a web interface**, especially in **local, on-premises, restricted, or web-gapped environments**, OpenDocs is designed for exactly that use case.
+
+## Product-specific deployment
+
+Deployment is organized into deploy/Word, deploy/Excel, deploy/PowerPoint and deploy/Outlook. Each folder has independent install, uninstall, status, prerequisite and standalone SCCM detection scripts. See [deploy/README.md](deploy/README.md) for packaging and deployment commands. Source folders contain scripts and offline runtimes; run Package.ps1 to produce a full signed-add-in distribution.
+
+

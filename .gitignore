@@ -11,3 +11,8 @@ node_modules/
 deploy/dist/
 deploy/*.zip
 .split-work/
+
+deploy/prerequisites/
+.release-backups/
+
+deploy/*/prerequisites/
