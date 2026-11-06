@@ -97,3 +97,15 @@ Checked in a separate Word instance (the COM calls, not through the add-in):
 
 Not run in Word: the `afterText` changes (the displayed-text matching and the end-of-cell guard are unit-tested in
 `OfficeAi.Shared.Tests`), and the `edit_textbox` type restriction.
+
+## After live testing (2026-11)
+
+- **Content control `add` with a field the type cannot hold** (`checked` on a plain-text control). Cleaning up after the
+  failure left the control's text behind as a tracked deletion under Track Changes, so the call now rejects `checked` /
+  `entries` for the wrong type before anything is created, and the cleanup delete runs with tracking off. `edit` runs the
+  same check against the existing control's type.
+- **`edit_toc` edit 1-3 -> 4-6 failed with "Command failed" in the live add-in and left the TOC as "Error! Not a valid
+  heading level range."** Not reproduced: the same two writes (lower first, then upper) succeed in a separate Word instance
+  with Track Changes on and off, inside an undo record, in a visible window, on a document with and without headings.
+  The edit now writes a line to `OpenDocsDebug.log` after each step to show which write fails.
+- **Text box `x`/`y`** are measured from the page corner, so `x=72, y=72` lands on the first line of a page with 1-inch margins.

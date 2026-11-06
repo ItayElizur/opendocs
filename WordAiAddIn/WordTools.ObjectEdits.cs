@@ -134,6 +134,16 @@ namespace WordAiAddIn
             return -1;
         }
 
+        // Rejects fields the control type cannot hold before anything is created or written, so a bad call leaves the
+        // document untouched (a control deleted afterwards leaves its text behind as a tracked deletion).
+        private static void CheckContentControlFields(int typeCode, JsonElement input)
+        {
+            if (OptBool(input, "checked").HasValue && typeCode != 8)
+                throw new ArgumentException("edit_content_control: checked only applies to a checkbox content control.");
+            if (input.TryGetProperty("entries", out var entries) && entries.ValueKind == JsonValueKind.Array && typeCode != 3 && typeCode != 4)
+                throw new ArgumentException("edit_content_control: entries only applies to a dropdown or combo_box content control.");
+        }
+
         private static void ApplyContentControlFields(dynamic cc, JsonElement input)
         {
             string title = OptStr(input, "title");
@@ -166,6 +176,7 @@ namespace WordAiAddIn
                 if (type == null || !ContentControlTypeCodes.TryGetValue(type, out code))
                     throw new ArgumentException("edit_content_control: type is required for add. Valid: " + string.Join(", ", ContentControlTypeCodes.Keys) + ".");
                 int? after = OptInt(input, "afterBlockIndex");
+                CheckContentControlFields(code, input);
                 Word.Range at = after.HasValue ? RangeAtEndOfBlockText(after.Value) : RangeAtEndOfDocumentText();
                 dynamic cc = AddContentControl(at, code);
                 try
@@ -174,8 +185,16 @@ namespace WordAiAddIn
                 }
                 catch
                 {
-                    // Otherwise the control exists, the call reports an error, and a retry adds a duplicate.
-                    try { cc.Delete(true); } catch { }
+                    // Otherwise the control exists, the call reports an error, and a retry adds a duplicate. Tracking is off for
+                    // the delete so the control's text is removed instead of left behind as a tracked deletion.
+                    bool tracking = doc.TrackRevisions;
+                    try
+                    {
+                        doc.TrackRevisions = false;
+                        cc.Delete(true);
+                    }
+                    catch { }
+                    finally { doc.TrackRevisions = tracking; }
                     throw;
                 }
                 return new ToolResult
@@ -189,6 +208,7 @@ namespace WordAiAddIn
             dynamic target = NthContentControl(doc, index);
             if (action == "edit")
             {
+                CheckContentControlFields((int)target.Type, input);
                 ApplyContentControlFields(target, input);
                 return new ToolResult { Output = "Updated content control " + index + ".", Mutated = true, Summary = "edit_content_control edit" };
             }
@@ -410,8 +430,21 @@ namespace WordAiAddIn
                     if (newUpper > newLower)
                         throw new ArgumentException("edit_toc: upperLevel (" + newUpper + ") must not be greater than lowerLevel (" + newLower + ").");
                     // Word refuses an upper level below the current lower one, so write the pair in an order that stays valid.
-                    if (newUpper > (int)target.LowerHeadingLevel) { target.LowerHeadingLevel = newLower; target.UpperHeadingLevel = newUpper; }
-                    else { target.UpperHeadingLevel = newUpper; target.LowerHeadingLevel = newLower; }
+                    int curLower = (int)target.LowerHeadingLevel;
+                    DebugLog.Write("edit_toc edit: levels " + (int)target.UpperHeadingLevel + "-" + curLower + " -> " + newUpper + "-" + newLower);
+                    if (newUpper > curLower)
+                    {
+                        target.LowerHeadingLevel = newLower;
+                        DebugLog.Write("edit_toc edit: lower written");
+                        target.UpperHeadingLevel = newUpper;
+                    }
+                    else
+                    {
+                        target.UpperHeadingLevel = newUpper;
+                        DebugLog.Write("edit_toc edit: upper written");
+                        target.LowerHeadingLevel = newLower;
+                    }
+                    DebugLog.Write("edit_toc edit: both written");
                     target.Update();
                     return new ToolResult { Output = "Updated TOC " + index + " heading levels and refreshed it. Paragraph indices after it may have shifted.", Mutated = true, Summary = "edit_toc edit" };
                 case "update":
