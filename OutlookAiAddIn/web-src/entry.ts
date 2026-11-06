@@ -252,13 +252,14 @@ const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'respond_meeting',
-    description: 'Responds to a meeting invitation - accept, tentative or decline - and notifies the organizer. Pass message to add a comment to the response. To write to the organizer or attendees instead of responding, use draft_email with event_id.',
+    description: 'Responds to a meeting invitation - accept, tentative or decline - and notifies the organizer (unless silent is true). Pass message to add a comment to the response. To write to the organizer or attendees instead of responding, use draft_email with event_id.',
     inputSchema: {
       type: 'object',
       properties: {
         response: { type: 'string', enum: ['accept', 'tentative', 'decline'] },
         event_id: { type: 'string', description: 'A calendar event_id (list_events), or the id of a meeting invitation from search_emails (type: meeting).' },
-        message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' },
+        message: { type: 'string', description: 'Optional comment sent to the organizer along with the response. Not allowed with silent.' },
+        silent: { type: 'boolean', description: 'Default false. true records your response in your own calendar without sending anything to the organizer.' },
         store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
       },
       required: ['response', 'event_id'],

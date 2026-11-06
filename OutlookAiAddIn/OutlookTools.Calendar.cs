@@ -407,6 +407,11 @@ namespace OutlookAiAddIn
 
             string message = Str(input, "message", null);
             bool hasComment = !string.IsNullOrWhiteSpace(message);
+            // silent: record the response in the user's own calendar without sending it to the organizer
+            // (the UI's "Don't send a response"). The response item Respond() returns is simply never sent.
+            bool silent = Bool(input, "silent", false);
+            if (silent && hasComment)
+                return new ToolResult { Output = "message cannot be used with silent: a silent response is not sent, so the comment would be lost.", IsError = true, Summary = toolName };
             // Captured before Respond() - if Respond() replaces the item with
             // a new EntryID on accept/tentative (unverified, but plausible
             // per Respond()'s documented behavior), appt.Subject read after
@@ -416,20 +421,21 @@ namespace OutlookAiAddIn
             object respObj = appt.Respond(response, true, false);
             Outlook.MeetingItem resp = respObj as Outlook.MeetingItem;
             bool sendSucceeded = false;
-            if (resp != null)
+            if (resp != null && !silent)
             {
                 if (hasComment) resp.Body = message;
                 try { resp.Send(); sendSucceeded = true; } catch (Exception ex) { DebugLog.WriteException(toolName + " Send", ex); }
             }
             bool commentSent = hasComment && sendSucceeded;
-            RecordIrreversible(mbxKey, toolName + " (" + responseName + ") for \"" + subject + "\"" + (commentSent ? " with a comment" : ""));
+            RecordIrreversible(mbxKey, toolName + " (" + responseName + (silent ? ", silent" : "") + ") for \"" + subject + "\"" + (commentSent ? " with a comment" : ""));
             string verb = response == Outlook.OlMeetingResponse.olMeetingAccepted ? "Accepted"
                         : response == Outlook.OlMeetingResponse.olMeetingTentative ? "Responded tentatively to"
                         : "Declined";
             // If Send() failed, the organizer was never notified (and any
             // comment was lost) even though the local Respond() already
             // went through - don't claim success without qualification.
-            string sendNote = sendSucceeded ? (commentSent ? " (comment sent)" : "") : " - but the response could not be sent to the organizer.";
+            string sendNote = silent ? " (silently - no response was sent to the organizer)"
+                : sendSucceeded ? (commentSent ? " (comment sent)" : "") : " - but the response could not be sent to the organizer.";
             return new ToolResult
             {
                 Output = verb + ": " + subject + sendNote,
