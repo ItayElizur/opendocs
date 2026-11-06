@@ -298,8 +298,11 @@
     font-size: 12px; cursor: pointer; position: relative;
   }
   .ai-mode-btn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-border-strong); }
-  .ai-mode-btn.accent { border-color: var(--docs-brand-ring); background: var(--docs-brand-ghost-weak); color: var(--color-brand-secondary); }
-  .ai-mode-btn.accent .dot { background: currentColor; }
+  .ai-mode-btn[data-editing-mode] { --mode-color: #6b7280; border-color: color-mix(in srgb, var(--mode-color) 45%, transparent); background: color-mix(in srgb, var(--mode-color) 8%, transparent); color: var(--mode-color); }
+  .ai-mode-btn[data-editing-mode="commentOnly"] { --mode-color: #0e9f6e; }
+  .ai-mode-btn[data-editing-mode="trackChanges"] { --mode-color: #0f7fff; }
+  .ai-mode-btn[data-editing-mode="fullAutonomy"] { --mode-color: #e8710a; }
+  .ai-mode-btn[data-editing-mode] .dot { background: currentColor; }
   .ai-mode-menu {
     position: absolute; bottom: 32px; inset-inline-start: 0; width: 190px;
     background: var(--color-bg-page); border: 1px solid var(--color-border-default);
@@ -634,7 +637,7 @@
     editingMode = mode
     document.getElementById('modeBtnLabel').setAttribute('data-t', 'mode' + mode[0].toUpperCase() + mode.slice(1))
     document.querySelectorAll('.ai-mode-menu-item').forEach(el => el.classList.toggle('selected', el.dataset.mode === mode))
-    document.getElementById('modeBtn').classList.toggle('accent', mode === 'trackChanges')
+    document.getElementById('modeBtn').dataset.editingMode = mode
     document.getElementById('modeMenu').classList.remove('open')
     applyStrings()
     // real impl: bridge.postMessage({ kind: 'set-mode', mode }) -> .NET WordTools

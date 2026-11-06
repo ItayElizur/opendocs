@@ -53,6 +53,15 @@ describe('mountChatUI', () => {
     expect(root.querySelector('[data-mode="trackChanges"]')!.classList.contains('selected')).toBe(true)
   })
 
+  it('colours the mode button for the starting mode and follows later selections', () => {
+    const { root } = setup()
+    const btn = root.querySelector<HTMLButtonElement>('.ai-mode-btn')!
+    expect(btn.dataset.editingMode).toBe('trackChanges')
+    btn.click()
+    root.querySelector<HTMLElement>('#modeMenu [data-mode="fullAutonomy"]')!.click()
+    expect(btn.dataset.editingMode).toBe('fullAutonomy')
+  })
+
   it('clicking outside the open mode menu closes it, same as the settings dropdown', () => {
     const { root } = setup()
     root.querySelector<HTMLButtonElement>('.ai-mode-btn')!.click()

@@ -1228,6 +1228,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     })
   }
 
+  modeBtn.dataset.editingMode = defaultMode // colour the initial mode too; selectMode() updates it afterwards
   modeBtn.addEventListener('click', () => modeMenu.classList.toggle('open'))
 
   // FT-1 Task 3 Step 4: the composer's mode menu AND the settings view's scope
@@ -1238,7 +1239,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     root.querySelectorAll<HTMLElement>('.ai-scope-option').forEach((el) => el.classList.toggle('selected', el.dataset.mode === mode))
     modeBtnLabel.textContent = t('mode' + mode[0]!.toUpperCase() + mode.slice(1))
     modeMenu.classList.remove('open')
-    modeBtn.classList.toggle('accent', mode === 'trackChanges')
+    modeBtn.dataset.editingMode = mode
     options.onModeChange(mode)
   }
 

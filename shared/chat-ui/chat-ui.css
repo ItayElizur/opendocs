@@ -1,6 +1,10 @@
   /* ---- tokens, mirroring packages/ui/src/tokens.css + apps/docs/src/renderer/styles.css ---- */
   :root {
     --color-brand-secondary: #0f7fff;
+    --mode-readonly: #6b7280;
+    --mode-comment: #0e9f6e;
+    --mode-track: #0f7fff;
+    --mode-auto: #e8710a;
     --color-text-primary: #232425;
     --color-text-secondary: #606366;
     --color-text-tertiary: #909499;
@@ -50,6 +54,10 @@
     --docs-shimmer-hi: #d0d0d0;
     --docs-shadow-composer: 0 6px 30px rgb(0 0 0 / 30%);
     --color-brand-secondary: #4a9eff;
+    --mode-readonly: #9ca3af;
+    --mode-comment: #34d399;
+    --mode-track: #4a9eff;
+    --mode-auto: #fb923c;
   }
 
   * { box-sizing: border-box; }
@@ -513,8 +521,12 @@
     font-size: 12px; cursor: pointer; position: relative;
   }
   .ai-mode-btn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-border-strong); }
-  .ai-mode-btn.accent { border-color: var(--docs-brand-ring); background: var(--docs-brand-ghost-weak); color: var(--color-brand-secondary); }
-  .ai-mode-btn.accent .dot { background: currentColor; }
+  .ai-mode-btn[data-editing-mode] { --mode-color: var(--mode-readonly); border-color: color-mix(in srgb, var(--mode-color) 45%, transparent); background: color-mix(in srgb, var(--mode-color) 8%, transparent); color: var(--mode-color); }
+  .ai-mode-btn[data-editing-mode="readOnly"] { --mode-color: var(--mode-readonly); }
+  .ai-mode-btn[data-editing-mode="commentOnly"] { --mode-color: var(--mode-comment); }
+  .ai-mode-btn[data-editing-mode="trackChanges"] { --mode-color: var(--mode-track); }
+  .ai-mode-btn[data-editing-mode="fullAutonomy"] { --mode-color: var(--mode-auto); }
+  .ai-mode-btn[data-editing-mode] .dot { background: currentColor; }
   .ai-mode-menu {
     position: absolute; bottom: 32px; inset-inline-start: 0; width: 190px;
     background: var(--color-bg-page); border: 1px solid var(--color-border-default);
