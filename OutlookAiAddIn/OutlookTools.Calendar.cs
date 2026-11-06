@@ -466,7 +466,11 @@ namespace OutlookAiAddIn
                 const string gidTag = "http://schemas.microsoft.com/mapi/id/{6ED8DA90-450B-101B-98DA-00AA003F1305}/00030102";
                 byte[] want = appt.PropertyAccessor.GetProperty(gidTag) as byte[];
                 if (want == null) return null;
-                Outlook.Folder inbox = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox);
+                // The invitation sits in the Inbox of the store the event lives in (a shared calendar is another
+                // mailbox); fall back to the default store. Only the first 3000 Inbox items are scanned.
+                Outlook.Folder inbox;
+                try { inbox = (Outlook.Folder)((Outlook.Folder)appt.Parent).Store.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox); }
+                catch { inbox = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox); }
                 int scanned = 0;
                 foreach (object o in inbox.Items)
                 {
@@ -487,7 +491,7 @@ namespace OutlookAiAddIn
 
         private static string NoInviteError(Outlook.AppointmentItem appt)
         {
-            return "Couldn't find the invitation email for \"" + (appt.Subject ?? "") + "\" - it may have been deleted or archived, or you organize this event (an organizer has no invitation to reply to or forward).";
+            return "Couldn't find the invitation email for \"" + (appt.Subject ?? "") + "\" - it may have been deleted or archived (only the most recent 3000 Inbox messages are searched), or you organize this event (an organizer has no invitation to reply to or forward).";
         }
 
         // Shared by draft_event/send_event (edit): an olMeetingReceived (or
@@ -759,6 +763,9 @@ namespace OutlookAiAddIn
         {
             string tool = send ? "send_event" : "draft_event";
             string action = Str(input, "action", "new");
+            // An event_id with no action would otherwise create a duplicate event and ignore the target.
+            if (action == "new" && Str(input, "event_id", null) != null)
+                return new ToolResult { Output = "event_id given with action new (or no action): pass action edit or cancel.", IsError = true, Summary = tool };
             ToolResult r;
             switch (action)
             {

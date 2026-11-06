@@ -44,7 +44,7 @@ namespace OutlookAiAddIn
         private static bool HasSearchFilters(JsonElement input)
         {
             SearchArgs a = ReadSearchArgs(input);
-            return !string.IsNullOrEmpty(a.Query) || a.Start.HasValue || a.End.HasValue ||
+            return !string.IsNullOrWhiteSpace(a.Query) || a.Start.HasValue || a.End.HasValue ||
                    !string.IsNullOrEmpty(a.Sender) || !string.IsNullOrEmpty(Str(input, "recipient", null));
         }
 

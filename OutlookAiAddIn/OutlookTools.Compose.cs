@@ -164,6 +164,9 @@ namespace OutlookAiAddIn
 
             if (action == "new")
             {
+                // A message_id/event_id with no action would otherwise start a brand-new email and ignore the target.
+                if (Str(input, "message_id", null) != null || Str(input, "event_id", null) != null)
+                    return new ToolResult { Output = "message_id/event_id given with action new (or no action): pass action reply, reply_all or forward.", IsError = true, Summary = tool };
                 // to is required when sending: there's no compose window for a
                 // human to fill it in. See OutlookTools.Compose.cs.md for what
                 // an unset recipient risks.
