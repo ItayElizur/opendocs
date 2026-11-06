@@ -91,7 +91,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'get_email',
     description:
-      'Full message (for a meeting invitation, also the event's start/end, location, organizer, attendees and your response): body (capped), To/CC recipients, conversation id/topic, importance, and an attachments list with each attachment\'s 1-based index, name, type, and size (feed the index to get_attachment).',
+      'Full message (for a meeting invitation, also the start/end, location, organizer, attendees and your response): body (capped), To/CC recipients, conversation id/topic, importance, and an attachments list with each attachment\'s 1-based index, name, type, and size (feed the index to get_attachment).',
     inputSchema: { type: 'object', properties: { message_id: MESSAGE_OR_MEETING_ID, folder: FOLDER }, required: ['message_id'] },
   },
   {
