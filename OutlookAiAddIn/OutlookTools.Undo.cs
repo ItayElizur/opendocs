@@ -231,7 +231,7 @@ namespace OutlookAiAddIn
                 object item = ItemById(ItemEntryId, ItemStoreId);
                 EnsureUnchanged(item, Props, expected);
                 List<string> skipped = WriteProps(item, Props, target);
-                ((dynamic)item).Save();
+                SaveItem(item);
                 return Describe(verb, target, expected, skipped);
             }
 

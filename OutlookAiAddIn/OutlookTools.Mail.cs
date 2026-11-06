@@ -123,6 +123,13 @@ namespace OutlookAiAddIn
             return item is Outlook.MailItem || item is Outlook.MeetingItem ? item : null;
         }
 
+        // Save() on a received meeting invitation always fails with MAPI_E_OBJECT_CHANGED (0x80040109), even with nothing
+        // changed, but setting UnRead / Importance on it persists without a Save - so a MeetingItem is not saved.
+        internal static void SaveItem(object item)
+        {
+            if (!(item is Outlook.MeetingItem)) ((dynamic)item).Save();
+        }
+
         private static ToolResult OpenEmail(JsonElement input)
         {
             string id = ReqStr(input, "message_id");
@@ -138,7 +145,7 @@ namespace OutlookAiAddIn
             if (wasUnread)
             {
                 mail.UnRead = true;
-                mail.Save();
+                SaveItem(mail);
             }
             return new ToolResult { Output = "Opened \"" + (mail.Subject ?? "") + "\" in Outlook.", Summary = "open_email" };
         }
@@ -163,7 +170,7 @@ namespace OutlookAiAddIn
             string[] props = { "UnRead" };
             object[] before = ReadProps(mail, props);
             mail.UnRead = unread;
-            mail.Save();
+            SaveItem(mail);
             string toolName = "mark_email_read";
             string undoLabel = unread ? "mark_email_read (as unread)" : "mark_email_read";
             RecordSnapshot(mbxKey, undoLabel, mail, mail.Subject ?? "", props, before);
@@ -179,7 +186,7 @@ namespace OutlookAiAddIn
             string[] props = { "Importance" };
             object[] before = ReadProps(mail, props);
             mail.Importance = important ? Outlook.OlImportance.olImportanceHigh : Outlook.OlImportance.olImportanceNormal;
-            mail.Save();
+            SaveItem(mail);
             RecordSnapshot(mbxKey, "flag_email_important", mail, mail.Subject ?? "", props, before);
             return new ToolResult { Output = (important ? "High importance: " : "Normal importance: ") + (mail.Subject ?? ""), Mutated = true, Summary = "flag_email_important" };
         }
