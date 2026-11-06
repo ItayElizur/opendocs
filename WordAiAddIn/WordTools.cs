@@ -113,6 +113,16 @@ namespace WordAiAddIn
                             return AddComment(input);
                         case "add_image":
                             return AddImage(input);
+                        case "edit_content_control":
+                            return EditContentControl(input);
+                        case "edit_header_footer":
+                            return EditHeaderFooter(input);
+                        case "edit_note":
+                            return EditNote(input);
+                        case "edit_toc":
+                            return EditToc(input);
+                        case "edit_textbox":
+                            return EditTextbox(input);
                         case "save":
                             return SaveDocument(input);
                         case "undo_last_action":
