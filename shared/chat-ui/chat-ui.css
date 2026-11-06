@@ -2,8 +2,8 @@
   :root {
     --color-brand-secondary: #0f7fff;
     --mode-readonly: #6b7280;
-    --mode-comment: #8b5cf6;
-    --mode-track: #0d9488;
+    --mode-comment: #0d9488;
+    --mode-track: #8b5cf6;
     --mode-auto: #e8710a;
     --color-text-primary: #232425;
     --color-text-secondary: #606366;
@@ -55,8 +55,8 @@
     --docs-shadow-composer: 0 6px 30px rgb(0 0 0 / 30%);
     --color-brand-secondary: #4a9eff;
     --mode-readonly: #9ca3af;
-    --mode-comment: #a78bfa;
-    --mode-track: #2dd4bf;
+    --mode-comment: #2dd4bf;
+    --mode-track: #a78bfa;
     --mode-auto: #fb923c;
   }
 
