@@ -69,7 +69,7 @@ namespace OutlookAiAddIn
             string folderName = Str(input, "folder", null);
             string storeId = folderName != null ? ResolveFolder(folderName).StoreID : null;
 
-            Outlook.MailItem mail = ItemById(id, storeId) as Outlook.MailItem;
+            dynamic mail = MailOrMeeting(id, storeId);
             if (mail == null) return new ToolResult { Output = "That message_id does not resolve to a mail item.", IsError = true, Summary = "get_email" };
 
             var to = new List<string>();
@@ -96,6 +96,22 @@ namespace OutlookAiAddIn
             sb.AppendLine("conversation_topic: " + (mail.ConversationTopic ?? ""));
             sb.AppendLine("importance: " + mail.Importance);
             sb.AppendLine("unread: " + mail.UnRead);
+
+            // A meeting invitation: add the event's when / where / who from its calendar item, so one call tells the
+            // whole story (the body below is the invitation text).
+            if (mail is Outlook.MeetingItem)
+            {
+                try
+                {
+                    Outlook.AppointmentItem appt = mail.GetAssociatedAppointment(false);
+                    if (appt != null)
+                    {
+                        sb.AppendLine("type: meeting");
+                        AppendEventDetails(sb, appt);
+                    }
+                }
+                catch (Exception ex) { DebugLog.WriteException("GetEmail associated appointment", ex); }
+            }
 
             int attCount = mail.Attachments != null ? mail.Attachments.Count : 0;
             if (attCount > 0)

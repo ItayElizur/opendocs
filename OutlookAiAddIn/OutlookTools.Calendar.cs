@@ -176,6 +176,17 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = sb + "\n(Recurring instances share the master event_id.)", Summary = "list_events" };
         }
 
+        // The when / where / who / response lines shared by get_event and get_email (for a meeting invitation).
+        private static void AppendEventDetails(StringBuilder sb, Outlook.AppointmentItem appt)
+        {
+            try { sb.AppendLine("start: " + Iso(appt.Start) + "  end: " + Iso(appt.End)); } catch { }
+            sb.AppendLine("location: " + (appt.Location ?? ""));
+            sb.AppendLine("organizer: " + (appt.Organizer ?? ""));
+            sb.AppendLine("required_attendees: " + (appt.RequiredAttendees ?? ""));
+            sb.AppendLine("optional_attendees: " + (appt.OptionalAttendees ?? ""));
+            sb.AppendLine("response: " + appt.ResponseStatus + "  recurring: " + appt.IsRecurring + "  meeting_status: " + appt.MeetingStatus);
+        }
+
         private static ToolResult GetEvent(JsonElement input)
         {
             string id = ReqStr(input, "event_id");
@@ -188,12 +199,7 @@ namespace OutlookAiAddIn
 
             var sb = new StringBuilder();
             sb.AppendLine("subject: " + (appt.Subject ?? ""));
-            try { sb.AppendLine("start: " + Iso(appt.Start) + "  end: " + Iso(appt.End)); } catch { }
-            sb.AppendLine("location: " + (appt.Location ?? ""));
-            sb.AppendLine("organizer: " + (appt.Organizer ?? ""));
-            sb.AppendLine("required_attendees: " + (appt.RequiredAttendees ?? ""));
-            sb.AppendLine("optional_attendees: " + (appt.OptionalAttendees ?? ""));
-            sb.AppendLine("response: " + appt.ResponseStatus + "  recurring: " + appt.IsRecurring + "  meeting_status: " + appt.MeetingStatus);
+            AppendEventDetails(sb, appt);
             sb.AppendLine();
             sb.AppendLine("body:");
             sb.Append(Truncate(appt.Body ?? "", 40000));
