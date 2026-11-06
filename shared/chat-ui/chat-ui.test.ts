@@ -58,8 +58,12 @@ describe('mountChatUI', () => {
     const btn = root.querySelector<HTMLButtonElement>('.ai-mode-btn')!
     expect(btn.dataset.editingMode).toBe('trackChanges')
     btn.click()
-    root.querySelector<HTMLElement>('#modeMenu [data-mode="fullAutonomy"]')!.click()
-    expect(btn.dataset.editingMode).toBe('fullAutonomy')
+    // The CSS selectors match these exact (case-sensitive) EditingMode strings.
+    for (const mode of ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy']) {
+      btn.click()
+      root.querySelector<HTMLElement>(`#modeMenu [data-mode="${mode}"]`)!.click()
+      expect(btn.dataset.editingMode).toBe(mode)
+    }
   })
 
   it('clicking outside the open mode menu closes it, same as the settings dropdown', () => {
