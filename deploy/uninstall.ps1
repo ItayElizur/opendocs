@@ -1,35 +1,64 @@
 # Run this ON THE TARGET MACHINE to remove the add-in(s) installed by
 # install.ps1.
 #
-# Usage:
-#   .\uninstall.ps1                        # removes Word, Excel, PowerPoint, and Outlook
+# Usage (default: removes the machine-wide install made by install.ps1; needs an ELEVATED PowerShell):
+#   .\uninstall.ps1                        # removes Word, Excel, PowerPoint, and Outlook for all users
 #   .\uninstall.ps1 -App Word              # removes just Word
 #   .\uninstall.ps1 -RemoveTrustedCert     # also untrusts the signing certificate
+#   .\uninstall.ps1 -CurrentUser           # removes an install made with install.ps1 -CurrentUser (no admin needed)
+#   .\uninstall.ps1 -WhatIf                # list what it would remove and remove nothing
 
+[CmdletBinding(SupportsShouldProcess)]
 param(
     [ValidateSet('Word', 'Excel', 'PowerPoint', 'Outlook', 'All')]
     [string]$App = 'All',
-    [string]$InstallRoot = "$env:LOCALAPPDATA\OpenDocs",
-    [switch]$RemoveTrustedCert
+    [string]$InstallRoot,
+    [switch]$RemoveTrustedCert,
+    [switch]$CurrentUser
 )
 
+$ErrorActionPreference = 'Stop'
+$AllUsers = -not $CurrentUser
 $Apps = if ($App -eq 'All') { @('Word', 'Excel', 'PowerPoint', 'Outlook') } else { @($App) }
 $OfficeApps = @{ Word = 'Word'; Excel = 'Excel'; PowerPoint = 'PowerPoint'; Outlook = 'Outlook' }
 
+if ($AllUsers) {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    if (-not ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        $needAdmin = "Removing a machine-wide install touches Program Files and HKLM, so it needs an elevated PowerShell (Run as administrator). Use -CurrentUser to remove a per-user install."
+        if ($WhatIfPreference) { Write-Host "NOTE: $needAdmin (continuing only because of -WhatIf; nothing will be changed)." -ForegroundColor Yellow }
+        else { throw $needAdmin }
+    }
+}
+
+if (-not $InstallRoot) {
+    if ($AllUsers) {
+        $programFiles = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+        $InstallRoot = Join-Path $programFiles 'OpenDocs'
+    }
+    else {
+        $InstallRoot = "$env:LOCALAPPDATA\OpenDocs"
+    }
+}
+$registryRoots = if ($AllUsers) { @('HKLM:\SOFTWARE\Microsoft\Office', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Office') } else { @('HKCU:\Software\Microsoft\Office') }
+$removed = if ($WhatIfPreference) { 'Would remove' } else { 'Removed' }
+
 foreach ($appName in $Apps) {
     $projName = "${appName}AiAddIn"
-    $regKey = "HKCU:\Software\Microsoft\Office\$($OfficeApps[$appName])\Addins\$projName"
-    if (Test-Path $regKey) {
-        Remove-Item $regKey -Recurse -Force
-        Write-Host "Removed registration for $projName."
+    foreach ($officeRoot in $registryRoots) {
+        $regKey = "$officeRoot\$($OfficeApps[$appName])\Addins\$projName"
+        if (Test-Path $regKey) {
+            Remove-Item $regKey -Recurse -Force
+            Write-Host "$removed registration for $projName ($regKey)."
+        }
     }
     $destDir = Join-Path $InstallRoot $projName
     if (Test-Path $destDir) {
         Remove-Item $destDir -Recurse -Force
-        Write-Host "Removed installed files at $destDir."
+        Write-Host "$removed installed files at $destDir."
     }
 
-    if ($appName -eq 'Outlook') {
+    if ($appName -eq 'Outlook' -and -not $AllUsers) {
         foreach ($ver in @('16.0', '15.0')) {
             $dna = "HKCU:\Software\Microsoft\Office\$ver\Outlook\Resiliency\DoNotDisableAddinList"
             if (Test-Path $dna) { Remove-ItemProperty -Path $dna -Name $projName -ErrorAction SilentlyContinue }
@@ -39,10 +68,11 @@ foreach ($appName in $Apps) {
 
 if ($RemoveTrustedCert) {
     $Thumbprint = 'D7C0D2DECAE0E7D967DE0A2C1B5DBFF185A932FD'
-    $cert = Get-ChildItem "Cert:\CurrentUser\TrustedPublisher\$Thumbprint" -ErrorAction SilentlyContinue
+    $location = if ($AllUsers) { 'LocalMachine' } else { 'CurrentUser' }
+    $cert = Get-ChildItem "Cert:\$location\TrustedPublisher\$Thumbprint" -ErrorAction SilentlyContinue
     if ($cert) {
         Remove-Item $cert.PSPath -Force
-        Write-Host "Removed trusted certificate."
+        Write-Host "$removed trusted certificate from $location."
     }
 }
 
