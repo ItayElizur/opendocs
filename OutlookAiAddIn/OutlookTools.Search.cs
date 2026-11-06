@@ -50,7 +50,7 @@ namespace OutlookAiAddIn
 
         // Shown on a search/list result that is a meeting message rather than an email: it is a MeetingItem, so the
         // email tools (read_email, open_email, mark/flag, attachments) do not resolve it.
-        private const string MeetingTypeNote = "meeting (an invitation, response or cancellation; pass this id as event_id to respond_meeting or draft_email/send_email - the email tools cannot open it)";
+        private const string MeetingTypeNote = "meeting (an invitation, response or cancellation; pass this id as event_id to respond_meeting or draft_email/send_email - open_email, mark_email_read and flag_email_important work on it, the other email tools cannot open it)";
 
         private static ToolResult SearchEmails(JsonElement input)
         {

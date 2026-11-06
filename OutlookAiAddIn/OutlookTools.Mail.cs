@@ -115,10 +115,18 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "get_email" };
         }
 
+        // A meeting invitation in the Inbox is a MeetingItem; it has the same UnRead / Importance / Display / Save
+        // members as a MailItem, so open_email, mark_email_read and flag_email_important take either.
+        private static dynamic MailOrMeeting(string id, string storeId)
+        {
+            object item = ItemById(id, storeId);
+            return item is Outlook.MailItem || item is Outlook.MeetingItem ? item : null;
+        }
+
         private static ToolResult OpenEmail(JsonElement input)
         {
             string id = ReqStr(input, "message_id");
-            Outlook.MailItem mail = ItemById(id, StoreOf(input)) as Outlook.MailItem;
+            dynamic mail = MailOrMeeting(id, StoreOf(input));
             if (mail == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "open_email" };
 
             // Display() marks the item read as a side effect, but this tool is
@@ -150,7 +158,7 @@ namespace OutlookAiAddIn
         private static ToolResult MarkEmail(string mbxKey, JsonElement input, bool unread)
         {
             string id = ReqStr(input, "message_id");
-            Outlook.MailItem mail = ItemById(id, StoreOf(input)) as Outlook.MailItem;
+            dynamic mail = MailOrMeeting(id, StoreOf(input));
             if (mail == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "mark_email" };
             string[] props = { "UnRead" };
             object[] before = ReadProps(mail, props);
@@ -166,7 +174,7 @@ namespace OutlookAiAddIn
         {
             string id = ReqStr(input, "message_id");
             bool important = Bool(input, "important", true);
-            Outlook.MailItem mail = ItemById(id, StoreOf(input)) as Outlook.MailItem;
+            dynamic mail = MailOrMeeting(id, StoreOf(input));
             if (mail == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "flag_email_important" };
             string[] props = { "Importance" };
             object[] before = ReadProps(mail, props);
