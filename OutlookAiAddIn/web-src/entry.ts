@@ -10,6 +10,8 @@ const FOLDER = {
 }
 
 const MESSAGE_ID = { type: 'string', description: 'Outlook EntryID from search_emails or the current selection.' }
+// For the tools that also work on a meeting invitation sitting in the Inbox (search_emails shows type: meeting).
+const MESSAGE_OR_MEETING_ID = { type: 'string', description: 'Outlook EntryID from search_emails or the current selection - an email, or a meeting invitation (type: meeting).' }
 
 const EVENT_RECURRENCE = {
   type: 'object',
@@ -95,7 +97,7 @@ const ALL_OUTLOOK_TOOLS = [
   {
     name: 'open_email',
     description: 'Opens a message in its own Outlook reading window (like double-clicking it) so the user can see it directly. Read-only.',
-    inputSchema: { type: 'object', properties: { message_id: MESSAGE_ID, folder: FOLDER }, required: ['message_id'] },
+    inputSchema: { type: 'object', properties: { message_id: MESSAGE_OR_MEETING_ID, folder: FOLDER }, required: ['message_id'] },
   },
   {
     name: 'get_attachment',
@@ -198,7 +200,7 @@ const ALL_OUTLOOK_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        message_id: MESSAGE_ID,
+        message_id: MESSAGE_OR_MEETING_ID,
         read: { type: 'boolean', description: 'true (default) marks it read; false marks it unread.' },
         folder: FOLDER,
       },
@@ -210,7 +212,7 @@ const ALL_OUTLOOK_TOOLS = [
     description: 'Sets a message\'s importance to High (important:true, default) or Normal (important:false).',
     inputSchema: {
       type: 'object',
-      properties: { message_id: MESSAGE_ID, important: { type: 'boolean' }, folder: FOLDER },
+      properties: { message_id: MESSAGE_OR_MEETING_ID, important: { type: 'boolean' }, folder: FOLDER },
       required: ['message_id'],
     },
   },
@@ -255,7 +257,7 @@ const ALL_OUTLOOK_TOOLS = [
       type: 'object',
       properties: {
         response: { type: 'string', enum: ['accept', 'tentative', 'decline'] },
-        event_id: { type: 'string' },
+        event_id: { type: 'string', description: 'A calendar event_id (list_events), or the id of a meeting invitation from search_emails (type: meeting).' },
         message: { type: 'string', description: 'Optional comment sent to the organizer along with the response.' },
         store_id: { type: 'string', description: 'Only needed for an event_id from a shared calendar (see list_events\' store_id field). Whether the action succeeds depends entirely on your actual Outlook/Exchange permissions for that calendar.' },
       },
@@ -377,7 +379,7 @@ const ALL_OUTLOOK_TOOLS = [
       properties: {
         action: { type: 'string', enum: ['new', 'reply', 'reply_all', 'forward'], description: 'Default "new" (a brand-new email). "reply", "reply_all" and "forward" act on an existing item: pass message_id for an email, or event_id for a calendar meeting (its invitation email).' },
         message_id: MESSAGE_ID,
-        event_id: { type: 'string', description: 'For reply/reply_all/forward of a calendar meeting instead of an email. Fails if the meeting\'s invitation email is gone (deleted, archived) or the user organizes the meeting.' },
+        event_id: { type: 'string', description: 'For reply/reply_all/forward of a calendar meeting instead of an email: a calendar event_id, or the id of a meeting invitation from search_emails (type: meeting). Fails if the meeting\'s invitation email is gone (deleted, archived) or the user organizes the meeting.' },
         to: { type: 'string', description: 'Recipients, comma-separated. For new emails and forwards.' },
         subject: { type: 'string', description: 'New emails only.' },
         body: { type: 'string', description: 'Message text. For reply/forward it goes above the quoted original.' },
@@ -402,7 +404,7 @@ const ALL_OUTLOOK_TOOLS = [
       properties: {
         action: { type: 'string', enum: ['new', 'reply', 'reply_all', 'forward'], description: 'Default "new" (a brand-new email). "reply", "reply_all" and "forward" act on an existing item: pass message_id for an email, or event_id for a calendar meeting (its invitation email).' },
         message_id: MESSAGE_ID,
-        event_id: { type: 'string', description: 'For reply/reply_all/forward of a calendar meeting instead of an email. Fails if the meeting\'s invitation email is gone (deleted, archived) or the user organizes the meeting.' },
+        event_id: { type: 'string', description: 'For reply/reply_all/forward of a calendar meeting instead of an email: a calendar event_id, or the id of a meeting invitation from search_emails (type: meeting). Fails if the meeting\'s invitation email is gone (deleted, archived) or the user organizes the meeting.' },
         to: { type: 'string', description: 'Recipients, comma-separated. For new emails and forwards.' },
         subject: { type: 'string', description: 'New emails only.' },
         body: { type: 'string', description: 'Message text. For reply/forward it goes above the quoted original.' },
