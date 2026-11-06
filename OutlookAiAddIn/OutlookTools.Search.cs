@@ -80,14 +80,15 @@ namespace OutlookAiAddIn
                 }
             }
 
-            var matches = new List<Outlook.MailItem>();
+            var matches = new List<dynamic>();
             int scanned = 0;
             const int scanCap = 500;
             Outlook.Items source = filtered ?? items;
             foreach (object obj in source)
             {
-                Outlook.MailItem m = obj as Outlook.MailItem;
-                if (m == null) continue;
+                // A meeting invitation in the Inbox is a MeetingItem, not a MailItem; it is listed like a message.
+                if (!(obj is Outlook.MailItem) && !(obj is Outlook.MeetingItem)) continue;
+                dynamic m = obj;
                 scanned++;
 
                 if (!usedRestrict && dasl.Length > 0 && !MatchesClientSide(m, query, start, end, sender))
@@ -108,7 +109,7 @@ namespace OutlookAiAddIn
 
             var sb = new StringBuilder();
             sb.AppendLine((usedRestrict ? "Server-filtered" : "Scanned") + " search in " + folder.Name + ":");
-            foreach (Outlook.MailItem m in matches)
+            foreach (dynamic m in matches)
             {
                 sb.AppendLine("- message_id: " + m.EntryID);
                 sb.AppendLine("  subject: " + (m.Subject ?? ""));
@@ -195,7 +196,7 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = "Applied the search to " + folder.Name + " in Outlook (scope: " + scope + ") - the user can see the results now.", Summary = "apply_search" };
         }
 
-        private static bool MatchesClientSide(Outlook.MailItem m, string query, DateTime? start, DateTime? end, string sender)
+        private static bool MatchesClientSide(dynamic m, string query, DateTime? start, DateTime? end, string sender)
         {
             if (!string.IsNullOrEmpty(query))
             {
@@ -219,7 +220,7 @@ namespace OutlookAiAddIn
             return true;
         }
 
-        private static bool MatchesRecipient(Outlook.MailItem m, string recipient)
+        private static bool MatchesRecipient(dynamic m, string recipient)
         {
             string target = recipient.Trim().ToLowerInvariant();
             try

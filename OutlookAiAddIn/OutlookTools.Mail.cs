@@ -41,7 +41,8 @@ namespace OutlookAiAddIn
             {
                 Outlook.Row row = table.GetNextRow();
                 string cls = Convert.ToString(row["MessageClass"], CultureInfo.InvariantCulture) ?? "";
-                if (!cls.StartsWith("IPM.Note", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!cls.StartsWith("IPM.Note", StringComparison.OrdinalIgnoreCase) &&
+                    !cls.StartsWith("IPM.Schedule.Meeting", StringComparison.OrdinalIgnoreCase)) continue; // invitations, responses, cancellations
 
                 n++;
                 string received = "";
