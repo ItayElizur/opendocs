@@ -48,6 +48,10 @@ namespace OutlookAiAddIn
                    !string.IsNullOrEmpty(a.Sender) || !string.IsNullOrEmpty(Str(input, "recipient", null));
         }
 
+        // Shown on a search/list result that is a meeting message rather than an email: it is a MeetingItem, so the
+        // email tools (read_email, open_email, mark/flag, attachments) do not resolve it.
+        private const string MeetingTypeNote = "meeting (an invitation, response or cancellation; pass this id as event_id to respond_meeting or draft_email/send_email - the email tools cannot open it)";
+
         private static ToolResult SearchEmails(JsonElement input)
         {
             SearchArgs a = ReadSearchArgs(input);
@@ -114,6 +118,7 @@ namespace OutlookAiAddIn
                 sb.AppendLine("- message_id: " + m.EntryID);
                 sb.AppendLine("  subject: " + (m.Subject ?? ""));
                 sb.AppendLine("  from: " + (m.SenderName ?? ""));
+                sb.AppendLine("  type: " + (m is Outlook.MeetingItem ? MeetingTypeNote : "email"));
                 bool hasAtt = false;
                 try { hasAtt = Convert.ToBoolean(m.PropertyAccessor.GetProperty(PrHasAttach)); }
                 catch { try { hasAtt = m.Attachments.Count > 0; } catch { } }

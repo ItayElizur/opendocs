@@ -55,6 +55,7 @@ namespace OutlookAiAddIn
                 sb.AppendLine("- message_id: " + Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture));
                 sb.AppendLine("  subject: " + (Convert.ToString(row["Subject"], CultureInfo.InvariantCulture) ?? ""));
                 sb.AppendLine("  from: " + (Convert.ToString(row["SenderName"], CultureInfo.InvariantCulture) ?? ""));
+                sb.AppendLine("  type: " + (cls.StartsWith("IPM.Schedule.Meeting", StringComparison.OrdinalIgnoreCase) ? MeetingTypeNote : "email"));
                 sb.AppendLine("  received: " + received + "  unread: " + unread + "  has_attachments: " + hasAtt);
             }
 
