@@ -427,7 +427,7 @@ const MUTATION_TOOLS = [
   {
     name: 'edit_picture',
     description:
-      'kind selects the operation: "crop" or "replace". ' +
+      'kind selects the operation: "crop" or "replace". Both work only on a picture - any other shape errors and nothing is changed (a replace also refuses a placeholder, since replacing deletes the old shape and PowerPoint would leave an empty placeholder behind). ' +
       'kind "crop": Non-destructively crops a picture shape. l/t/r/b are 0..1 fractions of the current on-slide image size cut from each edge; all zero clears the crop.' +
       'kind "replace": Swaps a picture shape\'s image content in place from a local file path, keeping position/size/rotation/approximate z-order.',
     inputSchema: {
