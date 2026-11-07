@@ -213,7 +213,9 @@ namespace OutlookAiAddIn
                     Outlook.AppointmentItem appt = ResolveMeetingAppointment(item);
                     if (appt == null) return new ToolResult { Output = "event_id does not resolve to a calendar event.", IsError = true, Summary = tool };
                     invite = FindInviteMessage(appt);
-                    if (invite == null) return new ToolResult { Output = NoInviteError(appt), IsError = true, Summary = tool };
+                    // No invitation email (deleted, archived, or you organize the event): build the message from the
+                    // event itself, as the UI does from the event window.
+                    if (invite == null) return ComposeFromEvent(mbxKey, tool, send, action, appt, to, body);
                     origSubject = appt.Subject ?? "";
                 }
             }
@@ -264,6 +266,60 @@ namespace OutlookAiAddIn
                 : (all ? invite.ReplyAll() : invite.Reply());
             if (!string.IsNullOrEmpty(body)) reply.HTMLBody = PrependHtml(body, reply.HTMLBody);
             return FinishCompose(mbxKey, tool, send, all ? "reply-all" : "reply", reply.To, origSubject, () => reply.Display(false), () => reply.Send());
+        }
+
+        // Reply / reply-all / forward from a calendar event when its invitation email is gone. Forward uses the event's own
+        // iCalendar forward; a reply is a new message to the organizer (and, for reply-all, the other attendees) that
+        // quotes the event. Replying to an event you organize has no one to answer, so that stays an error.
+        private static ToolResult ComposeFromEvent(string mbxKey, string tool, bool send, string action, Outlook.AppointmentItem appt, string to, string body)
+        {
+            string subject = appt.Subject ?? "";
+            if (action == "forward")
+            {
+                Outlook.MailItem fwd = appt.ForwardAsVcal();
+                if (!string.IsNullOrEmpty(to)) fwd.To = to;
+                if (!string.IsNullOrEmpty(body)) fwd.Body = SeedSignature(body) + "\n\n" + fwd.Body;
+                if (send && !fwd.Recipients.ResolveAll())
+                {
+                    fwd.Close(Outlook.OlInspectorClose.olDiscard);
+                    return new ToolResult { Output = "Not sent - couldn't resolve the recipient(s): " + to + ".", IsError = true, Summary = tool };
+                }
+                return FinishCompose(mbxKey, tool, send, "forward", to, subject, () => fwd.Display(false), () => fwd.Send());
+            }
+
+            if (!IsReceivedMeeting(appt)) return new ToolResult { Output = NoInviteError(appt), IsError = true, Summary = tool };
+
+            bool all = action == "reply_all";
+            Outlook.MailItem m = (Outlook.MailItem)App.CreateItem(Outlook.OlItemType.olMailItem);
+            var addresses = new List<string>();
+            try { string org = SmtpOf(appt.GetOrganizer()); if (!string.IsNullOrEmpty(org)) addresses.Add(org); } catch { }
+            if (all)
+            {
+                string me = "";
+                try { me = SmtpOf(Ns.CurrentUser.AddressEntry); } catch { }
+                foreach (Outlook.Recipient r in appt.Recipients)
+                {
+                    string a = "";
+                    try { a = SmtpOf(r.AddressEntry); } catch { }
+                    if (!string.IsNullOrEmpty(a) && !string.Equals(a, me, StringComparison.OrdinalIgnoreCase) && !addresses.Contains(a)) addresses.Add(a);
+                }
+            }
+            if (addresses.Count == 0)
+            {
+                m.Close(Outlook.OlInspectorClose.olDiscard);
+                return new ToolResult { Output = "Couldn't work out who to reply to for \"" + subject + "\" (organizer: " + (appt.Organizer ?? "unknown") + ").", IsError = true, Summary = tool };
+            }
+            m.To = string.Join("; ", addresses);
+            m.Subject = "RE: " + subject;
+            string when = ""; try { when = Iso(appt.Start) + " - " + Iso(appt.End); } catch { }
+            m.Body = SeedSignature(body) + "\n\n-----Original meeting-----\nSubject: " + subject + "\nWhen: " + when +
+                     "\nWhere: " + (appt.Location ?? "") + "\nOrganizer: " + (appt.Organizer ?? "");
+            if (send && !m.Recipients.ResolveAll())
+            {
+                m.Close(Outlook.OlInspectorClose.olDiscard);
+                return new ToolResult { Output = "Not sent - couldn't resolve: " + m.To + ".", IsError = true, Summary = tool };
+            }
+            return FinishCompose(mbxKey, tool, send, all ? "reply-all" : "reply", m.To, subject, () => m.Display(false), () => m.Send());
         }
 
         private static ToolResult FinishCompose(string mbxKey, string tool, bool send, string kind, string recipients, string subject, Action display, Action sendIt)

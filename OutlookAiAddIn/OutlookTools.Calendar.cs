@@ -576,6 +576,18 @@ namespace OutlookAiAddIn
             catch (Exception ex)
             {
                 DebugLog.WriteException(toolName + " GetOccurrence", ex);
+                // A series has at most one occurrence a day, so an occurrence moved to another time of day is still
+                // found by its original date among the series' exceptions.
+                Outlook.AppointmentItem moved = null;
+                try
+                {
+                    foreach (Outlook.Exception exc in pattern.Exceptions)
+                    {
+                        if (!exc.Deleted && exc.OriginalDate.Date == date.Date) { moved = exc.AppointmentItem; break; }
+                    }
+                }
+                catch (Exception ex2) { DebugLog.WriteException(toolName + " exceptions lookup", ex2); }
+                if (moved != null) { target = moved; return null; }
                 return new ToolResult { Output = "No occurrence of \"" + (master.Subject ?? "") + "\" on " + occurrenceDate + ". Check list_events for this series' actual occurrence dates.", IsError = true, Summary = toolName };
             }
             return null;
