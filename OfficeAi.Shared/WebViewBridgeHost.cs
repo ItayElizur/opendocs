@@ -101,6 +101,22 @@ namespace OfficeAi.Shared
                 await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
                     "window.__opendocsSecrets = " + JsonSerializer.Serialize(SecretStore.Load(appDataFolderName)) + ";");
 
+                // A link in the chat (model output can contain one) must not open a browser window inside the Office
+                // process, and the pane must never navigate away from its own page: links go to the system browser.
+                _webView.CoreWebView2.NewWindowRequested += (sender, args) =>
+                {
+                    args.Handled = true;
+                    OpenInSystemBrowser(args.Uri);
+                };
+                _webView.CoreWebView2.NavigationStarting += (sender, args) =>
+                {
+                    if (!args.Uri.StartsWith("http://appassets.local/", StringComparison.OrdinalIgnoreCase))
+                    {
+                        args.Cancel = true;
+                        OpenInSystemBrowser(args.Uri);
+                    }
+                };
+
                 _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
                 _webView.CoreWebView2.ServerCertificateErrorDetected += OnServerCertificateErrorDetected;
 
@@ -117,6 +133,14 @@ namespace OfficeAi.Shared
             {
                 _setStatus("WebView2 init failed: " + ex.Message);
             }
+        }
+
+        private static void OpenInSystemBrowser(string url)
+        {
+            Uri uri;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)) return;
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
+            catch (Exception ex) { DebugLog.WriteException("OpenInSystemBrowser", ex); }
         }
 
         public void PostMessage(object payload)
