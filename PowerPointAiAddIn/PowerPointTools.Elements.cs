@@ -230,46 +230,61 @@ namespace PowerPointAiAddIn
         private static ToolResult SetElementStyle(JsonElement input)
         {
             PowerPoint.Shape shape = ResolveShape(input);
+            if (shape.HasTextFrame != Microsoft.Office.Core.MsoTriState.msoTrue)
+                throw new ArgumentException("format_element: this shape has no text to style (a table, picture, chart or group). " +
+                                            "Use the fill, stroke or opacity fields, or edit_table_style / edit_table_cell for a table.");
             PowerPoint.TextRange range = shape.TextFrame.TextRange;
             var applied = new List<string>();
+            string field = null; // the parameter being applied, so a COM failure can name it
+
+            try
+            {
 
             if (input.TryGetProperty("bold", out var bold))
             {
+                field = "bold";
                 range.Font.Bold = Tri(bold.GetBoolean());
                 applied.Add("bold");
             }
             if (input.TryGetProperty("italic", out var italic))
             {
+                field = "italic";
                 range.Font.Italic = Tri(italic.GetBoolean());
                 applied.Add("italic");
             }
             if (input.TryGetProperty("fontSize", out var fontSize))
             {
+                field = "fontSize";
                 range.Font.Size = (float)fontSize.GetDouble();
                 applied.Add("fontSize");
             }
             if (input.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
             {
+                field = "color";
                 range.Font.Color.RGB = ColorUtil.HexToOle(color.GetString());
                 applied.Add("color");
             }
             if (input.TryGetProperty("fontName", out var fontName) && fontName.ValueKind == JsonValueKind.String)
             {
+                field = "fontName";
                 range.Font.Name = fontName.GetString();
                 applied.Add("fontName");
             }
             if (input.TryGetProperty("underline", out var underline))
             {
+                field = "underline";
                 range.Font.Underline = Tri(underline.ValueKind == JsonValueKind.True);
                 applied.Add("underline");
             }
             if (input.TryGetProperty("shadow", out var shadow))
             {
+                field = "shadow";
                 range.Font.Shadow = Tri(shadow.ValueKind == JsonValueKind.True);
                 applied.Add("shadow");
             }
             if (input.TryGetProperty("alignment", out var align) && align.ValueKind == JsonValueKind.String)
             {
+                field = "alignment";
                 PowerPoint.PpParagraphAlignment a;
                 if (!AlignmentMap.TryGetValue(align.GetString(), out a))
                     throw new ArgumentException("format_element: unknown alignment '" + align.GetString() +
@@ -279,6 +294,7 @@ namespace PowerPointAiAddIn
             }
             if (input.TryGetProperty("baselineOffset", out var baseline) && baseline.ValueKind == JsonValueKind.String)
             {
+                field = "baselineOffset";
                 string b = baseline.GetString();
                 if (b != "SUPERSCRIPT" && b != "SUBSCRIPT" && b != "NONE")
                     throw new ArgumentException("format_element: unknown baselineOffset '" + b +
@@ -286,6 +302,11 @@ namespace PowerPointAiAddIn
                 range.Font.Superscript = Tri(b == "SUPERSCRIPT");
                 range.Font.Subscript = Tri(b == "SUBSCRIPT");
                 applied.Add("baselineOffset");
+            }
+            }
+            catch (Exception ex) when (field != null && !(ex is ArgumentException))
+            {
+                throw new InvalidOperationException("format_element: could not set " + field + " - " + ex.Message);
             }
             // Strikethrough deliberately NOT implemented: this PIA's TextFrame has no
             // Strikethrough member, and Microsoft.Office.Interop.PowerPoint has no
