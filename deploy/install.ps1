@@ -9,8 +9,10 @@
 #   .\install.ps1 -WhatIf              # list what it would change and change nothing (works without elevation)
 #
 # All users (default): files in Program Files\OpenDocs (everyone can run them, only administrators can change them),
-#   registered under HKLM, signing certificate trusted for the computer.
-# -CurrentUser: files in %LOCALAPPDATA%\OpenDocs, registered under HKCU, certificate trusted for the current user.
+#   registered under HKLM.
+# -CurrentUser: files in %LOCALAPPDATA%\OpenDocs, registered under HKCU.
+# -TrustCertificate: also trust OpenDocsDevCert.cer in Trusted Publishers (computer, or current user with -CurrentUser). Not needed in
+#   the configurations tested - the add-ins load without it - so it is off by default; use it only if a policy blocks the add-ins.
 # Run uninstall.ps1 with the same switch to remove it.
 #
 # No internet access is required or used by this script.
@@ -20,7 +22,8 @@ param(
     [ValidateSet('Word', 'Excel', 'PowerPoint', 'Outlook', 'All')]
     [string]$App = 'All',
     [string]$InstallRoot,
-    [switch]$CurrentUser
+    [switch]$CurrentUser,
+    [switch]$TrustCertificate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -154,38 +157,43 @@ if ($running.Count -gt 0) {
 Write-Host "Unblocking package files (clears any Mark-of-the-Web from a zip transfer)..."
 Get-ChildItem -Path $PackageDir -Recurse | Unblock-File -ErrorAction SilentlyContinue
 
-$certPath = Join-Path $PackageDir 'OpenDocsDevCert.cer'
-if (-not (Test-Path $certPath)) { throw "Certificate file not found next to install.ps1: $certPath" }
-$thumbprint = (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath)).Thumbprint
+if ($TrustCertificate) {
+    $certPath = Join-Path $PackageDir 'OpenDocsDevCert.cer'
+    if (-not (Test-Path $certPath)) { throw "Certificate file not found next to install.ps1: $certPath" }
+    $thumbprint = (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath)).Thumbprint
 
-# A certificate trusted for the whole computer also covers a per-user install; the reverse is not true, because
-# CurrentUser belongs to whichever account ran this script.
-$certLocation = if ($AllUsers) { 'LocalMachine' } else { 'CurrentUser' }
-$coveredBy = if ($AllUsers) { @('LocalMachine') } else { @('CurrentUser', 'LocalMachine') }
-if (Test-CertTrusted -Thumbprint $thumbprint -Locations $coveredBy) {
-    Write-Host "The add-in's signing certificate is already trusted - skipping the import."
+    # A certificate trusted for the whole computer also covers a per-user install; the reverse is not true, because
+    # CurrentUser belongs to whichever account ran this script.
+    $certLocation = if ($AllUsers) { 'LocalMachine' } else { 'CurrentUser' }
+    $coveredBy = if ($AllUsers) { @('LocalMachine') } else { @('CurrentUser', 'LocalMachine') }
+    if (Test-CertTrusted -Thumbprint $thumbprint -Locations $coveredBy) {
+        Write-Host "The add-in's signing certificate is already trusted - skipping the import."
+    }
+    else {
+        $who = if ($AllUsers) { "this computer, all users" } else { "the current user only, no admin needed" }
+        Write-Host "Trusting the add-in's signing certificate ($who)..."
+        try {
+            Import-Certificate -FilePath $certPath -CertStoreLocation "Cert:\$certLocation\TrustedPublisher" | Out-Null
+        }
+        catch {
+            if (Test-CertTrusted -Thumbprint $thumbprint -Locations $coveredBy) {
+                Write-Host "WARNING: importing the certificate reported '$($_.Exception.Message)', but it is trusted now - continuing." -ForegroundColor Yellow
+            }
+            else {
+                # Not fatal: in the configurations tested (default Office, and Office set to require signed add-ins) the add-in
+                # loads without the certificate being trusted, so a refused import should not stop the install.
+                Write-Host ("WARNING: could not add the signing certificate to Cert:\$certLocation\TrustedPublisher: $($_.Exception.Message)") -ForegroundColor Yellow
+                Write-Host "Continuing - the add-in normally loads without it. If a security policy on this machine does block the add-in, trust OpenDocsDevCert.cer:" -ForegroundColor Yellow
+                Write-Host "  - 'Access denied' on one machine while others work usually means a Group Policy or permission restriction on Trusted Publishers" -ForegroundColor Yellow
+                Write-Host "    (run 'gpresult /h gp.html' to see which policies apply); IT can deploy the certificate through Group Policy," -ForegroundColor Yellow
+                Write-Host "  - or run this script from an elevated PowerShell without -CurrentUser to trust it for the whole computer." -ForegroundColor Yellow
+                Write-Host "  - A certificate imported by hand from an elevated shell only lands in the store of the account running that shell." -ForegroundColor Yellow
+            }
+        }
+    }
 }
 else {
-    $who = if ($AllUsers) { "this computer, all users" } else { "the current user only, no admin needed" }
-    Write-Host "Trusting the add-in's signing certificate ($who)..."
-    try {
-        Import-Certificate -FilePath $certPath -CertStoreLocation "Cert:\$certLocation\TrustedPublisher" | Out-Null
-    }
-    catch {
-        if (Test-CertTrusted -Thumbprint $thumbprint -Locations $coveredBy) {
-            Write-Host "WARNING: importing the certificate reported '$($_.Exception.Message)', but it is trusted now - continuing." -ForegroundColor Yellow
-        }
-        else {
-            # Not fatal: in the configurations tested (default Office, and Office set to require signed add-ins) the add-in
-            # loads without the certificate being trusted, so a refused import should not stop the install.
-            Write-Host ("WARNING: could not add the signing certificate to Cert:\$certLocation\TrustedPublisher: $($_.Exception.Message)") -ForegroundColor Yellow
-            Write-Host "Continuing - the add-in normally loads without it. If a security policy on this machine does block the add-in, trust OpenDocsDevCert.cer:" -ForegroundColor Yellow
-            Write-Host "  - 'Access denied' on one machine while others work usually means a Group Policy or permission restriction on Trusted Publishers" -ForegroundColor Yellow
-            Write-Host "    (run 'gpresult /h gp.html' to see which policies apply); IT can deploy the certificate through Group Policy," -ForegroundColor Yellow
-            Write-Host "  - or run this script from an elevated PowerShell without -CurrentUser to trust it for the whole computer." -ForegroundColor Yellow
-            Write-Host "  - A certificate imported by hand from an elevated shell only lands in the store of the account running that shell." -ForegroundColor Yellow
-        }
-    }
+    Write-Host "Not trusting the signing certificate (the add-ins load without it; pass -TrustCertificate if a policy blocks them)."
 }
 
 $registryRoots = Get-OfficeRegistryRoots

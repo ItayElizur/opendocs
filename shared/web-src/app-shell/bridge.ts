@@ -185,6 +185,18 @@ export function saveDocSettings(systemMessage: string): void {
   chrome.webview.postMessage({ kind: 'save-doc-settings', systemMessage })
 }
 
+// Provider API keys (provider id -> key). The host stores them DPAPI-encrypted (OfficeAi.Shared/SecretStore.cs) and
+// injects them back as window.__opendocsSecrets before the page's scripts run.
+export function saveSecrets(secrets: Record<string, string>): void {
+  if (typeof chrome === 'undefined') return
+  chrome.webview.postMessage({ kind: 'save-secrets', secrets })
+}
+
+export function injectedSecrets(): Record<string, string> {
+  const injected = (globalThis as { __opendocsSecrets?: unknown }).__opendocsSecrets
+  return injected && typeof injected === 'object' ? (injected as Record<string, string>) : {}
+}
+
 // The page lost keyboard focus. The host works out whether the user left the app (alt-tab) and, when they come
 // back, puts the cursor back in the chat box instead of leaving it in the document.
 export function notifyPaneBlur(): void {

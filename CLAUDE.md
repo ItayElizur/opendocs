@@ -9,8 +9,9 @@ current tool catalog.
 ## The `.csproj` files do not glob — a new `.cs` file is silently dropped otherwise
 
 `WordAiAddIn.csproj`, `ExcelAiAddIn.csproj`, `PowerPointAiAddIn.csproj`,
-`OutlookAiAddIn.csproj`, and `OfficeAi.Shared.csproj` are all **classic MSBuild format
-with explicit `<Compile Include="...">` items** — none of them glob `*.cs`. If you add
+and `OutlookAiAddIn.csproj` are all **classic MSBuild format
+with explicit `<Compile Include="...">` items** — none of them glob `*.cs`. (`OfficeAi.Shared.csproj` is the exception: it is
+SDK-style and does glob, so a new file there needs no csproj edit.) If you add
 a new `.cs` file to one of these projects and don't add a matching `<Compile Include>`
 line to its `.csproj`, the file **silently does not compile**. There is no error at the
 new file itself — MSBuild just never sees it, and the first symptom is usually a
@@ -47,6 +48,9 @@ if you touch either list, and update both in the same commit. The same applies t
 `SendTierTools`/`ApprovalTierTools` (C#) against `trackChangesExtraTools` (TS), and to
 each of Word/Excel/PowerPoint's own `readOnlyTools`/`commentOnlyExtraTools` arrays
 against their C# `Tools.Execute()` gating.
+
+`OfficeAi.Shared.Tests/TierListsAgreeTests.cs` now reads the C# sets and the matching TypeScript arrays (`entry.ts`, or `tools.ts` for Excel's and PowerPoint's read-only lists) and fails when they differ
+(Word, Excel and PowerPoint read-only lists; all of Outlook's tiers), so run `dotnet test OfficeAi.Shared.Tests` after touching either side.
 
 ## There is no live Office to test against in most automated contexts
 

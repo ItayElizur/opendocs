@@ -15,7 +15,7 @@ document window (keyed by `Hwnd`); Outlook attaches one pane per `Explorer` wind
 transport (`anthropic`/`gemini`/`deepseek`/`openai`/`custom`), `maxTurns`
 default of 8. Provider/model/key selection, the settings screen, and the transport live
 once in `shared/web-src/app-shell/` (`getSettings` / `makeTransport` / `onSettingsSave`,
-persisted in WebView `localStorage`), shared by all four add-ins including Outlook —
+persisted in WebView `localStorage`, except the API keys, which the host keeps DPAPI-encrypted: see `settings.ts.md`), shared by all four add-ins including Outlook —
 `makeTransport` routes via `streamForProvider` to whichever provider the user picks in
 the settings dropdown, with a "Test connection" button.
 

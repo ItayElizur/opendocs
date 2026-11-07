@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -211,6 +212,14 @@ namespace OfficeAi.Shared
                 case "load-doc-settings":
                     DocSettings settings = DocSettingsStore.Load(_appDataFolderName, GetChatId());
                     PostMessage(new { kind = "doc-settings-loaded", systemMessage = settings.SystemMessage });
+                    break;
+                // Provider API keys (provider id -> key); stored encrypted, see SecretStore.
+                case "save-secrets":
+                    var secrets = new Dictionary<string, string>();
+                    if (root.TryGetProperty("secrets", out var sec) && sec.ValueKind == JsonValueKind.Object)
+                        foreach (JsonProperty p in sec.EnumerateObject())
+                            if (p.Value.ValueKind == JsonValueKind.String) secrets[p.Name] = p.Value.GetString();
+                    SecretStore.Save(_appDataFolderName, secrets);
                     break;
                 case "save-doc-settings":
                     string systemMessage = root.TryGetProperty("systemMessage", out var sm) && sm.ValueKind == JsonValueKind.String

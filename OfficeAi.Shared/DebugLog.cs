@@ -12,12 +12,20 @@ namespace OfficeAi.Shared
         public static readonly string LogPath = Path.Combine(Path.GetTempPath(), "OpenDocsDebug.log");
         private static readonly object Lock = new object();
 
+        // The log is deleted and started again once it passes this size, so it never grows without bound.
+        private const long MaxBytes = 1000000;
+
+        // Tool inputs contain document text, so they are logged only when OPENDOCS_DEBUG_INPUTS=1 is set.
+        public static readonly bool LogToolInputs = Environment.GetEnvironmentVariable("OPENDOCS_DEBUG_INPUTS") == "1";
+
         public static void Write(string message)
         {
             try
             {
                 lock (Lock)
                 {
+                    var info = new FileInfo(LogPath);
+                    if (info.Exists && info.Length > MaxBytes) File.Delete(LogPath);
                     File.AppendAllText(LogPath, DateTime.Now.ToString("HH:mm:ss.fff") + " " + message + Environment.NewLine);
                 }
             }

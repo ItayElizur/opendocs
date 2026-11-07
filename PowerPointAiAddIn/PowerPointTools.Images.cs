@@ -30,14 +30,10 @@ namespace PowerPointAiAddIn
         private static ToolResult ReplaceImagePpt(JsonElement input)
         {
             string localPath = input.GetProperty("localPath").GetString();
-            if (localPath.StartsWith("http://") || localPath.StartsWith("https://"))
-            {
-                return new ToolResult { Output = "replace_image: remote URLs are not supported in this air-gapped deployment - use a local file path.", IsError = true, Summary = "replace_image" };
-            }
-            if (!System.IO.File.Exists(localPath))
-            {
-                return new ToolResult { Output = "replace_image: file not found: " + localPath, IsError = true, Summary = "replace_image" };
-            }
+            string pathError = PathGuard.LocalFileError(localPath);
+            if (pathError != null)
+                return new ToolResult { Output = "replace_image: " + pathError, IsError = true, Summary = "replace_image" };
+            localPath = localPath.Trim();
             PowerPoint.Shape oldShape = ResolveShape(input);
             bool keepCrop = input.TryGetProperty("keepCrop", out var kc) && kc.ValueKind == JsonValueKind.True;
 

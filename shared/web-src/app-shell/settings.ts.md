@@ -34,3 +34,11 @@ output while staying well under every supported provider's per-request cap
 footgun with no better default a user could pick, and Settings is already
 growing in PP-6/FT-1.
 ```
+
+## API keys are not in localStorage (2026)
+
+`persistSettings` blanks every provider's `apiKey` in the copy written to `localStorage` and sends the keys to the host
+(`save-secrets`). The host keeps them encrypted with the Windows user's key (DPAPI) in `<app data folder>\secrets.bin`
+(`OfficeAi.Shared/SecretStore.cs`) and injects them into the page before its scripts run as `window.__opendocsSecrets`
+(`WebViewBridgeHost`), which `loadSettings` reads. A key still in `localStorage` from an older build is moved over the first time
+the settings load. If the secrets file is lost, the keys are simply blank and the user enters them again.
