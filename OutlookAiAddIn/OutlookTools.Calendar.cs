@@ -403,8 +403,17 @@ namespace OutlookAiAddIn
             string storeId = Str(input, "store_id", null);
             object item = ItemById(id, storeId);
             Outlook.AppointmentItem appt = ResolveMeetingAppointment(item);
+            Outlook.MeetingItem invitation = item as Outlook.MeetingItem;
+            // An invitation whose event is not on the calendar (declined or deleted earlier): accepting or answering
+            // tentatively puts it back, like the UI does. A decline has nothing to decline.
+            if (appt == null && invitation != null && response != Outlook.OlMeetingResponse.olMeetingDeclined)
+                appt = invitation.GetAssociatedAppointment(true);
             if (appt == null)
-                return new ToolResult { Output = "event_id does not resolve to a meeting.", IsError = true, Summary = toolName };
+                return new ToolResult
+                {
+                    Output = invitation != null ? "This invitation is not on your calendar (probably already declined or deleted) - accept or tentative adds it back." : "event_id does not resolve to a meeting.",
+                    IsError = true, Summary = toolName,
+                };
 
             if (IsCanceledMeeting(appt))
                 return new ToolResult { Output = AlreadyCanceledRespondError(appt), IsError = true, Summary = toolName };

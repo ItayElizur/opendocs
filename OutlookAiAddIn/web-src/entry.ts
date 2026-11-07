@@ -379,7 +379,7 @@ const ALL_OUTLOOK_TOOLS = [
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['new', 'reply', 'reply_all', 'forward'], description: 'Default "new" (a brand-new email). "reply", "reply_all" and "forward" act on an existing item: pass message_id for an email, or event_id for a calendar meeting (its invitation email).' },
-        message_id: MESSAGE_ID,
+        message_id: MESSAGE_OR_MEETING_ID,
         event_id: { type: 'string', description: 'For reply/reply_all/forward of a calendar meeting instead of an email: a calendar event_id, or the id of a meeting invitation from search_emails (type: meeting). Fails if the meeting\'s invitation email is gone (deleted, archived) or the user organizes the meeting.' },
         to: { type: 'string', description: 'Recipients, comma-separated. For new emails and forwards.' },
         subject: { type: 'string', description: 'New emails only.' },
@@ -404,7 +404,7 @@ const ALL_OUTLOOK_TOOLS = [
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['new', 'reply', 'reply_all', 'forward'], description: 'Default "new" (a brand-new email). "reply", "reply_all" and "forward" act on an existing item: pass message_id for an email, or event_id for a calendar meeting (its invitation email).' },
-        message_id: MESSAGE_ID,
+        message_id: MESSAGE_OR_MEETING_ID,
         event_id: { type: 'string', description: 'For reply/reply_all/forward of a calendar meeting instead of an email: a calendar event_id, or the id of a meeting invitation from search_emails (type: meeting). Fails if the meeting\'s invitation email is gone (deleted, archived) or the user organizes the meeting.' },
         to: { type: 'string', description: 'Recipients, comma-separated. For new emails and forwards.' },
         subject: { type: 'string', description: 'New emails only.' },

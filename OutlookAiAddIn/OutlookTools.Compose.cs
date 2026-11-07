@@ -193,17 +193,29 @@ namespace OutlookAiAddIn
             string origSubject;
             if (messageId != null)
             {
-                orig = ItemById(messageId, StoreOf(input)) as Outlook.MailItem;
-                if (orig == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = tool };
-                origSubject = orig.Subject ?? "";
+                object item = ItemById(messageId, StoreOf(input));
+                orig = item as Outlook.MailItem;
+                // An invitation found by search_emails is a MeetingItem: reply to / forward the invitation itself.
+                invite = item as Outlook.MeetingItem;
+                if (orig == null && invite == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = tool };
+                origSubject = (orig != null ? orig.Subject : invite.Subject) ?? "";
             }
             else
             {
-                Outlook.AppointmentItem appt = ResolveMeetingAppointment(ItemById(eventId, Str(input, "store_id", null)));
-                if (appt == null) return new ToolResult { Output = "event_id does not resolve to a calendar event.", IsError = true, Summary = tool };
-                invite = FindInviteMessage(appt);
-                if (invite == null) return new ToolResult { Output = NoInviteError(appt), IsError = true, Summary = tool };
-                origSubject = appt.Subject ?? "";
+                object item = ItemById(eventId, Str(input, "store_id", null));
+                invite = item as Outlook.MeetingItem; // an invitation id given as event_id: no calendar item needed
+                if (invite != null)
+                {
+                    origSubject = invite.Subject ?? "";
+                }
+                else
+                {
+                    Outlook.AppointmentItem appt = ResolveMeetingAppointment(item);
+                    if (appt == null) return new ToolResult { Output = "event_id does not resolve to a calendar event.", IsError = true, Summary = tool };
+                    invite = FindInviteMessage(appt);
+                    if (invite == null) return new ToolResult { Output = NoInviteError(appt), IsError = true, Summary = tool };
+                    origSubject = appt.Subject ?? "";
+                }
             }
 
             if (action == "forward")
