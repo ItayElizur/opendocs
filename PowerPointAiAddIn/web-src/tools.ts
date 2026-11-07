@@ -9,15 +9,15 @@ export const READER_TOOLS = [
   },
   {
     name: 'read_slide',
-    description: 'Reads full text of every shape on one slide (0-based index), plus its layout, transition, animation count, and speaker notes (if any). Shapes are listed back-to-front (z-order/stacking order) - use set_element_order to change it. A group shape is shown as one line with a child count - call read_group to see inside it.',
+    description: 'Reads full text of every shape on one slide (0-based index), plus its layout, transition, animation count, and speaker notes (if any). Shapes are listed back-to-front (z-order/stacking order) - use set_element_transform with order to change it. A group shape is shown as one line with a child count - call read_group to see inside it.',
     inputSchema: { type: 'object', properties: { slideIndex: SLIDE_INDEX }, required: ['slideIndex'] },
   },
   {
     name: 'read_group',
     description:
       'Lists the shapes inside a group, recursively (nested groups are expanded in place). shapeIndex points at the group - a 0-based number, or a dotted path like "3.1" for a group nested inside another group. ' +
-      'Each child line is prefixed with its dotted path (e.g. "3.1.0"); pass that path as shapeIndex to set_element_text / set_element_style / set_element_fill / set_element_stroke to edit a child in place. ' +
-      'Positional or structural edits (set_element_transform, set_element_order, delete_element, add_animation) require ungroup_element on the top-level group first.',
+      'Each child line is prefixed with its dotted path (e.g. "3.1.0"); pass that path as shapeIndex to set_element_text / format_element to edit a child in place. ' +
+      'Positional or structural edits (set_element_transform, delete_element, add_animation) require group_element with action:"ungroup" on the top-level group first.',
     inputSchema: {
       type: 'object',
       properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: ['number', 'string'] } },
@@ -167,10 +167,13 @@ const MUTATION_TOOLS = [
     },
   },
   {
-    name: 'set_element_style',
+    name: 'format_element',
     description:
-      'Changes text formatting of one shape (its whole text range) without changing its text. ' +
-      'Only the fields you provide are changed; anything omitted is left as-is.',
+      'Changes the formatting of one shape, one kind of formatting per call: give fields from only ONE of the groups below (mixing groups errors - make a separate call for each). Only the fields you provide are changed. ' +
+      'Text style (the shape\'s whole text range, text itself unchanged): bold, italic, underline, shadow, fontSize, fontName, color (the TEXT color), alignment, baselineOffset. ' +
+      'Fill: fill = a solid hex color, or "none" to remove the fill. ' +
+      'Stroke (outline): strokeColor and strokeWidthPt, or removeStroke:true to remove it. ' +
+      'Opacity: opacity from 0 (invisible) to 1 (fully opaque), for a picture\'s overall opacity.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -182,16 +185,25 @@ const MUTATION_TOOLS = [
         shadow: { type: 'boolean' },
         fontSize: { type: 'number' },
         fontName: { type: 'string' },
-        color: { type: 'string', description: 'Hex color, e.g. "#FF0000".' },
+        color: { type: 'string', description: 'Text color, hex e.g. "#FF0000".' },
         alignment: { type: 'string', enum: ['left', 'center', 'right', 'justify'] },
         baselineOffset: { type: 'string', enum: ['SUPERSCRIPT', 'SUBSCRIPT', 'NONE'] },
+        fill: { type: 'string', description: 'Solid fill hex color, or "none".' },
+        strokeColor: { type: 'string', description: 'Outline hex color.' },
+        strokeWidthPt: { type: 'number' },
+        removeStroke: { type: 'boolean' },
+        opacity: { type: 'number', description: '0 (invisible) to 1 (fully opaque).' },
       },
       required: ['slideIndex', 'shapeIndex'],
     },
   },
   {
     name: 'set_element_transform',
-    description: 'Moves/resizes/rotates one shape (values in points; rotation in degrees).',
+    description:
+      'Changes one shape\'s geometry or stacking, one per call (giving both errors - make a separate call). ' +
+      'Position/size/rotation: any of left, top, width, height (points) and rotation (degrees). ' +
+      'Order: order = "bringToFront"/"sendToBack" (moves to the very top/bottom of the stack) or "bringForward"/"sendBackward" (one step relative to overlapping shapes) - changes which shapes appear in front of/behind others, not position or size. ' +
+      'Changing the order shifts other shapes\' shapeIndex on the same slide - re-read the slide (read_slide) before addressing another shape by index in the same run. Not for a shape inside a group - use group_element with action:"ungroup" first.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -202,52 +214,18 @@ const MUTATION_TOOLS = [
         width: { type: 'number' },
         height: { type: 'number' },
         rotation: { type: 'number' },
+        order: { type: 'string', enum: ['bringToFront', 'sendToBack', 'bringForward', 'sendBackward'] },
       },
       required: ['slideIndex', 'shapeIndex'],
     },
   },
   {
-    name: 'set_element_order',
-    description:
-      'Changes a shape\'s stacking order (z-order) - which shapes appear in front of/behind others, not its position or size (use set_element_transform for that). ' +
-      'kind: "bringToFront"/"sendToBack" (moves to the very top/bottom of the stack), "bringForward"/"sendBackward" (moves one step relative to overlapping shapes). ' +
-      'Shifts other shapes\' shapeIndex on the same slide - re-read the slide (read_slide) before addressing another shape by index in the same run.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX,
-        shapeIndex: { type: 'number' },
-        kind: { type: 'string', enum: ['bringToFront', 'sendToBack', 'bringForward', 'sendBackward'] },
-      },
-      required: ['slideIndex', 'shapeIndex', 'kind'],
-    },
-  },
-  {
-    name: 'add_text_box',
-    description:
-      'Creates a new text box on the given slide. A plain text box has no bullets by default (unlike a layout\'s content placeholder) - ' +
-      'pass bulleted:true for a real bulleted list instead of typing a literal "•"/"-"/"*" at the start of each line.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX,
-        left: { type: 'number' },
-        top: { type: 'number' },
-        width: { type: 'number' },
-        height: { type: 'number' },
-        text: { type: 'string' },
-        bulleted: { type: 'boolean' },
-        name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_slide/read_group - use a short, meaningful label (e.g. "CTA button").' },
-      },
-      required: ['slideIndex', 'left', 'top', 'width', 'height', 'text'],
-    },
-  },
-  {
     name: 'add_shape',
     description:
-      'Creates a shape with optional text. shapeType is one of the names below - "rect"/"ellipse" ' +
-      '(canonical) or "rectangle"/"oval" (aliases, same shapes) plus 24 more presets. ' +
-      'No fill/line parameters here - use set_element_fill/set_element_stroke afterward for those.',
+      'Creates a shape or a text box on the given slide. ' +
+      'With shapeType, creates that preset shape with optional text; shapeType is one of the names below - "rect"/"ellipse" (canonical) or "rectangle"/"oval" (aliases, same shapes) plus 24 more presets. ' +
+      'Without shapeType, creates a plain text box and text is required; a text box has no bullets by default (unlike a layout\'s content placeholder) - pass bulleted:true for a real bulleted list instead of typing a literal "•"/"-"/"*" at the start of each line. ' +
+      'No fill/line parameters here - use format_element afterward for those.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -266,9 +244,10 @@ const MUTATION_TOOLS = [
         width: { type: 'number' },
         height: { type: 'number' },
         text: { type: 'string' },
-        name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_slide/read_group - use a short, meaningful label (e.g. "Arrow to Q3").' },
+        bulleted: { type: 'boolean', description: 'Text boxes only (no shapeType).' },
+        name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_slide/read_group - use a short, meaningful label (e.g. "CTA button").' },
       },
-      required: ['slideIndex', 'shapeType', 'left', 'top', 'width', 'height'],
+      required: ['slideIndex', 'left', 'top', 'width', 'height'],
     },
   },
   {
@@ -281,60 +260,27 @@ const MUTATION_TOOLS = [
     },
   },
   {
-    name: 'duplicate_element',
-    description:
-      'Creates a copy of a shape on the SAME slide - works for every shape kind, including groups/pictures/tables/charts/SmartArt. For a DIFFERENT slide, use copy_element/move_element instead. ' +
-      'Positions the duplicate offsetX/offsetY points from the original (default 12/12) unless left/top is given, which places it at an exact position instead. ' +
-      'If you don\'t pass name, the duplicate is automatically given a unique name (e.g. "Rectangle 5" -> "Rectangle 5 2") instead of colliding with the original\'s name.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX,
-        shapeIndex: { type: 'number' },
-        offsetX: { type: 'number', description: 'Points. Default 12. Ignored if left/top is given.' },
-        offsetY: { type: 'number', description: 'Points. Default 12. Ignored if left/top is given.' },
-        left: { type: 'number', description: 'Exact destination position - overrides offsetX/offsetY.' },
-        top: { type: 'number', description: 'Exact destination position - overrides offsetX/offsetY.' },
-        name: { type: 'string', description: 'Optional. Sets the duplicate\'s name, shown in read_slide/read_group.' },
-      },
-      required: ['slideIndex', 'shapeIndex'],
-    },
-  },
-  {
     name: 'copy_element',
     description:
-      'Copies a shape to a DIFFERENT slide, leaving the original in place, using PowerPoint\'s own native copy/paste - so EVERY shape kind is supported with full native fidelity, exactly as it already exists (pictures, video/audio, OLE objects, freeform, tables with merged cells/per-cell shading/borders, charts, SmartArt, and groups of any of these, including a group nesting a SmartArt - since this clones the existing shape tree rather than rebuilding it). ' +
-      'For a same-slide copy, use duplicate_element instead - this tool refuses targetSlideIndex equal to slideIndex. ' +
-      'Inherits the source shape\'s own name (auto-suffixed if it collides on the destination slide) unless you pass an explicit name. Optional left/top override the position PowerPoint\'s own paste chose.',
+      'Copies one shape, leaving the original in place. ' +
+      'Without targetSlideIndex (or with the same slide) it makes a copy on the SAME slide - every shape kind, including groups/pictures/tables/charts/SmartArt - placed offsetX/offsetY points from the original (default 12/12) unless left/top gives an exact position. ' +
+      'With a targetSlideIndex on a DIFFERENT slide it copies there using PowerPoint\'s own native copy/paste - so EVERY shape kind is supported with full native fidelity, exactly as it already exists (pictures, video/audio, OLE objects, freeform, tables with merged cells/per-cell shading/borders, charts, SmartArt, and groups of any of these, including a group nesting a SmartArt - since this clones the existing shape tree rather than rebuilding it); left/top then override the position PowerPoint\'s own paste chose. ' +
+      'move:true (needs a different targetSlideIndex) also removes the shape from its original slide once the copy has fully succeeded; on any error nothing is changed. ' +
+      'Without a name the copy is given a unique name (e.g. "Rectangle 5" -> "Rectangle 5 2") instead of colliding with the original\'s.',
     inputSchema: {
       type: 'object',
       properties: {
         slideIndex: SLIDE_INDEX,
         shapeIndex: { type: 'number' },
-        targetSlideIndex: { type: 'number' },
-        left: { type: 'number', description: 'Destination position. Defaults to the source shape\'s own position.' },
-        top: { type: 'number', description: 'Destination position. Defaults to the source shape\'s own position.' },
-        name: { type: 'string', description: 'Optional. Sets the new shape\'s name (otherwise inherits the source\'s, deduped).' },
+        targetSlideIndex: { type: 'number', description: 'Destination slide for a cross-slide copy or move. Omit to copy on the same slide.' },
+        move: { type: 'boolean', description: 'Remove the original after copying. Needs a different targetSlideIndex.' },
+        offsetX: { type: 'number', description: 'Same-slide copies only. Points. Default 12. Ignored if left/top is given.' },
+        offsetY: { type: 'number', description: 'Same-slide copies only. Points. Default 12. Ignored if left/top is given.' },
+        left: { type: 'number', description: 'Exact destination position.' },
+        top: { type: 'number', description: 'Exact destination position.' },
+        name: { type: 'string', description: 'Optional. Sets the new shape\'s name, shown in read_slide/read_group.' },
       },
-      required: ['slideIndex', 'shapeIndex', 'targetSlideIndex'],
-    },
-  },
-  {
-    name: 'move_element',
-    description:
-      'Same as copy_element, but also removes the shape from its original slide - equivalent to copy_element followed by deleting the original. ' +
-      'The original is only removed once the copy has fully succeeded; on any error nothing is changed. Same kind support, formatting fidelity, and limitations as copy_element.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX,
-        shapeIndex: { type: 'number' },
-        targetSlideIndex: { type: 'number' },
-        left: { type: 'number', description: 'Destination position. Defaults to the source shape\'s own position.' },
-        top: { type: 'number', description: 'Destination position. Defaults to the source shape\'s own position.' },
-        name: { type: 'string', description: 'Optional. Sets the new shape\'s name (otherwise inherits the source\'s, deduped).' },
-      },
-      required: ['slideIndex', 'shapeIndex', 'targetSlideIndex'],
+      required: ['slideIndex', 'shapeIndex'],
     },
   },
   {
@@ -377,32 +323,6 @@ const MUTATION_TOOLS = [
     },
   },
   {
-    name: 'set_element_fill',
-    description: 'Sets a shape\'s solid fill color, or "none" to remove its fill.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX,
-        shapeIndex: SHAPE_PATH,
-        fill: { type: 'string' },
-      },
-      required: ['slideIndex', 'shapeIndex', 'fill'],
-    },
-  },
-  {
-    name: 'set_element_stroke',
-    description: 'Sets a shape\'s outline/stroke color and width, or removes it.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX,
-        shapeIndex: SHAPE_PATH,
-        color: { type: 'string' }, widthPt: { type: 'number' }, remove: { type: 'boolean' },
-      },
-      required: ['slideIndex', 'shapeIndex'],
-    },
-  },
-  {
     name: 'copy_element_style',
     description:
       'Format painter: applies PowerPoint\'s own native format painter (Shape.PickUp/Apply, NOT the clipboard) for broad, generic fidelity (fill, outline, shadow, 3-D/bevel, and anything else native formatting covers), plus targeted copies for the specifics this needs guaranteed - text formatting PER RUN (bold/italic/size/color/font/underline/shadow/alignment/superscript-subscript - reproduces mixed formatting within the text exactly, not just a single sampled value), ' +
@@ -427,27 +347,22 @@ const MUTATION_TOOLS = [
     },
   },
   {
-    name: 'ungroup_element',
-    description: 'Promotes a group shape\'s direct children to top-level shapes. Shape indices change after this call - re-read the slide before addressing the promoted shapes.',
-    inputSchema: {
-      type: 'object',
-      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: ['number', 'string'] } },
-      required: ['slideIndex', 'shapeIndex'],
-    },
-  },
-  {
     name: 'group_element',
     description:
-      'Groups two or more top-level shapes on a slide into a single group shape. shapeIndexes is an array of 0-based indices (as shown by read_slide). ' +
-      'Every other shape\'s index on the slide shifts afterward - re-read the slide before addressing another shape by index in the same run. Use ungroup_element to reverse it.',
+      'Groups shapes or ungroups a group. ' +
+      'action:"group" groups two or more top-level shapes on a slide into a single group shape; shapeIndexes is an array of 0-based indices (as shown by read_slide). ' +
+      'action:"ungroup" promotes a group shape\'s direct children to top-level shapes; shapeIndex points at the group. ' +
+      'Either way every other shape\'s index on the slide shifts afterward - re-read the slide before addressing another shape by index in the same run.',
     inputSchema: {
       type: 'object',
       properties: {
+        action: { type: 'string', enum: ['group', 'ungroup'] },
         slideIndex: SLIDE_INDEX,
-        shapeIndexes: { type: 'array', items: { type: 'number' }, description: 'Two or more distinct 0-based top-level shape indices.' },
-        name: { type: 'string', description: 'Optional. Sets the new group\'s name, shown in read_slide/read_group - use a short, meaningful label (e.g. "Logo lockup").' },
+        shapeIndexes: { type: 'array', items: { type: 'number' }, description: 'For "group": two or more distinct 0-based top-level shape indices.' },
+        shapeIndex: { type: ['number', 'string'], description: 'For "ungroup": the group to break up.' },
+        name: { type: 'string', description: 'For "group", optional. Sets the new group\'s name, shown in read_slide/read_group - use a short, meaningful label (e.g. "Logo lockup").' },
       },
-      required: ['slideIndex', 'shapeIndexes'],
+      required: ['slideIndex', 'action'],
     },
   },
   {
@@ -577,15 +492,6 @@ const MUTATION_TOOLS = [
       type: 'object',
       properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' }, l: { type: 'number' }, t: { type: 'number' }, r: { type: 'number' }, b: { type: 'number' } },
       required: ['slideIndex', 'shapeIndex', 'l', 't', 'r', 'b'],
-    },
-  },
-  {
-    name: 'set_picture_opacity',
-    description: 'Sets a picture shape\'s overall opacity, 0 (invisible) to 1 (fully opaque).',
-    inputSchema: {
-      type: 'object',
-      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' }, opacity: { type: 'number' } },
-      required: ['slideIndex', 'shapeIndex', 'opacity'],
     },
   },
   {

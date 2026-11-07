@@ -4,7 +4,7 @@
 
 Plain Shape-to-Shape native-value copies (no JSON parsing, no hex
 round trip) - power copy_element_style below. copy_element/
-move_element (PowerPointTools.CrossSlide.cs) used to share these
+copy_element move:true (PowerPointTools.CrossSlide.cs) used to share these
 too, back when they reconstructed a destination shape property by
 property; that approach was replaced (2026-09-23) with native
 Shape.Copy()/Slide.Shapes.Paste(), which needs none of this.
@@ -58,7 +58,7 @@ silently lose fidelity on long text, contradicting the point of
 this change - but a very long text body will be proportionally
 slower. Strikethrough still isn't copied (unchanged pre-existing
 gap - no TextFrame2/TextRange2 on this PIA's Shape, same as
-set_element_style's own documented limitation).
+format_element's own documented limitation).
 
 ## `CopyTextFormatting` - table crash gate
 
@@ -88,7 +88,7 @@ above uses (confirmed via reflection: no Line/Glow/Reflection/
 Strikethrough members on PowerPoint.Font at all). They ARE
 accessible via Shape.TextFrame2 -> Core.TextRange2 -> Core.Font2 -
 confirmed via reflection this session, CORRECTING an earlier,
-wrong claim elsewhere in this codebase (set_element_style's own
+wrong claim elsewhere in this codebase (format_element's own
 comment) that TextFrame2 doesn't exist on this PIA's Shape at all;
 it does, just needs Microsoft.Office.Core's own TextRange2/Font2
 types, not a PowerPoint-namespace TextRange2 (which is what a

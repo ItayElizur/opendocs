@@ -7,7 +7,7 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
-        // copy_element/move_element: cross-slide relocation via PowerPoint's own
+        // copy_element (move:true): cross-slide relocation via PowerPoint's own
         // native Copy()/Paste() (Shape.Copy() + Slide.Shapes.Paste()), not property
         // reconstruction - COM-surface gaps (SmartArt, grouping, table styling,
         // gradients) made reconstruction unreliable. This is the only tool in this
@@ -71,7 +71,7 @@ namespace PowerPointAiAddIn
 
         private static ToolResult CopyOrMoveElement(JsonElement input, bool cut)
         {
-            string toolName = cut ? "move_element" : "copy_element";
+            const string toolName = "copy_element";
             PowerPoint.Shape source = ResolveTopLevelShape(input, toolName);
 
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
@@ -79,8 +79,6 @@ namespace PowerPointAiAddIn
             PowerPoint.Slides slides = ActivePresentation.Slides;
             if (targetSlideIndex < 0 || targetSlideIndex >= slides.Count)
                 throw new ArgumentOutOfRangeException("targetSlideIndex", toolName + ": targetSlideIndex must be between 0 and " + (slides.Count - 1) + ".");
-            if (targetSlideIndex == slideIndex)
-                throw new ArgumentException(toolName + ": source and target are the same slide - use duplicate_element for a same-slide copy, or set_element_transform to reposition within a slide.");
 
             PowerPoint.Slide destSlide = slides[targetSlideIndex + 1];
 
@@ -96,7 +94,7 @@ namespace PowerPointAiAddIn
                 {
                     // A native paste lands at PowerPoint's own default position;
                     // honor an explicit left/top override the same way
-                    // duplicate_element does, otherwise leave it alone.
+                    // copy_element (same slide) does, otherwise leave it alone.
                     if (input.TryGetProperty("left", out var l)) dest.Left = (float)l.GetDouble();
                     if (input.TryGetProperty("top", out var t)) dest.Top = (float)t.GetDouble();
 
@@ -137,7 +135,6 @@ namespace PowerPointAiAddIn
                              ". Other shapes' indices on the destination slide may have shifted." + extra +
                              " Re-read the affected slide(s) (read_slide) before addressing another shape by index in the same run.",
                     Mutated = true,
-                    Summary = toolName,
                 };
             }
             finally
@@ -146,7 +143,17 @@ namespace PowerPointAiAddIn
             }
         }
 
-        private static ToolResult CopyElement(JsonElement input) { return CopyOrMoveElement(input, false); }
-        private static ToolResult MoveElement(JsonElement input) { return CopyOrMoveElement(input, true); }
+        // copy_element: a target on another slide goes through the clipboard (move:true also removes the
+        // original); no target, or the same slide, is a native same-slide Duplicate.
+        private static ToolResult CopyElement(JsonElement input)
+        {
+            bool move = ToolArgs.OptionalFlag(input, "move");
+            bool otherSlide = input.TryGetProperty("targetSlideIndex", out var target) &&
+                              target.GetInt32() != input.GetProperty("slideIndex").GetInt32();
+            if (otherSlide) return CopyOrMoveElement(input, move);
+            if (move)
+                throw new ArgumentException("copy_element: move needs a targetSlideIndex on a different slide - to reposition within a slide use set_element_transform.");
+            return DuplicateElement(input);
+        }
     }
 }

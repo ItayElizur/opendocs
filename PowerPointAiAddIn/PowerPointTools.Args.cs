@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Microsoft.Office.Core;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
@@ -18,7 +19,7 @@ namespace PowerPointAiAddIn
             return slides[index + 1];
         }
 
-        // Required left/top/width/height (add_text_box, add_shape).
+        // Required left/top/width/height (add_shape).
         private static void ReadRect(JsonElement input, out float left, out float top, out float width, out float height)
         {
             left = (float)input.GetProperty("left").GetDouble();
@@ -53,6 +54,31 @@ namespace PowerPointAiAddIn
         {
             range.Text = text;
             ApplyAutoDirection(range, text);
+        }
+
+        // A call changes one kind of thing, so it is one edit and one undo step. Each group is a name plus the
+        // input keys that select it; returns the name of the single group present, and throws when none or
+        // several are.
+        private static string RequireOneGroup(string tool, JsonElement input, params KeyValuePair<string, string[]>[] groups)
+        {
+            var present = new List<string>();
+            foreach (var g in groups)
+            {
+                foreach (string key in g.Value)
+                {
+                    if (input.TryGetProperty(key, out _)) { present.Add(g.Key); break; }
+                }
+            }
+            if (present.Count == 0)
+                throw new ArgumentException(tool + ": nothing to change - give fields for one of: " + string.Join(", ", groups.Select(g => g.Key)) + ".");
+            if (present.Count > 1)
+                throw new ArgumentException(tool + ": change one thing per call - got " + string.Join(", ", present) + ". Make a separate " + tool + " call for each.");
+            return present[0];
+        }
+
+        private static KeyValuePair<string, string[]> Group(string name, params string[] keys)
+        {
+            return new KeyValuePair<string, string[]>(name, keys);
         }
 
         private static MsoTriState Tri(bool value) => value ? MsoTriState.msoTrue : MsoTriState.msoFalse;

@@ -71,7 +71,7 @@ namespace PowerPointAiAddIn
         {
             ShapeRef r = ResolveShapeRef(input);
             if (r.IsNested)
-                throw new ArgumentException(toolName + ": shape " + r.Path + " is inside a group. Call ungroup_element on shapeIndex " +
+                throw new ArgumentException(toolName + ": shape " + r.Path + " is inside a group. Call group_element with action:\"ungroup\" on shapeIndex " +
                                             r.TopIndex + " first, then address the promoted shape by its new top-level index.");
             return r.Shape;
         }
@@ -272,7 +272,7 @@ namespace PowerPointAiAddIn
             {
                 PowerPoint.PpParagraphAlignment a;
                 if (!AlignmentMap.TryGetValue(align.GetString(), out a))
-                    throw new ArgumentException("set_element_style: unknown alignment '" + align.GetString() +
+                    throw new ArgumentException("format_element: unknown alignment '" + align.GetString() +
                                                 "'. Valid: " + string.Join(", ", AlignmentMap.Keys) + ".");
                 range.ParagraphFormat.Alignment = a;
                 applied.Add("alignment");
@@ -281,7 +281,7 @@ namespace PowerPointAiAddIn
             {
                 string b = baseline.GetString();
                 if (b != "SUPERSCRIPT" && b != "SUBSCRIPT" && b != "NONE")
-                    throw new ArgumentException("set_element_style: unknown baselineOffset '" + b +
+                    throw new ArgumentException("format_element: unknown baselineOffset '" + b +
                                                 "'. Valid: SUPERSCRIPT, SUBSCRIPT, NONE.");
                 range.Font.Superscript = Tri(b == "SUPERSCRIPT");
                 range.Font.Subscript = Tri(b == "SUBSCRIPT");
@@ -300,14 +300,19 @@ namespace PowerPointAiAddIn
             };
         }
 
+        // Position/size/rotation, or (order) the z-order - one per call.
         private static ToolResult SetElementTransform(JsonElement input)
         {
+            string group = RequireOneGroup("set_element_transform", input,
+                Group("position/size/rotation", "left", "top", "width", "height", "rotation"),
+                Group("order", "order"));
+            if (group == "order") return SetElementOrder(input);
             PowerPoint.Shape shape = ResolveTopLevelShape(input, "set_element_transform");
             ApplyTransform(shape, input);
             return new ToolResult { Output = "Transform updated.", Mutated = true };
         }
 
-        // Stacking/z-order control, distinct from set_element_transform's
+        // Stacking/z-order control (set_element_transform's order), distinct from its
         // position/size. Only 4 of MsoZOrderCmd's 6 values are exposed - the other
         // two are relative-to-body-text, not meaningful for a slide's z-order stack.
         private static readonly Dictionary<string, Microsoft.Office.Core.MsoZOrderCmd> ZOrderMap = new Dictionary<string, Microsoft.Office.Core.MsoZOrderCmd>
@@ -320,11 +325,11 @@ namespace PowerPointAiAddIn
 
         private static ToolResult SetElementOrder(JsonElement input)
         {
-            PowerPoint.Shape shape = ResolveTopLevelShape(input, "set_element_order");
-            string kind = input.GetProperty("kind").GetString();
+            PowerPoint.Shape shape = ResolveTopLevelShape(input, "set_element_transform");
+            string kind = input.GetProperty("order").GetString();
             Microsoft.Office.Core.MsoZOrderCmd cmd;
             if (!ZOrderMap.TryGetValue(kind, out cmd))
-                throw new ArgumentException("set_element_order: unknown kind '" + kind + "'. Valid: " + string.Join(", ", ZOrderMap.Keys) + ".");
+                throw new ArgumentException("set_element_transform: unknown order '" + kind + "'. Valid: " + string.Join(", ", ZOrderMap.Keys) + ".");
             shape.ZOrder(cmd);
             // ZOrderPosition is 1-based in COM; reported 0-based to match
             // read_slide's shapeIndex convention.
@@ -334,6 +339,8 @@ namespace PowerPointAiAddIn
 
         private static ToolResult AddTextBox(JsonElement input)
         {
+            if (!input.TryGetProperty("text", out _))
+                throw new ArgumentException("add_shape: a text box (no shapeType) needs text.");
             PowerPoint.Slide slide = ResolveSlide(input);
             ReadRect(input, out float left, out float top, out float width, out float height);
             PowerPoint.Shape shape = slide.Shapes.AddTextbox(Microsoft.Office.Core.MsoTextOrientation.msoTextOrientationHorizontal, left, top, width, height);
@@ -348,8 +355,10 @@ namespace PowerPointAiAddIn
         // Shape-name lookup now lives in OfficeAi.Shared.ShapeTypes (Phase 0) -
         // union of this map and Excel's near-identical copy, including this
         // app's rectangle/oval aliases for rect/ellipse.
+        // No shapeType means a text box (AddTextBox).
         private static ToolResult AddShape(JsonElement input)
         {
+            if (!input.TryGetProperty("shapeType", out _)) return AddTextBox(input);
             PowerPoint.Slide slide = ResolveSlide(input);
             string shapeType = input.GetProperty("shapeType").GetString();
             int autoShapeTypeInt;
@@ -371,12 +380,12 @@ namespace PowerPointAiAddIn
         }
 
         // Shape.Duplicate() is a native in-place COM clone, uniform across every
-        // shape kind (unlike copy_element/move_element's dispatch). The new position
+        // shape kind (unlike the cross-slide copy_element path's dispatch). The new position
         // is always computed from the ORIGINAL shape's Left/Top, since Duplicate()'s
         // own placement of the copy is unverified. See PowerPointTools.Elements.cs.md.
         private static ToolResult DuplicateElement(JsonElement input)
         {
-            PowerPoint.Shape shape = ResolveTopLevelShape(input, "duplicate_element");
+            PowerPoint.Shape shape = ResolveTopLevelShape(input, "copy_element");
             PowerPoint.ShapeRange range = shape.Duplicate();
             PowerPoint.Shape dup = range[1];
 

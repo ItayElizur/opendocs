@@ -4,7 +4,7 @@ Current-state reference for every tool the AI can call in PowerPoint. See
 [`docs/architecture.md`](../architecture.md) for the shared editing-mode/transport
 architecture.
 
-## Tools (46 total, all genuinely implemented)
+## Tools (38 total, all genuinely implemented)
 
 The largest tool surface of the four apps. Organized here by area rather than as one
 flat table.
@@ -15,7 +15,7 @@ flat table.
 |---|---|
 | `get_deck_context` | One-line-per-slide outline: slide index + text preview of its shapes. No per-element type/id inventory. |
 | `read_slide` | Full text of every shape on one slide, plus its layout, transition, animation count, and speaker notes. Shapes listed back-to-front (z-order). A group is shown as one line with a child count — see `read_group`. |
-| `read_group` | Lists a group's children recursively (nested groups expanded in place), each prefixed with a dotted path (e.g. `"3.1.0"`) usable as `shapeIndex` for `set_element_text`/`set_element_style`/`set_element_fill`/`set_element_stroke`. Positional/structural edits still require `ungroup_element` first. |
+| `read_group` | Lists a group's children recursively (nested groups expanded in place), each prefixed with a dotted path (e.g. `"3.1.0"`) usable as `shapeIndex` for `set_element_text`/`format_element`. Positional/structural edits still require `group_element` with `action:"ungroup"` first. |
 | `read_animations` | A slide's animations in play order (shape, effect, entrance/exit, trigger, timing) — `animationIndex` in `edit_animation` addresses this same order. |
 | `find_text` | Read-only substring/regex search across every slide's shape text (text boxes, placeholders, table cells, SmartArt node text) and speaker notes. Returns `[slide i, shape j] text` or `[slide i, notes] text`. |
 | `read_smartart` | Node text of SmartArt diagrams on a slide; omitting `smartArtIndex` reads every diagram on the slide. |
@@ -35,26 +35,20 @@ flat table.
 | Tool | Notes |
 |---|---|
 | `set_element_text` | Replaces one shape's text. `bulleted:true/false` controls real PowerPoint bullets — the model is instructed never to type a literal "•"/"-"/"*". |
-| `set_element_style` | bold/italic/underline/shadow/fontSize/fontName/color/alignment/baselineOffset. **Strikethrough deliberately not implemented** — this PIA has no `TextFrame2` member on `Shape` at all (confirmed via a `CS0234` compile failure), unlike Excel's newer text model. |
-| `set_element_transform` | left/top/width/height/rotation. |
-| `set_element_order` | z-order: `bringToFront`/`sendToBack`/`bringForward`/`sendBackward`. Shifts other shapes' `shapeIndex` on the slide — re-read before addressing another shape by index in the same run. |
-| `set_element_fill` / `set_element_stroke` | Solid fill or none; outline color/width or remove. |
+| `format_element` | One kind of formatting per call (mixing groups errors): text style (bold/italic/underline/shadow/fontSize/fontName/`color`/alignment/baselineOffset), `fill` (hex or `"none"`), stroke (`strokeColor`/`strokeWidthPt` or `removeStroke`), or `opacity` (via `Fill.Transparency`). **Strikethrough deliberately not implemented** — this PIA has no `TextFrame2` member on `Shape` at all (confirmed via a `CS0234` compile failure), unlike Excel's newer text model. |
+| `set_element_transform` | One of: left/top/width/height/rotation, or `order` (z-order: `bringToFront`/`sendToBack`/`bringForward`/`sendBackward`). Changing the order shifts other shapes' `shapeIndex` on the slide — re-read before addressing another shape by index in the same run. Top-level shapes only. |
 | `delete_element` | Deletes one shape. |
 | `crop_image` | Fractional crop (0..1) against current on-slide size. Documented imprecision under repeated crops. |
 | `replace_image` | **Full local drive path only** (`PathGuard`, same rule as Excel/Word; also `add_master_element` icons) — swaps a picture's content in place, keeping position/size/rotation/approximate z-order. |
-| `set_picture_opacity` | Via `Fill.Transparency`. |
 
-**Shape creation, duplication, and cross-slide copy/move**
+**Shape creation, copy/move, and grouping**
 
 | Tool | Notes |
 |---|---|
-| `add_text_box` | New text box; `bulleted:true` for a real bulleted list. |
-| `add_shape` | 26 presets + textbox, shares Excel's ported `ShapeTypeMap`; unrecognized name errors listing valid ones (no longer a silent rectangle fallback). No fill/line params — chain `set_element_fill`/`set_element_stroke`. |
-| `duplicate_element` | Copies a shape on the **same** slide — every shape kind, including groups/pictures/tables/charts/SmartArt. Offset or exact position; auto-deduped name. |
-| `copy_element` | Copies a shape to a **different** slide using PowerPoint's own native copy/paste (the real Windows clipboard — an explicit exception to this codebase's usual rule against it, since it reproduces the exact underlying OOXML the same way Ctrl+C/Ctrl+V does). Every shape kind supported with full native fidelity, including groups nesting SmartArt. Refuses `targetSlideIndex == slideIndex` (use `duplicate_element` for that). |
-| `move_element` | Same as `copy_element`, but also removes the original — atomic (only removed once the copy fully succeeds). |
+| `add_shape` | 26 presets + textbox, shares Excel's ported `ShapeTypeMap`; unrecognized name errors listing valid ones (no longer a silent rectangle fallback). **No `shapeType` makes a text box** (`text` required; `bulleted:true` for a real bulleted list). No fill/line params — chain `format_element`. |
+| `copy_element` | No `targetSlideIndex` (or the same slide): copies a shape on the **same** slide with the native `Shape.Duplicate` — every shape kind, including groups/pictures/tables/charts/SmartArt; offset or exact position; auto-deduped name. A `targetSlideIndex` on a **different** slide: copies it there using PowerPoint's own native copy/paste (the real Windows clipboard — an explicit exception to this codebase's usual rule against it, since it reproduces the exact underlying OOXML the same way Ctrl+C/Ctrl+V does), every shape kind with full native fidelity. `move:true` (different slide only) also removes the original — atomic (only removed once the copy fully succeeds). |
 | `copy_element_style` | Format painter: native `Shape.PickUp`/`Apply` (not the clipboard) for broad fidelity (fill/outline/shadow/3-D/bevel), plus targeted per-run text formatting, text outline/strikethrough/glow/reflection, text-box anchor/margins, gradient/patterned fill, dash/arrowhead outlines, rotation, flip, and AutoShape adjustment handles. Not position or size. Targets can span any slide. |
-| `group_element` / `ungroup_element` | Groups two or more top-level shapes, or promotes a group's children back to top-level. Both shift other shapes' indices on the slide — re-read before another index-addressed edit in the same run. |
+| `group_element` | `action:"group"` groups two or more top-level shapes (`shapeIndexes`); `action:"ungroup"` promotes a group's children back to top-level (`shapeIndex`). Both shift other shapes' indices on the slide — re-read before another index-addressed edit in the same run. |
 
 **Tables**
 
