@@ -512,7 +512,8 @@ namespace OutlookAiAddIn
 
         private static string NoInviteError(Outlook.AppointmentItem appt)
         {
-            return "Couldn't find the invitation email for \"" + (appt.Subject ?? "") + "\" - it may have been deleted or archived (only the most recent 3000 Inbox messages are searched), or you organize this event (an organizer has no invitation to reply to or forward).";
+            return "Couldn't find the invitation email for \"" + (appt.Subject ?? "") + "\" - it may have been deleted or archived (only the most recent 3000 Inbox messages are searched), or you organize this event (an organizer has no invitation to reply to or forward). " +
+                   "To write to the people involved anyway, use draft_email / send_email with action new (organizer: " + (appt.Organizer ?? "unknown") + ").";
         }
 
         // Shared by draft_event/send_event (edit): an olMeetingReceived (or
@@ -569,6 +570,8 @@ namespace OutlookAiAddIn
                 return new ToolResult { Output = "occurrence_date \"" + occurrenceDate + "\" is not a valid date/time.", IsError = true, Summary = toolName };
 
             Outlook.RecurrencePattern pattern = master.GetRecurrencePattern();
+            // GetOccurrence needs the occurrence's start date AND time; a date alone (midnight) never matches.
+            if (date.TimeOfDay == TimeSpan.Zero) date = date.Date + pattern.StartTime.TimeOfDay;
             try { target = pattern.GetOccurrence(date); }
             catch (Exception ex)
             {
