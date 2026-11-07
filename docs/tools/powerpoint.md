@@ -61,7 +61,7 @@ flat table.
 
 | Tool | Notes |
 |---|---|
-| `edit_smartart` | `kind`: `create` (7 layout keys list/process/cycle/hierarchy/pyramid/matrix/venn mapped to native SmartArt layouts by display name; flat `items` list only; unrecognized key errors listing the 7 valid ones; a valid key with no matching gallery layout gives a distinct error), `set_text`, `add_node`, `delete_node`, `set_style` (colorName/quickStyleName, substring-matched against the gallery), `set_layout`, `set_direction` (`reverse:true` flows the diagram right-to-left, `false` restores left-to-right; fails if the layout cannot reverse). Node text that is mostly right-to-left gets right-to-left paragraph direction (direction only, not alignment). `smartArtIndex` is 0-based **within that slide** and is not used by `create`. `delete_node` shifts later indices. |
+| `edit_smartart` | `kind`: `create` (7 layout keys list/process/cycle/hierarchy/pyramid/matrix/venn mapped to native SmartArt layouts by display name; flat `items` list only; unrecognized key errors listing the 7 valid ones; a valid key with no matching gallery layout gives a distinct error), `set_text`, `add_node`, `delete_node`, `set_style` (colorName/quickStyleName, substring-matched against the gallery), `set_layout`, `set_direction` (`reverse:true` flows the diagram right-to-left, `false` restores left-to-right; fails if the layout cannot reverse). Node text that is mostly right-to-left gets right-to-left paragraph direction (direction only, not alignment); clearly left-to-right text resets a node that is currently right-to-left. `smartArtIndex` is 0-based **within that slide** and is not used by `create`. `delete_node` shifts later indices. |
 
 **Animations & transitions** — see also `set_slide` above
 

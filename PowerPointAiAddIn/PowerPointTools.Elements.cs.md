@@ -25,8 +25,16 @@ automatically" - every write here always came out left-to-right/
 left-aligned, even for Hebrew. Same bidi mismatch class as
 chat-ui.ts's dir="auto" fix, but PowerPoint's COM object model has
 no built-in "auto" direction - it has to be decided per write from
-the text's own script mix. IsRtlMajority itself now lives in
-TextUtil (Phase 0) since it's free of COM types.
+the text's own script mix. The detection (TextUtil.DetectDirection)
+lives in TextUtil since it's free of COM types.
+
+Left-to-right text used to leave an earlier Hebrew write in place: a
+Hebrew text box overwritten with English stayed right-to-left and
+right-aligned. Now clearly left-to-right text resets a paragraph that is
+currently right-to-left (and a right alignment with it). Text with no
+letters (digits, punctuation) changes nothing, and a paragraph that is
+already left-to-right is never written to, so a deliberate centered or
+justified alignment survives.
 
 ## `ApplyBulletSetting`
 
