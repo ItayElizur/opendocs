@@ -71,7 +71,7 @@ export const POWERPOINT_TOOL_DISPLAY = {
   },
   edit_smartart: {
     label: { en: 'SmartArt', he: 'SmartArt' },
-    description: { en: 'Adds a SmartArt diagram, or edits an existing one\'s text, nodes, style, or layout.', he: 'מוסיף דיאגרמת SmartArt, או עורך טקסט, צמתים, עיצוב או פריסה של דיאגרמה קיימת.' },
+    description: { en: 'Adds a SmartArt diagram, or edits an existing one\'s text, nodes, style, layout, or flow direction.', he: 'מוסיף דיאגרמת SmartArt, או עורך טקסט, צמתים, עיצוב, פריסה או כיוון זרימה של דיאגרמה קיימת.' },
   },
   edit_picture: {
     label: { en: 'Edit picture', he: 'עריכת תמונה' },
