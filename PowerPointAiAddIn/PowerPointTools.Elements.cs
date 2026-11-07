@@ -359,7 +359,7 @@ namespace PowerPointAiAddIn
             Microsoft.Office.Core.MsoAutoShapeType autoShapeType = (Microsoft.Office.Core.MsoAutoShapeType)autoShapeTypeInt;
             ReadRect(input, out float left, out float top, out float width, out float height);
             PowerPoint.Shape shape = slide.Shapes.AddShape(autoShapeType, left, top, width, height);
-            if (input.TryGetProperty("text", out var text)) shape.TextFrame.TextRange.Text = text.GetString();
+            if (input.TryGetProperty("text", out var text)) SetText(shape.TextFrame.TextRange, text.GetString());
             string named = ApplyOptionalName(shape, input);
             return new ToolResult { Output = "Shape added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true };
         }

@@ -413,7 +413,6 @@ namespace PowerPointAiAddIn
 
         private static readonly string[] MasterCorners = { "topLeft", "topRight", "bottomLeft", "bottomRight" };
 
-        // kind selects the operation: add (contentType icon|text), move (position/size/rotation), or remove.
         private static ToolResult EditMasterElement(JsonElement input)
         {
             string kind = input.GetProperty("kind").GetString();
@@ -426,7 +425,6 @@ namespace PowerPointAiAddIn
             }
         }
 
-        // view "elements" (default) lists the Slide Master's or one layout's shapes; "layouts" lists the layout names.
         private static ToolResult ReadMaster(JsonElement input)
         {
             string view = input.TryGetProperty("view", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : "elements";
@@ -525,7 +523,7 @@ namespace PowerPointAiAddIn
                 else
                 {
                     PowerPoint.TextRange range = shape.TextFrame.TextRange;
-                    range.Text = text;
+                    SetText(range, text);
                     range.Font.Size = textFontSize;
                     range.Font.Color.RGB = textColor;
                 }

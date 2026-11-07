@@ -10,7 +10,6 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
-        // kind selects the operation: add (localPath), crop (l/t/r/b fractions) or replace (localPath, optional keepCrop).
         private static ToolResult EditPicture(JsonElement input)
         {
             string kind = input.GetProperty("kind").GetString();

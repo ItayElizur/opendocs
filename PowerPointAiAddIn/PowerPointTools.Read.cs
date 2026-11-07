@@ -75,8 +75,7 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = sb.ToString() };
         }
 
-        // view selects what to read: the slide itself (default), a group's contents, the slide's animations,
-        // or its SmartArt diagrams. All read-only, so the whole tool stays in the always-allowed tier.
+        // Every view is read-only, so the whole tool stays in the always-allowed tier.
         private static ToolResult ReadSlideView(JsonElement input)
         {
             string view = input.TryGetProperty("view", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : "slide";
@@ -92,13 +91,7 @@ namespace PowerPointAiAddIn
 
         private static ToolResult ReadSlide(JsonElement input)
         {
-            int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            PowerPoint.Slides slides = ActivePresentation.Slides;
-            if (slideIndex < 0 || slideIndex >= slides.Count)
-            {
-                return new ToolResult { Output = "Invalid slide index.", IsError = true };
-            }
-            PowerPoint.Slide slide = slides[slideIndex + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
             var sb = new StringBuilder();
 
             // Surfaces layout/transition/animation-count so the model isn't blind to
@@ -153,12 +146,9 @@ namespace PowerPointAiAddIn
         // require group_element with action:"ungroup" first.
         private static ToolResult ReadGroup(JsonElement input)
         {
-            ShapeRef r;
-            try { r = ResolveShapeRef(input); }
-            catch (Exception ex) { return new ToolResult { Output = ex.Message, IsError = true }; }
-
+            ShapeRef r = ResolveShapeRef(input);
             if (r.Shape.Type != Microsoft.Office.Core.MsoShapeType.msoGroup)
-                return new ToolResult { Output = "Shape " + r.Path + " is a " + ShapeKindLabel(r.Shape) + ", not a group. Call read_slide to see which shapes are groups.", IsError = true };
+                throw new ArgumentException("Shape " + r.Path + " is a " + ShapeKindLabel(r.Shape) + ", not a group. Call read_slide to see which shapes are groups.");
 
             var sb = new StringBuilder();
             sb.AppendLine($"[{r.Path}] {r.Shape.Name} (group, {r.Shape.GroupItems.Count} children)");
@@ -291,7 +281,7 @@ namespace PowerPointAiAddIn
                         string newNotes = ApplyReplace(notesRange.Text, out int notesCount);
                         if (notesCount > 0)
                         {
-                            notesRange.Text = newNotes;
+                            SetText(notesRange, newNotes);
                             replaced += notesCount;
                         }
                     }

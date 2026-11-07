@@ -10,8 +10,7 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
-        // kind "create" adds a chart (chartType required); "update" changes ONE property of an existing one
-        // (so a call is one edit and one undo step).
+        // update changes one property per call, so a call is one edit and one undo step.
         private static ToolResult EditChart(JsonElement input)
         {
             string kind = input.GetProperty("kind").GetString();
