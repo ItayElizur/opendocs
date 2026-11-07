@@ -11,7 +11,7 @@ namespace WordAiAddIn
     // WebView2-hosted AgentLoop via the JSON WebMessage bridge.
     public static partial class WordTools
     {
-        // Mirrors WORD_COMMAND_SCHEMAS's `required` arrays in web-src/entry.ts exactly
+        // Mirrors WORD_COMMAND_SCHEMAS's `required` arrays in web-src/tools.ts exactly
         // (minus "kind", validated separately) - edit both together. The TS schema is
         // documentation the model reads, not an enforced validator, so this precheck is
         // what turns a missing field into a specific error instead of a raw COM/NRE.

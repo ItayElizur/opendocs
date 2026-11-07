@@ -8,7 +8,7 @@ namespace OfficeAi.Shared
     /// Shared JSON-argument validation for apply_commands (Word) and
     /// propose_operations (Excel). The RequiredFields dictionaries themselves
     /// stay in each app's own file - they are app-specific data, each
-    /// documented as mirroring that app's entry.ts schema, and that pairing
+    /// documented as mirroring that app's tools.ts schema, and that pairing
     /// must not be split up.
     /// </summary>
     public static class ToolArgs

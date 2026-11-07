@@ -9,7 +9,7 @@ namespace ExcelAiAddIn
 {
     public static partial class ExcelTools
     {
-        // Required fields per operation kind, mirroring EXCEL_OPS's `required` arrays in entry.ts (PP-5) -
+        // Required fields per operation kind, mirroring EXCEL_OPS's `required` arrays in tools.ts (PP-5) -
         // edit both together. This table is the actual validation guarantee (the TS schema is documentation
         // the model reads, not an enforced validator) - see ExcelTools.Operations.cs.md.
         private static readonly Dictionary<string, string[]> RequiredFields = new Dictionary<string, string[]>

@@ -5,7 +5,7 @@
 Shape-name lookup now lives in OfficeAi.Shared.ShapeTypes (Phase 0) -
 union of this map and PowerPoint's near-identical copy. PP-16:
 mirrors EXCEL_SHAPE_TYPES / add_shape's shapeType enum in
-ExcelAiAddIn/web-src/entry.ts exactly, plus the separately-handled
+ExcelAiAddIn/web-src/tools.ts exactly, plus the separately-handled
 "textbox". Edit both together.
 
 ## Chart-type vocabulary (near `AlwaysAllowedTools`)

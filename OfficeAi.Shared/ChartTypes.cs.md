@@ -12,7 +12,7 @@
 ///   - WordChartTypeMap was missing "barStacked" entirely, so Word could not
 ///     produce a stacked bar chart while the other two apps could.
 /// Both are why this table is now single-source. Add a chart type HERE, and
-/// to each app's entry.ts chartType enum - ChartTypesTests guards that the
+/// to each app's tools.ts chartType enum - ChartTypesTests guards that the
 /// two stay in step.
 ///
 /// Plain int values, no Office interop type anywhere - so unlike ShapeTypes

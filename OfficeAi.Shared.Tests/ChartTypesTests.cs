@@ -3,7 +3,7 @@ using OfficeAi.Shared;
 
 public class ChartTypesTests
 {
-    // Every chart-type name advertised by any app's entry.ts. All three now
+    // Every chart-type name advertised by any app's tools.ts. All three now
     // advertise the same 8 (Word gained "barStacked" to reach parity):
     //   Word:       edit_chart.chartType
     //   Excel:      add_chart.chartType, edit_chart.chartType
@@ -56,7 +56,7 @@ public class ChartTypesTests
     public void ByName_AdvertisesNothingTheAppsDoNot()
     {
         // The other direction of the drift guard: a name here but absent from
-        // every entry.ts enum would be a capability no model can reach.
+        // every tools.ts enum would be a capability no model can reach.
         foreach (string key in ChartTypes.ByName.Keys)
         {
             Assert.Contains(key, EntryTsNames);

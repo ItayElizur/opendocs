@@ -9,7 +9,7 @@ architecture.
 The largest tool surface of the four apps. Organized here by area rather than as one
 flat table.
 
-**Reading (8, always allowed, never gated — `READER_TOOLS` in `entry.ts`)**
+**Reading (8, always allowed, never gated — `READER_TOOLS` in `tools.ts`)**
 
 | Tool | Notes |
 |---|---|

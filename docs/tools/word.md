@@ -42,7 +42,7 @@ the COM level in a separate Word instance, not re-run through the add-in.
 
 8 core kinds, 2 additional kinds (`copyBlocks`, `copyFormat`), and 5 shorthand aliases
 (`set_bold`, `set_italic`, `set_heading`, `find_replace`, `set_bullet`) — all cross-checked
-exhaustively against `WORD_COMMAND_SCHEMAS` in `entry.ts` (a structural per-kind schema;
+exhaustively against `WORD_COMMAND_SCHEMAS` in `tools.ts` (a structural per-kind schema;
 no bare `{:'object'}` items left).
 
 | Command | Notes |

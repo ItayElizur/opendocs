@@ -5,7 +5,7 @@ namespace OfficeAi.Shared
     /// <summary>
     /// Chart-type name to Office's xlChartType code, shared by Word, Excel and
     /// PowerPoint. Single-sourced to avoid the apps' tables drifting apart;
-    /// add a chart type here AND to each app's entry.ts chartType enum
+    /// add a chart type here AND to each app's tools.ts chartType enum
     /// (ChartTypesTests guards the two stay in step). Full history: ChartTypes.cs.md.
     /// </summary>
     public static class ChartTypes
