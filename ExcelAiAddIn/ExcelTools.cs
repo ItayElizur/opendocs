@@ -30,7 +30,7 @@ namespace ExcelAiAddIn
             "get_workbook_context", "read_range", "read_cells", "select_range", "read_formats", "read_sheet_features", "find_cells", "trace_precedents", "trace_dependents",
         };
 
-        // Shape names: OfficeAi.Shared.ShapeTypes; mirrors entry.ts's shapeType enum (PP-16) - edit both together.
+        // Shape names: OfficeAi.Shared.ShapeTypes; mirrors tools.ts's shapeType enum (PP-16) - edit both together.
         // Chart types: OfficeAi.Shared.ChartTypes, shared with Word and PowerPoint (PP-15).
 
         public static ToolResult Execute(string docKey, string name, JsonElement input)

@@ -56,7 +56,7 @@ public class ChartTypesTests
     public void ByName_AdvertisesNothingTheAppsDoNot()
     {
         // The other direction of the drift guard: a name here but absent from
-        // every entry.ts enum would be a capability no model can reach.
+        // every tools.ts enum would be a capability no model can reach.
         foreach (string key in ChartTypes.ByName.Keys)
         {
             Assert.Contains(key, EntryTsNames);
