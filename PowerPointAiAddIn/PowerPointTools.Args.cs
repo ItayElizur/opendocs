@@ -14,7 +14,7 @@ namespace PowerPointAiAddIn
             int index = input.GetProperty(key).GetInt32();
             PowerPoint.Slides slides = ActivePresentation.Slides;
             if (index < 0 || index >= slides.Count)
-                throw new ArgumentOutOfRangeException(key, key + " must be between 0 and " + (slides.Count - 1) + ".");
+                throw new ArgumentException(key + " must be between 0 and " + (slides.Count - 1) + ".");
             return slides[index + 1];
         }
 

@@ -139,11 +139,11 @@ const MUTATION_TOOLS = [
   {
     name: 'set_slide',
     description:
-      'Sets any combination of one slide\'s layout, background, entry transition, and speaker notes in one call (0-based slideIndex). Give only the fields you want to change. ' +
-      'layout (classic, a fixed set) or layoutName (custom: free text matched against this slide\'s own theme layouts - exact match preferred, else substring; an unmatched name errors listing the real available names, and a name matching more than one layout errors asking for a more specific one) - give one, not both. ' +
-      'background: a solid color; slideIndex=-1 applies it to every slide in the deck (background only - the other fields need a real slideIndex). ' +
-      'notes: replaces the speaker notes (read_slide shows the current notes first). ' +
-      'Transition: effect sets or removes the entry transition ("none" removes it); durationSeconds is how long the transition animation takes; advanceOnClick (default true in PowerPoint) and advanceAfterSeconds (an automatic timed advance) are independent - both can be on at once, and either can be changed without restating effect. When both advance options are off the slide only advances from the keyboard or menu.',
+      'Changes one thing about one slide per call (0-based slideIndex): its layout, background, entry transition, or speaker notes. Giving fields from more than one of these errors - make a separate call for each. ' +
+      'Layout: layout (classic, a fixed set) or layoutName (custom: free text matched against this slide\'s own theme layouts - exact match preferred, else substring; an unmatched name errors listing the real available names, and a name matching more than one layout errors asking for a more specific one) - give one, not both. ' +
+      'Background: a solid color; slideIndex=-1 applies it to every slide in the deck (the only change that allows -1). ' +
+      'Notes: replaces the speaker notes (read_slide shows the current notes first). ' +
+      'Transition: effect sets or removes the entry transition ("none" removes it); durationSeconds is how long the transition animation takes; advanceOnClick (default true in PowerPoint) and advanceAfterSeconds (an automatic timed advance) are independent - both can be on at once, and they can be changed without restating effect. These count as one change, so they may be combined. When both advance options are off the slide only advances from the keyboard or menu.',
     inputSchema: {
       type: 'object',
       properties: {

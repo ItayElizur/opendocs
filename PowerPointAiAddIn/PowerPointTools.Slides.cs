@@ -45,7 +45,7 @@ namespace PowerPointAiAddIn
                         throw new ArgumentException("manage_slide: action \"move\" needs toIndex.");
                     int toIndex = toEl.GetInt32();
                     if (toIndex < 0 || toIndex >= slides.Count)
-                        throw new ArgumentOutOfRangeException("toIndex", "toIndex must be between 0 and " + (slides.Count - 1) + ".");
+                        throw new ArgumentException("toIndex must be between 0 and " + (slides.Count - 1) + ".");
                     slide.MoveTo(toIndex + 1);
                     return new ToolResult { Output = "Moved slide " + slideIndex + " to position " + toIndex + ".", Mutated = true };
 
@@ -65,35 +65,36 @@ namespace PowerPointAiAddIn
             }
         }
 
-        // Applies whichever of layout / background / transition / notes are present, in that order.
+        // One kind of change per call (layout, background, transition, or notes), so a call is one edit
+        // and one undo step, and a failure can never leave a half-applied slide.
+        // The transition fields (effect, duration, advance options) count as one change.
         // slideIndex -1 (whole deck) is valid only for background.
         private static ToolResult SetSlide(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            bool hasLayout = input.TryGetProperty("layout", out _) || input.TryGetProperty("layoutName", out _);
-            bool hasBackground = input.TryGetProperty("background", out _);
-            bool hasTransition = SlideTransitionKeys.Any(k => input.TryGetProperty(k, out _));
-            bool hasNotes = input.TryGetProperty("notes", out _);
+            var groups = new List<string>();
+            if (input.TryGetProperty("layout", out _) || input.TryGetProperty("layoutName", out _)) groups.Add("layout");
+            if (input.TryGetProperty("background", out _)) groups.Add("background");
+            if (SlideTransitionKeys.Any(k => input.TryGetProperty(k, out _))) groups.Add("transition");
+            if (input.TryGetProperty("notes", out _)) groups.Add("notes");
 
-            if (!(hasLayout || hasBackground || hasTransition || hasNotes))
-                throw new ArgumentException("set_slide: nothing to set - give layout/layoutName, background, notes, or effect/durationSeconds/advanceOnClick/advanceAfterSeconds.");
-            if (slideIndex == -1 && (hasLayout || hasTransition || hasNotes))
+            if (groups.Count == 0)
+                throw new ArgumentException("set_slide: nothing to set - give layout/layoutName, background, notes, or the transition fields (effect/durationSeconds/advanceOnClick/advanceAfterSeconds).");
+            if (groups.Count > 1)
+                throw new ArgumentException("set_slide: change one thing per call - got " + string.Join(", ", groups) + ". Make a separate set_slide call for each.");
+            if (slideIndex == -1 && groups[0] != "background")
                 throw new ArgumentException("set_slide: slideIndex -1 (every slide) is only valid with background.");
 
             PowerPoint.Slide slide = slideIndex == -1 ? null : ResolveSlide(input);
-            var done = new List<string>();
-            try
+            string message;
+            switch (groups[0])
             {
-                if (hasLayout) done.Add(ApplySlideLayout(slide, slideIndex, input));
-                if (hasBackground) done.Add(ApplySlideBackground(slideIndex, input));
-                if (hasTransition) done.Add(ApplySlideTransition(slide, slideIndex, input));
-                if (hasNotes) done.Add(ApplySlideNotes(slide, slideIndex, input));
+                case "layout": message = ApplySlideLayout(slide, slideIndex, input); break;
+                case "background": message = ApplySlideBackground(slideIndex, input); break;
+                case "transition": message = ApplySlideTransition(slide, slideIndex, input); break;
+                default: message = ApplySlideNotes(slide, slideIndex, input); break;
             }
-            catch (Exception ex) when (done.Count > 0)
-            {
-                throw new InvalidOperationException(string.Join(" ", done) + " Then failed: " + ex.Message);
-            }
-            return new ToolResult { Output = string.Join(" ", done), Mutated = true };
+            return new ToolResult { Output = message, Mutated = true };
         }
 
     }
