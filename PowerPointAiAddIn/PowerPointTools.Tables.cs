@@ -149,7 +149,7 @@ namespace PowerPointAiAddIn
                 if (preset != "all" && preset != "none" && preset != "outline")
                     throw new ArgumentException("edit_table: unknown borderPreset '" + preset + "'. Valid: all, none, outline.");
                 bool visible = preset != "none";
-                float weight = input.TryGetProperty("borderWidthPt", out var bw) && bw.ValueKind == JsonValueKind.Number ? (float)bw.GetDouble() : 1f;
+                float weight = ToolArgs.OptionalFloat(input, "borderWidthPt") ?? 1f;
                 int color = input.TryGetProperty("borderColor", out var bc) && bc.ValueKind == JsonValueKind.String ? ColorUtil.HexToOle(bc.GetString()) : ColorUtil.HexToOle("#000000");
                 PowerPoint.PpBorderType[] sides = { PowerPoint.PpBorderType.ppBorderTop, PowerPoint.PpBorderType.ppBorderBottom, PowerPoint.PpBorderType.ppBorderLeft, PowerPoint.PpBorderType.ppBorderRight };
                 int rowCount = table.Rows.Count;

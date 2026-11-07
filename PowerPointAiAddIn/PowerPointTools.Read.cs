@@ -149,7 +149,7 @@ namespace PowerPointAiAddIn
 
         // Recursive listing of a group's contents, nested groups indented in place.
         // Each line's dotted "[path]" (e.g. "3.1.0") is accepted directly by
-        // set_element_text/_style/_fill/_stroke; positional/structural edits still
+        // set_element_text and format_element; positional/structural edits still
         // require group_element with action:"ungroup" first.
         private static ToolResult ReadGroup(JsonElement input)
         {

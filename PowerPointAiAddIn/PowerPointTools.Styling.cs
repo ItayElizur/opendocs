@@ -59,7 +59,7 @@ namespace PowerPointAiAddIn
                 {
                     shape.Line.ForeColor.RGB = ColorUtil.HexToOle(color.GetString());
                 }
-                shape.Line.Weight = input.TryGetProperty("strokeWidthPt", out var width) && width.ValueKind == JsonValueKind.Number ? (float)width.GetDouble() : 1f;
+                shape.Line.Weight = ToolArgs.OptionalFloat(input, "strokeWidthPt") ?? 1f;
             }
             return new ToolResult { Output = "Stroke updated.", Mutated = true };
         }

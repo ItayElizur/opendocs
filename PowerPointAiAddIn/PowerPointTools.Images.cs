@@ -34,8 +34,8 @@ namespace PowerPointAiAddIn
                 return new ToolResult { Output = "edit_picture: " + pathError, IsError = true };
             localPath = localPath.Trim();
 
-            float? width = input.TryGetProperty("width", out var wEl) && wEl.ValueKind == JsonValueKind.Number ? (float?)wEl.GetDouble() : null;
-            float? height = input.TryGetProperty("height", out var hEl) && hEl.ValueKind == JsonValueKind.Number ? (float?)hEl.GetDouble() : null;
+            float? width = ToolArgs.OptionalFloat(input, "width");
+            float? height = ToolArgs.OptionalFloat(input, "height");
             if ((width.HasValue && width.Value <= 0) || (height.HasValue && height.Value <= 0))
                 throw new ArgumentException("edit_picture: width and height must be greater than 0.");
 
@@ -61,8 +61,8 @@ namespace PowerPointAiAddIn
                 shape.Width = w;
                 shape.Height = h;
                 shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue;
-                shape.Left = input.TryGetProperty("left", out var lEl) && lEl.ValueKind == JsonValueKind.Number ? (float)lEl.GetDouble() : (slideW - w) / 2;
-                shape.Top = input.TryGetProperty("top", out var tEl) && tEl.ValueKind == JsonValueKind.Number ? (float)tEl.GetDouble() : (slideH - h) / 2;
+                shape.Left = ToolArgs.OptionalFloat(input, "left") ?? (slideW - w) / 2;
+                shape.Top = ToolArgs.OptionalFloat(input, "top") ?? (slideH - h) / 2;
 
                 string named = ApplyOptionalName(shape, input);
                 int newShapeIndex = shape.ZOrderPosition - 1;
