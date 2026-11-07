@@ -17,7 +17,7 @@ export const READER_TOOLS = [
     description:
       'Lists the shapes inside a group, recursively (nested groups are expanded in place). shapeIndex points at the group - a 0-based number, or a dotted path like "3.1" for a group nested inside another group. ' +
       'Each child line is prefixed with its dotted path (e.g. "3.1.0"); pass that path as shapeIndex to set_element_text / format_element to edit a child in place. ' +
-      'Positional or structural edits (set_element_transform, delete_element, add_animation) require group_element with action:"ungroup" on the top-level group first.',
+      'Positional or structural edits (set_element_transform, delete_element, edit_animation) require group_element with action:"ungroup" on the top-level group first.',
     inputSchema: {
       type: 'object',
       properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: ['number', 'string'] } },
@@ -88,7 +88,7 @@ const MUTATION_TOOLS = [
     name: 'replace_text',
     description:
       'Replaces every occurrence of find with replace across the whole deck - every text-frame shape (text boxes, title/body placeholders) on every slide, plus speaker notes unless includeNotes:false. ' +
-      'NOT table cells or SmartArt node text - use edit_table_cell / edit_smartart for those. regex:true treats find as a .NET regular expression (replace can use $1-style backreferences). Reports the number of occurrences actually replaced.',
+      'NOT table cells or SmartArt node text - use edit_table / edit_smartart for those. regex:true treats find as a .NET regular expression (replace can use $1-style backreferences). Reports the number of occurrences actually replaced.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -284,42 +284,27 @@ const MUTATION_TOOLS = [
     },
   },
   {
-    name: 'add_animation',
-    description:
-      'Adds an entrance (default) or exit animation to a shape. effect: appear, fade, fly, flashOnce, wipe, zoom, dissolve, bounce, spiral, swivel, wheel, split, box, circle, diamond, plus, checkerboard, randomBars, growAndTurn, riseUp. ' +
-      'trigger (default "onClick"): "onClick" starts on its own click during the slideshow, "withPrevious" starts together with the animation before it, "afterPrevious" starts automatically once the animation before it finishes. ' +
-      'Does not support directional variants (e.g. "wipe from the left") - only the base effect. Returns the new animationIndex (0-based) for read_animations/edit_animation.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX,
-        shapeIndex: { type: 'number' },
-        effect: { type: 'string', enum: ['appear', 'fade', 'fly', 'flashOnce', 'wipe', 'zoom', 'dissolve', 'bounce', 'spiral', 'swivel', 'wheel', 'split', 'box', 'circle', 'diamond', 'plus', 'checkerboard', 'randomBars', 'growAndTurn', 'riseUp'] },
-        exit: { type: 'boolean' },
-        trigger: { type: 'string', enum: ['onClick', 'withPrevious', 'afterPrevious'] },
-        durationSeconds: { type: 'number' },
-        delaySeconds: { type: 'number' },
-      },
-      required: ['slideIndex', 'shapeIndex', 'effect'],
-    },
-  },
-  {
     name: 'edit_animation',
     description:
-      'Edits an existing animation. kind: "delete", "set_timing" (durationSeconds?,delaySeconds?,trigger?), "reorder" (toIndex - 0-based new position in the play sequence). ' +
-      'animationIndex addresses the animation (0-based, current play order - call read_animations first). delete/reorder shift later indices - re-read before another edit in the same run.',
+      'Adds or edits a shape animation. kind:"add" adds an entrance (default) or exit animation to a shape (shapeIndex, effect; optional exit, trigger, durationSeconds, delaySeconds) and returns the new animationIndex. ' +
+      'effect: appear, fade, fly, flashOnce, wipe, zoom, dissolve, bounce, spiral, swivel, wheel, split, box, circle, diamond, plus, checkerboard, randomBars, growAndTurn, riseUp - base effects only, no directional variants (e.g. "wipe from the left"). ' +
+      'trigger (default "onClick"): "onClick" starts on its own click during the slideshow, "withPrevious" starts together with the animation before it, "afterPrevious" starts automatically once the animation before it finishes. ' +
+      'Existing animations: kind "delete", "set_timing" (durationSeconds?,delaySeconds?,trigger?), "reorder" (toIndex - 0-based new position in the play sequence); animationIndex addresses the animation (0-based, current play order - call read_animations first). delete/reorder shift later indices - re-read before another edit in the same run.',
     inputSchema: {
       type: 'object',
       properties: {
         slideIndex: SLIDE_INDEX,
-        animationIndex: { type: 'number' },
-        kind: { type: 'string', enum: ['delete', 'set_timing', 'reorder'] },
+        kind: { type: 'string', enum: ['add', 'delete', 'set_timing', 'reorder'] },
+        shapeIndex: { type: 'number', description: 'add only: the shape to animate.' },
+        effect: { type: 'string', enum: ['appear', 'fade', 'fly', 'flashOnce', 'wipe', 'zoom', 'dissolve', 'bounce', 'spiral', 'swivel', 'wheel', 'split', 'box', 'circle', 'diamond', 'plus', 'checkerboard', 'randomBars', 'growAndTurn', 'riseUp'], description: 'add only.' },
+        exit: { type: 'boolean', description: 'add only: true for an exit animation.' },
+        animationIndex: { type: 'number', description: 'delete, set_timing and reorder: which animation.' },
         durationSeconds: { type: 'number' },
         delaySeconds: { type: 'number' },
         trigger: { type: 'string', enum: ['onClick', 'withPrevious', 'afterPrevious'] },
-        toIndex: { type: 'number' },
+        toIndex: { type: 'number', description: 'reorder only.' },
       },
-      required: ['slideIndex', 'animationIndex', 'kind'],
+      required: ['slideIndex', 'kind'],
     },
   },
   {
@@ -366,121 +351,92 @@ const MUTATION_TOOLS = [
     },
   },
   {
-    name: 'add_table',
-    description: 'Adds a native PowerPoint table, optionally pre-filled with cell text (row-major array of arrays).',
+    name: 'edit_table',
+    description:
+      'Creates or edits a native PowerPoint table. kind selects the operation: ' +
+      '"create" adds a table (rows, cols; optional cells = row-major array of arrays of cell text; optional position/size; returns its shapeIndex); ' +
+      '"set_cell" replaces one cell\'s text (shapeIndex, 0-based row/col, paragraphs); ' +
+      '"insert-row"/"delete-row"/"insert-col"/"delete-col" change the structure (shapeIndex, index = a 0-based EXISTING row/column; before decides which side the new one goes on for insert kinds); ' +
+      '"style" applies firstRow/bandRow (header row / banded rows), shadingColor (all cells), borderColor/borderWidthPt/borderPreset ("all" = every cell edge, "outline" = only the table\'s outer perimeter, "none" = remove borders). ' +
+      'Row 0 is just the first physical row, including when it holds column headers - there is no separate header concept in the index space (style\'s firstRow only changes that row\'s visual style, not its index). ' +
+      'Inserting/deleting shifts every later row/column\'s index - re-read the table before a second structural edit in the same run.',
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: SLIDE_INDEX, rows: { type: 'number' }, cols: { type: 'number' },
-        cells: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
-        x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
-        name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_slide/read_group.' },
-      },
-      required: ['slideIndex', 'rows', 'cols'],
-    },
-  },
-  {
-    name: 'edit_table_cell',
-    description: 'Replaces one table cell\'s text (0-based row/col). Row 0 is just the first physical row, including when it holds column headers - there is no separate header concept in the index space (edit_table_style\'s firstRow only changes that row\'s visual style, not its index).',
-    inputSchema: {
-      type: 'object',
-      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' }, row: { type: 'number' }, col: { type: 'number' }, paragraphs: { type: 'string' } },
-      required: ['slideIndex', 'shapeIndex', 'row', 'col', 'paragraphs'],
-    },
-  },
-  {
-    name: 'edit_table_structure',
-    description: 'Inserts or deletes a table row/column. index (0-based) addresses an EXISTING row/column, including row 0 even if it holds column headers - there is no separate header concept in the index space (edit_table_style\'s firstRow only changes that row\'s visual style, not its index). before decides which side the new one goes on for insert kinds. Deleting/inserting shifts every later row/column\'s index - re-read the table before a second structural edit in the same run.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' },
-        kind: { type: 'string', enum: ['insert-row', 'delete-row', 'insert-col', 'delete-col'] },
-        index: { type: 'number' }, before: { type: 'boolean' },
-      },
-      required: ['slideIndex', 'shapeIndex', 'kind', 'index'],
-    },
-  },
-  {
-    name: 'edit_table_style',
-    description: 'Applies granular table styling: firstRow/bandRow (header row / banded rows), shadingColor (all cells), borderColor/borderWidthPt/borderPreset ("all" = every cell edge, "outline" = only the table\'s outer perimeter, "none" = remove borders).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
+        kind: { type: 'string', enum: ['create', 'set_cell', 'insert-row', 'delete-row', 'insert-col', 'delete-col', 'style'] },
+        shapeIndex: { type: 'number', description: 'Every kind except create: the table to edit.' },
+        rows: { type: 'number', description: 'create only.' },
+        cols: { type: 'number', description: 'create only.' },
+        cells: { type: 'array', items: { type: 'array', items: { type: 'string' } }, description: 'create only: optional pre-filled cell text.' },
+        left: { type: 'number', description: 'create only. Default 100.' },
+        top: { type: 'number', description: 'create only. Default 100.' },
+        width: { type: 'number', description: 'create only. Default 400.' },
+        height: { type: 'number', description: 'create only. Default 200.' },
+        name: { type: 'string', description: 'create only, optional. Sets the shape\'s name, shown in read_slide/read_group.' },
+        row: { type: 'number', description: 'set_cell only.' },
+        col: { type: 'number', description: 'set_cell only.' },
+        paragraphs: { type: 'string', description: 'set_cell only: the cell text.' },
+        index: { type: 'number', description: 'insert/delete kinds only.' },
+        before: { type: 'boolean', description: 'insert kinds only.' },
         firstRow: { type: 'boolean' }, bandRow: { type: 'boolean' }, shadingColor: { type: 'string' },
         borderColor: { type: 'string' }, borderWidthPt: { type: 'number' },
         borderPreset: { type: 'string', enum: ['all', 'outline', 'none'] },
       },
-      required: ['slideIndex', 'shapeIndex'],
-    },
-  },
-  {
-    name: 'add_chart',
-    description: 'Adds a native, editable PowerPoint chart, returning its shapeIndex for a follow-up edit_chart call. Every series\' values array must have exactly one value per category.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX,
-        kind: { type: 'string', enum: ['column', 'columnStacked', 'bar', 'barStacked', 'line', 'area', 'pie', 'doughnut'] },
-        title: { type: 'string' },
-        categories: { type: 'array', items: { type: 'string' } },
-        series: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, values: { type: 'array', items: { type: 'number' } } } } },
-        x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
-        name: { type: 'string', description: 'Optional. Sets the chart shape\'s name, shown in read_slide/read_group.' },
-      },
-      required: ['slideIndex', 'kind', 'categories', 'series'],
+      required: ['slideIndex', 'kind'],
     },
   },
   {
     name: 'edit_chart',
-    description: 'Modifies an existing chart\'s type/title/legend position/data labels/gridlines. Only properties provided are changed; the result names exactly what applied.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' },
-        chartType: { type: 'string', enum: ['column', 'columnStacked', 'bar', 'barStacked', 'line', 'area', 'pie', 'doughnut'] },
-        title: { type: 'string' },
-        legendPos: { type: 'string', enum: ['none', 'right', 'top', 'left', 'bottom', 'r', 't', 'l', 'b'] },
-        dataLabels: { type: 'string', enum: ['none', 'value', 'percent'] },
-        gridlines: { type: 'boolean', description: 'Errors with a clear message on chart types with no value axis (pie/doughnut).' },
-      },
-      required: ['slideIndex', 'shapeIndex'],
-    },
-  },
-  {
-    name: 'add_smartart',
-    description: 'Adds a shape-composed SmartArt diagram. items are flat node texts, one per top-level node.',
+    description:
+      'Creates or edits a native, editable PowerPoint chart. kind:"create" adds a chart and returns its shapeIndex (chartType, categories, series; optional title and position/size) - every series\' values array must have exactly one value per category. ' +
+      'kind:"update" modifies an existing chart (shapeIndex) - chartType/title/legendPos/dataLabels/gridlines; only the properties provided are changed and the result names exactly what applied.',
     inputSchema: {
       type: 'object',
       properties: {
         slideIndex: SLIDE_INDEX,
-        layout: { type: 'string', enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'] },
-        items: { type: 'array', items: { type: 'string' } },
-        x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
-        name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_slide/read_group.' },
+        kind: { type: 'string', enum: ['create', 'update'] },
+        shapeIndex: { type: 'number', description: 'update only: the chart to edit.' },
+        chartType: { type: 'string', enum: ['column', 'columnStacked', 'bar', 'barStacked', 'line', 'area', 'pie', 'doughnut'], description: 'Required for create; optional for update.' },
+        title: { type: 'string' },
+        categories: { type: 'array', items: { type: 'string' }, description: 'create only.' },
+        series: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, values: { type: 'array', items: { type: 'number' } } } }, description: 'create only.' },
+        left: { type: 'number', description: 'create only. Default 100.' },
+        top: { type: 'number', description: 'create only. Default 100.' },
+        width: { type: 'number', description: 'create only. Default 400.' },
+        height: { type: 'number', description: 'create only. Default 300.' },
+        name: { type: 'string', description: 'create only, optional. Sets the chart shape\'s name, shown in read_slide/read_group.' },
+        legendPos: { type: 'string', enum: ['none', 'right', 'top', 'left', 'bottom', 'r', 't', 'l', 'b'], description: 'update only.' },
+        dataLabels: { type: 'string', enum: ['none', 'value', 'percent'], description: 'update only.' },
+        gridlines: { type: 'boolean', description: 'update only. Errors with a clear message on chart types with no value axis (pie/doughnut).' },
       },
-      required: ['slideIndex', 'layout', 'items'],
+      required: ['slideIndex', 'kind'],
     },
   },
   {
     name: 'edit_smartart',
     description:
-      'Edits an existing SmartArt diagram on a slide. kind is one of: set_text (needs nodeIndex + text), add_node (optional text, appends), ' +
+      'Creates or edits a shape-composed SmartArt diagram. kind is one of: create (layout + items - flat node texts, one per top-level node; optional position/size; returns the diagram), set_text (needs nodeIndex + text), add_node (optional text, appends), ' +
       'delete_node (needs nodeIndex), set_style (needs colorName and/or quickStyleName, matched loosely against this Office install\'s gallery), ' +
-      'set_layout (needs layout). smartArtIndex is 0-based WITHIN THAT SLIDE and defaults to 0. ' +
+      'set_layout (needs layout). For every kind except create, smartArtIndex is 0-based WITHIN THAT SLIDE and defaults to 0. ' +
       'delete_node shifts later node indices - call read_smartart again before a second node edit on the same diagram in one run.',
     inputSchema: {
       type: 'object',
       properties: {
         slideIndex: SLIDE_INDEX,
-        smartArtIndex: { type: 'number', description: '0-based among the SmartArt diagrams on that slide. Default 0.' },
-        kind: { type: 'string', enum: ['set_text', 'add_node', 'delete_node', 'set_style', 'set_layout'] },
+        smartArtIndex: { type: 'number', description: '0-based among the SmartArt diagrams on that slide. Default 0. Not used by create.' },
+        kind: { type: 'string', enum: ['create', 'set_text', 'add_node', 'delete_node', 'set_style', 'set_layout'] },
         nodeIndex: { type: 'number', description: '0-based. Required for set_text and delete_node.' },
         text: { type: 'string' },
         colorName: { type: 'string', description: 'set_style: substring-matched against the gallery, e.g. "Colorful".' },
         quickStyleName: { type: 'string', description: 'set_style: substring-matched, e.g. "Intense".' },
-        layout: { type: 'string', enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'] },
+        layout: { type: 'string', enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'], description: 'Required for create and set_layout.' },
+        items: { type: 'array', items: { type: 'string' }, description: 'create only.' },
+        left: { type: 'number', description: 'create only. Default 100.' },
+        top: { type: 'number', description: 'create only. Default 100.' },
+        width: { type: 'number', description: 'create only. Default 400.' },
+        height: { type: 'number', description: 'create only. Default 300.' },
+        name: { type: 'string', description: 'create only, optional. Sets the shape\'s name, shown in read_slide/read_group.' },
       },
       required: ['slideIndex', 'kind'],
     },

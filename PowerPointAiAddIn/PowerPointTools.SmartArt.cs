@@ -17,7 +17,7 @@ namespace PowerPointAiAddIn
         {
             string targetName;
             if (!SmartArtLayouts.ByName.TryGetValue(layoutKey, out targetName))
-                throw new ArgumentException("add_smartart: unknown layout '" + layoutKey + "'. Valid: " +
+                throw new ArgumentException("edit_smartart: unknown layout '" + layoutKey + "'. Valid: " +
                                             string.Join(", ", SmartArtLayouts.ByName.Keys) + ".");
             dynamic layouts = Globals.ThisAddIn.Application.SmartArtLayouts;
             foreach (dynamic layout in layouts)
@@ -29,7 +29,7 @@ namespace PowerPointAiAddIn
             }
             // Distinct from the unknown-key case above: a valid key with no matching
             // gallery entry points at a non-English Office install. See .md.
-            throw new InvalidOperationException("add_smartart: no SmartArt layout named '" + targetName +
+            throw new InvalidOperationException("edit_smartart: no SmartArt layout named '" + targetName +
                                                 "' was found in this Office install's gallery - this install may be " +
                                                 "non-English, where the built-in gallery's display names differ from " +
                                                 "the standard English ones this tool assumes (see plan Task 6 Step 1).");
@@ -142,9 +142,10 @@ namespace PowerPointAiAddIn
 
         private static ToolResult EditSmartArt(JsonElement input)
         {
+            string kind = input.GetProperty("kind").GetString();
+            if (kind == "create") return AddSmartArt(input);
             dynamic smartArt = ResolveSmartArtOnSlide(input, "edit_smartart");
             dynamic nodes = smartArt.Nodes;
-            string kind = input.GetProperty("kind").GetString();
             switch (kind)
             {
                 case "set_text":
@@ -198,7 +199,7 @@ namespace PowerPointAiAddIn
                     return new ToolResult { Output = "SmartArt layout changed to '" + layoutKey + "'.", Mutated = true };
                 }
                 default:
-                    throw new ArgumentException("edit_smartart: unknown kind '" + kind + "'. Valid: set_text, add_node, delete_node, set_style, set_layout.");
+                    throw new ArgumentException("edit_smartart: unknown kind '" + kind + "'. Valid: create, set_text, add_node, delete_node, set_style, set_layout.");
             }
         }
 
@@ -206,7 +207,7 @@ namespace PowerPointAiAddIn
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
             string layoutKey = input.GetProperty("layout").GetString();
-            ReadXywh(input, 300f, out float left, out float top, out float width, out float height);
+            ReadRectDefaulted(input, 300f, out float left, out float top, out float width, out float height);
 
             dynamic layout = ResolveSmartArtLayout(layoutKey);
             PowerPoint.Slide slide = ResolveSlide(input);

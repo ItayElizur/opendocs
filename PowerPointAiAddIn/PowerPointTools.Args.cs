@@ -28,13 +28,13 @@ namespace PowerPointAiAddIn
             height = (float)input.GetProperty("height").GetDouble();
         }
 
-        // Optional x/y/w/h with the 100,100,400,defaultHeight fallback (add_table/chart/smartart).
-        private static void ReadXywh(JsonElement input, float defaultHeight, out float left, out float top, out float width, out float height)
+        // Optional left/top/width/height with the 100,100,400,defaultHeight fallback (new table/chart/SmartArt).
+        private static void ReadRectDefaulted(JsonElement input, float defaultHeight, out float left, out float top, out float width, out float height)
         {
-            left = input.TryGetProperty("x", out var x) ? (float)x.GetDouble() : 100f;
-            top = input.TryGetProperty("y", out var y) ? (float)y.GetDouble() : 100f;
-            width = input.TryGetProperty("w", out var w) ? (float)w.GetDouble() : 400f;
-            height = input.TryGetProperty("h", out var h) ? (float)h.GetDouble() : defaultHeight;
+            left = input.TryGetProperty("left", out var l) ? (float)l.GetDouble() : 100f;
+            top = input.TryGetProperty("top", out var t) ? (float)t.GetDouble() : 100f;
+            width = input.TryGetProperty("width", out var w) ? (float)w.GetDouble() : 400f;
+            height = input.TryGetProperty("height", out var h) ? (float)h.GetDouble() : defaultHeight;
         }
 
         // Applies whichever of left/top/width/height/rotation are present; returns the names applied.

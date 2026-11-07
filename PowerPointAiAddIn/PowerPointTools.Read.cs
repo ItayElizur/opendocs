@@ -87,7 +87,7 @@ namespace PowerPointAiAddIn
             var sb = new StringBuilder();
 
             // Surfaces layout/transition/animation-count so the model isn't blind to
-            // state set_slide/add_animation just created.
+            // state set_slide/edit_animation just created.
             string layoutName = null;
             foreach (var kv in SlideLayoutMap) { if (kv.Value == slide.Layout) { layoutName = kv.Key; break; } }
             if (layoutName != null) sb.AppendLine("Layout: " + layoutName);
@@ -228,7 +228,7 @@ namespace PowerPointAiAddIn
 
         // Scoped to simple text-frame shapes (title/body placeholders, text
         // boxes) and speaker notes - NOT table cells or SmartArt node text,
-        // which have their own dedicated edit tools (edit_table_cell,
+        // which have their own dedicated edit tools (edit_table,
         // edit_smartart) and aren't safely addressable by a single
         // TextRange.Text assignment the way a plain text frame is.
         private static ToolResult ReplaceTextPpt(JsonElement input)

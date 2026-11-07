@@ -232,7 +232,7 @@ namespace PowerPointAiAddIn
             PowerPoint.Shape shape = ResolveShape(input);
             if (shape.HasTextFrame != Microsoft.Office.Core.MsoTriState.msoTrue)
                 throw new ArgumentException("format_element: this shape has no text to style (a table, picture, chart or group). " +
-                                            "Use the fill, stroke or opacity fields, or edit_table_style / edit_table_cell for a table.");
+                                            "Use the fill, stroke or opacity fields, or edit_table for a table.");
             PowerPoint.TextRange range = shape.TextFrame.TextRange;
             var applied = new List<string>();
             string field = null; // the parameter being applied, so a COM failure can name it

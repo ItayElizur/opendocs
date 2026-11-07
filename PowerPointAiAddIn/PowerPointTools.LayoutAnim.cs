@@ -171,7 +171,7 @@ namespace PowerPointAiAddIn
 
         // All 7 real MsoAnimTriggerType values are not exposed - msoAnimTriggerNone
         // and msoAnimTriggerOnMediaBookmark/msoAnimTriggerMixed are not
-        // meaningful choices for add_animation/edit_animation's caller.
+        // meaningful choices for edit_animation's caller.
         private static readonly Dictionary<string, PowerPoint.MsoAnimTriggerType> AnimationTriggerMap = new Dictionary<string, PowerPoint.MsoAnimTriggerType>
         {
             ["onClick"] = PowerPoint.MsoAnimTriggerType.msoAnimTriggerOnPageClick,
@@ -181,19 +181,19 @@ namespace PowerPointAiAddIn
 
         private static ToolResult AddAnimation(JsonElement input)
         {
-            PowerPoint.Shape shape = ResolveTopLevelShape(input, "add_animation");
+            PowerPoint.Shape shape = ResolveTopLevelShape(input, "edit_animation");
             PowerPoint.Slide slide = (PowerPoint.Slide)shape.Parent;
             PowerPoint.Sequence sequence = slide.TimeLine.MainSequence;
 
             string effectKey = input.GetProperty("effect").GetString();
             PowerPoint.MsoAnimEffect effectValue;
             if (!AnimationEffectMap.TryGetValue(effectKey, out effectValue))
-                throw new ArgumentException("add_animation: unknown effect '" + effectKey + "'. Valid: " + string.Join(", ", AnimationEffectMap.Keys) + ".");
+                throw new ArgumentException("edit_animation: unknown effect '" + effectKey + "'. Valid: " + string.Join(", ", AnimationEffectMap.Keys) + ".");
 
             string triggerKey = input.TryGetProperty("trigger", out var trEl) && trEl.ValueKind == JsonValueKind.String ? trEl.GetString() : "onClick";
             PowerPoint.MsoAnimTriggerType triggerValue;
             if (!AnimationTriggerMap.TryGetValue(triggerKey, out triggerValue))
-                throw new ArgumentException("add_animation: unknown trigger '" + triggerKey + "'. Valid: " + string.Join(", ", AnimationTriggerMap.Keys) + ".");
+                throw new ArgumentException("edit_animation: unknown trigger '" + triggerKey + "'. Valid: " + string.Join(", ", AnimationTriggerMap.Keys) + ".");
 
             bool isExit = ToolArgs.OptionalFlag(input, "exit");
 
@@ -249,6 +249,8 @@ namespace PowerPointAiAddIn
 
         private static ToolResult EditAnimation(JsonElement input)
         {
+            string kind = input.GetProperty("kind").GetString();
+            if (kind == "add") return AddAnimation(input);
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
             int animationIndex = input.GetProperty("animationIndex").GetInt32();
             PowerPoint.Slide slide = ResolveSlide(input);
@@ -257,7 +259,6 @@ namespace PowerPointAiAddIn
                 throw new ArgumentOutOfRangeException("animationIndex", "animationIndex must be between 0 and " + (sequence.Count - 1) + " (" + sequence.Count + " animation(s) on this slide).");
             PowerPoint.Effect effect = sequence[animationIndex + 1];
 
-            string kind = input.GetProperty("kind").GetString();
             switch (kind)
             {
                 case "delete":
@@ -295,7 +296,7 @@ namespace PowerPointAiAddIn
                     return new ToolResult { Output = "Animation moved from " + animationIndex + " to " + toIndex + ". Indices have shifted - re-read (read_animations) before another edit in the same run.", Mutated = true };
                 }
                 default:
-                    throw new ArgumentException("edit_animation: unknown kind '" + kind + "'. Valid: delete, set_timing, reorder.");
+                    throw new ArgumentException("edit_animation: unknown kind '" + kind + "'. Valid: add, delete, set_timing, reorder.");
             }
         }
 

@@ -10,13 +10,25 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
+        // kind "create" adds a chart (chartType required); "update" edits an existing one.
+        private static ToolResult EditChart(JsonElement input)
+        {
+            string kind = input.GetProperty("kind").GetString();
+            switch (kind)
+            {
+                case "create": return AddChartPpt(input);
+                case "update": return EditChartPpt(input);
+                default: throw new ArgumentException("edit_chart: unknown kind '" + kind + "'. Valid: create, update.");
+            }
+        }
+
         private static ToolResult AddChartPpt(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            string kindStr = input.GetProperty("kind").GetString();
+            string kindStr = input.GetProperty("chartType").GetString();
             int typeCode;
             if (!ChartTypes.ByName.TryGetValue(kindStr, out typeCode))
-                throw new ArgumentException("add_chart: unknown kind '" + kindStr + "'. Valid: " +
+                throw new ArgumentException("edit_chart: unknown chartType '" + kindStr + "'. Valid: " +
                                             string.Join(", ", ChartTypes.ByName.Keys) + ".");
             var categories = new List<string>();
             foreach (JsonElement c in input.GetProperty("categories").EnumerateArray()) categories.Add(c.GetString());
@@ -31,13 +43,13 @@ namespace PowerPointAiAddIn
                 if (valueCount != categories.Count)
                 {
                     string seriesName = s.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String ? nameEl.GetString() : "(unnamed)";
-                    throw new ArgumentException("add_chart: series '" + seriesName + "' has " + valueCount +
+                    throw new ArgumentException("edit_chart: series '" + seriesName + "' has " + valueCount +
                                                 " value(s) but there are " + categories.Count +
                                                 " categories - every series must have exactly one value per category.");
                 }
             }
 
-            ReadXywh(input, 300f, out float left, out float top, out float width, out float height);
+            ReadRectDefaulted(input, 300f, out float left, out float top, out float width, out float height);
 
             PowerPoint.Slide slide = ResolveSlide(input);
             dynamic chartShape = slide.Shapes.AddChart2(-1, (Microsoft.Office.Core.XlChartType)typeCode, left, top, width, height);

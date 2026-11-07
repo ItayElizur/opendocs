@@ -53,17 +53,13 @@ export const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'Update slide', he: 'עדכון שקופית' },
     description: { en: "Changes a slide's layout, background, transition, or speaker notes.", he: 'משנה את פריסת השקופית, הרקע, המעבר או הערות הדובר.' },
   },
-  add_animation: {
-    label: { en: 'Add animation', he: 'הוספת אנימציה' },
-    description: { en: 'Adds an entrance or exit animation to a shape.', he: 'מוסיף אנימציית כניסה או יציאה לאובייקט.' },
-  },
   read_animations: {
     label: { en: 'Read animations', he: 'קריאת אנימציות' },
     description: { en: "Reads a slide's animations and their order.", he: 'קורא את אנימציות השקופית וסדרן.' },
   },
   edit_animation: {
-    label: { en: 'Edit animation', he: 'עריכת אנימציה' },
-    description: { en: "Deletes, retimes, or reorders an existing animation.", he: 'מוחק, משנה תזמון או מסדר מחדש אנימציה קיימת.' },
+    label: { en: 'Animation', he: 'אנימציה' },
+    description: { en: 'Adds an entrance or exit animation to a shape, or deletes, retimes, or reorders an existing one.', he: 'מוסיף אנימציית כניסה או יציאה לאובייקט, או מוחק, משנה תזמון או מסדר מחדש אנימציה קיימת.' },
   },
   copy_element_style: {
     label: { en: 'Copy shape formatting', he: 'העתקת עיצוב אובייקט' },
@@ -73,41 +69,21 @@ export const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'Group or ungroup shapes', he: 'קיבוץ או פירוק קבוצת אובייקטים' },
     description: { en: 'Combines shapes into a group, or breaks a group into its parts.', he: 'מאחד אובייקטים לקבוצה, או מפרק קבוצה לחלקיה.' },
   },
-  add_table: {
-    label: { en: 'Add table', he: 'הוספת טבלה' },
-    description: { en: 'Adds a table to a slide, optionally pre-filled with data.', he: 'מוסיף טבלה לשקופית, ניתן למלא אותה מראש בנתונים.' },
-  },
-  edit_table_cell: {
-    label: { en: 'Edit table cell', he: 'עריכת תא בטבלה' },
-    description: { en: 'Replaces the text in one table cell.', he: 'מחליף את הטקסט בתא אחד בטבלה.' },
-  },
-  edit_table_structure: {
-    label: { en: 'Edit table rows/columns', he: 'עריכת מבנה הטבלה' },
-    description: { en: 'Inserts or deletes a row or column in a table.', he: 'מוסיף או מוחק שורה או עמודה בטבלה.' },
-  },
-  edit_table_style: {
-    label: { en: 'Format table', he: 'עיצוב טבלה' },
-    description: { en: 'Applies styling to a table, such as header row, banding, shading, and borders.', he: 'מיישם עיצוב על טבלה, כגון שורת כותרת, פסים, הצללה ומסגרות.' },
-  },
-  add_chart: {
-    label: { en: 'Add chart', he: 'הוספת תרשים' },
-    description: { en: 'Adds a native, editable chart with categories and data series.', he: 'מוסיף תרשים מובנה וניתן לעריכה עם קטגוריות וסדרות נתונים.' },
+  edit_table: {
+    label: { en: 'Table', he: 'טבלה' },
+    description: { en: 'Adds a table, or edits a table\'s cells, rows and columns, or styling.', he: 'מוסיף טבלה, או עורך את התאים, השורות והעמודות שלה או את העיצוב.' },
   },
   edit_chart: {
-    label: { en: 'Edit chart', he: 'עריכת תרשים' },
-    description: { en: "Modifies an existing chart's type, title, legend, or labels.", he: 'משנה סוג, כותרת, מקרא או תוויות של תרשים קיים.' },
+    label: { en: 'Chart', he: 'תרשים' },
+    description: { en: 'Adds a native, editable chart, or modifies an existing chart\'s type, title, legend, or labels.', he: 'מוסיף תרשים מובנה וניתן לעריכה, או משנה סוג, כותרת, מקרא או תוויות של תרשים קיים.' },
   },
   edit_smartart: {
-    label: { en: 'Edit SmartArt', he: 'עריכת SmartArt' },
-    description: { en: 'Edits an existing SmartArt diagram\'s text, nodes, style, or layout.', he: 'עורך טקסט, צמתים, עיצוב או פריסה של דיאגרמת SmartArt קיימת.' },
+    label: { en: 'SmartArt', he: 'SmartArt' },
+    description: { en: 'Adds a SmartArt diagram, or edits an existing one\'s text, nodes, style, or layout.', he: 'מוסיף דיאגרמת SmartArt, או עורך טקסט, צמתים, עיצוב או פריסה של דיאגרמה קיימת.' },
   },
   read_smartart: {
     label: { en: 'Read SmartArt', he: 'קריאת SmartArt' },
     description: { en: 'Reads the node text of SmartArt diagrams on a slide.', he: 'קורא את טקסט הצמתים של דיאגרמות SmartArt בשקופית.' },
-  },
-  add_smartart: {
-    label: { en: 'Add SmartArt', he: 'הוספת SmartArt' },
-    description: { en: 'Adds a SmartArt diagram built from a list of items.', he: 'מוסיף תרשים SmartArt הבנוי מרשימת פריטים.' },
   },
   crop_image: {
     label: { en: 'Crop image', he: 'חיתוך תמונה' },
