@@ -70,6 +70,19 @@ cross-check against an equivalent working call elsewhere in the repo) and what y
 didn't (the actual rendered/mutated result in a real Office document) — don't imply
 more confidence than a build-clean compile actually gives you.
 
+## Each add-in's `web-src/` is split by kind of text
+
+`WordAiAddIn`, `ExcelAiAddIn`, `PowerPointAiAddIn` and `OutlookAiAddIn` each have four files under `web-src/`:
+
+- `entry.ts` — only the wiring into the shared app shell, including the editing-mode tool lists (`readOnlyTools`, `commentOnlyExtraTools`,
+  `trackChangesExtraTools`) where an app has them inline.
+- `tools.ts` — the tool schemas the model reads (English), plus helpers such as Excel's `READ_ONLY_TOOL_NAMES` and PowerPoint's `READER_TOOLS`.
+- `display.ts` — the user-facing labels and descriptions, `{ en, he }` side by side per tool, and the chat starters. Every entry must have both
+  languages (a `satisfies` type for Word/Excel/PowerPoint, the `d()` helper for Outlook).
+- `prompt.ts` — the system prompt.
+
+A new tool needs entries in `tools.ts` and `display.ts` (and the C# side), not in `entry.ts`.
+
 ## Where to update docs after a change
 
 `docs/tools/{word,excel,powerpoint,outlook}.md` are the current-state reference for

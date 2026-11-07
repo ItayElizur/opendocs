@@ -56,7 +56,7 @@ not moved; `move_range` clears the source as part of the move, native Excel Cut
 behavior, and other formulas referencing the moved cells auto-update).
 
 Every kind's real per-field JSON Schema lives in `EXCEL_OPS` (`ExcelAiAddIn/web-src/
-entry.ts`) — the single source of truth for both the wire schema and the human-readable
+tools.ts`) — the single source of truth for both the wire schema and the human-readable
 description, cross-checked exhaustively against `ExcelTools.cs`'s `ProposeOperations`
 switch.
 

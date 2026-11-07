@@ -3,7 +3,7 @@ using OfficeAi.Shared;
 
 public class ShapeTypesTests
 {
-    // Excel's add_shape shapeType enum (ExcelAiAddIn/web-src/entry.ts), minus
+    // Excel's add_shape shapeType enum (ExcelAiAddIn/web-src/tools.ts), minus
     // "textbox" (handled separately, not an AutoShape).
     private static readonly string[] ExcelEntryTsNames =
     {
@@ -12,7 +12,7 @@ public class ShapeTypesTests
         "lightningBolt", "sun", "moon", "cloud", "arc", "star5", "rightArrow", "leftArrow", "upArrow", "downArrow",
     };
 
-    // PowerPoint's add_shape shapeType enum (PowerPointAiAddIn/web-src/entry.ts).
+    // PowerPoint's add_shape shapeType enum (PowerPointAiAddIn/web-src/tools.ts).
     private static readonly string[] PowerPointEntryTsNames =
     {
         "rect", "rectangle", "roundRect", "ellipse", "oval", "triangle", "rtTriangle",

@@ -3,7 +3,7 @@
 ## `RequiredFields`
 
 PP-5: mirrors EXCEL_OPS's `required` arrays in
-ExcelAiAddIn/web-src/entry.ts exactly (minus "kind" itself, which is
+ExcelAiAddIn/web-src/tools.ts exactly (minus "kind" itself, which is
 validated separately in ProposeOperations before this table is
 consulted) - the two must be edited together. Kinds needing no
 field beyond "kind" (set_page_setup, delete_sheet, duplicate_sheet,

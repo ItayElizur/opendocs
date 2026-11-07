@@ -1,0 +1,40 @@
+const d = (en: string, he: string, den: string, dhe: string) => ({ label: { en, he }, description: { en: den, he: dhe } })
+
+export const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
+  search_emails: d('Search emails', 'חיפוש הודעות', 'Lists recent messages from a folder, or searches by text, date, or sender.', 'מציג הודעות אחרונות מתיקייה, או מחפש לפי טקסט, תאריך או שולח.'),
+  apply_search: d('Show search in Outlook', 'הצגת חיפוש ב-Outlook', 'Applies the search to the Outlook window itself.', 'מיישם את החיפוש בחלון Outlook עצמו.'),
+  get_email: d('Read email', 'קריאת הודעה', 'Reads one message in full, including its attachment list.', 'קורא הודעה אחת במלואה, כולל רשימת הקבצים המצורפים.'),
+  open_email: d('Open email', 'פתיחת הודעה', 'Opens a message in Outlook.', 'פותח הודעה ב-Outlook.'),
+  get_attachment: d('Get attachment', 'קבלת קובץ מצורף', 'Saves an attachment and extracts text from documents.', 'שומר קובץ מצורף ומחלץ טקסט ממסמכים.'),
+  list_folders: d('List folders', 'רשימת תיקיות', 'Lists the available mail folders.', 'מציג את תיקיות הדואר הזמינות.'),
+  search_contacts: d('Search contacts', 'חיפוש אנשי קשר', 'Finds people by name or email.', 'מוצא אנשים לפי שם או דוא"ל.'),
+  list_events: d('List calendar events', 'רשימת אירועים', 'Lists calendar events in a date range.', 'מציג אירועי יומן בטווח תאריכים.'),
+  get_event: d('Read event', 'קריאת אירוע', 'Reads one calendar event in full.', 'קורא אירוע יומן אחד במלואו.'),
+  find_meeting_slots: d('Find meeting times', 'מציאת זמני פגישה', 'Finds open times for you and the attendees, ranked by availability.', 'מוצא זמנים פנויים עבורך והמוזמנים, מדורגים לפי זמינות.'),
+  list_color_categories: d('List color tags', 'רשימת תגיות צבע', 'Lists the available color tags and their colors.', 'מציג את תגיות הצבע הזמינות והצבעים שלהן.'),
+  list_tasks: d('List tasks', 'רשימת משימות', 'Lists tasks and their due dates.', 'מציג משימות ותאריכי יעד.'),
+  mark_email_read: d('Mark read/unread', 'סימון כנקרא/כלא נקרא', 'Marks a message as read or unread.', 'מסמן הודעה כנקראה או כלא נקראה.'),
+  flag_email_important: d('Flag importance', 'סימון חשיבות', 'Sets a message to High or Normal importance.', 'מגדיר חשיבות גבוהה או רגילה להודעה.'),
+  move_email: d('Move email', 'העברת הודעה', 'Moves a message to another folder.', 'מעביר הודעה לתיקייה אחרת.'),
+  delete_email: d('Delete email', 'מחיקת הודעה', 'Moves a message to Deleted Items, or permanently deletes it (Full autonomy only).', 'מעביר הודעה לפריטים שנמחקו, או מוחק אותה לצמיתות (רק במצב אוטונומיה מלאה).'),
+  undo_last_action: d('Undo', 'ביטול', "Reverses the assistant's most recent action. Sent items can't be undone.", 'מבטל את הפעולה האחרונה של העוזר. לא ניתן לבטל פריטים שנשלחו.'),
+  redo_last_action: d('Redo', 'ביצוע חוזר', 'Re-applies the action the assistant last undid.', 'מבצע מחדש את הפעולה שהעוזר ביטל לאחרונה.'),
+  respond_meeting: d('Respond to meeting', 'מענה להזמנה לפגישה', 'Accepts, tentatively accepts or declines a meeting invitation.', 'מאשר, מאשר זמנית או דוחה הזמנה לפגישה.'),
+  set_event_categories: d('Color event', 'צביעת אירוע', 'Applies or clears color tags on a calendar event.', 'מחיל או מנקה תגיות צבע על אירוע יומן.'),
+  set_category_color: d('Set tag color', 'הגדרת צבע תגית', 'Creates or recolors a color tag.', 'יוצר או משנה צבע של תגית.'),
+  set_event_availability: d('Set availability', 'הגדרת זמינות', 'Sets an event\'s Free/Busy/Tentative/Out of Office status.', 'מגדיר את סטטוס הזמינות של אירוע (פנוי / עסוק / בעבודה במקום אחר / מחוץ למשרד).'),
+  create_task: d('Create task', 'יצירת משימה', 'Creates a task with an optional due date and reminder.', 'יוצר משימה עם תאריך יעד ותזכורת אופציונליים.'),
+  update_task: d('Update task', 'עדכון משימה', 'Updates or completes an existing task.', 'מעדכן או משלים משימה קיימת.'),
+  set_reminder: d('Set reminder', 'הגדרת תזכורת', 'Sets a reminder on an appointment or task.', 'מגדיר תזכורת לפגישה או משימה.'),
+  set_email_reminder: d('Flag with reminder', 'סימון עם תזכורת', 'Flags an email for follow-up with a reminder.', 'מסמן הודעה למעקב עם תזכורת.'),
+  draft_email: d('Draft email', 'טיוטת הודעה', 'Opens a pre-filled new email, reply or forward to review and send.', 'פותח הודעה חדשה, תשובה או העברה מלאה מראש לבדיקה ושליחה.'),
+  draft_event: d('Draft event', 'טיוטת אירוע', 'Opens a pre-filled new event, or an existing event with edits or a cancellation, to review.', 'פותח אירוע חדש, או אירוע קיים עם עריכות או ביטול, לבדיקה.'),
+  send_email: d('Send email (auto-send)', 'שליחת הודעה (שליחה אוטומטית)', 'Sends a new email, reply or forward immediately, no review window.', 'שולח הודעה חדשה, תשובה או העברה מיידית, ללא חלון בדיקה.'),
+  send_event: d('Send event (auto-send)', 'שליחת אירוע (שליחה אוטומטית)', 'Creates, edits or cancels an event immediately, no review window.', 'יוצר, עורך או מבטל אירוע מיידית, ללא חלון בדיקה.'),
+}
+
+export const STARTERS = [
+  { en: 'Summarize my unread emails', he: 'סכם את ההודעות שלא קראתי' },
+  { en: 'Draft a reply to the selected email', he: 'נסח תשובה להודעה שנבחרה' },
+  { en: "What's on my calendar this week?", he: 'מה יש ביומן שלי השבוע?' },
+]
