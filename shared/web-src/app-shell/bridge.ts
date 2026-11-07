@@ -125,6 +125,7 @@ export interface BridgeHandlers {
 const pendingToolCalls = new Map<string, (result: ToolExecution) => void>()
 
 export function initBridge(handlers: BridgeHandlers): void {
+  window.addEventListener('blur', notifyPaneBlur)
   chrome.webview.addEventListener('message', (ev) => {
     const data = ev.data as OtherMessage & ToolResultMessage
     if (!data) return
@@ -182,6 +183,14 @@ export function requestOfficeLanguage(): void {
 
 export function saveDocSettings(systemMessage: string): void {
   chrome.webview.postMessage({ kind: 'save-doc-settings', systemMessage })
+}
+
+// The page lost keyboard focus. The host works out whether the user left the app (alt-tab) and, when they come
+// back, puts the cursor back in the chat box instead of leaving it in the document.
+export function notifyPaneBlur(): void {
+  if (typeof chrome === 'undefined') return
+  const active = document.activeElement
+  if (active && active !== document.body) chrome.webview.postMessage({ kind: 'pane-blur' })
 }
 
 export function persistMessage(role: 'user' | 'assistant', text: string): void {
