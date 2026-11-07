@@ -11,21 +11,13 @@ namespace WordAiAddIn
     // WebView2-hosted AgentLoop via the JSON WebMessage bridge.
     public static partial class WordTools
     {
-        // Same air-gapped local-file-only rule as Excel's AddImageExcel/PowerPoint's
-        // replace_image. The File.Exists check is the one addition - AddPicture on a
-        // missing file throws a bare COMException with a useless message.
+        // Same local-file-only rule as every picture tool (PathGuard): a network path would make Windows connect
+        // to that server, and a missing file makes AddPicture throw a bare COMException.
         private static string ValidateLocalImagePath(string path)
         {
-            if (string.IsNullOrWhiteSpace(path))
-                throw new ArgumentException("add_image: path is required.");
-            if (path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
-                throw new NotSupportedException(
-                    "add_image: remote URLs are not supported in this air-gapped deployment - use a local file path.");
-            if (!System.IO.File.Exists(path))
-                throw new System.IO.FileNotFoundException("add_image: no file at '" + path + "'.");
-            return path;
+            string error = PathGuard.LocalFileError(path);
+            if (error != null) throw new ArgumentException("add_image: " + error);
+            return path.Trim();
         }
 
         private static ToolResult AddImage(JsonElement input)

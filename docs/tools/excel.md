@@ -64,7 +64,7 @@ Known limitations:
 
 | Op | Gap |
 |---|---|
-| `add_image` | **Local file paths only** — remote URLs throw `NotSupportedException` ("air-gapped deployment"). Deliberate scope boundary, not a bug. |
+| `add_image` | **Full local drive paths only** (`PathGuard`) — remote URLs, network (UNC) and relative paths are refused ("air-gapped deployment"; a network path would make Windows send the login hash to that server). Deliberate scope boundary, not a bug. |
 | `add_shape` | 26 named preset types + textbox (case-insensitive match, unknown name errors listing valid ones) — not the full OOXML preset-geometry set. |
 | `set_data_validation` | `checkbox` kind explicitly rejected — Excel's Data Validation COM API (verified via reflection against the referenced PIA) has no boolean-checkbox validation type; only 5 kinds exist total (`list`/`listRef`/`numberBetween`/`dateBetween`/`formula`), none map to it. |
 

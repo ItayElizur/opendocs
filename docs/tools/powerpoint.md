@@ -47,7 +47,7 @@ flat table.
 | `set_slide_notes` | Replaces a slide's speaker notes. |
 | `delete_element` | Deletes one shape. |
 | `crop_image` | Fractional crop (0..1) against current on-slide size. Documented imprecision under repeated crops. |
-| `replace_image` | **Local file path only** (same air-gapped constraint as Excel/Word) — swaps a picture's content in place, keeping position/size/rotation/approximate z-order. |
+| `replace_image` | **Full local drive path only** (`PathGuard`, same rule as Excel/Word; also `add_master_element` icons) — swaps a picture's content in place, keeping position/size/rotation/approximate z-order. |
 | `set_picture_opacity` | Via `Fill.Transparency`. |
 
 **Shape creation, duplication, and cross-slide copy/move**

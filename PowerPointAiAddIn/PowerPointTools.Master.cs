@@ -466,10 +466,10 @@ namespace PowerPointAiAddIn
             if (kind == "icon")
             {
                 string localPath = input.GetProperty("localPath").GetString();
-                if (localPath.StartsWith("http://") || localPath.StartsWith("https://"))
-                    return new ToolResult { Output = "add_master_element: remote URLs are not supported in this air-gapped deployment - use a local file path.", IsError = true, Summary = "add_master_element" };
-                if (!System.IO.File.Exists(localPath))
-                    return new ToolResult { Output = "add_master_element: file not found: " + localPath, IsError = true, Summary = "add_master_element" };
+                string pathError = PathGuard.LocalFileError(localPath);
+                if (pathError != null)
+                    return new ToolResult { Output = "add_master_element: " + pathError, IsError = true, Summary = "add_master_element" };
+                localPath = localPath.Trim();
 
                 shape = target.Shapes.AddPicture(localPath, Microsoft.Office.Core.MsoTriState.msoFalse, Microsoft.Office.Core.MsoTriState.msoTrue, 0, 0, -1, -1);
             }

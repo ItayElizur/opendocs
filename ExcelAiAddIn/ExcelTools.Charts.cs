@@ -288,10 +288,9 @@ namespace ExcelAiAddIn
         private static void AddImageExcel(JsonElement op)
         {
             string path = op.GetProperty("path").GetString();
-            if (path.StartsWith("http://") || path.StartsWith("https://"))
-            {
-                throw new NotSupportedException("add_image: remote URLs are not supported in this air-gapped deployment - use a local file path.");
-            }
+            string pathError = PathGuard.LocalFileError(path);
+            if (pathError != null) throw new ArgumentException("add_image: " + pathError);
+            path = path.Trim();
             string anchorCell = op.GetProperty("anchorCell").GetString();
             Excel.Range anchor = Sheet(op).Range[anchorCell];
             Sheet(op).Shapes.AddPicture(path, Microsoft.Office.Core.MsoTriState.msoFalse, Microsoft.Office.Core.MsoTriState.msoTrue,
