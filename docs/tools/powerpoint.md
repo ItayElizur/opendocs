@@ -55,7 +55,7 @@ flat table.
 
 | Tool | Notes |
 |---|---|
-| `edit_chart` | `kind:"create"`: column/columnStacked/bar/barStacked/line/area/pie/doughnut (`chartType`, enum'd from the corrected chart-type map), writes real data into the chart's embedded Excel workbook; a series/categories length mismatch errors instead of drawing a silently wrong chart; position/size default 100/100/400/300. `kind:"update"`: `chartType`, `title`, `legendPos` (`none`/`right`/`top`/`left`/`bottom` + short aliases `r`/`t`/`l`/`b`), `dataLabels` (`none`/`value`/`percent`), `gridlines` (errors with a clear message on chart types with no value axis, e.g. pie/doughnut); several properties may be combined in one update. |
+| `edit_chart` | `kind:"create"`: column/columnStacked/bar/barStacked/line/area/pie/doughnut (`chartType`, enum'd from the corrected chart-type map), writes real data into the chart's embedded Excel workbook; a series/categories length mismatch errors instead of drawing a silently wrong chart; position/size default 100/100/400/300. `kind:"update"`: `chartType`, `title`, `legendPos` (`none`/`right`/`top`/`left`/`bottom` + short aliases `r`/`t`/`l`/`b`), `dataLabels` (`none`/`value`/`percent`), `gridlines` (errors with a clear message on chart types with no value axis, e.g. pie/doughnut); exactly one property per update call (more than one errors), so a call is one edit and one undo step. |
 
 **SmartArt**
 
