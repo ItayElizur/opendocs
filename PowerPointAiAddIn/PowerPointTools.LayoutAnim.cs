@@ -49,7 +49,7 @@ namespace PowerPointAiAddIn
         private static ToolResult SetSlideLayout(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
             string kind = input.TryGetProperty("kind", out var kindEl) && kindEl.ValueKind == JsonValueKind.String ? kindEl.GetString() : "classic";
 
             if (kind == "custom")
@@ -60,7 +60,7 @@ namespace PowerPointAiAddIn
                 if (string.IsNullOrEmpty(layoutName))
                     throw new ArgumentException("set_slide_layout: layoutName must be a non-empty string for kind:\"custom\".");
                 slide.CustomLayout = ResolveCustomLayout(slide, layoutName);
-                return new ToolResult { Output = "Slide " + slideIndex + " layout set to custom layout '" + layoutName + "'.", Mutated = true, Summary = "set_slide_layout" };
+                return new ToolResult { Output = "Slide " + slideIndex + " layout set to custom layout '" + layoutName + "'.", Mutated = true };
             }
             if (kind != "classic")
                 throw new ArgumentException("set_slide_layout: unknown kind '" + kind + "'. Valid: classic, custom.");
@@ -70,7 +70,7 @@ namespace PowerPointAiAddIn
             if (!SlideLayoutMap.TryGetValue(layoutKey, out layoutValue))
                 throw new ArgumentException("set_slide_layout: unknown layout '" + layoutKey + "'. Valid: " + string.Join(", ", SlideLayoutMap.Keys) + ".");
             slide.Layout = layoutValue;
-            return new ToolResult { Output = "Slide " + slideIndex + " layout set to '" + layoutKey + "'.", Mutated = true, Summary = "set_slide_layout" };
+            return new ToolResult { Output = "Slide " + slideIndex + " layout set to '" + layoutKey + "'.", Mutated = true };
         }
 
         // PP-24: curated subset of PpEntryEffect's 189 values, all confirmed
@@ -114,7 +114,7 @@ namespace PowerPointAiAddIn
         private static ToolResult SetSlideTransition(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
             PowerPoint.SlideShowTransition transition = slide.SlideShowTransition;
 
             string effectKey = input.GetProperty("effect").GetString();
@@ -126,14 +126,14 @@ namespace PowerPointAiAddIn
             if (input.TryGetProperty("durationSeconds", out var durEl) && durEl.ValueKind == JsonValueKind.Number)
                 transition.Duration = (float)durEl.GetDouble();
             if (input.TryGetProperty("advanceOnClick", out var clickEl))
-                transition.AdvanceOnClick = clickEl.ValueKind == JsonValueKind.True ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
+                transition.AdvanceOnClick = Tri(clickEl.ValueKind == JsonValueKind.True);
             if (input.TryGetProperty("advanceAfterSeconds", out var advEl) && advEl.ValueKind == JsonValueKind.Number)
             {
                 transition.AdvanceOnTime = Microsoft.Office.Core.MsoTriState.msoTrue;
                 transition.AdvanceTime = (float)advEl.GetDouble();
             }
 
-            return new ToolResult { Output = "Slide " + slideIndex + " transition set to '" + effectKey + "'.", Mutated = true, Summary = "set_slide_transition" };
+            return new ToolResult { Output = "Slide " + slideIndex + " transition set to '" + effectKey + "'.", Mutated = true };
         }
 
         // PP-24: curated subset of MsoAnimEffect's 151 values, all confirmed
@@ -188,7 +188,7 @@ namespace PowerPointAiAddIn
             if (!AnimationTriggerMap.TryGetValue(triggerKey, out triggerValue))
                 throw new ArgumentException("add_animation: unknown trigger '" + triggerKey + "'. Valid: " + string.Join(", ", AnimationTriggerMap.Keys) + ".");
 
-            bool isExit = input.TryGetProperty("exit", out var exitEl) && exitEl.ValueKind == JsonValueKind.True;
+            bool isExit = ToolArgs.OptionalFlag(input, "exit");
 
             // UNVERIFIED (plan's own risk note, PP-24): -1 is documented
             // (not independently reflection-confirmed - reflection gives
@@ -209,18 +209,17 @@ namespace PowerPointAiAddIn
             {
                 Output = "Animation added at animationIndex " + newIndex + " ('" + effectKey + "', " + (isExit ? "exit" : "entrance") + ").",
                 Mutated = true,
-                Summary = "add_animation",
             };
         }
 
         private static ToolResult ReadAnimations(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
             PowerPoint.Sequence sequence = slide.TimeLine.MainSequence;
             int count = sequence.Count;
             if (count == 0)
-                return new ToolResult { Output = "No animations on slide " + slideIndex + ".", Summary = "read_animations" };
+                return new ToolResult { Output = "No animations on slide " + slideIndex + "." };
 
             var sb = new StringBuilder();
             sb.AppendLine("Slide " + slideIndex + " has " + count + " animation(s):");
@@ -238,14 +237,14 @@ namespace PowerPointAiAddIn
                     " trigger=" + (triggerName ?? effect.Timing.TriggerType.ToString()) +
                     " duration=" + effect.Timing.Duration + "s delay=" + effect.Timing.TriggerDelayTime + "s");
             }
-            return new ToolResult { Output = sb.ToString().TrimEnd(), Summary = "read_animations" };
+            return new ToolResult { Output = sb.ToString().TrimEnd() };
         }
 
         private static ToolResult EditAnimation(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
             int animationIndex = input.GetProperty("animationIndex").GetInt32();
-            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
             PowerPoint.Sequence sequence = slide.TimeLine.MainSequence;
             if (animationIndex < 0 || animationIndex >= sequence.Count)
                 throw new ArgumentOutOfRangeException("animationIndex", "animationIndex must be between 0 and " + (sequence.Count - 1) + " (" + sequence.Count + " animation(s) on this slide).");
@@ -256,7 +255,7 @@ namespace PowerPointAiAddIn
             {
                 case "delete":
                     effect.Delete();
-                    return new ToolResult { Output = "Animation " + animationIndex + " deleted. Later animation indices have shifted - re-read (read_animations) before another edit in the same run.", Mutated = true, Summary = "edit_animation" };
+                    return new ToolResult { Output = "Animation " + animationIndex + " deleted. Later animation indices have shifted - re-read (read_animations) before another edit in the same run.", Mutated = true };
                 case "set_timing":
                 {
                     bool changed = false;
@@ -272,7 +271,7 @@ namespace PowerPointAiAddIn
                     }
                     if (!changed)
                         throw new ArgumentException("edit_animation: set_timing requires at least one of durationSeconds, delaySeconds, trigger.");
-                    return new ToolResult { Output = "Animation " + animationIndex + " timing updated.", Mutated = true, Summary = "edit_animation" };
+                    return new ToolResult { Output = "Animation " + animationIndex + " timing updated.", Mutated = true };
                 }
                 case "reorder":
                 {
@@ -286,7 +285,7 @@ namespace PowerPointAiAddIn
                     // off, MoveBefore/MoveAfter (relative-position moves
                     // against another Effect reference) are the fallback.
                     effect.MoveTo(toIndex + 1);
-                    return new ToolResult { Output = "Animation moved from " + animationIndex + " to " + toIndex + ". Indices have shifted - re-read (read_animations) before another edit in the same run.", Mutated = true, Summary = "edit_animation" };
+                    return new ToolResult { Output = "Animation moved from " + animationIndex + " to " + toIndex + ". Indices have shifted - re-read (read_animations) before another edit in the same run.", Mutated = true };
                 }
                 default:
                     throw new ArgumentException("edit_animation: unknown kind '" + kind + "'. Valid: delete, set_timing, reorder.");

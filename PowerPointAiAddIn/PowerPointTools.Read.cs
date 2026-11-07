@@ -72,7 +72,7 @@ namespace PowerPointAiAddIn
                 sb.AppendLine($"[{i}] {preview}");
                 i++;
             }
-            return new ToolResult { Output = sb.ToString(), Summary = "get_deck_context" };
+            return new ToolResult { Output = sb.ToString() };
         }
 
         private static ToolResult ReadSlide(JsonElement input)
@@ -81,7 +81,7 @@ namespace PowerPointAiAddIn
             PowerPoint.Slides slides = ActivePresentation.Slides;
             if (slideIndex < 0 || slideIndex >= slides.Count)
             {
-                return new ToolResult { Output = "Invalid slide index.", IsError = true, Summary = "read_slide" };
+                return new ToolResult { Output = "Invalid slide index.", IsError = true };
             }
             PowerPoint.Slide slide = slides[slideIndex + 1];
             var sb = new StringBuilder();
@@ -129,7 +129,7 @@ namespace PowerPointAiAddIn
             string notesText = GetSlideNotesText(slide);
             if (!string.IsNullOrWhiteSpace(notesText)) sb.AppendLine("Notes: " + notesText.Replace("\r", " ").Trim());
 
-            return new ToolResult { Output = sb.ToString(), Summary = "read_slide" };
+            return new ToolResult { Output = sb.ToString() };
         }
 
         // Recursive listing of a group's contents, nested groups indented in place.
@@ -140,15 +140,15 @@ namespace PowerPointAiAddIn
         {
             ShapeRef r;
             try { r = ResolveShapeRef(input); }
-            catch (Exception ex) { return new ToolResult { Output = ex.Message, IsError = true, Summary = "read_group" }; }
+            catch (Exception ex) { return new ToolResult { Output = ex.Message, IsError = true }; }
 
             if (r.Shape.Type != Microsoft.Office.Core.MsoShapeType.msoGroup)
-                return new ToolResult { Output = "Shape " + r.Path + " is a " + ShapeKindLabel(r.Shape) + ", not a group. Call read_slide to see which shapes are groups.", IsError = true, Summary = "read_group" };
+                return new ToolResult { Output = "Shape " + r.Path + " is a " + ShapeKindLabel(r.Shape) + ", not a group. Call read_slide to see which shapes are groups.", IsError = true };
 
             var sb = new StringBuilder();
             sb.AppendLine($"[{r.Path}] {r.Shape.Name} (group, {r.Shape.GroupItems.Count} children)");
             AppendGroupChildren(sb, r.Shape, r.Path, 1);
-            return new ToolResult { Output = sb.ToString(), Summary = "read_group" };
+            return new ToolResult { Output = sb.ToString() };
         }
 
         private static void AppendGroupChildren(StringBuilder sb, PowerPoint.Shape group, string parentPath, int depth)
@@ -178,15 +178,11 @@ namespace PowerPointAiAddIn
         private static ToolResult FindTextPpt(JsonElement input)
         {
             string query = input.GetProperty("query").GetString();
-            bool useRegex = input.TryGetProperty("regex", out var rx) && rx.ValueKind == JsonValueKind.True;
-            bool matchCase = input.TryGetProperty("matchCase", out var mc) && mc.ValueKind == JsonValueKind.True;
+            bool useRegex = ToolArgs.OptionalFlag(input, "regex");
+            bool matchCase = ToolArgs.OptionalFlag(input, "matchCase");
             int maxResults = input.GetProperty("max_results").GetInt32();
 
-            System.Text.RegularExpressions.Regex regex = useRegex
-                ? new System.Text.RegularExpressions.Regex(query, matchCase
-                    ? System.Text.RegularExpressions.RegexOptions.None
-                    : System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-                : null;
+            System.Text.RegularExpressions.Regex regex = BuildRegex(query, useRegex, matchCase);
             StringComparison comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
             bool IsMatch(string text) => regex != null ? regex.IsMatch(text) : text.IndexOf(query, comparison) >= 0;
 
@@ -219,7 +215,15 @@ namespace PowerPointAiAddIn
                 }
                 slideIndex++;
             }
-            return new ToolResult { Output = found > 0 ? sb.ToString() : "No matches.", Summary = "find_text" };
+            return new ToolResult { Output = found > 0 ? sb.ToString() : "No matches." };
+        }
+
+        private static System.Text.RegularExpressions.Regex BuildRegex(string pattern, bool useRegex, bool matchCase)
+        {
+            if (!useRegex) return null;
+            return new System.Text.RegularExpressions.Regex(pattern, matchCase
+                ? System.Text.RegularExpressions.RegexOptions.None
+                : System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         }
 
         // Scoped to simple text-frame shapes (title/body placeholders, text
@@ -231,15 +235,11 @@ namespace PowerPointAiAddIn
         {
             string find = input.GetProperty("find").GetString();
             string replace = input.GetProperty("replace").GetString();
-            bool useRegex = input.TryGetProperty("regex", out var rx) && rx.ValueKind == JsonValueKind.True;
-            bool matchCase = input.TryGetProperty("matchCase", out var mc) && mc.ValueKind == JsonValueKind.True;
+            bool useRegex = ToolArgs.OptionalFlag(input, "regex");
+            bool matchCase = ToolArgs.OptionalFlag(input, "matchCase");
             bool includeNotes = !input.TryGetProperty("includeNotes", out var inEl) || inEl.ValueKind != JsonValueKind.False;
 
-            System.Text.RegularExpressions.Regex regex = useRegex
-                ? new System.Text.RegularExpressions.Regex(find, matchCase
-                    ? System.Text.RegularExpressions.RegexOptions.None
-                    : System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-                : null;
+            System.Text.RegularExpressions.Regex regex = BuildRegex(find, useRegex, matchCase);
             StringComparison comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
             string ApplyReplace(string text, out int count)
@@ -263,8 +263,7 @@ namespace PowerPointAiAddIn
                     PowerPoint.TextRange range = shape.TextFrame.TextRange;
                     string newText = ApplyReplace(range.Text, out int count);
                     if (count == 0) continue;
-                    range.Text = newText;
-                    ApplyAutoDirection(range, newText);
+                    SetText(range, newText);
                     replaced += count;
                 }
                 if (includeNotes)
@@ -283,7 +282,7 @@ namespace PowerPointAiAddIn
                     }
                 }
             }
-            return new ToolResult { Output = replaced + " replacement(s).", Mutated = replaced > 0, Summary = "replace_text" };
+            return new ToolResult { Output = replaced + " replacement(s).", Mutated = replaced > 0 };
         }
 
     }

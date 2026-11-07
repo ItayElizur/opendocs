@@ -1,3 +1,6 @@
+const SLIDE_INDEX = { type: 'number' };
+const SHAPE_PATH = { type: ['number', 'string'], description: '0-based shape index, or a dotted path like "3.1.0" for a shape inside a group (from read_group).' };
+
 export const READER_TOOLS = [
   {
     name: 'get_deck_context',
@@ -7,7 +10,7 @@ export const READER_TOOLS = [
   {
     name: 'read_slide',
     description: 'Reads full text of every shape on one slide (0-based index), plus its layout, transition, animation count, and speaker notes (if any). Shapes are listed back-to-front (z-order/stacking order) - use set_element_order to change it. A group shape is shown as one line with a child count - call read_group to see inside it.',
-    inputSchema: { type: 'object', properties: { slideIndex: { type: 'number' } }, required: ['slideIndex'] },
+    inputSchema: { type: 'object', properties: { slideIndex: SLIDE_INDEX }, required: ['slideIndex'] },
   },
   {
     name: 'read_group',
@@ -17,14 +20,14 @@ export const READER_TOOLS = [
       'Positional or structural edits (set_element_transform, set_element_order, delete_element, add_animation) require ungroup_element on the top-level group first.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: ['number', 'string'] } },
+      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: ['number', 'string'] } },
       required: ['slideIndex', 'shapeIndex'],
     },
   },
   {
     name: 'read_animations',
     description: 'Reads a slide\'s animations in play order, one per line (shape, effect, entrance/exit, trigger, timing). Needed before edit_animation, since animationIndex addresses this same order.',
-    inputSchema: { type: 'object', properties: { slideIndex: { type: 'number' } }, required: ['slideIndex'] },
+    inputSchema: { type: 'object', properties: { slideIndex: SLIDE_INDEX }, required: ['slideIndex'] },
   },
   {
     name: 'find_text',
@@ -51,7 +54,7 @@ export const READER_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         smartArtIndex: { type: 'number', description: 'Omit to read all diagrams on the slide.' },
       },
       required: ['slideIndex'],
@@ -107,8 +110,8 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
-        shapeIndex: { type: ['number', 'string'], description: '0-based shape index, or a dotted path like "3.1.0" for a shape inside a group (from read_group).' },
+        slideIndex: SLIDE_INDEX,
+        shapeIndex: SHAPE_PATH,
         text: { type: 'string' },
         bulleted: { type: 'boolean' },
       },
@@ -120,7 +123,7 @@ const MUTATION_TOOLS = [
     description: 'Replaces a slide\'s speaker notes (0-based slideIndex). Overwrites any existing notes text; read_slide shows the current notes first.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: { type: 'number' }, text: { type: 'string' } },
+      properties: { slideIndex: SLIDE_INDEX, text: { type: 'string' } },
       required: ['slideIndex', 'text'],
     },
   },
@@ -132,8 +135,8 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
-        shapeIndex: { type: ['number', 'string'], description: '0-based shape index, or a dotted path like "3.1.0" for a shape inside a group (from read_group).' },
+        slideIndex: SLIDE_INDEX,
+        shapeIndex: SHAPE_PATH,
         bold: { type: 'boolean' },
         italic: { type: 'boolean' },
         underline: { type: 'boolean' },
@@ -153,7 +156,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         shapeIndex: { type: 'number' },
         left: { type: 'number' },
         top: { type: 'number' },
@@ -173,7 +176,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         shapeIndex: { type: 'number' },
         kind: { type: 'string', enum: ['bringToFront', 'sendToBack', 'bringForward', 'sendBackward'] },
       },
@@ -188,7 +191,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         left: { type: 'number' },
         top: { type: 'number' },
         width: { type: 'number' },
@@ -209,7 +212,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         shapeType: {
           type: 'string',
           enum: [
@@ -234,7 +237,7 @@ const MUTATION_TOOLS = [
     description: 'Deletes one shape from a slide.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' } },
+      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' } },
       required: ['slideIndex', 'shapeIndex'],
     },
   },
@@ -247,7 +250,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         shapeIndex: { type: 'number' },
         offsetX: { type: 'number', description: 'Points. Default 12. Ignored if left/top is given.' },
         offsetY: { type: 'number', description: 'Points. Default 12. Ignored if left/top is given.' },
@@ -267,7 +270,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         shapeIndex: { type: 'number' },
         targetSlideIndex: { type: 'number' },
         left: { type: 'number', description: 'Destination position. Defaults to the source shape\'s own position.' },
@@ -285,7 +288,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         shapeIndex: { type: 'number' },
         targetSlideIndex: { type: 'number' },
         left: { type: 'number', description: 'Destination position. Defaults to the source shape\'s own position.' },
@@ -307,21 +310,21 @@ const MUTATION_TOOLS = [
   {
     name: 'delete_slide',
     description: 'Deletes one slide (0-based slideIndex). Slides after it shift DOWN by one index - re-read the deck with get_deck_context before deleting another slide in the same run. Cannot delete the last remaining slide.',
-    inputSchema: { type: 'object', properties: { slideIndex: { type: 'number' } }, required: ['slideIndex'] },
+    inputSchema: { type: 'object', properties: { slideIndex: SLIDE_INDEX }, required: ['slideIndex'] },
   },
   {
     name: 'move_slide',
     description: 'Moves a slide to a new 0-based position; other slides shift accordingly.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: { type: 'number' }, toIndex: { type: 'number' } },
+      properties: { slideIndex: SLIDE_INDEX, toIndex: { type: 'number' } },
       required: ['slideIndex', 'toIndex'],
     },
   },
   {
     name: 'duplicate_slide',
     description: 'Inserts a copy of a slide (content included) directly after it. Use add_slide instead to create a new slide from a slide\'s layout without its content.',
-    inputSchema: { type: 'object', properties: { slideIndex: { type: 'number' } }, required: ['slideIndex'] },
+    inputSchema: { type: 'object', properties: { slideIndex: SLIDE_INDEX }, required: ['slideIndex'] },
   },
   {
     name: 'set_slide_layout',
@@ -331,7 +334,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         kind: { type: 'string', enum: ['classic', 'custom'] },
         layout: {
           type: 'string',
@@ -350,7 +353,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         effect: {
           type: 'string',
           enum: ['none', 'cut', 'fade', 'dissolve', 'random', 'wipeLeft', 'wipeRight', 'wipeUp', 'wipeDown', 'pushLeft', 'pushRight', 'pushUp', 'pushDown', 'coverLeft', 'coverRight', 'coverUp', 'coverDown', 'uncoverLeft', 'uncoverRight', 'uncoverUp', 'uncoverDown', 'zoomIn', 'zoomOut', 'zoomCenter', 'circle', 'diamond', 'splitHorizontal', 'splitVertical', 'wheel', 'blindsHorizontal', 'blindsVertical', 'checkerboard'],
@@ -371,7 +374,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         shapeIndex: { type: 'number' },
         effect: { type: 'string', enum: ['appear', 'fade', 'fly', 'flashOnce', 'wipe', 'zoom', 'dissolve', 'bounce', 'spiral', 'swivel', 'wheel', 'split', 'box', 'circle', 'diamond', 'plus', 'checkerboard', 'randomBars', 'growAndTurn', 'riseUp'] },
         exit: { type: 'boolean' },
@@ -390,7 +393,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         animationIndex: { type: 'number' },
         kind: { type: 'string', enum: ['delete', 'set_timing', 'reorder'] },
         durationSeconds: { type: 'number' },
@@ -407,8 +410,8 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
-        shapeIndex: { type: ['number', 'string'], description: '0-based shape index, or a dotted path like "3.1.0" for a shape inside a group (from read_group).' },
+        slideIndex: SLIDE_INDEX,
+        shapeIndex: SHAPE_PATH,
         fill: { type: 'string' },
       },
       required: ['slideIndex', 'shapeIndex', 'fill'],
@@ -420,8 +423,8 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
-        shapeIndex: { type: ['number', 'string'], description: '0-based shape index, or a dotted path like "3.1.0" for a shape inside a group (from read_group).' },
+        slideIndex: SLIDE_INDEX,
+        shapeIndex: SHAPE_PATH,
         color: { type: 'string' }, widthPt: { type: 'number' }, remove: { type: 'boolean' },
       },
       required: ['slideIndex', 'shapeIndex'],
@@ -436,13 +439,13 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         shapeIndex: { type: 'number', description: 'The source shape to copy formatting FROM.' },
         targets: {
           type: 'array',
           items: {
             type: 'object',
-            properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' } },
+            properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' } },
             required: ['slideIndex', 'shapeIndex'],
           },
           description: 'One or more {slideIndex, shapeIndex} shapes to copy formatting TO - can span multiple slides.',
@@ -456,7 +459,7 @@ const MUTATION_TOOLS = [
     description: 'Sets a solid background color for one slide, or slideIndex=-1 for every slide in the deck.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: { type: 'number' }, color: { type: 'string' } },
+      properties: { slideIndex: SLIDE_INDEX, color: { type: 'string' } },
       required: ['slideIndex', 'color'],
     },
   },
@@ -465,7 +468,7 @@ const MUTATION_TOOLS = [
     description: 'Promotes a group shape\'s direct children to top-level shapes. Shape indices change after this call - re-read the slide before addressing the promoted shapes.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: ['number', 'string'] } },
+      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: ['number', 'string'] } },
       required: ['slideIndex', 'shapeIndex'],
     },
   },
@@ -477,7 +480,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         shapeIndexes: { type: 'array', items: { type: 'number' }, description: 'Two or more distinct 0-based top-level shape indices.' },
         name: { type: 'string', description: 'Optional. Sets the new group\'s name, shown in read_slide/read_group - use a short, meaningful label (e.g. "Logo lockup").' },
       },
@@ -490,7 +493,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' }, rows: { type: 'number' }, cols: { type: 'number' },
+        slideIndex: SLIDE_INDEX, rows: { type: 'number' }, cols: { type: 'number' },
         cells: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
         x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
         name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_slide/read_group.' },
@@ -503,7 +506,7 @@ const MUTATION_TOOLS = [
     description: 'Replaces one table cell\'s text (0-based row/col). Row 0 is just the first physical row, including when it holds column headers - there is no separate header concept in the index space (edit_table_style\'s firstRow only changes that row\'s visual style, not its index).',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, row: { type: 'number' }, col: { type: 'number' }, paragraphs: { type: 'string' } },
+      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' }, row: { type: 'number' }, col: { type: 'number' }, paragraphs: { type: 'string' } },
       required: ['slideIndex', 'shapeIndex', 'row', 'col', 'paragraphs'],
     },
   },
@@ -513,7 +516,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' }, shapeIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' },
         kind: { type: 'string', enum: ['insert-row', 'delete-row', 'insert-col', 'delete-col'] },
         index: { type: 'number' }, before: { type: 'boolean' },
       },
@@ -526,7 +529,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' }, shapeIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' },
         firstRow: { type: 'boolean' }, bandRow: { type: 'boolean' }, shadingColor: { type: 'string' },
         borderColor: { type: 'string' }, borderWidthPt: { type: 'number' },
         borderPreset: { type: 'string', enum: ['all', 'outline', 'none'] },
@@ -540,7 +543,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         kind: { type: 'string', enum: ['column', 'columnStacked', 'bar', 'barStacked', 'line', 'area', 'pie', 'doughnut'] },
         title: { type: 'string' },
         categories: { type: 'array', items: { type: 'string' } },
@@ -557,7 +560,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' }, shapeIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' },
         chartType: { type: 'string', enum: ['column', 'columnStacked', 'bar', 'barStacked', 'line', 'area', 'pie', 'doughnut'] },
         title: { type: 'string' },
         legendPos: { type: 'string', enum: ['none', 'right', 'top', 'left', 'bottom', 'r', 't', 'l', 'b'] },
@@ -573,7 +576,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         layout: { type: 'string', enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'] },
         items: { type: 'array', items: { type: 'string' } },
         x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
@@ -592,7 +595,7 @@ const MUTATION_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: { type: 'number' },
+        slideIndex: SLIDE_INDEX,
         smartArtIndex: { type: 'number', description: '0-based among the SmartArt diagrams on that slide. Default 0.' },
         kind: { type: 'string', enum: ['set_text', 'add_node', 'delete_node', 'set_style', 'set_layout'] },
         nodeIndex: { type: 'number', description: '0-based. Required for set_text and delete_node.' },
@@ -609,7 +612,7 @@ const MUTATION_TOOLS = [
     description: 'Non-destructively crops a picture shape. l/t/r/b are 0..1 fractions of the current on-slide image size cut from each edge; all zero clears the crop.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, l: { type: 'number' }, t: { type: 'number' }, r: { type: 'number' }, b: { type: 'number' } },
+      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' }, l: { type: 'number' }, t: { type: 'number' }, r: { type: 'number' }, b: { type: 'number' } },
       required: ['slideIndex', 'shapeIndex', 'l', 't', 'r', 'b'],
     },
   },
@@ -618,7 +621,7 @@ const MUTATION_TOOLS = [
     description: 'Sets a picture shape\'s overall opacity, 0 (invisible) to 1 (fully opaque).',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, opacity: { type: 'number' } },
+      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' }, opacity: { type: 'number' } },
       required: ['slideIndex', 'shapeIndex', 'opacity'],
     },
   },
@@ -627,7 +630,7 @@ const MUTATION_TOOLS = [
     description: 'Swaps a picture shape\'s image content in place from a local file path, keeping position/size/rotation/approximate z-order.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: { type: 'number' }, shapeIndex: { type: 'number' }, localPath: { type: 'string' }, keepCrop: { type: 'boolean' } },
+      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' }, localPath: { type: 'string' }, keepCrop: { type: 'boolean' } },
       required: ['slideIndex', 'shapeIndex', 'localPath'],
     },
   },

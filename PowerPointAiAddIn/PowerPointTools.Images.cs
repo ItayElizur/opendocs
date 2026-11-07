@@ -24,7 +24,7 @@ namespace PowerPointAiAddIn
             shape.PictureFormat.CropTop = t * shape.Height;
             shape.PictureFormat.CropRight = r * shape.Width;
             shape.PictureFormat.CropBottom = b * shape.Height;
-            return new ToolResult { Output = "Image cropped.", Mutated = true, Summary = "crop_image" };
+            return new ToolResult { Output = "Image cropped.", Mutated = true };
         }
 
         private static ToolResult ReplaceImagePpt(JsonElement input)
@@ -32,10 +32,10 @@ namespace PowerPointAiAddIn
             string localPath = input.GetProperty("localPath").GetString();
             string pathError = PathGuard.LocalFileError(localPath);
             if (pathError != null)
-                return new ToolResult { Output = "replace_image: " + pathError, IsError = true, Summary = "replace_image" };
+                return new ToolResult { Output = "replace_image: " + pathError, IsError = true };
             localPath = localPath.Trim();
             PowerPoint.Shape oldShape = ResolveShape(input);
-            bool keepCrop = input.TryGetProperty("keepCrop", out var kc) && kc.ValueKind == JsonValueKind.True;
+            bool keepCrop = ToolArgs.OptionalFlag(input, "keepCrop");
 
             float left = oldShape.Left, top = oldShape.Top, width = oldShape.Width, height = oldShape.Height, rotation = oldShape.Rotation;
             int zPos = oldShape.ZOrderPosition;
@@ -66,7 +66,7 @@ namespace PowerPointAiAddIn
             {
                 newShape.ZOrder(Microsoft.Office.Core.MsoZOrderCmd.msoBringForward);
             }
-            return new ToolResult { Output = "Image replaced.", Mutated = true, Summary = "replace_image" };
+            return new ToolResult { Output = "Image replaced.", Mutated = true };
         }
 
         private static ToolResult SetPictureOpacity(JsonElement input)
@@ -75,7 +75,7 @@ namespace PowerPointAiAddIn
             float opacity = (float)input.GetProperty("opacity").GetDouble();
             dynamic dShape = shape;
             dShape.Fill.Transparency = 1f - opacity;
-            return new ToolResult { Output = "Opacity updated.", Mutated = true, Summary = "set_picture_opacity" };
+            return new ToolResult { Output = "Opacity updated.", Mutated = true };
         }
     }
 }

@@ -15,12 +15,9 @@ namespace PowerPointAiAddIn
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
             int rows = input.GetProperty("rows").GetInt32();
             int cols = input.GetProperty("cols").GetInt32();
-            float left = input.TryGetProperty("x", out var x) ? (float)x.GetDouble() : 100f;
-            float top = input.TryGetProperty("y", out var y) ? (float)y.GetDouble() : 100f;
-            float width = input.TryGetProperty("w", out var w) ? (float)w.GetDouble() : 400f;
-            float height = input.TryGetProperty("h", out var h) ? (float)h.GetDouble() : 200f;
+            ReadXywh(input, 200f, out float left, out float top, out float width, out float height);
 
-            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
             PowerPoint.Shape tableShape = slide.Shapes.AddTable(rows, cols, left, top, width, height);
             if (input.TryGetProperty("cells", out var cells) && cells.ValueKind == JsonValueKind.Array)
             {
@@ -32,8 +29,7 @@ namespace PowerPointAiAddIn
                     {
                         string cellText = cellEl.GetString();
                         PowerPoint.TextRange cellRange = tableShape.Table.Cell(r + 1, c + 1).Shape.TextFrame.TextRange;
-                        cellRange.Text = cellText;
-                        ApplyAutoDirection(cellRange, cellText);
+                        SetText(cellRange, cellText);
                         c++;
                     }
                     r++;
@@ -41,7 +37,7 @@ namespace PowerPointAiAddIn
             }
             int newShapeIndex = slide.Shapes.Count - 1;
             string named = ApplyOptionalName(tableShape, input);
-            return new ToolResult { Output = "Table added at shapeIndex " + newShapeIndex + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true, Summary = "add_table" };
+            return new ToolResult { Output = "Table added at shapeIndex " + newShapeIndex + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true };
         }
 
         private static PowerPoint.Table ResolveTable(JsonElement input)
@@ -61,9 +57,8 @@ namespace PowerPointAiAddIn
             int col = input.GetProperty("col").GetInt32();
             string text = input.GetProperty("paragraphs").GetString();
             PowerPoint.TextRange range = table.Cell(row + 1, col + 1).Shape.TextFrame.TextRange;
-            range.Text = text;
-            ApplyAutoDirection(range, text);
-            return new ToolResult { Output = "Cell updated.", Mutated = true, Summary = "edit_table_cell" };
+            SetText(range, text);
+            return new ToolResult { Output = "Cell updated.", Mutated = true };
         }
 
         private static ToolResult EditTableStructure(JsonElement input)
@@ -71,7 +66,7 @@ namespace PowerPointAiAddIn
             PowerPoint.Table table = ResolveTable(input);
             string kind = input.GetProperty("kind").GetString();
             int index = input.GetProperty("index").GetInt32();
-            bool before = input.TryGetProperty("before", out var b) && b.ValueKind == JsonValueKind.True;
+            bool before = ToolArgs.OptionalFlag(input, "before");
             // index always addresses an EXISTING row/column (0-based); before/
             // after decides which side of it the new one goes on - so the valid
             // range is the same for insert and delete. Un-validated, an
@@ -99,13 +94,13 @@ namespace PowerPointAiAddIn
                     table.Columns[index + 1].Delete();
                     break;
                 default:
-                    return new ToolResult { Output = "Unknown structure kind: " + kind, IsError = true, Summary = "edit_table_structure" };
+                    return new ToolResult { Output = "Unknown structure kind: " + kind, IsError = true };
             }
             // Deleting/inserting a row or column shifts every later row/column's
             // index - the same trap PP-19's delete_slide has. Callers doing more
             // than one structural edit in a run should re-read the table between
             // calls; documented in the schema description too.
-            return new ToolResult { Output = "Table structure updated.", Mutated = true, Summary = "edit_table_structure" };
+            return new ToolResult { Output = "Table structure updated.", Mutated = true };
         }
 
         private static ToolResult EditTableStyle(JsonElement input)
@@ -161,7 +156,7 @@ namespace PowerPointAiAddIn
                                            || (side == PowerPoint.PpBorderType.ppBorderRight && cIdx == colCount - 1);
                             }
                             PowerPoint.LineFormat border = cell.Borders[side];
-                            border.Visible = sideVisible ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
+                            border.Visible = Tri(sideVisible);
                             if (sideVisible)
                             {
                                 border.Weight = weight;
@@ -173,7 +168,7 @@ namespace PowerPointAiAddIn
                     rIdx++;
                 }
             }
-            return new ToolResult { Output = "Table style updated.", Mutated = true, Summary = "edit_table_style" };
+            return new ToolResult { Output = "Table style updated.", Mutated = true };
         }
 
     }

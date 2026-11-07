@@ -520,7 +520,6 @@ namespace PowerPointAiAddIn
             {
                 Output = "Style copied to " + targets.Count + " shape(s): " + what + ".",
                 Mutated = true,
-                Summary = "copy_element_style",
             };
         }
     }
