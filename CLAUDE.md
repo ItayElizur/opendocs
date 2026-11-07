@@ -49,7 +49,7 @@ if you touch either list, and update both in the same commit. The same applies t
 each of Word/Excel/PowerPoint's own `readOnlyTools`/`commentOnlyExtraTools` arrays
 against their C# `Tools.Execute()` gating.
 
-`OfficeAi.Shared.Tests/TierListsAgreeTests.cs` now reads the C# sets and the `entry.ts` arrays and fails when they differ
+`OfficeAi.Shared.Tests/TierListsAgreeTests.cs` now reads the C# sets and the matching TypeScript arrays (`entry.ts`, or `tools.ts` for Excel's and PowerPoint's read-only lists) and fails when they differ
 (Word, Excel and PowerPoint read-only lists; all of Outlook's tiers), so run `dotnet test OfficeAi.Shared.Tests` after touching either side.
 
 ## There is no live Office to test against in most automated contexts

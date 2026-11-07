@@ -60,13 +60,13 @@ namespace OfficeAi.Shared.Tests
         public void Excel_ReadOnlyTools()
         {
             Same(CSharpSet("ExcelAiAddIn/ExcelTools.cs", "AlwaysAllowedTools"),
-                 TsArray("ExcelAiAddIn/web-src/entry.ts", "const READ_ONLY_TOOL_NAMES ="), "Excel read-only tools");
+                 TsArray("ExcelAiAddIn/web-src/tools.ts", "const READ_ONLY_TOOL_NAMES ="), "Excel read-only tools");
         }
 
         [Fact]
         public void PowerPoint_ReadOnlyTools()
         {
-            string ts = Read("PowerPointAiAddIn/web-src/entry.ts");
+            string ts = Read("PowerPointAiAddIn/web-src/tools.ts");
             int from = ts.IndexOf("const READER_TOOLS = [", StringComparison.Ordinal);
             int to = ts.IndexOf("const MUTATION_TOOLS = [", StringComparison.Ordinal);
             Assert.True(from >= 0 && to > from, "READER_TOOLS / MUTATION_TOOLS markers not found");
