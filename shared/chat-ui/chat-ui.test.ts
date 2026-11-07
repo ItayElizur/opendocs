@@ -53,6 +53,30 @@ describe('mountChatUI', () => {
     expect(root.querySelector('[data-mode="trackChanges"]')!.classList.contains('selected')).toBe(true)
   })
 
+  it('the eye button next to the API key shows and hides it', () => {
+    const { root } = setup()
+    const input = root.querySelector<HTMLInputElement>('[data-field="apiKey"]')!
+    const eye = root.querySelector<HTMLButtonElement>('[data-secret-toggle]')!
+    expect(input.type).toBe('password')
+    expect(eye.getAttribute('aria-label')).toBe('Show API key')
+    eye.click()
+    expect(input.type).toBe('text')
+    expect(eye.getAttribute('aria-pressed')).toBe('true')
+    expect(eye.getAttribute('aria-label')).toBe('Hide API key')
+    eye.click()
+    expect(input.type).toBe('password')
+    expect(eye.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('opening the settings dropdown hides a shown API key again', () => {
+    const { root } = setup()
+    const input = root.querySelector<HTMLInputElement>('[data-field="apiKey"]')!
+    root.querySelector<HTMLButtonElement>('[data-secret-toggle]')!.click()
+    expect(input.type).toBe('text')
+    root.querySelector<HTMLButtonElement>('[data-t-title="settings"]')!.click()
+    expect(input.type).toBe('password')
+  })
+
   it('colours the mode button for the starting mode and follows later selections', () => {
     const { root } = setup()
     const btn = root.querySelector<HTMLButtonElement>('.ai-mode-btn')!

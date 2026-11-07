@@ -23,6 +23,8 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   settingsTitle:        { en: 'OpenDocs Settings', he: 'הגדרות אופן דוקס' },
   settingsBaseUrl:      { en: 'API Base URL', he: 'כתובת בסיס API' },
   settingsApiKey:       { en: 'API Key', he: 'מפתח API' },
+  showApiKey:           { en: 'Show API key', he: 'הצג מפתח API' },
+  hideApiKey:           { en: 'Hide API key', he: 'הסתר מפתח API' },
   settingsModel:        { en: 'Model name', he: 'שם המודל' },
   settingsSkipTls:      { en: 'Skip TLS certificate verification (insecure - testing only)', he: 'דלג על אימות אישור TLS (לא מאובטח - לבדיקות בלבד)' },
   settingsLanguage:     { en: 'Language', he: 'שפה' },
@@ -569,7 +571,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <h4 data-t="settingsTitle">OpenDocs Settings</h4>
           <div class="ai-field"><label data-t="settingsProvider">Provider</label><select class="ai-settings-provider"></select></div>
           <div class="ai-field ai-field-baseurl"><label data-t="settingsBaseUrl">API Base URL</label><input data-field="baseUrl" type="text" /></div>
-          <div class="ai-field"><label data-t="settingsApiKey">API Key</label><input data-field="apiKey" type="password" /></div>
+          <div class="ai-field"><label data-t="settingsApiKey">API Key</label><div class="ai-secret"><input data-field="apiKey" type="password" /><button type="button" class="ai-secret-toggle" data-secret-toggle data-t-title="showApiKey" aria-pressed="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line class="ai-secret-slash" x1="3" y1="3" x2="21" y2="21"/></svg></button></div></div>
           <div class="ai-field">
             <label data-t="settingsModel">Model name</label>
             <select class="ai-settings-model-select" hidden></select>
@@ -687,6 +689,20 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const modelSelect = root.querySelector<HTMLSelectElement>('.ai-settings-model-select')!
   const modelInput = root.querySelector<HTMLInputElement>('.ai-settings-model-input')!
   const apiKeyInput = root.querySelector<HTMLInputElement>('[data-field="apiKey"]')!
+  const apiKeyToggle = root.querySelector<HTMLButtonElement>('[data-secret-toggle]')!
+
+  // The eye button next to the API key: shows or hides it. The key goes back to hidden whenever the settings are
+  // saved or the settings dropdown is opened again.
+  function setApiKeyVisible(visible: boolean): void {
+    apiKeyInput.type = visible ? 'text' : 'password'
+    apiKeyToggle.setAttribute('aria-pressed', String(visible))
+    apiKeyToggle.classList.toggle('shown', visible)
+    apiKeyToggle.dataset.tTitle = visible ? 'hideApiKey' : 'showApiKey' // applyStrings keeps the label in the chosen language
+    const label = t(visible ? 'hideApiKey' : 'showApiKey')
+    apiKeyToggle.title = label
+    apiKeyToggle.setAttribute('aria-label', label)
+  }
+  apiKeyToggle.addEventListener('click', () => setApiKeyVisible(apiKeyInput.type === 'password'))
 
   providerSelect.innerHTML = AI_PROVIDERS.map((p) => `<option value="${p.id}">${escapeHtml(p.label)}</option>`).join('')
 
@@ -1192,6 +1208,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       theme: pendingTheme,
     })
     settingsPanel.classList.remove('open')
+    setApiKeyVisible(false)
   })
 
   const testBtn = root.querySelector<HTMLButtonElement>('[data-t="testConnection"]')!
@@ -1394,6 +1411,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       closeSettingsView()
     } else {
       settingsPanel.classList.toggle('open')
+      setApiKeyVisible(false)
     }
   })
 

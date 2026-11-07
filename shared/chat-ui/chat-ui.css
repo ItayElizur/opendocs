@@ -161,6 +161,16 @@
     background: var(--color-bg-page); color: var(--color-text-primary);
   }
   .ai-field input:focus, .ai-field select:focus { outline: none; border-color: var(--docs-brand-ring); }
+  .ai-secret { position: relative; }
+  .ai-secret input { padding-inline-end: 34px; }
+  .ai-secret-toggle {
+    position: absolute; inset-inline-end: 4px; top: 50%; transform: translateY(-50%);
+    display: flex; align-items: center; padding: 4px; border: 0; border-radius: var(--radius-8);
+    background: none; color: var(--color-text-secondary); cursor: pointer;
+  }
+  .ai-secret-toggle:hover { color: var(--color-text-primary); }
+  .ai-secret-toggle .ai-secret-slash { display: none; }
+  .ai-secret-toggle.shown .ai-secret-slash { display: inline; }
   .ai-field-checkbox label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
   .ai-field-checkbox input[type="checkbox"] { width: auto; flex-shrink: 0; }
   .ai-lang-toggle { display: flex; gap: 6px; }
