@@ -26,12 +26,9 @@ jobs:
             (cd "$app" && npm ci && npx tsc --noEmit -p .)
           done
 
-  # The C# unit tests (OfficeAi.Shared.Tests), including the check that each add-in's C# and entry.ts tool lists agree.
-  # OfficeAi.Shared references the Office interop assemblies from a Visual Studio install, which a hosted runner may not
-  # have; until that is confirmed this job reports but does not block. Remove continue-on-error once it is green.
+  # The C# unit tests (OfficeAi.Shared.Tests), including the checks that each add-in's C# and TypeScript tool lists agree.
   dotnet:
     runs-on: windows-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: unit tests
