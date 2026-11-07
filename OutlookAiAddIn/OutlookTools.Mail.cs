@@ -41,7 +41,8 @@ namespace OutlookAiAddIn
             {
                 Outlook.Row row = table.GetNextRow();
                 string cls = Convert.ToString(row["MessageClass"], CultureInfo.InvariantCulture) ?? "";
-                if (!cls.StartsWith("IPM.Note", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!cls.StartsWith("IPM.Note", StringComparison.OrdinalIgnoreCase) &&
+                    !cls.StartsWith("IPM.Schedule.Meeting", StringComparison.OrdinalIgnoreCase)) continue; // invitations, responses, cancellations
 
                 n++;
                 string received = "";
@@ -54,11 +55,12 @@ namespace OutlookAiAddIn
                 sb.AppendLine("- message_id: " + Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture));
                 sb.AppendLine("  subject: " + (Convert.ToString(row["Subject"], CultureInfo.InvariantCulture) ?? ""));
                 sb.AppendLine("  from: " + (Convert.ToString(row["SenderName"], CultureInfo.InvariantCulture) ?? ""));
+                sb.AppendLine("  type: " + (IsMeetingRequest(cls) ? MeetingTypeNote : "email"));
                 sb.AppendLine("  received: " + received + "  unread: " + unread + "  has_attachments: " + hasAtt);
             }
 
-            if (n == 0) return new ToolResult { Output = "No messages in " + folder.Name + (unreadOnly ? " (unread only)." : "."), Summary = "list_emails" };
-            return new ToolResult { Output = "Folder: " + folder.Name + "\n" + sb, Summary = "list_emails" };
+            if (n == 0) return new ToolResult { Output = "No messages in " + folder.Name + (unreadOnly ? " (unread only)." : "."), Summary = "search_emails" };
+            return new ToolResult { Output = "Folder: " + folder.Name + "\n" + sb, Summary = "search_emails" };
         }
 
         private static ToolResult GetEmail(JsonElement input)
@@ -67,7 +69,7 @@ namespace OutlookAiAddIn
             string folderName = Str(input, "folder", null);
             string storeId = folderName != null ? ResolveFolder(folderName).StoreID : null;
 
-            Outlook.MailItem mail = ItemById(id, storeId) as Outlook.MailItem;
+            dynamic mail = MailOrMeeting(id, storeId);
             if (mail == null) return new ToolResult { Output = "That message_id does not resolve to a mail item.", IsError = true, Summary = "get_email" };
 
             var to = new List<string>();
@@ -95,6 +97,22 @@ namespace OutlookAiAddIn
             sb.AppendLine("importance: " + mail.Importance);
             sb.AppendLine("unread: " + mail.UnRead);
 
+            // A meeting invitation: add the event's when / where / who from its calendar item, so one call tells the
+            // whole story (the body below is the invitation text).
+            if (mail is Outlook.MeetingItem && IsMeetingRequest((string)mail.MessageClass))
+            {
+                try
+                {
+                    Outlook.AppointmentItem appt = mail.GetAssociatedAppointment(false);
+                    if (appt != null)
+                    {
+                        sb.AppendLine("type: meeting");
+                        AppendEventDetails(sb, appt);
+                    }
+                }
+                catch (Exception ex) { DebugLog.WriteException("GetEmail associated appointment", ex); }
+            }
+
             int attCount = mail.Attachments != null ? mail.Attachments.Count : 0;
             if (attCount > 0)
             {
@@ -113,10 +131,25 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = sb.ToString(), Summary = "get_email" };
         }
 
+        // A meeting invitation in the Inbox is a MeetingItem; it has the same UnRead / Importance / Display / Save
+        // members as a MailItem, so open_email, mark_email_read and flag_email_important take either.
+        // Only a meeting request is labelled "meeting" (and can be answered with respond_meeting); responses and
+        // cancellations are listed like ordinary mail.
+        private static bool IsMeetingRequest(string messageClass)
+        {
+            return messageClass != null && messageClass.StartsWith("IPM.Schedule.Meeting.Request", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static dynamic MailOrMeeting(string id, string storeId)
+        {
+            object item = ItemById(id, storeId);
+            return item is Outlook.MailItem || item is Outlook.MeetingItem ? item : null;
+        }
+
         private static ToolResult OpenEmail(JsonElement input)
         {
             string id = ReqStr(input, "message_id");
-            Outlook.MailItem mail = ItemById(id, StoreOf(input)) as Outlook.MailItem;
+            dynamic mail = MailOrMeeting(id, StoreOf(input));
             if (mail == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "open_email" };
 
             // Display() marks the item read as a side effect, but this tool is
@@ -148,14 +181,15 @@ namespace OutlookAiAddIn
         private static ToolResult MarkEmail(string mbxKey, JsonElement input, bool unread)
         {
             string id = ReqStr(input, "message_id");
-            Outlook.MailItem mail = ItemById(id, StoreOf(input)) as Outlook.MailItem;
+            dynamic mail = MailOrMeeting(id, StoreOf(input));
             if (mail == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "mark_email" };
             string[] props = { "UnRead" };
             object[] before = ReadProps(mail, props);
             mail.UnRead = unread;
             mail.Save();
-            string toolName = unread ? "mark_email_unread" : "mark_email_read";
-            RecordSnapshot(mbxKey, toolName, mail, mail.Subject ?? "", props, before);
+            string toolName = "mark_email_read";
+            string undoLabel = unread ? "mark_email_read (as unread)" : "mark_email_read";
+            RecordSnapshot(mbxKey, undoLabel, mail, mail.Subject ?? "", props, before);
             return new ToolResult { Output = (unread ? "Marked unread: " : "Marked read: ") + (mail.Subject ?? ""), Mutated = true, Summary = toolName };
         }
 
@@ -163,7 +197,7 @@ namespace OutlookAiAddIn
         {
             string id = ReqStr(input, "message_id");
             bool important = Bool(input, "important", true);
-            Outlook.MailItem mail = ItemById(id, StoreOf(input)) as Outlook.MailItem;
+            dynamic mail = MailOrMeeting(id, StoreOf(input));
             if (mail == null) return new ToolResult { Output = "message_id does not resolve to a mail item.", IsError = true, Summary = "flag_email_important" };
             string[] props = { "Importance" };
             object[] before = ReadProps(mail, props);

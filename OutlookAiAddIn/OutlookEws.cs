@@ -270,7 +270,7 @@ namespace OutlookAiAddIn
             {
                 // HexEntryId, not EntryId: EntryId returns a base64-encoded
                 // PR_ENTRYID, but Outlook.AppointmentItem.EntryID / Namespace.
-                // GetItemFromID (which every ItemById/get_event/edit_event call in
+                // GetItemFromID (which every ItemById/get_event/event-edit call in
                 // this add-in goes through) expect the hex-encoded form - EWS's
                 // own docs call HexEntryId "the format used by Microsoft Outlook".
                 var converted = svc.ConvertId(new Ews.AlternateId(Ews.IdFormat.EwsId, appt.Id.UniqueId, mailboxSmtp), Ews.IdFormat.HexEntryId);

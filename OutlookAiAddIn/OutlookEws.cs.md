@@ -80,7 +80,7 @@ this path now fetches data via EWS instead of COM. Failure here (should
 be rare - reasoned from the EWS Managed API surface, not yet verified
 live) degrades to an empty event_id rather than dropping the whole event:
 the caller still sees the event exists, just can't act on it via
-get_event/edit_event until this is investigated.
+get_event/event-edit until this is investigated.
 
 A timeout is deliberately NOT caught here - it propagates to
 GetSharedCalendarEvents' loop, which needs to distinguish "this was a

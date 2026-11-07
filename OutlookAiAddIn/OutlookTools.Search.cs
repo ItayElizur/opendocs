@@ -39,6 +39,18 @@ namespace OutlookAiAddIn
         // Native query first: Items.Sort then Items.Restrict("@SQL=" + DASL).
         // A capped linear scan is the fallback only when Restrict throws on a
         // filter it cannot parse - never the default path.
+        // True when the caller gave any search criterion. search_emails with none
+        // of these is a plain "newest messages in a folder" listing (ListEmails).
+        private static bool HasSearchFilters(JsonElement input)
+        {
+            SearchArgs a = ReadSearchArgs(input);
+            return !string.IsNullOrWhiteSpace(a.Query) || a.Start.HasValue || a.End.HasValue ||
+                   !string.IsNullOrEmpty(a.Sender) || !string.IsNullOrEmpty(Str(input, "recipient", null));
+        }
+
+        // search_emails marks a meeting invitation (a MeetingItem request, not a MailItem) with this type.
+        private const string MeetingTypeNote = "meeting";
+
         private static ToolResult SearchEmails(JsonElement input)
         {
             SearchArgs a = ReadSearchArgs(input);
@@ -71,14 +83,15 @@ namespace OutlookAiAddIn
                 }
             }
 
-            var matches = new List<Outlook.MailItem>();
+            var matches = new List<dynamic>();
             int scanned = 0;
             const int scanCap = 500;
             Outlook.Items source = filtered ?? items;
             foreach (object obj in source)
             {
-                Outlook.MailItem m = obj as Outlook.MailItem;
-                if (m == null) continue;
+                // A meeting invitation in the Inbox is a MeetingItem, not a MailItem; it is listed like a message.
+                if (!(obj is Outlook.MailItem) && !(obj is Outlook.MeetingItem)) continue;
+                dynamic m = obj;
                 scanned++;
 
                 if (!usedRestrict && dasl.Length > 0 && !MatchesClientSide(m, query, start, end, sender))
@@ -99,12 +112,16 @@ namespace OutlookAiAddIn
 
             var sb = new StringBuilder();
             sb.AppendLine((usedRestrict ? "Server-filtered" : "Scanned") + " search in " + folder.Name + ":");
-            foreach (Outlook.MailItem m in matches)
+            foreach (dynamic m in matches)
             {
                 sb.AppendLine("- message_id: " + m.EntryID);
                 sb.AppendLine("  subject: " + (m.Subject ?? ""));
                 sb.AppendLine("  from: " + (m.SenderName ?? ""));
-                try { sb.AppendLine("  received: " + Iso(m.ReceivedTime) + "  unread: " + m.UnRead); } catch { }
+                sb.AppendLine("  type: " + (IsMeetingRequest((string)m.MessageClass) ? MeetingTypeNote : "email"));
+                bool hasAtt = false;
+                try { hasAtt = Convert.ToBoolean(m.PropertyAccessor.GetProperty(PrHasAttach)); }
+                catch { try { hasAtt = m.Attachments.Count > 0; } catch { } }
+                try { sb.AppendLine("  received: " + Iso(m.ReceivedTime) + "  unread: " + m.UnRead + "  has_attachments: " + hasAtt); } catch { }
             }
             return new ToolResult { Output = sb.ToString(), Summary = "search_emails" };
         }
@@ -183,7 +200,7 @@ namespace OutlookAiAddIn
             return new ToolResult { Output = "Applied the search to " + folder.Name + " in Outlook (scope: " + scope + ") - the user can see the results now.", Summary = "apply_search" };
         }
 
-        private static bool MatchesClientSide(Outlook.MailItem m, string query, DateTime? start, DateTime? end, string sender)
+        private static bool MatchesClientSide(dynamic m, string query, DateTime? start, DateTime? end, string sender)
         {
             if (!string.IsNullOrEmpty(query))
             {
@@ -207,7 +224,7 @@ namespace OutlookAiAddIn
             return true;
         }
 
-        private static bool MatchesRecipient(Outlook.MailItem m, string recipient)
+        private static bool MatchesRecipient(dynamic m, string recipient)
         {
             string target = recipient.Trim().ToLowerInvariant();
             try

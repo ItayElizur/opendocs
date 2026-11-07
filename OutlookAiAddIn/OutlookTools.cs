@@ -37,7 +37,7 @@ namespace OutlookAiAddIn
         // this escalation exactly - see OfficeAi.Shared.EditingMode.
         private static readonly HashSet<string> AlwaysAllowedTools = new HashSet<string>
         {
-            "list_emails", "search_emails", "get_email", "list_folders", "search_contacts",
+            "search_emails", "get_email", "list_folders", "search_contacts",
             "list_events", "get_event", "list_tasks", "get_attachment", "find_meeting_slots", "open_email",
             "list_color_categories",
         };
@@ -52,11 +52,10 @@ namespace OutlookAiAddIn
         // commentOnlyExtraTools.
         private static readonly HashSet<string> DraftTierTools = new HashSet<string>
         {
-            "mark_email_read", "mark_email_unread", "flag_email_important", "move_email", "delete_email",
+            "mark_email_read", "flag_email_important", "move_email", "delete_email",
             "create_task", "update_task", "set_reminder", "set_email_reminder",
-            "draft_email", "reply_email", "reply_all_email", "forward_email", "draft_event",
-            "set_event_categories", "set_category_color", "set_event_availability", "apply_search", "draft_cancel_event", "draft_edit_event",
-            "draft_respond_meeting",
+            "draft_email", "draft_event",
+            "set_event_categories", "set_category_color", "set_event_availability", "apply_search",
             // undo/redo only replay the assistant's own recorded actions (see
             // OutlookTools.Undo.cs) and never send anything - sends and
             // meeting responses are barriers, not replayable entries - so
@@ -69,14 +68,14 @@ namespace OutlookAiAddIn
         // the draft tier so "Draft only" honestly means nothing sends.
         private static readonly HashSet<string> ApprovalTierTools = new HashSet<string>
         {
-            "accept_meeting", "decline_meeting", "tentative_meeting",
+            "respond_meeting",
         };
 
         // Tier 4 (Full autonomy only): composes and sends/creates brand-new
         // content with no review step at all.
         private static readonly HashSet<string> SendTierTools = new HashSet<string>
         {
-            "send_email", "send_reply", "send_reply_all", "send_forward", "create_event", "cancel_event", "edit_event",
+            "send_email", "send_event",
         };
 
         private static string TierLabel(EditingMode mode)
@@ -131,8 +130,14 @@ namespace OutlookAiAddIn
 
                 switch (name)
                 {
-                    case "list_emails": return ListEmails(input);
-                    case "search_emails": return SearchEmails(input);
+                    case "search_emails":
+                    {
+                        // No filters = just list the newest messages (the fast table API);
+                        // any filter = a real search.
+                        ToolResult found = HasSearchFilters(input) ? SearchEmails(input) : ListEmails(input);
+                        found.Summary = "search_emails";
+                        return found;
+                    }
                     case "apply_search": return ApplySearch(input);
                     case "get_email": return GetEmail(input);
                     case "open_email": return OpenEmail(input);
@@ -145,17 +150,13 @@ namespace OutlookAiAddIn
                     case "get_attachment": return GetAttachment(input);
                     case "list_color_categories": return ListColorCategories(input);
 
-                    case "mark_email_read": return MarkEmail(mbxKey, input, false);
-                    case "mark_email_unread": return MarkEmail(mbxKey, input, true);
+                    case "mark_email_read": return MarkEmail(mbxKey, input, !Bool(input, "read", true));
                     case "flag_email_important": return FlagEmailImportant(mbxKey, input);
                     case "move_email": return MoveEmail(mbxKey, input);
                     case "delete_email": return DeleteEmail(mbxKey, input);
                     case "undo_last_action": return UndoLastAction(mbxKey);
                     case "redo_last_action": return RedoLastAction(mbxKey);
-                    case "draft_respond_meeting": return DraftRespondMeeting(input);
-                    case "accept_meeting": return RespondMeeting(mbxKey, input, Outlook.OlMeetingResponse.olMeetingAccepted, "accept_meeting");
-                    case "decline_meeting": return RespondMeeting(mbxKey, input, Outlook.OlMeetingResponse.olMeetingDeclined, "decline_meeting");
-                    case "tentative_meeting": return RespondMeeting(mbxKey, input, Outlook.OlMeetingResponse.olMeetingTentative, "tentative_meeting");
+                    case "respond_meeting": return RespondMeeting(mbxKey, input);
                     case "set_event_categories": return SetEventCategories(mbxKey, input);
                     case "set_category_color": return SetCategoryColor(mbxKey, input);
                     case "set_event_availability": return SetEventAvailability(mbxKey, input);
@@ -164,21 +165,11 @@ namespace OutlookAiAddIn
                     case "set_reminder": return SetReminder(mbxKey, input);
                     case "set_email_reminder": return SetEmailReminder(mbxKey, input);
 
-                    case "draft_email": return DraftEmail(input);
-                    case "reply_email": return ReplyEmail(input, false);
-                    case "reply_all_email": return ReplyEmail(input, true);
-                    case "forward_email": return ForwardEmail(input);
-                    case "draft_event": return DraftEvent(input);
-                    case "draft_cancel_event": return DraftCancelEvent(input);
-                    case "draft_edit_event": return DraftEditEvent(input);
+                    case "draft_email": return ComposeEmail(mbxKey, input, false);
+                    case "draft_event": return EventAction(mbxKey, input, false);
 
-                    case "send_email": return SendEmail(mbxKey, input);
-                    case "send_reply": return SendReply(mbxKey, input, false);
-                    case "send_reply_all": return SendReply(mbxKey, input, true);
-                    case "send_forward": return SendForward(mbxKey, input);
-                    case "create_event": return CreateEvent(mbxKey, input);
-                    case "cancel_event": return CancelEvent(mbxKey, input);
-                    case "edit_event": return EditEvent(mbxKey, input);
+                    case "send_email": return ComposeEmail(mbxKey, input, true);
+                    case "send_event": return EventAction(mbxKey, input, true);
 
                     default: return new ToolResult { Output = "Unknown tool: " + name, IsError = true, Summary = name };
                 }

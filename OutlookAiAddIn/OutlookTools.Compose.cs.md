@@ -43,7 +43,7 @@ populated, and delivery confirmed to a real external
 account) - do it here so every caller gets a genuinely
 resolved recipient without needing its own resolve step.
 
-## `SendEmail` - `to` required
+## `ComposeEmail` (send mode) - `to` required
 
 to is required, unlike draft_email's - draft_email opens a
 compose window where a human can add a missing recipient
