@@ -87,3 +87,13 @@
 // app's own VSTO-generated Globals class). See OfficeLanguage.cs
 // for how the returned LCID maps to a supported UI language.
 ```
+
+## Focus after alt-tab (2026)
+
+If the cursor was in the chat box and the user alt-tabbed to another program and back, Office gave focus to the document, not the pane.
+The page now posts `pane-blur` when it loses focus with an element focused (`bridge.ts` `notifyPaneBlur`). `StartFocusReturnWatch` then
+samples every 250 ms whether the pane's top-level window (`GetAncestor(Handle, GA_ROOT)`) is the foreground window. `FocusReturn.Next`
+decides: another program in front means "away"; the window in front again after being away means `_bridge.WebView.Focus()`, which puts
+the cursor back in the box Chromium remembers; the window in front without ever being away (the user clicked the document) means do nothing.
+The timer runs only between a blur and that decision. Not exercised in a live Office window: whether Office re-takes focus after our
+`Focus()` call, and the 250 ms sampling, are untested.

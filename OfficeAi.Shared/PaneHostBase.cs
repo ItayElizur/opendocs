@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -28,6 +29,16 @@ namespace OfficeAi.Shared
         private string _pendingSelectionSignature;
         private string _lastSelectionSignature;
 
+        // Alt-tabbing away and back makes Office give focus to the document, not the pane, so the cursor in the chat
+        // box is lost. When the page reports it lost focus, this timer watches whether the app was left and comes
+        // back, and if so gives the pane its focus again (see FocusReturn and PaneHostBase.cs.md).
+        private readonly Timer _focusReturnTimer;
+        private bool _focusWasAway;
+
+        [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+        private const uint GA_ROOT = 2;
+
         public event Action<int> RequestPaneWidth;
 
         protected PaneHostBase(string appDataFolderName)
@@ -44,6 +55,9 @@ namespace OfficeAi.Shared
 
             _selectionTimer = new Timer { Interval = 200 };
             _selectionTimer.Tick += OnSelectionTimerTick;
+
+            _focusReturnTimer = new Timer { Interval = 250 };
+            _focusReturnTimer.Tick += OnFocusReturnTick;
 
             // Never dereference the owning document/workbook/presentation at
             // construction time (no .Path/.FullName access) - doing so
@@ -83,10 +97,37 @@ namespace OfficeAi.Shared
             PostMessage(_pendingSelection);
         }
 
+        private void StartFocusReturnWatch()
+        {
+            if (_focusReturnTimer.Enabled) return;
+            _focusWasAway = false;
+            _focusReturnTimer.Start();
+        }
+
+        private void OnFocusReturnTick(object sender, EventArgs e)
+        {
+            if (IsDisposed || !IsHandleCreated) { _focusReturnTimer.Stop(); return; }
+            IntPtr root = GetAncestor(Handle, GA_ROOT);
+            bool inFront = root != IntPtr.Zero && GetForegroundWindow() == root;
+            switch (FocusReturn.Next(inFront, ref _focusWasAway))
+            {
+                case FocusReturnStep.Restore:
+                    _focusReturnTimer.Stop();
+                    _bridge.WebView.Focus();
+                    break;
+                case FocusReturnStep.Stop:
+                    _focusReturnTimer.Stop();
+                    break;
+            }
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
+                _focusReturnTimer.Tick -= OnFocusReturnTick;
+                _focusReturnTimer.Stop();
+                _focusReturnTimer.Dispose();
                 _selectionTimer.Tick -= OnSelectionTimerTick;
                 _selectionTimer.Stop();
                 _selectionTimer.Dispose();
@@ -164,6 +205,10 @@ namespace OfficeAi.Shared
                 // The document system message; both branches use GetChatId()
                 // so they inherit the per-document keying and lazy-COM-
                 // resolution rule for free, same as chat history above.
+                // The page lost keyboard focus (to another program, or to the document): see StartFocusReturnWatch.
+                case "pane-blur":
+                    StartFocusReturnWatch();
+                    break;
                 case "load-doc-settings":
                     DocSettings settings = DocSettingsStore.Load(_appDataFolderName, GetChatId());
                     PostMessage(new { kind = "doc-settings-loaded", systemMessage = settings.SystemMessage });
