@@ -3,7 +3,7 @@ using OfficeAi.Shared;
 
 public class ChartTypesTests
 {
-    // Every chart-type name advertised by any app's entry.ts. All three now
+    // Every chart-type name advertised by any app's tools.ts. All three now
     // advertise the same 8 (Word gained "barStacked" to reach parity):
     //   Word:       edit_chart.chartType
     //   Excel:      add_chart.chartType, edit_chart.chartType
