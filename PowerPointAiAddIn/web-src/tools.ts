@@ -1,4 +1,10 @@
 const SLIDE_INDEX = { type: 'number' };
+const createRect = (defaultHeight: number) => ({
+  left: { type: 'number', description: 'create only. Default 100.' },
+  top: { type: 'number', description: 'create only. Default 100.' },
+  width: { type: 'number', description: 'create only. Default 400.' },
+  height: { type: 'number', description: `create only. Default ${defaultHeight}.` },
+})
 const SHAPE_PATH = { type: ['number', 'string'], description: '0-based shape index, or a dotted path like "3.1.0" for a shape inside a group (from read_slide (view=group)).' };
 
 export const READER_TOOLS = [
@@ -340,10 +346,7 @@ const MUTATION_TOOLS = [
         rows: { type: 'number', description: 'create only.' },
         cols: { type: 'number', description: 'create only.' },
         cells: { type: 'array', items: { type: 'array', items: { type: 'string' } }, description: 'create only: optional pre-filled cell text.' },
-        left: { type: 'number', description: 'create only. Default 100.' },
-        top: { type: 'number', description: 'create only. Default 100.' },
-        width: { type: 'number', description: 'create only. Default 400.' },
-        height: { type: 'number', description: 'create only. Default 200.' },
+        ...createRect(200),
         name: { type: 'string', description: 'create only, optional. Shape name, shown by read_slide.' },
         row: { type: 'number', description: 'set_cell only.' },
         col: { type: 'number', description: 'set_cell only.' },
@@ -373,10 +376,7 @@ const MUTATION_TOOLS = [
         title: { type: 'string' },
         categories: { type: 'array', items: { type: 'string' }, description: 'create only.' },
         series: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, values: { type: 'array', items: { type: 'number' } } } }, description: 'create only.' },
-        left: { type: 'number', description: 'create only. Default 100.' },
-        top: { type: 'number', description: 'create only. Default 100.' },
-        width: { type: 'number', description: 'create only. Default 400.' },
-        height: { type: 'number', description: 'create only. Default 300.' },
+        ...createRect(300),
         name: { type: 'string', description: 'create only, optional. Shape name, shown by read_slide.' },
         legendPos: { type: 'string', enum: ['none', 'right', 'top', 'left', 'bottom', 'r', 't', 'l', 'b'], description: 'update only.' },
         dataLabels: { type: 'string', enum: ['none', 'value', 'percent'], description: 'update only.' },
@@ -404,10 +404,7 @@ const MUTATION_TOOLS = [
         quickStyleName: { type: 'string', description: 'set_style: substring-matched, e.g. "Intense".' },
         layout: { type: 'string', enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'], description: 'Required for create and set_layout.' },
         items: { type: 'array', items: { type: 'string' }, description: 'create only.' },
-        left: { type: 'number', description: 'create only. Default 100.' },
-        top: { type: 'number', description: 'create only. Default 100.' },
-        width: { type: 'number', description: 'create only. Default 400.' },
-        height: { type: 'number', description: 'create only. Default 300.' },
+        ...createRect(300),
         name: { type: 'string', description: 'create only, optional. Shape name, shown by read_slide.' },
       },
       required: ['slideIndex', 'kind'],
