@@ -12,9 +12,8 @@ theme has more than one Slide Master, and only this default
 
 ## `MasterTarget`
 
-User-requested (2026-09-22, live testing): edit_master_element/
-read_master/edit_master_element/set_master_element_
-transform previously only ever targeted the single top-level
+User-requested (2026-09-22, live testing): edit_master_element and
+read_master previously only ever targeted the single top-level
 Slide Master - there was no way to address one specific layout
 (Title Slide, Title and Content, etc.), even though each layout
 has its own independent shape collection (the exact thing that
@@ -50,9 +49,8 @@ ResolveCustomLayout (PowerPointTools.LayoutAnim.cs), which is
 handed a specific slide and correctly searches THAT slide's own
 Design. A deck combining more than one theme/design (e.g. slides
 pasted in with "Preserve Source Formatting") could never reach a
-non-default design's layout by name through edit_master_element/
-read_master/edit_master_element/set_master_element_
-transform's layoutName. Now searches every design in the
+non-default design's layout by name through edit_master_element
+and read_master's layoutName. Now searches every design in the
 presentation (confirmed via reflection: Presentation.Designs is a
 real, enumerable collection, each with its own SlideMaster).
 
