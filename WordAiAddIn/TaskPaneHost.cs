@@ -96,13 +96,8 @@ namespace WordAiAddIn
             int objectIndex = -1;
             try
             {
-                // Logs Word's raw Selection.Type to distinguish an actual shape
-                // selection from the cursor merely being near a shape (both can
-                // report Start==End). See TaskPaneHost.cs.md.
-                DebugLog.Write("OnSelectionChanged: Selection.Type=" + selection.Type + " Start=" + selection.Start + " End=" + selection.End);
                 bool withinTable = (bool)selection.get_Information(Word.WdInformation.wdWithInTable);
                 int inlineCount = selection.InlineShapes.Count;
-                DebugLog.Write("OnSelectionChanged: withinTable=" + withinTable + " inlineShapes.Count=" + inlineCount);
                 if (withinTable)
                 {
                     Word.Table selTable = selection.Tables[1];
@@ -120,13 +115,11 @@ namespace WordAiAddIn
                 {
                     dynamic shapeRange = selection.ShapeRange;
                     int shapeRangeCount = (int)shapeRange.Count;
-                    DebugLog.Write("OnSelectionChanged: shapeRange.Count=" + shapeRangeCount);
                     if (shapeRangeCount > 0)
                     {
                         objectKind = ClassifySelectedShape(selection.Document, shapeRange[1], out objectIndex);
                     }
                 }
-                DebugLog.Write("OnSelectionChanged: resolved objectKind=" + (objectKind ?? "(null)") + " objectIndex=" + objectIndex);
             }
             catch (System.Exception ex)
             {
@@ -139,7 +132,6 @@ namespace WordAiAddIn
             // NOT set Start != End the way dragging across text does, so a detected
             // object also counts as "has selection" downstream. See TaskPaneHost.cs.md.
             bool effectiveHasSelection = hasSelection || objectKind != null;
-            DebugLog.Write("OnSelectionChanged: hasSelection(raw)=" + hasSelection + " effectiveHasSelection=" + effectiveHasSelection);
 
             // Routed through the shared debounce - WindowSelectionChange fires on
             // every caret move, same as Excel/PowerPoint's selection events.
@@ -170,27 +162,22 @@ namespace WordAiAddIn
             bool hasChart = false, hasSmartArt = false;
             try { hasChart = (int)shape.HasChart == -1; } catch (System.Exception ex) { DebugLog.WriteException("ClassifySelectedShape: shape.HasChart", ex); }
             try { hasSmartArt = (int)shape.HasSmartArt == -1; } catch (System.Exception ex) { DebugLog.WriteException("ClassifySelectedShape: shape.HasSmartArt", ex); }
-            DebugLog.Write("ClassifySelectedShape: name=" + name + " hasChart=" + hasChart + " hasSmartArt=" + hasSmartArt);
 
             if (hasChart)
             {
                 var charts = WordTools.ListChartShapes(doc);
-                DebugLog.Write("ClassifySelectedShape: ListChartShapes returned " + charts.Count + " chart(s)");
                 for (int i = 0; i < charts.Count; i++)
                 {
                     string n = null; try { n = (string)charts[i].Name; } catch { }
-                    DebugLog.Write("ClassifySelectedShape: chart[" + i + "].Name=" + n);
                     if (n == name) { index = i; return "chart"; }
                 }
             }
             if (hasSmartArt)
             {
                 var arts = WordTools.ListSmartArtShapes(doc);
-                DebugLog.Write("ClassifySelectedShape: ListSmartArtShapes returned " + arts.Count + " diagram(s)");
                 for (int i = 0; i < arts.Count; i++)
                 {
                     string n = null; try { n = (string)arts[i].Name; } catch { }
-                    DebugLog.Write("ClassifySelectedShape: smartart[" + i + "].Name=" + n);
                     if (n == name) { index = i; return "smartart"; }
                 }
             }

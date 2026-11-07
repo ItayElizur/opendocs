@@ -43,7 +43,7 @@ namespace WordAiAddIn
             // Logs every tool call and failure regardless of which tool, so a repro
             // always shows up even if a specific method's own logging missed the
             // failure point.
-            DebugLog.Write("Execute: " + name + " input=" + input.GetRawText());
+            DebugLog.Write("Execute: " + name + (DebugLog.LogToolInputs ? " input=" + input.GetRawText() : ""));
             try
             {
                 EditingMode mode = ModeFor(docKey);
