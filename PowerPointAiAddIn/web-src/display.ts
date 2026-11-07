@@ -73,6 +73,10 @@ export const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'Move slide', he: 'העברת שקופית' },
     description: { en: 'Moves a slide to a different position in the presentation.', he: 'מעביר שקופית למיקום אחר במצגת.' },
   },
+  set_slide_notes: {
+    label: { en: 'Set speaker notes', he: 'עריכת הערות דובר' },
+    description: { en: "Replaces a slide's speaker notes.", he: 'מחליף את הערות הדובר של שקופית.' },
+  },
   duplicate_slide: {
     label: { en: 'Duplicate slide', he: 'שכפול שקופית' },
     description: { en: 'Inserts a copy of a slide, including its content.', he: 'מוסיף עותק של שקופית, כולל תוכנה.' },
