@@ -13,7 +13,7 @@ export const SYSTEM_PROMPT =
     'You can create and edit charts with edit_chart (kind create or update). ' +
     'You can add, read and edit SmartArt diagrams: edit_smartart (kind create adds one) and read_slide with view "smartart". ' +
     'edit_smartart\'s delete_node shifts later node indices - call read_slide with view "smartart" again before a second node edit on the same diagram in one run. ' +
-    'You can work with images: edit_picture (kind crop or replace) and format_element\'s opacity. ' +
+    'You can work with images: edit_picture (kind add, crop, or replace) and format_element\'s opacity. ' +
     'You can change a slide\'s layout, background, transition, and speaker notes with set_slide (one kind of change per call), and add, read, or edit shape animations (edit_animation with kind add, delete, set_timing, or reorder; read_slide with view "animations"). ' +
     'edit_animation\'s delete/reorder shift later animation indices - call read_slide with view "animations" again before a second animation edit on the same slide in the same run. ' +
     'You can manage Slide Master basics: set_headers_footers (slide number/footer/date, deck-wide or per slide - mirrors PowerPoint\'s native "Insert Header and Footer" dialog), ' +

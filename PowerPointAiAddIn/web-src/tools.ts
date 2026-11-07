@@ -427,23 +427,30 @@ const MUTATION_TOOLS = [
   {
     name: 'edit_picture',
     description:
-      'kind selects the operation: "crop" or "replace". Both work only on a picture - any other shape errors and nothing is changed (a replace also refuses a placeholder, since replacing deletes the old shape and PowerPoint would leave an empty placeholder behind). ' +
+      'kind selects the operation: "add", "crop", or "replace". ' +
+      'kind "add": inserts a new picture on the slide from a local file (localPath; no shapeIndex) and returns its shapeIndex. With neither width nor height it keeps the image\'s natural size, shrunk to fit if it would overflow the slide; with only one of width/height it scales proportionally; with both it stretches to exactly that size. Omitted left/top centers the picture on that axis. Optional name. ' +
+      'crop and replace work only on a picture (shapeIndex) - any other shape errors and nothing is changed (a replace also refuses a placeholder, since replacing deletes the old shape and PowerPoint would leave an empty placeholder behind). ' +
       'kind "crop": Non-destructively crops a picture shape. l/t/r/b are 0..1 fractions of the current on-slide image size cut from each edge; all zero clears the crop.' +
       'kind "replace": Swaps a picture shape\'s image content in place from a local file path, keeping position/size/rotation/approximate z-order.',
     inputSchema: {
       type: 'object',
       properties: {
         slideIndex: SLIDE_INDEX,
-        shapeIndex: { type: 'number' },
-        kind: { type: 'string', enum: ['crop', 'replace'] },
+        shapeIndex: { type: 'number', description: 'crop and replace only: the picture.' },
+        kind: { type: 'string', enum: ['add', 'crop', 'replace'] },
         l: { type: 'number', description: 'crop only.' },
         t: { type: 'number', description: 'crop only.' },
         r: { type: 'number', description: 'crop only.' },
         b: { type: 'number', description: 'crop only.' },
-        localPath: { type: 'string', description: 'replace only: the new image file.' },
+        localPath: { type: 'string', description: 'add and replace: a full local drive path to the image file.' },
         keepCrop: { type: 'boolean', description: 'replace only.' },
+        left: { type: 'number', description: 'add only. Omit to center horizontally.' },
+        top: { type: 'number', description: 'add only. Omit to center vertically.' },
+        width: { type: 'number', description: 'add only.' },
+        height: { type: 'number', description: 'add only.' },
+        name: { type: 'string', description: 'add only, optional. Sets the shape\'s name, shown in read_slide/read_group.' },
       },
-      required: ['slideIndex', 'shapeIndex', 'kind'],
+      required: ['slideIndex', 'kind'],
     },
   },
   {

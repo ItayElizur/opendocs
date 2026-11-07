@@ -75,7 +75,7 @@ export const POWERPOINT_TOOL_DISPLAY = {
   },
   edit_picture: {
     label: { en: 'Edit picture', he: 'עריכת תמונה' },
-    description: { en: 'Crops a picture, or swaps its image for another file.', he: 'חותך תמונה, או מחליף את התמונה בקובץ אחר.' },
+    description: { en: 'Adds a picture from a file, crops a picture, or swaps its image for another file.', he: 'מוסיף תמונה מקובץ, חותך תמונה, או מחליף את התמונה בקובץ אחר.' },
   },
   set_headers_footers: {
     label: { en: 'Slide numbers, footer & date', he: 'מספור שקופיות, כותרת תחתונה ותאריך' },

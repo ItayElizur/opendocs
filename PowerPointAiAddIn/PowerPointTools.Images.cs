@@ -10,15 +10,72 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
-        // kind selects the operation: crop (l/t/r/b fractions) or replace (localPath, optional keepCrop).
+        // kind selects the operation: add (localPath), crop (l/t/r/b fractions) or replace (localPath, optional keepCrop).
         private static ToolResult EditPicture(JsonElement input)
         {
             string kind = input.GetProperty("kind").GetString();
             switch (kind)
             {
+                case "add": return AddPictureToSlide(input);
                 case "crop": return CropImage(input);
                 case "replace": return ReplaceImagePpt(input);
-                default: throw new ArgumentException("edit_picture: unknown kind '" + kind + "'. Valid: crop, replace.");
+                default: throw new ArgumentException("edit_picture: unknown kind '" + kind + "'. Valid: add, crop, replace.");
+            }
+        }
+
+        // Inserts a picture from a local file. Only one of width/height scales proportionally; both stretch to
+        // exactly that size; neither keeps the natural size, shrunk to fit if it would overflow the slide.
+        // An omitted left/top centers the picture on that axis.
+        private static ToolResult AddPictureToSlide(JsonElement input)
+        {
+            string localPath = input.GetProperty("localPath").GetString();
+            string pathError = PathGuard.LocalFileError(localPath);
+            if (pathError != null)
+                return new ToolResult { Output = "edit_picture: " + pathError, IsError = true };
+            localPath = localPath.Trim();
+
+            float? width = input.TryGetProperty("width", out var wEl) && wEl.ValueKind == JsonValueKind.Number ? (float?)wEl.GetDouble() : null;
+            float? height = input.TryGetProperty("height", out var hEl) && hEl.ValueKind == JsonValueKind.Number ? (float?)hEl.GetDouble() : null;
+            if ((width.HasValue && width.Value <= 0) || (height.HasValue && height.Value <= 0))
+                throw new ArgumentException("edit_picture: width and height must be greater than 0.");
+
+            PowerPoint.Slide slide = ResolveSlide(input);
+            float slideW = ActivePresentation.PageSetup.SlideWidth, slideH = ActivePresentation.PageSetup.SlideHeight;
+
+            PowerPoint.Shape shape = slide.Shapes.AddPicture(localPath, Microsoft.Office.Core.MsoTriState.msoFalse, Microsoft.Office.Core.MsoTriState.msoTrue, 0, 0, -1, -1);
+            // The shape now exists - delete it again if anything below throws, rather than leave it unplaced.
+            try
+            {
+                float w = shape.Width, h = shape.Height;
+                if (width.HasValue && height.HasValue) { w = width.Value; h = height.Value; }
+                else if (width.HasValue) { h = h * width.Value / w; w = width.Value; }
+                else if (height.HasValue) { w = w * height.Value / h; h = height.Value; }
+                else
+                {
+                    float scale = Math.Min(1f, Math.Min(slideW / w, slideH / h));
+                    w *= scale;
+                    h *= scale;
+                }
+
+                shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoFalse;
+                shape.Width = w;
+                shape.Height = h;
+                shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue;
+                shape.Left = input.TryGetProperty("left", out var lEl) && lEl.ValueKind == JsonValueKind.Number ? (float)lEl.GetDouble() : (slideW - w) / 2;
+                shape.Top = input.TryGetProperty("top", out var tEl) && tEl.ValueKind == JsonValueKind.Number ? (float)tEl.GetDouble() : (slideH - h) / 2;
+
+                string named = ApplyOptionalName(shape, input);
+                int newShapeIndex = shape.ZOrderPosition - 1;
+                return new ToolResult
+                {
+                    Output = "Picture added at shapeIndex " + newShapeIndex + (named != null ? " (\"" + named + "\")" : "") + ".",
+                    Mutated = true,
+                };
+            }
+            catch
+            {
+                try { shape.Delete(); } catch { }
+                throw;
             }
         }
 
