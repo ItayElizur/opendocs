@@ -406,7 +406,7 @@ namespace OutlookAiAddIn
             Outlook.MeetingItem invitation = item as Outlook.MeetingItem;
             // An invitation whose event is not on the calendar (declined or deleted earlier): accepting or answering
             // tentatively puts it back, like the UI does. A decline has nothing to decline.
-            if (appt == null && invitation != null && response != Outlook.OlMeetingResponse.olMeetingDeclined)
+            if (appt == null && invitation != null && IsMeetingRequest(invitation.MessageClass) && response != Outlook.OlMeetingResponse.olMeetingDeclined)
                 appt = invitation.GetAssociatedAppointment(true);
             if (appt == null)
                 return new ToolResult
@@ -488,16 +488,16 @@ namespace OutlookAiAddIn
                 byte[] want = appt.PropertyAccessor.GetProperty(gidTag) as byte[];
                 if (want == null) return null;
                 // The invitation sits in the Inbox of the store the event lives in (a shared calendar is another
-                // mailbox); fall back to the default store. Only the first 3000 Inbox items are scanned.
+                // mailbox); fall back to the default store. Only the meeting requests are looked at (a Restrict, not a
+                // walk over every message).
                 Outlook.Folder inbox;
                 try { inbox = (Outlook.Folder)((Outlook.Folder)appt.Parent).Store.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox); }
                 catch { inbox = (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox); }
-                int scanned = 0;
-                foreach (object o in inbox.Items)
+                Outlook.Items requests = inbox.Items.Restrict("[MessageClass] = 'IPM.Schedule.Meeting.Request'");
+                foreach (object o in requests)
                 {
-                    if (++scanned > 3000) break;
                     Outlook.MeetingItem mi = o as Outlook.MeetingItem;
-                    if (mi == null || !(mi.MessageClass ?? "").StartsWith("IPM.Schedule.Meeting.Request", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (mi == null) continue;
                     try
                     {
                         byte[] got = mi.PropertyAccessor.GetProperty(gidTag) as byte[];
@@ -512,7 +512,7 @@ namespace OutlookAiAddIn
 
         private static string NoInviteError(Outlook.AppointmentItem appt)
         {
-            return "Couldn't find the invitation email for \"" + (appt.Subject ?? "") + "\" - it may have been deleted or archived (only the most recent 3000 Inbox messages are searched), or you organize this event (an organizer has no invitation to reply to or forward). " +
+            return "Couldn't find the invitation email for \"" + (appt.Subject ?? "") + "\" - it may have been deleted or archived, or you organize this event (an organizer has no invitation to reply to or forward). " +
                    "To write to the people involved anyway, use draft_email / send_email with action new (organizer: " + (appt.Organizer ?? "unknown") + ").";
         }
 
@@ -571,7 +571,7 @@ namespace OutlookAiAddIn
 
             Outlook.RecurrencePattern pattern = master.GetRecurrencePattern();
             // GetOccurrence needs the occurrence's start date AND time; a date alone (midnight) never matches.
-            if (date.TimeOfDay == TimeSpan.Zero) date = date.Date + pattern.StartTime.TimeOfDay;
+            date = MeetingArgs.OccurrenceStart(date, pattern.StartTime.TimeOfDay);
             try { target = pattern.GetOccurrence(date); }
             catch (Exception ex)
             {
@@ -800,7 +800,7 @@ namespace OutlookAiAddIn
             string tool = send ? "send_event" : "draft_event";
             string action = Str(input, "action", "new");
             // An event_id with no action would otherwise create a duplicate event and ignore the target.
-            if (action == "new" && Str(input, "event_id", null) != null)
+            if (MeetingArgs.TargetNeedsAction(action, Str(input, "event_id", null)))
                 return new ToolResult { Output = "event_id given with action new (or no action): pass action edit or cancel.", IsError = true, Summary = tool };
             ToolResult r;
             switch (action)

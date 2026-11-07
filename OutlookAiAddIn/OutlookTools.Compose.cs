@@ -165,7 +165,7 @@ namespace OutlookAiAddIn
             if (action == "new")
             {
                 // A message_id/event_id with no action would otherwise start a brand-new email and ignore the target.
-                if (Str(input, "message_id", null) != null || Str(input, "event_id", null) != null)
+                if (MeetingArgs.TargetNeedsAction(action, Str(input, "message_id", null), Str(input, "event_id", null)))
                     return new ToolResult { Output = "message_id/event_id given with action new (or no action): pass action reply, reply_all or forward.", IsError = true, Summary = tool };
                 // to is required when sending: there's no compose window for a
                 // human to fill it in. See OutlookTools.Compose.cs.md for what
@@ -184,6 +184,8 @@ namespace OutlookAiAddIn
 
             string messageId = Str(input, "message_id", null);
             string eventId = Str(input, "event_id", null);
+            if (string.IsNullOrEmpty(messageId)) messageId = null; // an empty placeholder is the same as absent
+            if (string.IsNullOrEmpty(eventId)) eventId = null;
             if ((messageId == null) == (eventId == null))
                 return new ToolResult { Output = "Pass exactly one of message_id (an email) or event_id (a calendar meeting).", IsError = true, Summary = tool };
             if (send && action == "forward") to = ReqStr(input, "to");
@@ -299,6 +301,7 @@ namespace OutlookAiAddIn
                 try { me = SmtpOf(Ns.CurrentUser.AddressEntry); } catch { }
                 foreach (Outlook.Recipient r in appt.Recipients)
                 {
+                    if (r.Type == (int)Outlook.OlMeetingRecipientType.olResource) continue; // rooms and equipment are not people to write to
                     string a = "";
                     try { a = SmtpOf(r.AddressEntry); } catch { }
                     if (!string.IsNullOrEmpty(a) && !string.Equals(a, me, StringComparison.OrdinalIgnoreCase) && !addresses.Contains(a)) addresses.Add(a);

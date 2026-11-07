@@ -48,7 +48,7 @@ namespace OutlookAiAddIn
                    !string.IsNullOrEmpty(a.Sender) || !string.IsNullOrEmpty(Str(input, "recipient", null));
         }
 
-        // search_emails marks a meeting message (a MeetingItem, not a MailItem) with this type.
+        // search_emails marks a meeting invitation (a MeetingItem request, not a MailItem) with this type.
         private const string MeetingTypeNote = "meeting";
 
         private static ToolResult SearchEmails(JsonElement input)
@@ -117,7 +117,7 @@ namespace OutlookAiAddIn
                 sb.AppendLine("- message_id: " + m.EntryID);
                 sb.AppendLine("  subject: " + (m.Subject ?? ""));
                 sb.AppendLine("  from: " + (m.SenderName ?? ""));
-                sb.AppendLine("  type: " + (m is Outlook.MeetingItem ? MeetingTypeNote : "email"));
+                sb.AppendLine("  type: " + (IsMeetingRequest((string)m.MessageClass) ? MeetingTypeNote : "email"));
                 bool hasAtt = false;
                 try { hasAtt = Convert.ToBoolean(m.PropertyAccessor.GetProperty(PrHasAttach)); }
                 catch { try { hasAtt = m.Attachments.Count > 0; } catch { } }

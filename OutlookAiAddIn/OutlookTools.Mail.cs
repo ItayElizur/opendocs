@@ -55,7 +55,7 @@ namespace OutlookAiAddIn
                 sb.AppendLine("- message_id: " + Convert.ToString(row["EntryID"], CultureInfo.InvariantCulture));
                 sb.AppendLine("  subject: " + (Convert.ToString(row["Subject"], CultureInfo.InvariantCulture) ?? ""));
                 sb.AppendLine("  from: " + (Convert.ToString(row["SenderName"], CultureInfo.InvariantCulture) ?? ""));
-                sb.AppendLine("  type: " + (cls.StartsWith("IPM.Schedule.Meeting", StringComparison.OrdinalIgnoreCase) ? MeetingTypeNote : "email"));
+                sb.AppendLine("  type: " + (IsMeetingRequest(cls) ? MeetingTypeNote : "email"));
                 sb.AppendLine("  received: " + received + "  unread: " + unread + "  has_attachments: " + hasAtt);
             }
 
@@ -99,7 +99,7 @@ namespace OutlookAiAddIn
 
             // A meeting invitation: add the event's when / where / who from its calendar item, so one call tells the
             // whole story (the body below is the invitation text).
-            if (mail is Outlook.MeetingItem)
+            if (mail is Outlook.MeetingItem && IsMeetingRequest((string)mail.MessageClass))
             {
                 try
                 {
@@ -133,6 +133,13 @@ namespace OutlookAiAddIn
 
         // A meeting invitation in the Inbox is a MeetingItem; it has the same UnRead / Importance / Display / Save
         // members as a MailItem, so open_email, mark_email_read and flag_email_important take either.
+        // Only a meeting request is labelled "meeting" (and can be answered with respond_meeting); responses and
+        // cancellations are listed like ordinary mail.
+        private static bool IsMeetingRequest(string messageClass)
+        {
+            return messageClass != null && messageClass.StartsWith("IPM.Schedule.Meeting.Request", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static dynamic MailOrMeeting(string id, string storeId)
         {
             object item = ItemById(id, storeId);
