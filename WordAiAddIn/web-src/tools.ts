@@ -1,0 +1,634 @@
+// PP-5: structural per-kind schema for apply_commands, replacing the old
+// `items: { type: 'object' }` (no structure at all) + one prose paragraph.
+// This is documentation the model reads, not a validator that runs (not
+// every provider enforces oneOf/const) - the actual guarantee is the
+// required-field precheck in WordTools.cs's ApplyCommands (PP-5 Task 4).
+// Every kind below matches WordTools.cs's ApplyCommands switch exactly
+// (cross-checked in docs/tools/word.md) - do not add a kind here
+// without a matching case there, or vice versa.
+
+const TARGET_SCHEMA = {
+  type: 'object',
+  description:
+    'Selects paragraphs. Fields are AND-combined; at least one of nodeType/containsText/blockIndexes is required.',
+  properties: {
+    nodeType: { type: 'string', enum: ['heading', 'paragraph', 'listItem'] },
+    headingLevel: { type: 'number', minimum: 1, maximum: 6 },
+    containsText: { type: 'string' },
+    matchCase: { type: 'boolean' },
+    blockIndexes: { type: 'array', items: { type: 'number' }, description: '0-based paragraph indices' },
+    scope: { type: 'string', enum: ['document', 'selection'] },
+  },
+}
+
+// Exactly the 10 keys UpdateTextStyle (WordTools.cs) checks against `fields` -
+// PP-12 implemented `highlight` (was deliberately absent pre-PP-12).
+const TEXT_STYLE_FIELDS = ['bold', 'italic', 'underline', 'strike', 'sizeHalfPoints', 'font', 'color', 'baselineOffset', 'link', 'highlight']
+
+// Word's HighlightColors palette (WordTools.cs) - a fixed 16-entry
+// WdColorIndex palette, NOT arbitrary RGB like `color` above.
+const HIGHLIGHT_COLORS = [
+  'none', 'yellow', 'brightGreen', 'turquoise', 'pink', 'blue', 'red', 'darkBlue',
+  'teal', 'green', 'violet', 'darkRed', 'darkYellow', 'gray50', 'gray25', 'black', 'white',
+]
+
+const TEXT_STYLE_SCHEMA = {
+  type: 'object',
+  description: 'Only keys also listed in `fields` are applied. Any key not in fields/here errors instead of silently no-opping.',
+  properties: {
+    bold: { type: 'boolean' },
+    italic: { type: 'boolean' },
+    underline: { type: 'boolean' },
+    strike: { type: 'boolean' },
+    sizeHalfPoints: { type: 'number', description: 'Font size in half-points (e.g. 24 = 12pt).' },
+    font: { type: 'string' },
+    color: { type: 'string', description: 'Hex color, e.g. "#FF0000".' },
+    baselineOffset: { type: 'string', enum: ['SUPERSCRIPT', 'SUBSCRIPT', 'NONE'] },
+    link: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
+    highlight: { type: 'string', enum: HIGHLIGHT_COLORS, description: 'A fixed palette name, not a hex color - hex is rejected.' },
+  },
+}
+
+// Exactly the 10 keys UpdateParagraphStyle (WordTools.cs) checks against `fields`.
+const PARAGRAPH_STYLE_FIELDS = [
+  'align', 'lineSpacing', 'indentLeft', 'indentRight', 'indentFirstLine',
+  'spaceBefore', 'spaceAfter', 'pageBreakBefore', 'shadingFill', 'borders',
+]
+
+const PARAGRAPH_STYLE_SCHEMA = {
+  type: 'object',
+  description: 'Only keys also listed in `fields` are applied.',
+  properties: {
+    align: { type: 'string', enum: ['left', 'center', 'right', 'justify'] },
+    lineSpacing: { type: 'number' },
+    indentLeft: { type: 'number' },
+    indentRight: { type: 'number' },
+    indentFirstLine: { type: 'number' },
+    spaceBefore: { type: 'number' },
+    spaceAfter: { type: 'number' },
+    pageBreakBefore: { type: 'boolean' },
+    shadingFill: { type: 'string', description: 'Hex color, e.g. "#FFFF00".' },
+    borders: { type: 'boolean', description: 'true = single-line borders on all sides; false = no borders.' },
+  },
+}
+
+// Exactly the 3 keys UpdateImageProperties (WordTools.cs) checks against
+// `fields` - note align here is left/center/right only (no "justify"),
+// unlike updateParagraphStyle's align - the handler's own switch has no
+// justify case for images.
+const IMAGE_PROPERTIES_FIELDS = ['widthPx', 'heightPx', 'align']
+
+const IMAGE_PROPERTIES_SCHEMA = {
+  type: 'object',
+  description: 'Only keys also listed in `fields` are applied. Setting only one of widthPx/heightPx scales the other proportionally.',
+  properties: {
+    widthPx: { type: 'number' },
+    heightPx: { type: 'number' },
+    align: { type: 'string', enum: ['left', 'center', 'right'] },
+  },
+}
+
+const WORD_COMMAND_SCHEMAS = [
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'set_bold' },
+      startIndex: { type: 'number', description: '0-based paragraph index' },
+      endIndex: { type: 'number', description: '0-based paragraph index, inclusive' },
+      value: { type: 'boolean' },
+    },
+    required: ['kind', 'startIndex', 'endIndex', 'value'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'set_italic' },
+      startIndex: { type: 'number', description: '0-based paragraph index' },
+      endIndex: { type: 'number', description: '0-based paragraph index, inclusive' },
+      value: { type: 'boolean' },
+    },
+    required: ['kind', 'startIndex', 'endIndex', 'value'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'set_heading' },
+      index: { type: 'number', description: '0-based paragraph index' },
+      level: { type: 'number', minimum: 0, maximum: 9, description: '0 = Normal style, 1-9 = Heading 1-9' },
+    },
+    required: ['kind', 'index', 'level'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'find_replace' },
+      find: { type: 'string' },
+      replace: { type: 'string' },
+      matchCase: { type: 'boolean' },
+    },
+    required: ['kind', 'find', 'replace'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'updateTextStyle' },
+      target: TARGET_SCHEMA,
+      style: TEXT_STYLE_SCHEMA,
+      fields: { type: 'array', items: { type: 'string', enum: TEXT_STYLE_FIELDS } },
+    },
+    required: ['kind', 'target', 'style', 'fields'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'updateParagraphStyle' },
+      target: TARGET_SCHEMA,
+      style: PARAGRAPH_STYLE_SCHEMA,
+      fields: { type: 'array', items: { type: 'string', enum: PARAGRAPH_STYLE_FIELDS } },
+    },
+    required: ['kind', 'target', 'style', 'fields'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'deleteBlocks' },
+      target: TARGET_SCHEMA,
+    },
+    required: ['kind', 'target'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'moveBlocks' },
+      blockIndexes: { type: 'array', items: { type: 'number' }, description: '0-based paragraph indices to move' },
+      afterBlockIndex: { type: 'number', description: '0-based paragraph index to insert after; -1 = start of document. Cannot be one of blockIndexes.' },
+    },
+    required: ['kind', 'blockIndexes', 'afterBlockIndex'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'createParagraphBullets' },
+      target: TARGET_SCHEMA,
+      bulletPreset: {
+        type: 'string',
+        enum: ['BULLET_DISC_CIRCLE_SQUARE', 'BULLET_DIAMOND_X', 'BULLET_CHECKBOX', 'NUMBERED_DECIMAL', 'NUMBERED_DECIMAL_ALPHA_ROMAN', 'NUMBERED_UPPERALPHA', 'NUMBERED_UPPERROMAN'],
+        description: 'Default plain bullet if omitted. An unrecognized value errors (PP-12) rather than silently collapsing to a generic bullet. NUMBERED_DECIMAL_ALPHA_ROMAN renders level 1 as plain decimal only - this flat per-paragraph model has no multi-level nesting to show alpha/roman sub-levels.',
+      },
+    },
+    required: ['kind', 'target'],
+  },
+  {
+    type: 'object',
+    description:
+      'Turns bullets on or off in one command - the set_X-shaped alias for createParagraphBullets/deleteParagraphBullets, ' +
+      'matching set_bold/set_italic/set_heading. value:true (or omitted) adds bullets, value:false removes them.',
+    properties: {
+      kind: { const: 'set_bullet' },
+      target: TARGET_SCHEMA,
+      value: { type: 'boolean', description: 'Default true. true = add bullets, false = remove them.' },
+      bulletPreset: {
+        type: 'string',
+        enum: ['BULLET_DISC_CIRCLE_SQUARE', 'BULLET_DIAMOND_X', 'BULLET_CHECKBOX', 'NUMBERED_DECIMAL', 'NUMBERED_DECIMAL_ALPHA_ROMAN', 'NUMBERED_UPPERALPHA', 'NUMBERED_UPPERROMAN'],
+        description: 'Only meaningful with value:true. Same presets as createParagraphBullets.',
+      },
+    },
+    required: ['kind', 'target'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'deleteParagraphBullets' },
+      target: TARGET_SCHEMA,
+    },
+    required: ['kind', 'target'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'updateImageProperties' },
+      imageIndex: { type: 'number', description: '0-based index into the document\'s inline images' },
+      properties: IMAGE_PROPERTIES_SCHEMA,
+      fields: { type: 'array', items: { type: 'string', enum: IMAGE_PROPERTIES_FIELDS } },
+    },
+    required: ['kind', 'imageIndex', 'properties', 'fields'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'insertToc' },
+      afterBlockIndex: { type: 'number', description: '0-based paragraph index to insert after; -1 = start of document. Requires at least one Heading-styled paragraph in the document.' },
+    },
+    required: ['kind', 'afterBlockIndex'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'copyBlocks' },
+      target: TARGET_SCHEMA,
+      afterBlockIndex: {
+        type: 'number',
+        description: "0-based paragraph index to insert the copies after; -1 = start of document. May be one of the copied paragraphs' own indices - duplicating a paragraph directly after itself is allowed, unlike moveBlocks.",
+      },
+    },
+    required: ['kind', 'target', 'afterBlockIndex'],
+  },
+  {
+    type: 'object',
+    properties: {
+      kind: { const: 'copyFormat' },
+      sourceBlockIndex: {
+        type: 'number',
+        description: "0-based paragraph index to copy ALL character and paragraph formatting FROM (Format Painter semantics - whole paragraph only, not sub-paragraph text runs). Does not copy hyperlinks.",
+      },
+      target: TARGET_SCHEMA,
+    },
+    required: ['kind', 'sourceBlockIndex', 'target'],
+  },
+]
+
+export const ALL_WORD_TOOLS = [
+    {
+      name: 'get_document_context',
+      description:
+        "Reads the active Word document's paragraph/word count, a short text preview and an outline of its first 25 headings (\"[index] H<level>: text\"; get_headings lists all of them). " +
+        "If the document has non-body objects it adds one 'Objects:' line of counts " +
+        "(tables, charts, SmartArt, shapes with how many hold text, inline pictures, content controls, footnotes/endnotes, header/footer parts, TOC). " +
+        "A document built mostly from text boxes/shapes has an almost empty body, so when that line shows shapes, list them with read_object.",
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'insert_content',
+      description:
+        'Inserts content into the active Word document. Supply exactly one of text (plain; newlines create separate paragraphs) ' +
+        'or html (restricted subset: <p> <h1>-<h3> <ul>/<ol>/<li> <b>/<strong> <i>/<em> <u> <br/> - must be well-formed XHTML, no attributes, no nesting of lists). ' +
+        'afterBlockIndex (0-based paragraph index) anchors the insertion after that paragraph; -1 = start of document; omit = end of document (the original behavior).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          html: { type: 'string' },
+          afterBlockIndex: { type: 'number' },
+        },
+        required: [],
+      },
+    },
+    {
+      name: 'edit_chart',
+      description:
+        'Creates or edits a native Word chart. Supply categories + one or more named series for a labeled chart. ' +
+        'chartIndex addresses an existing chart (0-based, inline shapes first then floating shapes, in document order); omit it to edit the first chart, ' +
+        'or pass create:true to always add a new one. With no afterBlockIndex, a newly created chart is a floating shape at document origin (unchanged legacy behavior); ' +
+        'with afterBlockIndex, it is inserted inline (flows with the text) after that paragraph.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          chartType: { type: 'string', enum: ['column', 'columnStacked', 'bar', 'barStacked', 'line', 'area', 'pie', 'doughnut'] },
+          categories: { type: 'array', items: { type: 'string' } },
+          series: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { name: { type: 'string' }, values: { type: 'array', items: { type: 'number' } } },
+              required: ['values'],
+            },
+          },
+          values: { type: 'array', items: { type: 'number' }, description: 'Legacy single-series shorthand; prefer series.' },
+          chartIndex: { type: 'number' },
+          create: { type: 'boolean' },
+          afterBlockIndex: { type: 'number', description: '0-based paragraph index to anchor a NEW chart after; -1 = start.' },
+        },
+        required: [],
+      },
+    },
+    {
+      name: 'read_object',
+      description:
+        'Reads the non-body objects of the document. kind: "table" | "chart" | "smartart" | "shape" (text boxes, canvases, groups, floating pictures - reports hasText, and the text of each) | ' +
+        '"content_control" | "header_footer" | "footnote" | "endnote" | "toc". Each kind has its own 0-based index space (the same indices edit_table/edit_chart/edit_smartart use: ' +
+        'tables in document order, charts and SmartArt inline-first then floating). Omit index to list every object of that kind, one summary line each (with the paragraph it is anchored in); ' +
+        'pass index to read one in full (for kind "shape"/"chart"/"smartart" you may pass name instead - the name read_blocks shows). Long text (a text box, note, header, TOC) comes back in parts of about 4000 characters; the reply ends with the offset to pass for the next part. A "chart" read returns its title, type, categories and per-series values - call it before an incremental edit_chart change, ' +
+        'since edit_chart REPLACES the whole dataset when categories/series is given. read_blocks marks these objects next to the paragraph they sit in.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['table', 'chart', 'smartart', 'shape', 'content_control', 'header_footer', 'footnote', 'endnote', 'toc'] },
+          index: { type: 'number' },
+          name: { type: 'string' },
+          offset: { type: 'number' },
+        },
+        required: ['kind'],
+      },
+    },
+    {
+      name: 'find_text',
+      description:
+        'Searches the document\'s paragraph text for a substring (or, with regex:true, a .NET regular expression) - read-only, never modifies the document. ' +
+        'Returns each match as "[index] full paragraph text" - that index is the EXACT SAME 0-based paragraph index read_blocks\'/replace_blocks\' ' +
+        'startIndex/endIndex and apply_commands\' Target.blockIndexes use, so pass it straight through with no translation (e.g. a hit "[42] ..." means ' +
+        'read_blocks({startIndex: 42, endIndex: 42}) or a Target of {blockIndexes: [42]}). Use this to locate the paragraphs you actually need instead of ' +
+        'reading a large range blindly or guessing indices before find_replace.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' },
+          regex: { type: 'boolean' },
+          matchCase: { type: 'boolean' },
+          max_results: { type: 'number' },
+        },
+        required: ['query', 'max_results'],
+      },
+    },
+    {
+      name: 'get_headings',
+      description:
+        'Lists every heading-styled paragraph in the document, in order, like Word\'s Navigation Pane - each line is "[index] H<level>: text". ' +
+        'Use this to see the document\'s outline/structure in one call instead of reading every paragraph via read_blocks.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'read_blocks',
+      description:
+        'Reads paragraphs [startIndex, endIndex] (0-based, inclusive) of the active document, one per line prefixed with its index - capped at 1000 paragraphs per call. ' +
+        'format:"html" emits the same restricted HTML subset insert_content/replace_blocks accept (headings/bold/italic/underline/list membership survive; ' +
+        'anything outside that subset, e.g. font color, does not) - capped lower, at 100 paragraphs per call (per-paragraph formatting reads are slower); strip the leading "[i] " markers before feeding the fragment back into html. ' +
+        'A paragraph that holds or anchors a non-body object ends with "{table#0, shape \"TextBox 3\" textbox hasText, footnote#2, ...}" - that is not part of the paragraph text. ' +
+        'To read one with read_object: a tag with a number (table#0, content_control#1, footnote#2, endnote#0, toc#0, chart#1 or smartart#0 for inline ones) is kind#index; a tag with a quoted name (shape, chart or smartart) is read with kind and name. ' +
+        'Prefer find_text to locate the paragraph indices you actually need instead of reading a large range blindly.',
+      inputSchema: {
+        type: 'object',
+        properties: { startIndex: { type: 'number' }, endIndex: { type: 'number' }, format: { type: 'string', enum: ['text', 'html'] } },
+        required: ['startIndex', 'endIndex'],
+      },
+    },
+    {
+      name: 'replace_blocks',
+      description:
+        'Replaces paragraphs [startIndex, endIndex] (0-based, inclusive) with new content. Supply exactly one of text or html (same restricted subset as insert_content). ' +
+        'Empty text deletes the range. preserveFormatting (default true) reapplies the first replaced paragraph\'s style (e.g. Heading 2) to the result - ' +
+        'pass false for the old strip-everything behavior. preserveFormatting has no effect when html is given (the fragment\'s own tags dictate style).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          startIndex: { type: 'number' },
+          endIndex: { type: 'number' },
+          text: { type: 'string' },
+          html: { type: 'string' },
+          preserveFormatting: { type: 'boolean' },
+        },
+        required: ['startIndex', 'endIndex'],
+      },
+    },
+    {
+      name: 'add_image',
+      description:
+        'Inserts an image from a LOCAL FILE PATH into the document (no URLs - this deployment is air-gapped). ' +
+        'Inserts inline in the text flow by default, after the paragraph given by afterBlockIndex (0-based; -1 = start; omit = end of document). ' +
+        'Inline images are addressable afterwards by apply_commands/updateImageProperties via their 0-based index, which this tool returns; floating images (floating:true) are not.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          afterBlockIndex: { type: 'number' },
+          floating: { type: 'boolean' },
+          widthPoints: { type: 'number' },
+          heightPoints: { type: 'number' },
+          altText: { type: 'string' },
+        },
+        required: ['path'],
+      },
+    },
+    {
+      name: 'add_table',
+      description:
+        'Adds a native Word table, optionally pre-filled with cell text (row-major array of arrays; extra cells beyond rows/cols are ignored). ' +
+        'afterBlockIndex is the 0-based paragraph index to insert after (-1 = start of document; omit = end of document).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          rows: { type: 'number' },
+          cols: { type: 'number' },
+          cells: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
+          afterBlockIndex: { type: 'number' },
+        },
+        required: ['rows', 'cols'],
+      },
+    },
+    {
+      name: 'edit_table',
+      description:
+        'Edits an existing table. kind: "set_cell" (row,col,text), "insert_row"/"delete_row"/"insert_col"/"delete_col" (index,before?), ' +
+        '"set_style" (styleName?,headerRow?,bandedRows?,borders?,borderColor?), "set_shading" (scope,color,row?,col?) fills cell background color. ' +
+        'borders:true draws a single-line border on every table edge (default color black, override with borderColor); borders:false removes all table borders. ' +
+        'set_shading scope: "cell" (needs row+col), "row" (needs row, fills the whole row), "col" (needs col, fills the whole column), "table" (fills every cell) - color is a required hex string, e.g. "#FFFF00". ' +
+        'tableIndex addresses the table (0-based, document order); omit to target the first table. ' +
+        'row/col are 0-based over every physical row/column, including row 0 even if it holds column headers - there is no separate header concept in the index space (set_style\'s headerRow only changes that row\'s visual style, not its index). ' +
+        'Structural edits shift later indices - re-read the table (read_object kind "table") before a second structural edit in the same run.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          tableIndex: { type: 'number' },
+          kind: { type: 'string', enum: ['set_cell', 'insert_row', 'delete_row', 'insert_col', 'delete_col', 'set_style', 'set_shading'] },
+          row: { type: 'number' },
+          col: { type: 'number' },
+          text: { type: 'string' },
+          index: { type: 'number' },
+          before: { type: 'boolean' },
+          styleName: { type: 'string' },
+          headerRow: { type: 'boolean' },
+          bandedRows: { type: 'boolean' },
+          borders: { type: 'boolean' },
+          borderColor: { type: 'string', description: 'Hex color, e.g. "#000000". Only applied when borders:true.' },
+          scope: { type: 'string', enum: ['cell', 'row', 'col', 'table'], description: 'Required for kind:"set_shading".' },
+          color: { type: 'string', description: 'Hex color, e.g. "#FFFF00". Required for kind:"set_shading".' },
+        },
+        required: ['kind'],
+      },
+    },
+    {
+      name: 'add_smartart',
+      description:
+        'Adds a shape-composed SmartArt diagram. layout: "list"|"process"|"cycle"|"hierarchy"|"pyramid"|"matrix"|"venn". items are flat node texts, one per top-level node. ' +
+        'afterBlockIndex (0-based paragraph index, -1 = start, omit = end of document) inserts inline; omitting both x/y and afterBlockIndex places a floating shape at a default position.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          layout: { type: 'string', enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'] },
+          items: { type: 'array', items: { type: 'string' } },
+          x: { type: 'number' },
+          y: { type: 'number' },
+          w: { type: 'number' },
+          h: { type: 'number' },
+          afterBlockIndex: { type: 'number' },
+        },
+        required: ['layout', 'items'],
+      },
+    },
+    {
+      name: 'edit_smartart',
+      description:
+        'Edits an existing SmartArt diagram. kind: "set_text" (nodeIndex,text), "add_node" (text?), "delete_node" (nodeIndex), ' +
+        '"set_style" (colorName?,quickStyleName? - free-text, matched by substring against this Office install\'s actual color/quick-style gallery; ' +
+        'an unmatched name errors listing the real available names to retry with, e.g. try "Colorful" or "Accent" for colorName, "Intense" or "Simple" for quickStyleName), ' +
+        '"set_layout" (layout - same layout keys as add_smartart: list/process/cycle/hierarchy/pyramid/matrix/venn; changes an existing diagram\'s layout, keeping its current node text). ' +
+        'smartArtIndex addresses the diagram (0-based, document order); omit to target the first one. ' +
+        'delete_node shifts later node indices - re-read (read_object kind "smartart") before another node edit in the same run.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          smartArtIndex: { type: 'number' },
+          kind: { type: 'string', enum: ['set_text', 'add_node', 'delete_node', 'set_style', 'set_layout'] },
+          nodeIndex: { type: 'number' },
+          text: { type: 'string' },
+          colorName: { type: 'string' },
+          quickStyleName: { type: 'string' },
+          layout: { type: 'string', enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'] },
+        },
+        required: ['kind'],
+      },
+    },
+    {
+      name: 'apply_commands',
+      description:
+        'Applies a batch of formatting/editing commands. Each command is one of the kinds described by the schema below - see each branch\'s properties for its exact fields.',
+      inputSchema: {
+        type: 'object',
+        properties: { commands: { type: 'array', items: { oneOf: WORD_COMMAND_SCHEMAS } } },
+        required: ['commands'],
+      },
+    },
+    {
+      name: 'add_comment',
+      description:
+        'Adds a Word comment anchored to the first occurrence of the given text, without changing document content. Available in every editing mode.',
+      inputSchema: {
+        type: 'object',
+        properties: { anchorText: { type: 'string' }, commentText: { type: 'string' } },
+        required: ['anchorText', 'commentText'],
+      },
+    },
+    {
+      name: 'edit_content_control',
+      description:
+        'Adds, edits or deletes a content control (a typed, optionally titled/tagged form field wrapped around content). action "add": type (rich_text|plain_text|dropdown|combo_box|date|checkbox) is required; ' +
+        'it is placed at the end of paragraph afterBlockIndex (omit = end of document); optional title, tag, text, entries (dropdown/combo choices), checked. ' +
+        'action "edit": index (read_object kind "content_control") plus any of title, tag, text, entries (REPLACES the choice list), checked. ' +
+        'action "delete": index; the content is kept as ordinary text unless deleteContents is true. Deleting shifts later indices.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['add', 'edit', 'delete'] },
+          index: { type: 'number' },
+          type: { type: 'string', enum: ['rich_text', 'plain_text', 'dropdown', 'combo_box', 'date', 'checkbox'] },
+          afterBlockIndex: { type: 'number' },
+          title: { type: 'string' },
+          tag: { type: 'string' },
+          text: { type: 'string' },
+          entries: { type: 'array', items: { type: 'string' } },
+          checked: { type: 'boolean' },
+          deleteContents: { type: 'boolean' },
+        },
+        required: ['action'],
+      },
+    },
+    {
+      name: 'edit_header_footer',
+      description:
+        'Sets or clears a section\'s header or footer. which: "header"|"footer"; type: "primary" (default) | "first_page" | "even_pages" (writing one of the last two switches that option on for the section); ' +
+        'section is 1-based (default 1). action "set" needs text (newlines make paragraphs); "clear" empties it. For section 2+, the part is unlinked from the previous section first so the edit stays in that section. ' +
+        'Writes the whole part: anything already in it, page-number fields included, is replaced. To put a field in the text write {PAGE}, {NUMPAGES}, {DATE}, {TIME}, {FILENAME}, {AUTHOR} or {TITLE} (e.g. "Page {PAGE} of {NUMPAGES}"); read_object shows fields the same way (format switches such as a date format are not kept when you rewrite a field). ' +
+        'Use read_object kind "header_footer" to see what the document has now.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['set', 'clear'] },
+          which: { type: 'string', enum: ['header', 'footer'] },
+          type: { type: 'string', enum: ['primary', 'first_page', 'even_pages'] },
+          section: { type: 'number' },
+          text: { type: 'string' },
+        },
+        required: ['action', 'which'],
+      },
+    },
+    {
+      name: 'edit_note',
+      description:
+        'Adds, edits or deletes a footnote or endnote. noteKind: "footnote"|"endnote". action "add": text and afterBlockIndex (the paragraph that carries the reference mark) are required; ' +
+        'the mark goes at the end of that paragraph, or right after afterText inside it (afterText must match exactly once in that paragraph - if it matches several times the call fails and lists them numbered, so retry with a longer phrase, or pass match = the number of the one you want). action "edit": index (read_object kind "footnote"/"endnote") and text. action "delete": index. ' +
+        'Add and delete shift later note indices.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['add', 'edit', 'delete'] },
+          noteKind: { type: 'string', enum: ['footnote', 'endnote'] },
+          index: { type: 'number' },
+          text: { type: 'string' },
+          afterBlockIndex: { type: 'number' },
+          afterText: { type: 'string' },
+          match: { type: 'number' },
+        },
+        required: ['action', 'noteKind'],
+      },
+    },
+    {
+      name: 'edit_toc',
+      description:
+        'Adds, edits, refreshes or deletes a table of contents built from heading styles. action "add": inserted like insert_content at afterBlockIndex (-1 or omitted = start of the document), ' +
+        'upperLevel/lowerLevel default 1-3 (upperLevel must not be greater than lowerLevel). action "edit": index (read_object kind "toc") plus upperLevel and/or lowerLevel; refreshes it. action "update": index; refreshes it (pageNumbersOnly:true keeps the entries and only renumbers pages). ' +
+        'action "delete": index. Adding, editing or deleting a TOC shifts paragraph indices - re-read before addressing later paragraphs.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['add', 'edit', 'update', 'delete'] },
+          index: { type: 'number' },
+          afterBlockIndex: { type: 'number' },
+          upperLevel: { type: 'number' },
+          lowerLevel: { type: 'number' },
+          pageNumbersOnly: { type: 'boolean' },
+        },
+        required: ['action'],
+      },
+    },
+    {
+      name: 'edit_textbox',
+      description:
+        'Adds, edits or deletes a floating text box. action "add": optional text, name, x/y/w/h in points (default 72,72,200,80 from the page corner) and afterBlockIndex to anchor it to that paragraph. ' +
+        'action "edit": index (read_object kind "shape" - the same shape index space) plus text and/or x, y, w, h. Only text boxes and autoshapes can be edited or deleted here - an index that is a picture, chart, line, group or canvas is rejected. x/y are measured from the page corner. ' +
+        'action "delete": index; deleting shifts later shape indices.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['add', 'edit', 'delete'] },
+          index: { type: 'number' },
+          text: { type: 'string' },
+          name: { type: 'string' },
+          x: { type: 'number' },
+          y: { type: 'number' },
+          w: { type: 'number' },
+          h: { type: 'number' },
+          afterBlockIndex: { type: 'number' },
+        },
+        required: ['action'],
+      },
+    },
+    {
+      name: 'undo_last_action',
+      description:
+        "Reverses the document's last action, exactly like Ctrl+Z - can undo an edit this assistant just made OR one the user made. " +
+        'Reports honestly whether anything was actually undone ("Nothing to undo." if the undo history is empty).',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'redo_last_action',
+      description:
+        'Re-applies the last action that was undone, exactly like Ctrl+Y/Ctrl+Shift+Z. ' +
+        'Reports honestly whether anything was actually redone ("Nothing to redo." if there is nothing to reapply).',
+      inputSchema: { type: 'object', properties: {} },
+    },
+  ]
+
+// FT-1 Task 5: settings-screen labels/descriptions, one entry per tool above.
+// These are short, user-facing sentences for a non-technical reader - NOT the
+// model-facing `description` strings above, which enumerate parameter shapes
+// and are the wrong register for this screen (Task 5 Step 2).
