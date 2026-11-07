@@ -84,7 +84,7 @@ export interface RawSelectionPayload {
   shapeIndex?: number
   text?: string
   // PowerPoint: the selected slide's current layout name, so the model can
-  // address add_master_element/etc. without a separate read_slide call
+  // address edit_master_element/etc. without a separate read_slide call
   // (see `bridge.ts.md`).
   layoutName?: string | null
   // Outlook ('app: "outlook"') - the Explorer's currently-selected mail

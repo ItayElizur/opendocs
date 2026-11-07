@@ -17,7 +17,7 @@ PP-24: surfaces layout/transition/animation-count so the model
 isn't blind to state set_slide/
 edit_animation just created - same "the model can add
 something but then can't see it" gap PP-23's read_chart/
-read_table/read_smartart all exist to close.
+read_table/read_slide (view=smartart) all exist to close.
 
 ## `ReadSlide` - guarded HeadersFooters read
 

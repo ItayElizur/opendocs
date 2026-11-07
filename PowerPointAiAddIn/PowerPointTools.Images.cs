@@ -10,6 +10,18 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
+        // kind selects the operation: crop (l/t/r/b fractions) or replace (localPath, optional keepCrop).
+        private static ToolResult EditPicture(JsonElement input)
+        {
+            string kind = input.GetProperty("kind").GetString();
+            switch (kind)
+            {
+                case "crop": return CropImage(input);
+                case "replace": return ReplaceImagePpt(input);
+                default: throw new ArgumentException("edit_picture: unknown kind '" + kind + "'. Valid: crop, replace.");
+            }
+        }
+
         private static ToolResult CropImage(JsonElement input)
         {
             PowerPoint.Shape shape = ResolveShape(input);
@@ -32,7 +44,7 @@ namespace PowerPointAiAddIn
             string localPath = input.GetProperty("localPath").GetString();
             string pathError = PathGuard.LocalFileError(localPath);
             if (pathError != null)
-                return new ToolResult { Output = "replace_image: " + pathError, IsError = true };
+                return new ToolResult { Output = "edit_picture: " + pathError, IsError = true };
             localPath = localPath.Trim();
             PowerPoint.Shape oldShape = ResolveShape(input);
             bool keepCrop = ToolArgs.OptionalFlag(input, "keepCrop");

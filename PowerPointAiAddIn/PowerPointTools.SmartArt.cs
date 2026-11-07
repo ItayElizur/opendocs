@@ -106,7 +106,7 @@ namespace PowerPointAiAddIn
 
             // No smartArtIndex given: read every diagram on the slide in one
             // call rather than forcing a round trip per diagram (matches
-            // Word's read_smartart).
+            // Word's read_slide (view=smartart)).
             bool hasIndex = input.TryGetProperty("smartArtIndex", out var si) && si.ValueKind == JsonValueKind.Number;
             if (!hasIndex)
             {
@@ -171,7 +171,7 @@ namespace PowerPointAiAddIn
                     if (nodeIndex < 0 || nodeIndex >= count)
                         throw new ArgumentOutOfRangeException("nodeIndex", "nodeIndex must be between 0 and " + (count - 1) + " (" + count + " node(s)).");
                     nodes.Item(nodeIndex + 1).Delete();
-                    return new ToolResult { Output = "Node " + nodeIndex + " deleted. Later node indices have shifted - re-read (read_smartart) before another node edit in the same run.", Mutated = true };
+                    return new ToolResult { Output = "Node " + nodeIndex + " deleted. Later node indices have shifted - re-read (read_slide (view=smartart)) before another node edit in the same run.", Mutated = true };
                 }
                 case "set_style":
                 {
