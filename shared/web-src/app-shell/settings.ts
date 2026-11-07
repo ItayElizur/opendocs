@@ -1,4 +1,5 @@
 import type { AgentStreamHandle, AgentTransport } from '@officeai/agent-core'
+import { injectedSecrets, saveSecrets } from './bridge'
 import {
   defaultAiSettings,
   resolveAiSettings,
@@ -71,7 +72,7 @@ function loadSettings(): PanelSettings {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY)
     if (!raw) return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default', reasoningEffort: 'default' }
     const parsed = JSON.parse(raw) as Partial<PanelSettings> & LegacyStoredSettings
-    return {
+    const loaded: PanelSettings = {
       // resolveAiSettings migrates the legacy flat {baseUrl, apiKey, model}
       // shape into the `custom` provider slot, so an existing user's
       // configuration survives this change instead of silently resetting.
@@ -81,13 +82,32 @@ function loadSettings(): PanelSettings {
       lang: normalizeLang(parsed.lang),
       reasoningEffort: normalizeReasoningEffort(parsed.reasoningEffort),
     }
+    // API keys come from the host's encrypted store. A key still sitting in localStorage (saved by an older build)
+    // is moved there: persistSettings below writes it to the store and blanks it in localStorage.
+    const secrets = injectedSecrets()
+    let hasPlainKey = false
+    for (const id of Object.keys(loaded.ai.providers) as (keyof typeof loaded.ai.providers)[]) {
+      const stored = secrets[id]
+      if (typeof stored === 'string') loaded.ai.providers[id].apiKey = stored
+      else if (loaded.ai.providers[id].apiKey) hasPlainKey = true
+    }
+    if (hasPlainKey) persistSettings(loaded)
+    return loaded
   } catch {
     return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default', reasoningEffort: 'default' }
   }
 }
 
+// The API keys are sent to the host (encrypted on disk) and blanked in the copy that goes to localStorage.
 function persistSettings(settings: PanelSettings): void {
-  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings))
+  const toStore = JSON.parse(JSON.stringify(settings)) as PanelSettings
+  const keys: Record<string, string> = {}
+  for (const [id, slot] of Object.entries(toStore.ai.providers)) {
+    if (slot.apiKey) keys[id] = slot.apiKey
+    slot.apiKey = ''
+  }
+  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(toStore))
+  saveSecrets(keys)
 }
 
 let currentSettings: PanelSettings = loadSettings()

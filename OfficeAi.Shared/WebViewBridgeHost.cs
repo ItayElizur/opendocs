@@ -96,6 +96,11 @@ namespace OfficeAi.Shared
                     args.Request.Headers.SetHeader("Pragma", "no-cache");
                 };
 
+                // The API keys live DPAPI-encrypted on disk (SecretStore), never in the page's localStorage; they are handed
+                // to the page here, before any of its scripts run, as window.__opendocsSecrets (provider id -> key).
+                await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
+                    "window.__opendocsSecrets = " + JsonSerializer.Serialize(SecretStore.Load(appDataFolderName)) + ";");
+
                 _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
                 _webView.CoreWebView2.ServerCertificateErrorDetected += OnServerCertificateErrorDetected;
 

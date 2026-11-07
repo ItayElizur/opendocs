@@ -184,6 +184,18 @@ export function saveDocSettings(systemMessage: string): void {
   chrome.webview.postMessage({ kind: 'save-doc-settings', systemMessage })
 }
 
+// Provider API keys (provider id -> key). The host stores them DPAPI-encrypted (OfficeAi.Shared/SecretStore.cs) and
+// injects them back as window.__opendocsSecrets before the page's scripts run.
+export function saveSecrets(secrets: Record<string, string>): void {
+  if (typeof chrome === 'undefined') return
+  chrome.webview.postMessage({ kind: 'save-secrets', secrets })
+}
+
+export function injectedSecrets(): Record<string, string> {
+  const injected = (globalThis as { __opendocsSecrets?: unknown }).__opendocsSecrets
+  return injected && typeof injected === 'object' ? (injected as Record<string, string>) : {}
+}
+
 export function persistMessage(role: 'user' | 'assistant', text: string): void {
   chrome.webview.postMessage({ kind: 'append-message', role, text })
 }
