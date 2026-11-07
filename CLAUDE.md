@@ -9,8 +9,9 @@ current tool catalog.
 ## The `.csproj` files do not glob — a new `.cs` file is silently dropped otherwise
 
 `WordAiAddIn.csproj`, `ExcelAiAddIn.csproj`, `PowerPointAiAddIn.csproj`,
-`OutlookAiAddIn.csproj`, and `OfficeAi.Shared.csproj` are all **classic MSBuild format
-with explicit `<Compile Include="...">` items** — none of them glob `*.cs`. If you add
+and `OutlookAiAddIn.csproj` are all **classic MSBuild format
+with explicit `<Compile Include="...">` items** — none of them glob `*.cs`. (`OfficeAi.Shared.csproj` is the exception: it is
+SDK-style and does glob, so a new file there needs no csproj edit.) If you add
 a new `.cs` file to one of these projects and don't add a matching `<Compile Include>`
 line to its `.csproj`, the file **silently does not compile**. There is no error at the
 new file itself — MSBuild just never sees it, and the first symptom is usually a
