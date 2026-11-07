@@ -11,3 +11,11 @@
 // needs step-by-step COM call tracing - this is a temporary debugging
 // aid, not a permanent logging subsystem.
 ```
+
+## Size cap and tool inputs (2026)
+
+- The file is deleted and started again once it passes 1 MB (checked on every write), so it never grows without bound.
+- Word's `Execute:` line records the tool name only. The full tool input contains document text, so it is added only when the
+  environment variable `OPENDOCS_DEBUG_INPUTS=1` is set before Word starts.
+- The per-selection `OnSelectionChanged` / `ClassifySelectedShape` trace lines were removed: they were written on every cursor
+  move on the UI thread. Failures are still logged through `WriteException`.

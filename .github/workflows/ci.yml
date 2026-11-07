@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # The TypeScript side: type-check every add-in's web front end and run the chat UI tests.
+  web:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: chat-ui tests
+        working-directory: shared/chat-ui
+        run: |
+          npm ci
+          npx vitest run
+      - name: type-check each add-in
+        shell: bash
+        run: |
+          for app in WordAiAddIn ExcelAiAddIn PowerPointAiAddIn OutlookAiAddIn; do
+            (cd "$app" && npm ci && npx tsc --noEmit -p .)
+          done
+
+  # The C# unit tests (OfficeAi.Shared.Tests), including the checks that each add-in's C# and TypeScript tool lists agree.
+  dotnet:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: unit tests
+        run: dotnet test OfficeAi.Shared.Tests

@@ -84,3 +84,10 @@
 // tool that awaited Task.Run resumes on a threadpool thread) - so the result is
 // posted back through PostToolResult, which marshals onto the control's thread.
 ```
+
+## WebViewBridgeHost.InitializeAsync - links and navigation (2026)
+
+Model output can contain `[text](https://...)` links, rendered with `target="_blank"`. With no handler, WebView2 opens its own window
+inside the Office process. `NewWindowRequested` is now cancelled and an http/https link is opened with the system browser instead,
+and `NavigationStarting` cancels any navigation away from `http://appassets.local/` the same way, so the pane can only ever show its
+own page. The LLM endpoint is reached with `fetch`, which is not a navigation and is not affected. Not exercised in a live pane.
