@@ -97,7 +97,7 @@ namespace PowerPointAiAddIn
                     return new ToolResult { Output = "Unknown structure kind: " + kind, IsError = true };
             }
             // Deleting/inserting a row or column shifts every later row/column's
-            // index - the same trap PP-19's delete_slide has. Callers doing more
+            // index - the same trap manage_slide's delete action has. Callers doing more
             // than one structural edit in a run should re-read the table between
             // calls; documented in the schema description too.
             return new ToolResult { Output = "Table structure updated.", Mutated = true };

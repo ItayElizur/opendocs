@@ -407,7 +407,7 @@ namespace PowerPointAiAddIn
                          (deckWideFailures.Count > 0 ? " (" + string.Join(", ", deckWideFailures) + " rejected and were skipped.)" : "") +
                          " (skipTitleSlide/startNumber, if given, always apply deck-wide regardless of slideIndex)." +
                          " If slide numbers/footer/date still don't appear, this slide's layout may not include that placeholder - " +
-                         "check read_master_elements or try a different layout (set_slide_layout).",
+                         "check read_master_elements or try a different layout (set_slide).",
                 Mutated = true,
             };
         }

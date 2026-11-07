@@ -4,7 +4,7 @@ Current-state reference for every tool the AI can call in PowerPoint. See
 [`docs/architecture.md`](../architecture.md) for the shared editing-mode/transport
 architecture.
 
-## Tools (52 total, all genuinely implemented)
+## Tools (46 total, all genuinely implemented)
 
 The largest tool surface of the four apps. Organized here by area rather than as one
 flat table.
@@ -26,13 +26,8 @@ flat table.
 
 | Tool | Notes |
 |---|---|
-| `add_slide` | Clones a source slide's layout as a new slide inserted after it, optional text-clear. |
-| `delete_slide` | Deletes one slide. Cannot delete the last remaining slide; later slides shift down — re-read before deleting another in the same run. |
-| `move_slide` | Moves a slide to a new 0-based position. |
-| `duplicate_slide` | Inserts a copy of a slide (content included) directly after it — use `add_slide` instead for layout-only, content-free duplication. |
-| `set_slide_layout` | `kind:"classic"` (16 standard `PpSlideLayout` values) or `kind:"custom"` (free-text `layoutName`, matched against the deck's own theme layouts). |
-| `set_slide_transition` | 31 curated entry-effect values, duration, click/timed advance (independent toggles). |
-| `set_slide_background` | Solid color for one slide or `slideIndex:-1` for every slide. |
+| `manage_slide` | `action` is `add` (clone the slide's layout right after it with every text frame cleared), `duplicate` (full copy right after it), `move` (to 0-based `toIndex`), or `delete` (one slide per call; cannot delete the last remaining slide; later slides shift down — re-read before another index-based edit in the same run). |
+| `set_slide` | Any combination, in one call, of: `layout` (16 classic `PpSlideLayout` values) or `layoutName` (free text matched against the deck's own theme layouts; give one, not both), `background` (solid color; `slideIndex:-1` applies to every slide, background only), `notes` (replaces the speaker notes), and the entry transition (`effect` — 31 curated values, `durationSeconds`, `advanceOnClick`, `advanceAfterSeconds`; the two advance options are independent toggles and can change without restating `effect`). Fields apply in the order layout, background, transition, notes; if one fails, the error names what was already applied. |
 | `set_headers_footers` | Slide number/footer/date toggles, deck-wide (`slideIndex:-1`) or per-slide — mirrors PowerPoint's native "Insert Header and Footer" dialog. `skipTitleSlide`/`startNumber` are always deck-wide regardless of `slideIndex` (PowerPoint has no per-slide version of either). |
 
 **Shape editing**
@@ -44,7 +39,6 @@ flat table.
 | `set_element_transform` | left/top/width/height/rotation. |
 | `set_element_order` | z-order: `bringToFront`/`sendToBack`/`bringForward`/`sendBackward`. Shifts other shapes' `shapeIndex` on the slide — re-read before addressing another shape by index in the same run. |
 | `set_element_fill` / `set_element_stroke` | Solid fill or none; outline color/width or remove. |
-| `set_slide_notes` | Replaces a slide's speaker notes. |
 | `delete_element` | Deletes one shape. |
 | `crop_image` | Fractional crop (0..1) against current on-slide size. Documented imprecision under repeated crops. |
 | `replace_image` | **Full local drive path only** (`PathGuard`, same rule as Excel/Word; also `add_master_element` icons) — swaps a picture's content in place, keeping position/size/rotation/approximate z-order. |
@@ -85,7 +79,7 @@ flat table.
 | `add_smartart` | 7 layout keys (list/process/cycle/hierarchy/pyramid/matrix/venn) mapped to native SmartArt layouts by display name; flat item list only. Unrecognized key errors listing the 7 valid ones; a valid key with no matching gallery layout gives a distinct "may be a non-English Office install" error instead of silently falling back to Basic Block List. |
 | `edit_smartart` | `set_text`, `add_node`, `delete_node`, `set_style` (colorName/quickStyleName, substring-matched against the gallery), `set_layout`. `smartArtIndex` is 0-based **within that slide**. `delete_node` shifts later indices. |
 
-**Animations & transitions** — see also `set_slide_transition` above
+**Animations & transitions** — see also `set_slide` above
 
 | Tool | Notes |
 |---|---|

@@ -2,7 +2,7 @@
 
 ## `DeleteSlide`
 
-PP-19 Task 1: delete_slide/move_slide/duplicate_slide. Deliberately no
+PP-19 Task 1: manage_slide's delete/move/duplicate actions. Deliberately no
 slideIndexes:number[] batch form - deleting slide 2 shifts every later
 slide's index down by one, so a batch would need to either resolve all
 targets up front or delete in strict descending order. One slide per

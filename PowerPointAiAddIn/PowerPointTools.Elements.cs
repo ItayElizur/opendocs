@@ -207,19 +207,13 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = "Text updated.", Mutated = true };
         }
 
-        private static ToolResult SetSlideNotes(JsonElement input)
+        private static string ApplySlideNotes(PowerPoint.Slide slide, int slideIndex, JsonElement input)
         {
-            int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            string text = input.GetProperty("text").GetString();
-            PowerPoint.Slide slide = ResolveSlide(input);
             PowerPoint.Shape body = ResolveNotesBodyPlaceholder(slide);
             if (body == null)
-            {
-                return new ToolResult { Output = "Slide has no notes body placeholder.", IsError = true };
-            }
-            PowerPoint.TextRange range = body.TextFrame.TextRange;
-            SetText(range, text);
-            return new ToolResult { Output = "Notes updated.", Mutated = true };
+                throw new InvalidOperationException("Slide " + slideIndex + " has no notes body placeholder.");
+            SetText(body.TextFrame.TextRange, input.GetProperty("notes").GetString());
+            return "Slide " + slideIndex + " notes updated.";
         }
 
         // PP-20: left|center|right|justify -> PpParagraphAlignment, mirroring
