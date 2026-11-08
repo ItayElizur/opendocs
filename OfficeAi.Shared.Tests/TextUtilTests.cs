@@ -159,4 +159,19 @@ public class TextUtilTests
         // counted as neither.
         Assert.True(TextUtil.IsRtlMajority("שלום, hi!"));
     }
+
+    // ---- DetectDirection ----
+
+    [Theory]
+    [InlineData("שלום עולם", TextDirection.Rtl)]
+    [InlineData("Hello world", TextDirection.Ltr)]
+    [InlineData("aב", TextDirection.Rtl)]
+    [InlineData("שלום world and more words", TextDirection.Ltr)]
+    [InlineData("123 - 456 !", TextDirection.Neutral)]
+    [InlineData("", TextDirection.Neutral)]
+    [InlineData(null, TextDirection.Neutral)]
+    public void DetectDirection_ClassifiesByScriptMix(string text, TextDirection expected)
+    {
+        Assert.Equal(expected, TextUtil.DetectDirection(text));
+    }
 }

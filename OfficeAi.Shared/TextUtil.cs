@@ -3,6 +3,8 @@ using System.Text;
 
 namespace OfficeAi.Shared
 {
+    public enum TextDirection { Neutral, Ltr, Rtl }
+
     /// <summary>
     /// Pure string helpers shared by the Word/Excel/PowerPoint tool layers.
     /// Before adding anything new here, read the seam rules in
@@ -66,9 +68,12 @@ namespace OfficeAi.Shared
         // PowerPoint's TextRange never auto-flips paragraph direction the way
         // Word's editor does with "detect language automatically" - direction
         // has to be decided per write from the text's own script mix.
-        public static bool IsRtlMajority(string text)
+        public static bool IsRtlMajority(string text) => DetectDirection(text) == TextDirection.Rtl;
+
+        // Neutral = no letters at all (digits, punctuation, empty): carries no direction of its own.
+        public static TextDirection DetectDirection(string text)
         {
-            if (string.IsNullOrEmpty(text)) return false;
+            if (string.IsNullOrEmpty(text)) return TextDirection.Neutral;
             int rtl = 0, ltr = 0;
             foreach (char c in text)
             {
@@ -80,7 +85,8 @@ namespace OfficeAi.Shared
                 if (isRtlChar) rtl++;
                 else if (char.IsLetter(c)) ltr++;
             }
-            return rtl > 0 && rtl >= ltr;
+            if (rtl == 0 && ltr == 0) return TextDirection.Neutral;
+            return rtl > 0 && rtl >= ltr ? TextDirection.Rtl : TextDirection.Ltr;
         }
     }
 }

@@ -178,9 +178,21 @@ namespace PowerPointAiAddIn
         // mix via TextUtil.IsRtlMajority. See PowerPointTools.Elements.cs.md.
         private static void ApplyAutoDirection(PowerPoint.TextRange range, string text)
         {
-            if (!TextUtil.IsRtlMajority(text)) return;
-            range.ParagraphFormat.TextDirection = PowerPoint.PpDirection.ppDirectionRightToLeft;
-            range.ParagraphFormat.Alignment = PowerPoint.PpParagraphAlignment.ppAlignRight;
+            switch (TextUtil.DetectDirection(text))
+            {
+                case TextDirection.Rtl:
+                    range.ParagraphFormat.TextDirection = PowerPoint.PpDirection.ppDirectionRightToLeft;
+                    range.ParagraphFormat.Alignment = PowerPoint.PpParagraphAlignment.ppAlignRight;
+                    break;
+                case TextDirection.Ltr:
+                    // Undo an earlier Hebrew write, but never touch text that is already left-to-right, and keep a
+                    // centered or justified alignment: only a right alignment is the leftover to reset.
+                    if (range.ParagraphFormat.TextDirection != PowerPoint.PpDirection.ppDirectionRightToLeft) break;
+                    range.ParagraphFormat.TextDirection = PowerPoint.PpDirection.ppDirectionLeftToRight;
+                    if (range.ParagraphFormat.Alignment == PowerPoint.PpParagraphAlignment.ppAlignRight)
+                        range.ParagraphFormat.Alignment = PowerPoint.PpParagraphAlignment.ppAlignLeft;
+                    break;
+            }
         }
 
         // Gives the model an explicit bulleted on/off switch instead of typing a

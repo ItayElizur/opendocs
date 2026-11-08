@@ -142,11 +142,21 @@ namespace PowerPointAiAddIn
 
         // Node text is TextFrame2, which ApplyAutoDirection (TextRange) cannot take. Sets only the paragraph
         // direction, not alignment: the layout owns alignment (PowerPoint's own UI writes just rtl="1").
+        // Left-to-right text only resets a node that is currently right-to-left.
         private static void SetNodeText(dynamic node, string text)
         {
             node.TextFrame2.TextRange.Text = text;
-            if (TextUtil.IsRtlMajority(text))
-                node.TextFrame2.TextRange.ParagraphFormat.TextDirection = (int)Microsoft.Office.Core.MsoTextDirection.msoTextDirectionRightToLeft;
+            dynamic paragraph = node.TextFrame2.TextRange.ParagraphFormat;
+            switch (TextUtil.DetectDirection(text))
+            {
+                case TextDirection.Rtl:
+                    paragraph.TextDirection = (int)Microsoft.Office.Core.MsoTextDirection.msoTextDirectionRightToLeft;
+                    break;
+                case TextDirection.Ltr:
+                    if ((int)paragraph.TextDirection == (int)Microsoft.Office.Core.MsoTextDirection.msoTextDirectionRightToLeft)
+                        paragraph.TextDirection = (int)Microsoft.Office.Core.MsoTextDirection.msoTextDirectionLeftToRight;
+                    break;
+            }
         }
 
         private static ToolResult EditSmartArt(JsonElement input)
