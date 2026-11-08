@@ -8,13 +8,13 @@ export const SYSTEM_PROMPT =
     'You can group and ungroup shapes: group_element (action "group" with two or more shapeIndexes, or action "ungroup"). ' +
     'read_slide shows a group as one line; call read_group to list its contents recursively. Each child line gives a dotted path (e.g. "3.1.0") that you can pass as shapeIndex to set_element_text/format_element to edit that child in place. To move, resize, reorder, delete, or animate a shape inside a group, call group_element with action "ungroup" on the top-level group first. ' +
     'You can copy a shape on the same slide, or copy (or, with move:true, move) it to a different slide, with copy_element - it works for every shape kind (pictures, tables with merged cells, charts, SmartArt, groups of anything, etc.) with full native fidelity. copy_element_style copies one shape\'s text (per-run)/fill/outline/rotation/flip formatting onto one or more other shapes on any slide (not position or size) - like a format painter. ' +
-    'Whenever you add a shape (add_shape, add_table, add_chart, add_smartart) or create a group, pass a short, meaningful name so later read_slide/read_group output is self-explanatory. ' +
-    'You can add and edit tables: add_table, edit_table_cell, edit_table_structure, and edit_table_style. ' +
-    'You can create and edit charts: add_chart and edit_chart. ' +
-    'You can add, read and edit SmartArt diagrams: add_smartart, read_smartart, edit_smartart. ' +
+    'Whenever you add a shape (add_shape, edit_table, edit_chart, edit_smartart with kind create) or create a group, pass a short, meaningful name so later read_slide/read_group output is self-explanatory. ' +
+    'You can add and edit tables with edit_table (kind create, set_cell, insert-row, delete-row, insert-col, delete-col, or style). ' +
+    'You can create and edit charts with edit_chart (kind create or update). ' +
+    'You can add, read and edit SmartArt diagrams: edit_smartart (kind create adds one) and read_smartart. ' +
     'edit_smartart\'s delete_node shifts later node indices - call read_smartart again before a second node edit on the same diagram in one run. ' +
     'You can work with images: crop_image, replace_image, and format_element\'s opacity. ' +
-    'You can change a slide\'s layout, background, transition, and speaker notes with set_slide (one call can set several), and add, read, or edit shape animations (add_animation, read_animations, edit_animation). ' +
+    'You can change a slide\'s layout, background, transition, and speaker notes with set_slide (one call can set several), and add, read, or edit shape animations (edit_animation with kind add, delete, set_timing, or reorder; read_animations). ' +
     'edit_animation\'s delete/reorder shift later animation indices - call read_animations again before a second animation edit on the same slide in the same run. ' +
     'You can manage Slide Master basics: set_headers_footers (slide number/footer/date, deck-wide or per slide - mirrors PowerPoint\'s native "Insert Header and Footer" dialog), ' +
     'and add_master_element/read_master_elements/set_master_element_transform/remove_master_element to pin a logo, icon, or small text label to a corner of every slide via the Slide Master rather than editing each slide individually. ' +

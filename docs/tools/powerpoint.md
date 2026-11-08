@@ -4,7 +4,7 @@ Current-state reference for every tool the AI can call in PowerPoint. See
 [`docs/architecture.md`](../architecture.md) for the shared editing-mode/transport
 architecture.
 
-## Tools (38 total, all genuinely implemented)
+## Tools (32 total, all genuinely implemented)
 
 The largest tool surface of the four apps. Organized here by area rather than as one
 flat table.
@@ -54,31 +54,25 @@ flat table.
 
 | Tool | Notes |
 |---|---|
-| `add_table` | Native `Shapes.AddTable`, optional pre-filled cell text. |
-| `edit_table_cell` | Replaces one cell's text. Row/col index 0 is just the first physical row/column, including a header row — there's no separate header concept in the index space. |
-| `edit_table_structure` | Insert/delete row or column; bounds-checked (an out-of-range index errors specifically rather than a raw COM error). Shifts later indices. Row/col index 0 is just the first physical row/column, same note as above. |
-| `edit_table_style` | firstRow/bandRow, shading, `borderPreset`: `all` (every cell edge) / `outline` (outer perimeter only) / `none`. |
+| `edit_table` | `kind` selects the operation: `create` (native `Shapes.AddTable`, optional pre-filled `cells`, `left`/`top`/`width`/`height` default 100/100/400/200), `set_cell` (replaces one cell's text), `insert-row`/`delete-row`/`insert-col`/`delete-col` (bounds-checked — an out-of-range `index` errors specifically rather than a raw COM error; shifts later indices), or `style` (firstRow/bandRow, shading, `borderPreset`: `all` (every cell edge) / `outline` (outer perimeter only) / `none`). Row/col index 0 is just the first physical row/column, including a header row — there's no separate header concept in the index space. |
 
 **Charts**
 
 | Tool | Notes |
 |---|---|
-| `add_chart` | column/columnStacked/bar/barStacked/line/area/pie/doughnut, writes real data into the chart's embedded Excel workbook. `kind` is enum'd from the corrected chart-type map; a series/categories length mismatch errors instead of drawing a silently wrong chart. Returns the new shape's index for a follow-up `edit_chart`. |
-| `edit_chart` | `chartType`, `title`, `legendPos` (`none`/`right`/`top`/`left`/`bottom` + short aliases `r`/`t`/`l`/`b`), `dataLabels` (`none`/`value`/`percent`), `gridlines` (errors with a clear message on chart types with no value axis, e.g. pie/doughnut). Result names exactly which properties were applied. Unrecognized values throw, listing valid ones from the map itself (fixed a previous `"bar"` → `xlColumnClustered` silent-wrong-chart-type bug, and `legendPos`'s terminal-else-to-bottom silent fallback). |
+| `edit_chart` | `kind:"create"`: column/columnStacked/bar/barStacked/line/area/pie/doughnut (`chartType`, enum'd from the corrected chart-type map), writes real data into the chart's embedded Excel workbook; a series/categories length mismatch errors instead of drawing a silently wrong chart; position/size default 100/100/400/300. `kind:"update"`: `chartType`, `title`, `legendPos` (`none`/`right`/`top`/`left`/`bottom` + short aliases `r`/`t`/`l`/`b`), `dataLabels` (`none`/`value`/`percent`), `gridlines` (errors with a clear message on chart types with no value axis, e.g. pie/doughnut); several properties may be combined in one update. |
 
 **SmartArt**
 
 | Tool | Notes |
 |---|---|
-| `add_smartart` | 7 layout keys (list/process/cycle/hierarchy/pyramid/matrix/venn) mapped to native SmartArt layouts by display name; flat item list only. Unrecognized key errors listing the 7 valid ones; a valid key with no matching gallery layout gives a distinct "may be a non-English Office install" error instead of silently falling back to Basic Block List. |
-| `edit_smartart` | `set_text`, `add_node`, `delete_node`, `set_style` (colorName/quickStyleName, substring-matched against the gallery), `set_layout`. `smartArtIndex` is 0-based **within that slide**. `delete_node` shifts later indices. |
+| `edit_smartart` | `kind`: `create` (7 layout keys list/process/cycle/hierarchy/pyramid/matrix/venn mapped to native SmartArt layouts by display name; flat `items` list only; unrecognized key errors listing the 7 valid ones; a valid key with no matching gallery layout gives a distinct error), `set_text`, `add_node`, `delete_node`, `set_style` (colorName/quickStyleName, substring-matched against the gallery), `set_layout`. `smartArtIndex` is 0-based **within that slide** and is not used by `create`. `delete_node` shifts later indices. |
 
 **Animations & transitions** — see also `set_slide` above
 
 | Tool | Notes |
 |---|---|
-| `add_animation` | Entrance (default) or exit, 20 effect names, `trigger` (`onClick`/`withPrevious`/`afterPrevious`), duration/delay. No directional variants (e.g. "wipe from the left") — base effect only. Returns the new `animationIndex`. |
-| `edit_animation` | `delete`, `set_timing` (duration/delay/trigger), `reorder` (`toIndex`). `animationIndex` addresses current play order (call `read_animations` first); delete/reorder shift later indices. |
+| `edit_animation` | `kind`: `add` (entrance by default or `exit:true`, 20 effect names, `trigger` (`onClick`/`withPrevious`/`afterPrevious`), duration/delay; no directional variants, e.g. "wipe from the left" — base effect only; returns the new `animationIndex`), `delete`, `set_timing` (duration/delay/trigger), `reorder` (`toIndex`). `animationIndex` addresses current play order (call `read_animations` first); delete/reorder shift later indices. |
 
 **Slide Master**
 

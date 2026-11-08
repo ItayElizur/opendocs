@@ -10,12 +10,30 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
+        // kind selects the operation: create, set_cell, the four row/column structure edits, or style.
+        private static ToolResult EditTable(JsonElement input)
+        {
+            string kind = input.GetProperty("kind").GetString();
+            switch (kind)
+            {
+                case "create": return AddTable(input);
+                case "set_cell": return EditTableCell(input);
+                case "insert-row":
+                case "delete-row":
+                case "insert-col":
+                case "delete-col": return EditTableStructure(input);
+                case "style": return EditTableStyle(input);
+                default:
+                    throw new ArgumentException("edit_table: unknown kind '" + kind + "'. Valid: create, set_cell, insert-row, delete-row, insert-col, delete-col, style.");
+            }
+        }
+
         private static ToolResult AddTable(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
             int rows = input.GetProperty("rows").GetInt32();
             int cols = input.GetProperty("cols").GetInt32();
-            ReadXywh(input, 200f, out float left, out float top, out float width, out float height);
+            ReadRectDefaulted(input, 200f, out float left, out float top, out float width, out float height);
 
             PowerPoint.Slide slide = ResolveSlide(input);
             PowerPoint.Shape tableShape = slide.Shapes.AddTable(rows, cols, left, top, width, height);
@@ -129,7 +147,7 @@ namespace PowerPointAiAddIn
             {
                 string preset = input.TryGetProperty("borderPreset", out var bp) && bp.ValueKind == JsonValueKind.String ? bp.GetString() : "all";
                 if (preset != "all" && preset != "none" && preset != "outline")
-                    throw new ArgumentException("edit_table_style: unknown borderPreset '" + preset + "'. Valid: all, none, outline.");
+                    throw new ArgumentException("edit_table: unknown borderPreset '" + preset + "'. Valid: all, none, outline.");
                 bool visible = preset != "none";
                 float weight = input.TryGetProperty("borderWidthPt", out var bw) && bw.ValueKind == JsonValueKind.Number ? (float)bw.GetDouble() : 1f;
                 int color = input.TryGetProperty("borderColor", out var bc) && bc.ValueKind == JsonValueKind.String ? ColorUtil.HexToOle(bc.GetString()) : ColorUtil.HexToOle("#000000");

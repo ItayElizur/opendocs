@@ -7,7 +7,7 @@ public class ChartTypesTests
     // advertise the same 8 (Word gained "barStacked" to reach parity):
     //   Word:       edit_chart.chartType
     //   Excel:      add_chart.chartType, edit_chart.chartType
-    //   PowerPoint: add_chart.kind, edit_chart.chartType
+    //   PowerPoint: edit_chart.chartType (create and update)
     private static readonly string[] EntryTsNames =
     {
         "column", "columnStacked", "bar", "barStacked", "line", "area", "pie", "doughnut",
