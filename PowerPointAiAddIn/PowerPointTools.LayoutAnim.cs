@@ -263,7 +263,7 @@ namespace PowerPointAiAddIn
             {
                 case "delete":
                     effect.Delete();
-                    return new ToolResult { Output = "Animation " + animationIndex + " deleted. Later animation indices have shifted - re-read (read_animations) before another edit in the same run.", Mutated = true };
+                    return new ToolResult { Output = "Animation " + animationIndex + " deleted. Later animation indices have shifted - re-read (read_slide (view=animations)) before another edit in the same run.", Mutated = true };
                 case "set_timing":
                 {
                     bool changed = false;
@@ -293,7 +293,7 @@ namespace PowerPointAiAddIn
                     // off, MoveBefore/MoveAfter (relative-position moves
                     // against another Effect reference) are the fallback.
                     effect.MoveTo(toIndex + 1);
-                    return new ToolResult { Output = "Animation moved from " + animationIndex + " to " + toIndex + ". Indices have shifted - re-read (read_animations) before another edit in the same run.", Mutated = true };
+                    return new ToolResult { Output = "Animation moved from " + animationIndex + " to " + toIndex + ". Indices have shifted - re-read (read_slide (view=animations)) before another edit in the same run.", Mutated = true };
                 }
                 default:
                     throw new ArgumentException("edit_animation: unknown kind '" + kind + "'. Valid: add, delete, set_timing, reorder.");

@@ -14,7 +14,7 @@ namespace PowerPointAiAddIn
         // shapeIndex is normally a 0-based number (a top-level shape on the
         // slide). It may also be a dotted-path STRING like "3.1.0" - shape 3 on
         // the slide, its child 1 (a group), that group's child 0 - to address a
-        // shape nested inside one or more groups. read_group prints these paths.
+        // shape nested inside one or more groups. read_slide (view=group) prints these paths.
         private struct ShapeRef
         {
             public PowerPoint.Shape Shape;
@@ -84,7 +84,7 @@ namespace PowerPointAiAddIn
         // Shared by ApplyOptionalName below and DuplicateElement/CopyOrMoveElement
         // (PowerPointTools.CrossSlide.cs) - disambiguates `desired` against every
         // OTHER shape's current Name with a numeric suffix ("Rectangle 5" ->
-        // "Rectangle 5 2"), the same convention read_slide/read_group key their
+        // "Rectangle 5 2"), the same convention read_slide key their
         // output on. siblingShapes defaults to resolving from the shape's own
         // slide; pass it explicitly for a Slide Master/layout shape, whose parent
         // is never a PowerPoint.Slide. See PowerPointTools.Elements.cs.md for why
@@ -110,7 +110,7 @@ namespace PowerPointAiAddIn
         }
 
         // Optional model-chosen shape name. PowerPoint permits duplicate names,
-        // but read_slide/read_group key their output on the name, so a collision
+        // but read_slide key their output on the name, so a collision
         // among the sibling shapes is disambiguated with a numeric suffix.
         // Returns the name actually applied, or null when none was requested.
         private static string ApplyOptionalName(PowerPoint.Shape shape, JsonElement input, PowerPoint.Shapes siblingShapes = null)

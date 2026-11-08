@@ -175,7 +175,7 @@ function defaultDescribeSelection(ctx: SelectionContext): string {
     case 'slides':
       return (
         `The user has selected slide${ctx.slideIndexes.length > 1 ? 's' : ''} ${ctx.slideIndexes.join(', ')} (0-based).` +
-        (ctx.layoutName ? ` The first selected slide's layout is "${ctx.layoutName}" - pass this as layoutName to add_master_element/read_master_elements/remove_master_element/set_master_element_transform to target it specifically.` : '')
+        (ctx.layoutName ? ` The first selected slide's layout is "${ctx.layoutName}" - pass this as layoutName to edit_master_element/read_master to target it specifically.` : '')
       )
     case 'shapes': {
       const list = ctx.shapeIndexes.map((idx, i) => `${idx} ("${ctx.names[i] ?? ''}")`).join(', ')

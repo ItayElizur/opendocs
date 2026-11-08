@@ -28,7 +28,7 @@ namespace PowerPointAiAddIn
 
         // Tools always allowed regardless of editing mode (read-only, no document mutation).
         private static readonly System.Collections.Generic.HashSet<string> AlwaysAllowedTools =
-            new System.Collections.Generic.HashSet<string> { "get_deck_context", "read_slide", "read_group", "read_animations", "find_text", "read_smartart", "read_master_elements", "list_layouts" };
+            new System.Collections.Generic.HashSet<string> { "get_deck_context", "read_slide", "find_text", "read_master" };
 
         // Handlers leave Summary null; it defaults to the tool name here.
         public static ToolResult Execute(string docKey, string name, JsonElement input)
@@ -68,13 +68,15 @@ namespace PowerPointAiAddIn
                 switch (name)
                 {
                     case "get_deck_context": return GetDeckContext();
-                    case "read_slide": return ReadSlide(input);
-                    case "read_group": return ReadGroup(input);
+                    case "read_slide": return ReadSlideView(input);
                     case "find_text": return FindTextPpt(input);
                     case "replace_text": return ReplaceTextPpt(input);
                     case "set_element_text": return SetElementText(input);
                     case "format_element": return FormatElement(input);
                     case "edit_table": return EditTable(input);
+                    case "edit_picture": return EditPicture(input);
+                    case "edit_master_element": return EditMasterElement(input);
+                    case "read_master": return ReadMaster(input);
                     case "manage_slide": return ManageSlide(input);
                     case "set_slide": return SetSlide(input);
                     case "set_element_transform": return SetElementTransform(input);
@@ -83,19 +85,10 @@ namespace PowerPointAiAddIn
                     case "group_element": return GroupElement(input);
                     case "edit_chart": return EditChart(input);
                     case "edit_smartart": return EditSmartArt(input);
-                    case "read_smartart": return ReadSmartArt(input);
-                    case "crop_image": return CropImage(input);
-                    case "replace_image": return ReplaceImagePpt(input);
-                    case "read_animations": return ReadAnimations(input);
                     case "edit_animation": return EditAnimation(input);
                     case "copy_element": return CopyElement(input);
                     case "copy_element_style": return CopyElementStyle(input);
                     case "set_headers_footers": return SetHeadersFooters(input);
-                    case "add_master_element": return AddMasterElement(input);
-                    case "set_master_element_transform": return SetMasterElementTransform(input);
-                    case "remove_master_element": return RemoveMasterElement(input);
-                    case "read_master_elements": return ReadMasterElements(input);
-                    case "list_layouts": return ListLayouts(input);
                     case "save": return SavePresentation(input);
                     case "undo_last_action": return UndoLastAction();
                     case "redo_last_action": return RedoLastAction();

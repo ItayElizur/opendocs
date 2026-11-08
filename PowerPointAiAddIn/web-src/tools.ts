@@ -1,5 +1,5 @@
 const SLIDE_INDEX = { type: 'number' };
-const SHAPE_PATH = { type: ['number', 'string'], description: '0-based shape index, or a dotted path like "3.1.0" for a shape inside a group (from read_group).' };
+const SHAPE_PATH = { type: ['number', 'string'], description: '0-based shape index, or a dotted path like "3.1.0" for a shape inside a group (from read_slide (view=group)).' };
 
 export const READER_TOOLS = [
   {
@@ -9,25 +9,22 @@ export const READER_TOOLS = [
   },
   {
     name: 'read_slide',
-    description: 'Reads full text of every shape on one slide (0-based index), plus its layout, transition, animation count, and speaker notes (if any). Shapes are listed back-to-front (z-order/stacking order) - use set_element_transform with order to change it. A group shape is shown as one line with a child count - call read_group to see inside it.',
-    inputSchema: { type: 'object', properties: { slideIndex: SLIDE_INDEX }, required: ['slideIndex'] },
-  },
-  {
-    name: 'read_group',
     description:
-      'Lists the shapes inside a group, recursively (nested groups are expanded in place). shapeIndex points at the group - a 0-based number, or a dotted path like "3.1" for a group nested inside another group. ' +
-      'Each child line is prefixed with its dotted path (e.g. "3.1.0"); pass that path as shapeIndex to set_element_text / format_element to edit a child in place. ' +
-      'Positional or structural edits (set_element_transform, delete_element, edit_animation) require group_element with action:"ungroup" on the top-level group first.',
+      'Reads one slide (0-based slideIndex); view picks what: "slide" (default), "group", "animations", or "smartart". ' +
+      '"slide": the text of every shape plus the layout, transition, animation count and speaker notes. Shapes are listed back-to-front (z-order); change it with set_element_transform order. A group appears as one line with a child count. ' +
+      '"group" (needs shapeIndex, a number or a dotted path like "3.1" for a nested group): lists the group\'s children recursively, each with its dotted path (e.g. "3.1.0") - pass that path as shapeIndex to set_element_text / format_element to edit a child in place. Moving, resizing, reordering, deleting or animating a child needs group_element with action "ungroup" first. ' +
+      '"animations": the slide\'s animations in play order (shape, effect, entrance/exit, trigger, timing); animationIndex in edit_animation addresses this order, so read it first. ' +
+      '"smartart" (optional smartArtIndex, omit for all): node text as "[i] text" lines; read it before an edit_smartart so the node indices are current.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: ['number', 'string'] } },
-      required: ['slideIndex', 'shapeIndex'],
+      properties: {
+        slideIndex: SLIDE_INDEX,
+        view: { type: 'string', enum: ['slide', 'group', 'animations', 'smartart'], description: 'Default "slide".' },
+        shapeIndex: { type: ['number', 'string'], description: 'view "group" only: the group, a 0-based number or a dotted path like "3.1" for a group nested in another.' },
+        smartArtIndex: { type: 'number', description: 'view "smartart" only. Omit to read all diagrams on the slide.' },
+      },
+      required: ['slideIndex'],
     },
-  },
-  {
-    name: 'read_animations',
-    description: 'Reads a slide\'s animations in play order, one per line (shape, effect, entrance/exit, trigger, timing). Needed before edit_animation, since animationIndex addresses this same order.',
-    inputSchema: { type: 'object', properties: { slideIndex: SLIDE_INDEX }, required: ['slideIndex'] },
   },
   {
     name: 'find_text',
@@ -46,38 +43,16 @@ export const READER_TOOLS = [
     },
   },
   {
-    name: 'read_smartart',
+    name: 'read_master',
     description:
-      'Reads the node text of SmartArt diagrams on a slide, one "[i] text" line per node. ' +
-      'Omit smartArtIndex to read every diagram on the slide in one call. ' +
-      'Call this before an incremental edit_smartart change so you are working from current node indices.',
+      'Reads the Slide Master; view: "elements" (default) or "layouts". ' +
+      '"elements": lists the shapes placed directly on the Slide Master (index, name, kind, position/size, text) - not any one slide\'s shapes. Pass layoutName to list one layout\'s own shapes instead (e.g. "Title Slide"): exact name preferred, else substring, matched across every design/theme; an ambiguous name errors. Elements added with edit_master_element appear on every slide whose layout doesn\'t hide master shapes. Call this before edit_master_element to find the masterShapeIndex. ' +
+      '"layouts": lists every layout name in the deck, across all designs/themes, with how many slides use each. Call it before passing a layoutName anywhere instead of guessing; an ambiguous layoutName errors, so pass a more specific or exact name.',
     inputSchema: {
       type: 'object',
       properties: {
-        slideIndex: SLIDE_INDEX,
-        smartArtIndex: { type: 'number', description: 'Omit to read all diagrams on the slide.' },
-      },
-      required: ['slideIndex'],
-    },
-  },
-  {
-    name: 'list_layouts',
-    description:
-      'Lists every layout name in this presentation (e.g. "Title Slide", "Title and Content"), plus how many slides currently use each one - across every design/theme in the deck if it has more than one, not just the default. ' +
-      'Call this before passing layoutName to add_master_element/read_master_elements/remove_master_element/set_master_element_transform/set_slide, instead of guessing a name. ' +
-      'A layoutName matching more than one layout (e.g. two designs both have a layout with that name) errors instead of guessing - pass a more specific or exact name.',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'read_master_elements',
-    description:
-      'Lists the shapes placed directly on the Slide Master (index, name, kind, position/size, text if any) - not the shapes on any one slide. ' +
-      'Pass layoutName to instead list one specific layout\'s own shapes (e.g. "Title Slide", "Title and Content") - matched against this presentation\'s real layout names (exact match preferred, else substring; matching more than one errors, e.g. two designs both having a layout with that name), across every design/theme in the deck; omit it for the Slide Master (the default, and what every slide inherits from unless its own layout overrides a shape). ' +
-      'Shapes added here with add_master_element appear on every slide whose layout doesn\'t hide master shapes. Call this before remove_master_element/set_master_element_transform to find the right masterShapeIndex.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        layoutName: { type: 'string', description: 'Optional. A specific layout\'s name (substring match), instead of the Slide Master.' },
+        view: { type: 'string', enum: ['elements', 'layouts'], description: 'Default "elements".' },
+        layoutName: { type: 'string', description: 'view "elements" only. Optional. A specific layout\'s name (substring match), instead of the Slide Master.' },
       },
     },
   },
@@ -139,11 +114,11 @@ const MUTATION_TOOLS = [
   {
     name: 'set_slide',
     description:
-      'Changes one thing about one slide per call (0-based slideIndex): its layout, background, entry transition, or speaker notes. Giving fields from more than one of these errors - make a separate call for each. ' +
-      'Layout: layout (classic, a fixed set) or layoutName (custom: free text matched against this slide\'s own theme layouts - exact match preferred, else substring; an unmatched name errors listing the real available names, and a name matching more than one layout errors asking for a more specific one) - give one, not both. ' +
-      'Background: a solid color; slideIndex=-1 applies it to every slide in the deck (the only change that allows -1). ' +
-      'Notes: replaces the speaker notes (read_slide shows the current notes first). ' +
-      'Transition: effect sets or removes the entry transition ("none" removes it); durationSeconds is how long the transition animation takes; advanceOnClick (default true in PowerPoint) and advanceAfterSeconds (an automatic timed advance) are independent - both can be on at once, and they can be changed without restating effect. These count as one change, so they may be combined. When both advance options are off the slide only advances from the keyboard or menu.',
+      'Changes ONE thing about a slide per call (0-based slideIndex): layout, background, entry transition, or speaker notes. Fields from more than one of these error - make a separate call for each. ' +
+      'Layout: layout (a classic preset) or layoutName (free text matched against the slide\'s theme layouts, exact preferred else substring; no match lists the real names, several matches asks for a more specific one) - one, not both. ' +
+      'Background: a solid color; slideIndex -1 applies it to every slide (the only change that allows -1). ' +
+      'Notes: replaces the speaker notes. ' +
+      'Transition: effect sets or removes the transition ("none" removes it); durationSeconds, advanceOnClick (PowerPoint default true) and advanceAfterSeconds (timed advance) are independent, may be combined, and can change without restating effect. With both advance options off the slide advances only from the keyboard or menu.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -245,7 +220,7 @@ const MUTATION_TOOLS = [
         height: { type: 'number' },
         text: { type: 'string' },
         bulleted: { type: 'boolean', description: 'Text boxes only (no shapeType).' },
-        name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_slide/read_group - use a short, meaningful label (e.g. "CTA button").' },
+        name: { type: 'string', description: 'Optional shape name, shown by read_slide; use a short, meaningful label.' },
       },
       required: ['slideIndex', 'left', 'top', 'width', 'height'],
     },
@@ -262,11 +237,9 @@ const MUTATION_TOOLS = [
   {
     name: 'copy_element',
     description:
-      'Copies one shape, leaving the original in place. ' +
-      'Without targetSlideIndex (or with the same slide) it makes a copy on the SAME slide - every shape kind, including groups/pictures/tables/charts/SmartArt - placed offsetX/offsetY points from the original (default 12/12) unless left/top gives an exact position. ' +
-      'With a targetSlideIndex on a DIFFERENT slide it copies there using PowerPoint\'s own native copy/paste - so EVERY shape kind is supported with full native fidelity, exactly as it already exists (pictures, video/audio, OLE objects, freeform, tables with merged cells/per-cell shading/borders, charts, SmartArt, and groups of any of these, including a group nesting a SmartArt - since this clones the existing shape tree rather than rebuilding it); left/top then override the position PowerPoint\'s own paste chose. ' +
-      'move:true (needs a different targetSlideIndex) also removes the shape from its original slide once the copy has fully succeeded; on any error nothing is changed. ' +
-      'Without a name the copy is given a unique name (e.g. "Rectangle 5" -> "Rectangle 5 2") instead of colliding with the original\'s.',
+      'Copies one shape, leaving the original. Without targetSlideIndex (or with the same slide) it copies on the SAME slide, offsetX/offsetY points away (default 12/12) or at left/top. ' +
+      'With a targetSlideIndex on a DIFFERENT slide it uses PowerPoint\'s native copy/paste, so every shape kind comes across with full fidelity (pictures, video/audio, OLE, freeform, tables with merged cells, charts, SmartArt, groups of these); left/top then override where the paste landed. ' +
+      'move:true (different slide only) also removes the original, but only after the copy fully succeeded. The copy gets a unique name (e.g. "Rectangle 5 2") unless you pass name.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -278,7 +251,7 @@ const MUTATION_TOOLS = [
         offsetY: { type: 'number', description: 'Same-slide copies only. Points. Default 12. Ignored if left/top is given.' },
         left: { type: 'number', description: 'Exact destination position.' },
         top: { type: 'number', description: 'Exact destination position.' },
-        name: { type: 'string', description: 'Optional. Sets the new shape\'s name, shown in read_slide/read_group.' },
+        name: { type: 'string', description: 'Optional name for the new shape, shown by read_slide.' },
       },
       required: ['slideIndex', 'shapeIndex'],
     },
@@ -286,10 +259,9 @@ const MUTATION_TOOLS = [
   {
     name: 'edit_animation',
     description:
-      'Adds or edits a shape animation. kind:"add" adds an entrance (default) or exit animation to a shape (shapeIndex, effect; optional exit, trigger, durationSeconds, delaySeconds) and returns the new animationIndex. ' +
-      'effect: appear, fade, fly, flashOnce, wipe, zoom, dissolve, bounce, spiral, swivel, wheel, split, box, circle, diamond, plus, checkerboard, randomBars, growAndTurn, riseUp - base effects only, no directional variants (e.g. "wipe from the left"). ' +
-      'trigger (default "onClick"): "onClick" starts on its own click during the slideshow, "withPrevious" starts together with the animation before it, "afterPrevious" starts automatically once the animation before it finishes. ' +
-      'Existing animations: kind "delete", "set_timing" (durationSeconds?,delaySeconds?,trigger?), "reorder" (toIndex - 0-based new position in the play sequence); animationIndex addresses the animation (0-based, current play order - call read_animations first). delete/reorder shift later indices - re-read before another edit in the same run.',
+      'Adds or edits a shape animation. kind: "add", "delete", "set_timing", "reorder". ' +
+      'add: an entrance (default) or exit (exit:true) animation on shapeIndex; effect is one of appear, fade, fly, flashOnce, wipe, zoom, dissolve, bounce, spiral, swivel, wheel, split, box, circle, diamond, plus, checkerboard, randomBars, growAndTurn, riseUp (base effects only, no directional variants like "wipe from the left"); optional trigger, durationSeconds, delaySeconds; returns the new animationIndex. trigger defaults to "onClick" (its own click); "withPrevious" starts with the animation before it, "afterPrevious" once that one finishes. ' +
+      'delete, set_timing (durationSeconds/delaySeconds/trigger) and reorder (toIndex, the new 0-based position) act on animationIndex, the 0-based play order - read it with read_slide (view=animations) first. delete and reorder shift later indices; re-read before another edit.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -345,7 +317,7 @@ const MUTATION_TOOLS = [
         slideIndex: SLIDE_INDEX,
         shapeIndexes: { type: 'array', items: { type: 'number' }, description: 'For "group": two or more distinct 0-based top-level shape indices.' },
         shapeIndex: { type: ['number', 'string'], description: 'For "ungroup": the group to break up.' },
-        name: { type: 'string', description: 'For "group", optional. Sets the new group\'s name, shown in read_slide/read_group - use a short, meaningful label (e.g. "Logo lockup").' },
+        name: { type: 'string', description: 'For "group", optional name, shown by read_slide; use a short, meaningful label.' },
       },
       required: ['slideIndex', 'action'],
     },
@@ -353,13 +325,12 @@ const MUTATION_TOOLS = [
   {
     name: 'edit_table',
     description:
-      'Creates or edits a native PowerPoint table. kind selects the operation: ' +
-      '"create" adds a table (rows, cols; optional cells = row-major array of arrays of cell text; optional position/size; returns its shapeIndex); ' +
-      '"set_cell" replaces one cell\'s text (shapeIndex, 0-based row/col, paragraphs); ' +
-      '"insert-row"/"delete-row"/"insert-col"/"delete-col" change the structure (shapeIndex, index = a 0-based EXISTING row/column; before decides which side the new one goes on for insert kinds); ' +
-      '"style" applies firstRow/bandRow (header row / banded rows), shadingColor (all cells), borderColor/borderWidthPt/borderPreset ("all" = every cell edge, "outline" = only the table\'s outer perimeter, "none" = remove borders). ' +
-      'Row 0 is just the first physical row, including when it holds column headers - there is no separate header concept in the index space (style\'s firstRow only changes that row\'s visual style, not its index). ' +
-      'Inserting/deleting shifts every later row/column\'s index - re-read the table before a second structural edit in the same run.',
+      'Creates or edits a native table. kind: ' +
+      '"create" (rows, cols; optional cells = row-major array of arrays of text; optional left/top/width/height; returns its shapeIndex), ' +
+      '"set_cell" (shapeIndex, 0-based row/col, paragraphs = the cell text), ' +
+      '"insert-row"/"delete-row"/"insert-col"/"delete-col" (shapeIndex, index = a 0-based EXISTING row/column; before picks the side for inserts), ' +
+      '"style" (firstRow/bandRow, shadingColor for all cells, borderColor/borderWidthPt, borderPreset "all"/"outline"/"none"). ' +
+      'Row 0 is simply the first physical row, even if it holds headers; firstRow only changes its look, not its index. Inserts and deletes shift later indices - re-read the table before another structural edit.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -373,7 +344,7 @@ const MUTATION_TOOLS = [
         top: { type: 'number', description: 'create only. Default 100.' },
         width: { type: 'number', description: 'create only. Default 400.' },
         height: { type: 'number', description: 'create only. Default 200.' },
-        name: { type: 'string', description: 'create only, optional. Sets the shape\'s name, shown in read_slide/read_group.' },
+        name: { type: 'string', description: 'create only, optional. Shape name, shown by read_slide.' },
         row: { type: 'number', description: 'set_cell only.' },
         col: { type: 'number', description: 'set_cell only.' },
         paragraphs: { type: 'string', description: 'set_cell only: the cell text.' },
@@ -389,8 +360,9 @@ const MUTATION_TOOLS = [
   {
     name: 'edit_chart',
     description:
-      'Creates or edits a native, editable PowerPoint chart. kind:"create" adds a chart and returns its shapeIndex (chartType, categories, series; optional title and position/size) - every series\' values array must have exactly one value per category. ' +
-      'kind:"update" modifies an existing chart (shapeIndex) - chartType/title/legendPos/dataLabels/gridlines; only the properties provided are changed and the result names exactly what applied.',
+      'Creates or edits a native, editable chart. ' +
+      'kind "create": adds a chart and returns its shapeIndex (chartType, categories, series; optional title and left/top/width/height). Every series\' values array needs exactly one value per category. ' +
+      'kind "update": changes ONE property of the chart at shapeIndex per call - exactly one of chartType, title, legendPos, dataLabels or gridlines; more than one errors, so make a separate call for each. The result names what applied.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -405,7 +377,7 @@ const MUTATION_TOOLS = [
         top: { type: 'number', description: 'create only. Default 100.' },
         width: { type: 'number', description: 'create only. Default 400.' },
         height: { type: 'number', description: 'create only. Default 300.' },
-        name: { type: 'string', description: 'create only, optional. Sets the chart shape\'s name, shown in read_slide/read_group.' },
+        name: { type: 'string', description: 'create only, optional. Shape name, shown by read_slide.' },
         legendPos: { type: 'string', enum: ['none', 'right', 'top', 'left', 'bottom', 'r', 't', 'l', 'b'], description: 'update only.' },
         dataLabels: { type: 'string', enum: ['none', 'value', 'percent'], description: 'update only.' },
         gridlines: { type: 'boolean', description: 'update only. Errors with a clear message on chart types with no value axis (pie/doughnut).' },
@@ -419,7 +391,7 @@ const MUTATION_TOOLS = [
       'Creates or edits a shape-composed SmartArt diagram. kind is one of: create (layout + items - flat node texts, one per top-level node; optional position/size; returns the diagram), set_text (needs nodeIndex + text), add_node (optional text, appends), ' +
       'delete_node (needs nodeIndex), set_style (needs colorName and/or quickStyleName, matched loosely against this Office install\'s gallery), ' +
       'set_layout (needs layout). For every kind except create, smartArtIndex is 0-based WITHIN THAT SLIDE and defaults to 0. ' +
-      'delete_node shifts later node indices - call read_smartart again before a second node edit on the same diagram in one run.',
+      'delete_node shifts later node indices - call read_slide (view=smartart) again before a second node edit on the same diagram in one run.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -436,39 +408,46 @@ const MUTATION_TOOLS = [
         top: { type: 'number', description: 'create only. Default 100.' },
         width: { type: 'number', description: 'create only. Default 400.' },
         height: { type: 'number', description: 'create only. Default 300.' },
-        name: { type: 'string', description: 'create only, optional. Sets the shape\'s name, shown in read_slide/read_group.' },
+        name: { type: 'string', description: 'create only, optional. Shape name, shown by read_slide.' },
       },
       required: ['slideIndex', 'kind'],
     },
   },
   {
-    name: 'crop_image',
-    description: 'Non-destructively crops a picture shape. l/t/r/b are 0..1 fractions of the current on-slide image size cut from each edge; all zero clears the crop.',
+    name: 'edit_picture',
+    description:
+      'kind: "add", "crop", or "replace". ' +
+      'add: inserts a new picture from localPath, a full local path, and returns its shapeIndex. It keeps the natural size (shrunk to fit the slide), scales proportionally if you give only width or height, and stretches if you give both; omitted left/top centers it. Optional name. ' +
+      'crop and replace need a picture at shapeIndex - any other shape errors and nothing changes; replace also refuses a placeholder, since deleting it leaves an empty one behind. ' +
+      'crop: l/t/r/b are 0..1 fractions of the current on-slide size cut from each edge (all 0 clears the crop). ' +
+      'replace: swaps the image in place from localPath, keeping position/size/rotation/approximate z-order; keepCrop keeps the crop.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' }, l: { type: 'number' }, t: { type: 'number' }, r: { type: 'number' }, b: { type: 'number' } },
-      required: ['slideIndex', 'shapeIndex', 'l', 't', 'r', 'b'],
-    },
-  },
-  {
-    name: 'replace_image',
-    description: 'Swaps a picture shape\'s image content in place from a local file path, keeping position/size/rotation/approximate z-order.',
-    inputSchema: {
-      type: 'object',
-      properties: { slideIndex: SLIDE_INDEX, shapeIndex: { type: 'number' }, localPath: { type: 'string' }, keepCrop: { type: 'boolean' } },
-      required: ['slideIndex', 'shapeIndex', 'localPath'],
+      properties: {
+        slideIndex: SLIDE_INDEX,
+        shapeIndex: { type: 'number', description: 'crop and replace only: the picture.' },
+        kind: { type: 'string', enum: ['add', 'crop', 'replace'] },
+        l: { type: 'number', description: 'crop only.' },
+        t: { type: 'number', description: 'crop only.' },
+        r: { type: 'number', description: 'crop only.' },
+        b: { type: 'number', description: 'crop only.' },
+        localPath: { type: 'string', description: 'add and replace: a full local drive path to the image file.' },
+        keepCrop: { type: 'boolean', description: 'replace only.' },
+        left: { type: 'number', description: 'add only. Omit to center horizontally.' },
+        top: { type: 'number', description: 'add only. Omit to center vertically.' },
+        width: { type: 'number', description: 'add only.' },
+        height: { type: 'number', description: 'add only.' },
+        name: { type: 'string', description: 'add only, optional. Shape name, shown by read_slide.' },
+      },
+      required: ['slideIndex', 'kind'],
     },
   },
   {
     name: 'set_headers_footers',
     description:
-      'Sets slide number, footer text, and date/time - the same 3 toggles as PowerPoint\'s native "Insert Header and Footer" dialog (there is no per-slide "header", only slide number/footer/date). ' +
-      'slideIndex:-1 applies to every slide in the deck; a specific 0-based slideIndex applies to just that one. Only the fields you provide are changed. ' +
-      'footerText implies footerVisible:true unless you also pass footerVisible explicitly; dateText implies dateMode:"fixed" the same way. ' +
-      'dateMode defaults to and stays "fixed" unless you pass dateMode:"auto" explicitly - it is never inferred from dateFormat. ' +
-      'dateMode "auto" shows a self-updating today\'s-date (in dateFormat, default "M/d/yy" - requires dateMode:"auto" to have any effect), "fixed" shows dateText verbatim. ' +
-      'skipTitleSlide and startNumber are both ALWAYS deck-wide, regardless of slideIndex - PowerPoint has no per-slide version of either (skipTitleSlide sets the Slide/Title Master\'s "Don\'t show on title slide" flag, startNumber sets the deck\'s first slide number). ' +
-      'If nothing appears after enabling a toggle, the slide\'s layout may simply not include that placeholder - try set_slide or check read_master_elements.',
+      'Sets slide number, footer text and date/time, the same 3 toggles as PowerPoint\'s Insert Header and Footer dialog. slideIndex -1 = every slide, otherwise that 0-based slide. Only the fields you give change. ' +
+      'footerText implies footerVisible:true unless you pass footerVisible; dateText implies dateMode:"fixed" the same way. dateMode is never inferred from dateFormat: "fixed" (default) shows dateText verbatim, "auto" shows today\'s date in dateFormat (default "M/d/yy", only used with "auto"). ' +
+      'skipTitleSlide ("Don\'t show on title slide") and startNumber (the first slide number) are ALWAYS deck-wide, whatever slideIndex is. If nothing appears after a toggle, the slide\'s layout may not include that placeholder - try set_slide or check read_master.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -491,66 +470,34 @@ const MUTATION_TOOLS = [
     },
   },
   {
-    name: 'add_master_element',
+    name: 'edit_master_element',
     description:
-      'Adds a persistent icon (picture) or small text label to the Slide Master, so it shows up in the same spot on every slide (e.g. a logo/watermark/confidentiality label) - not just one slide. ' +
-      'Pass layoutName to add it to one specific layout instead (e.g. "Title Slide") - it then only shows on slides using that layout, not deck-wide; matched against this presentation\'s real layout names across every design/theme in the deck (exact match preferred, else substring; matching more than one, e.g. two designs both having a layout with that name, errors instead of guessing). ' +
-      'Use corner for a quick topLeft/topRight/bottomLeft/bottomRight placement (inset by marginPt, default 12pt), or left+top together for an exact position (left/top must both be given, or neither). ' +
-      'For kind:"icon", width/height are optional - omit one and it scales proportionally from the image\'s natural size; omit both to use the natural size. ' +
-      'Known limits: with no layoutName, only this presentation\'s default (first) Slide Master is affected - a deck combining more than one theme has more than one, and layoutName is the way to reach a non-default one\'s layout directly; and a layout with "Hide Background Graphics" enabled won\'t show a Slide-Master-level element.',
+      'Adds, moves, or removes one element on the Slide Master, or on one specific layout. kind: "add", "move", or "remove". ' +
+      'add (contentType "icon" = a picture from localPath, or "text" = a small label): pins it in the same spot on every slide (logo, watermark, confidentiality label). Place it with corner (topLeft/topRight/bottomLeft/bottomRight, inset by marginPt, default 12) or left+top together (both or neither). For an icon, width/height are optional: one scales proportionally, neither keeps the natural size. ' +
+      'move: changes the position/size/rotation of the element at masterShapeIndex (from read_master); only the fields you give change. It also works on theme placeholders (e.g. repositioning the footer), so double-check the index. ' +
+      'remove: deletes the element at masterShapeIndex. It refuses theme placeholders (read_master marks them "(placeholder)") and only deletes shapes added here; to switch a slide number, footer or date off, use set_headers_footers with the matching *Visible:false. Other indices may shift afterward - re-read before another edit. ' +
+      'layoutName (any kind) targets one layout instead of the Slide Master: exact name preferred, else substring, matched across every design/theme; an ambiguous name errors. For move/remove it must match what you used in read_master, since masterShapeIndex is only valid within that target. Without layoutName only the default (first) Slide Master is affected, and a layout set to "Hide Background Graphics" will not show a Slide Master element.',
     inputSchema: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: ['icon', 'text'] },
-        layoutName: { type: 'string', description: 'Optional. Adds to one specific layout (matched across every design/theme in the deck) instead of the Slide Master.' },
-        corner: { type: 'string', enum: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'], description: 'Ignored if left+top are both given. Required if they aren\'t.' },
-        left: { type: 'number', description: 'Must be given together with top (or neither) - a single coordinate alone is rejected.' },
-        top: { type: 'number', description: 'Must be given together with left (or neither) - a single coordinate alone is rejected.' },
+        kind: { type: 'string', enum: ['add', 'move', 'remove'] },
+        contentType: { type: 'string', enum: ['icon', 'text'], description: 'add only.' },
+        masterShapeIndex: { type: 'number', description: 'move and remove: the element, from read_master.' },
+        layoutName: { type: 'string', description: 'Optional. Targets one specific layout (matched across every design/theme in the deck) instead of the Slide Master. For move/remove it must match what you used (or omitted) in read_master.' },
+        corner: { type: 'string', enum: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'], description: 'add only. Ignored if left+top are both given. Required if they aren\'t.' },
+        left: { type: 'number', description: 'add: must be given together with top (or neither) - a single coordinate alone is rejected. move: the new left.' },
+        top: { type: 'number', description: 'add: must be given together with left (or neither) - a single coordinate alone is rejected. move: the new top.' },
         width: { type: 'number' },
         height: { type: 'number' },
-        marginPt: { type: 'number', description: 'Default 12. Inset from the slide edge, only used with corner.' },
-        localPath: { type: 'string', description: 'Required for kind:"icon" - a local image file path.' },
-        text: { type: 'string', description: 'Required for kind:"text".' },
-        fontSize: { type: 'number', description: 'kind:"text" only. Default 10.' },
-        color: { type: 'string', description: 'kind:"text" only. Hex color, e.g. "#808080" (the default).' },
-        name: { type: 'string', description: 'Optional. Sets the shape\'s name, shown in read_master_elements.' },
+        rotation: { type: 'number', description: 'move only.' },
+        marginPt: { type: 'number', description: 'add only. Default 12. Inset from the slide edge, only used with corner.' },
+        localPath: { type: 'string', description: 'add with contentType "icon": a local image file path.' },
+        text: { type: 'string', description: 'add with contentType "text".' },
+        fontSize: { type: 'number', description: 'add with contentType "text". Default 10.' },
+        color: { type: 'string', description: 'add with contentType "text". Hex color, e.g. "#808080" (the default).' },
+        name: { type: 'string', description: 'add only, optional. Name, shown by read_master.' },
       },
       required: ['kind'],
-    },
-  },
-  {
-    name: 'set_master_element_transform',
-    description:
-      'Moves/resizes/rotates an existing Slide Master element by masterShapeIndex (from read_master_elements). Only the fields you provide are changed. ' +
-      'Works on a theme placeholder too (e.g. repositioning where the footer shows) - unlike remove_master_element, this is not refused, since moving/resizing a placeholder is a normal, reversible edit. ' +
-      'Pass layoutName to target one specific layout\'s shape instead of the Slide Master\'s - must match what you used (or omitted) in read_master_elements, since masterShapeIndex is only valid within that same target. Matched across every design/theme in the deck (exact match preferred, else substring; matching more than one errors).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        masterShapeIndex: { type: 'number' },
-        layoutName: { type: 'string', description: 'Optional. Targets one specific layout (matched across every design/theme in the deck) instead of the Slide Master.' },
-        left: { type: 'number' },
-        top: { type: 'number' },
-        width: { type: 'number' },
-        height: { type: 'number' },
-        rotation: { type: 'number' },
-      },
-      required: ['masterShapeIndex'],
-    },
-  },
-  {
-    name: 'remove_master_element',
-    description:
-      'Deletes one shape from the Slide Master by the 0-based masterShapeIndex read_master_elements reports. Refuses (with an error) to delete a theme placeholder - read_master_elements marks those "(placeholder)"; only delete a shape add_master_element actually created. ' +
-      'To turn a slide number/footer/date placeholder off instead of deleting it, use set_headers_footers with the matching *Visible:false field - that\'s the correct way to "remove" one, matching PowerPoint\'s own native behavior. ' +
-      'Pass layoutName to target one specific layout instead of the Slide Master - must match what you used (or omitted) in read_master_elements. Matched across every design/theme in the deck (exact match preferred, else substring; matching more than one errors). Other master shapes\' indices may shift afterward - re-read before another edit in the same run.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        masterShapeIndex: { type: 'number' },
-        layoutName: { type: 'string', description: 'Optional. Targets one specific layout (matched across every design/theme in the deck) instead of the Slide Master.' },
-      },
-      required: ['masterShapeIndex'],
     },
   },
   {

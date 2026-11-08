@@ -132,7 +132,7 @@ namespace PowerPointAiAddIn
             {
                 Output = "Grouped " + comIndexes.Count + " shapes into " + (named ?? group.Name) + " at shapeIndex " + newIndex +
                          ". Other shapes' indices on this slide shifted - call read_slide before addressing another shape by index in the same run. " +
-                         "Address the grouped children with a dotted path (e.g. \"" + newIndex + ".0\") via read_group.",
+                         "Address the grouped children with a dotted path (e.g. \"" + newIndex + ".0\") via read_slide (view=group).",
                 Mutated = true,
             };
         }

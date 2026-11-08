@@ -10,14 +10,19 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
-        // kind "create" adds a chart (chartType required); "update" edits an existing one.
+        // kind "create" adds a chart (chartType required); "update" changes ONE property of an existing one
+        // (so a call is one edit and one undo step).
         private static ToolResult EditChart(JsonElement input)
         {
             string kind = input.GetProperty("kind").GetString();
             switch (kind)
             {
                 case "create": return AddChartPpt(input);
-                case "update": return EditChartPpt(input);
+                case "update":
+                    RequireOneGroup("edit_chart", input,
+                        Group("chartType", "chartType"), Group("title", "title"), Group("legendPos", "legendPos"),
+                        Group("dataLabels", "dataLabels"), Group("gridlines", "gridlines"));
+                    return EditChartPpt(input);
                 default: throw new ArgumentException("edit_chart: unknown kind '" + kind + "'. Valid: create, update.");
             }
         }

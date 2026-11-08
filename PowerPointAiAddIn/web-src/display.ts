@@ -9,10 +9,6 @@ export const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'Read slide', he: 'קריאת שקופית' },
     description: { en: 'Reads the full text of every shape on one slide.', he: 'קורא את הטקסט המלא של כל האובייקטים בשקופית.' },
   },
-  read_group: {
-    label: { en: 'Read group', he: 'קריאת קבוצה' },
-    description: { en: 'Lists the shapes inside a group, including nested groups.', he: 'מציג את האובייקטים בתוך קבוצה, כולל קבוצות מקוננות.' },
-  },
   find_text: {
     label: { en: 'Search deck', he: 'חיפוש במצגת' },
     description: { en: 'Searches every slide\'s text and speaker notes for a word or phrase.', he: 'מחפש מילה או ביטוי בטקסט של כל השקופיות ובהערות הדובר.' },
@@ -53,10 +49,6 @@ export const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'Update slide', he: 'עדכון שקופית' },
     description: { en: "Changes a slide's layout, background, transition, or speaker notes.", he: 'משנה את פריסת השקופית, הרקע, המעבר או הערות הדובר.' },
   },
-  read_animations: {
-    label: { en: 'Read animations', he: 'קריאת אנימציות' },
-    description: { en: "Reads a slide's animations and their order.", he: 'קורא את אנימציות השקופית וסדרן.' },
-  },
   edit_animation: {
     label: { en: 'Animation', he: 'אנימציה' },
     description: { en: 'Adds an entrance or exit animation to a shape, or deletes, retimes, or reorders an existing one.', he: 'מוסיף אנימציית כניסה או יציאה לאובייקט, או מוחק, משנה תזמון או מסדר מחדש אנימציה קיימת.' },
@@ -81,41 +73,21 @@ export const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'SmartArt', he: 'SmartArt' },
     description: { en: 'Adds a SmartArt diagram, or edits an existing one\'s text, nodes, style, or layout.', he: 'מוסיף דיאגרמת SmartArt, או עורך טקסט, צמתים, עיצוב או פריסה של דיאגרמה קיימת.' },
   },
-  read_smartart: {
-    label: { en: 'Read SmartArt', he: 'קריאת SmartArt' },
-    description: { en: 'Reads the node text of SmartArt diagrams on a slide.', he: 'קורא את טקסט הצמתים של דיאגרמות SmartArt בשקופית.' },
-  },
-  crop_image: {
-    label: { en: 'Crop image', he: 'חיתוך תמונה' },
-    description: { en: 'Crops a picture without permanently discarding the cropped-out parts.', he: 'חותך תמונה מבלי למחוק לצמיתות את החלקים שנחתכו.' },
-  },
-  replace_image: {
-    label: { en: 'Replace image', he: 'החלפת תמונה' },
-    description: { en: "Swaps a picture's content for a different image file, keeping its position and size.", he: 'מחליף את תוכן התמונה בקובץ תמונה אחר, תוך שמירה על מיקום וגודל.' },
+  edit_picture: {
+    label: { en: 'Edit picture', he: 'עריכת תמונה' },
+    description: { en: 'Adds a picture from a file, crops a picture, or swaps its image for another file.', he: 'מוסיף תמונה מקובץ, חותך תמונה, או מחליף את התמונה בקובץ אחר.' },
   },
   set_headers_footers: {
     label: { en: 'Slide numbers, footer & date', he: 'מספור שקופיות, כותרת תחתונה ותאריך' },
     description: { en: 'Turns slide numbers, footer text, and date/time on or off, deck-wide or for one slide.', he: 'מפעיל או מכבה מספור שקופיות, טקסט כותרת תחתונה ותאריך, בכל המצגת או בשקופית אחת.' },
   },
-  add_master_element: {
-    label: { en: 'Add logo/label to every slide', he: 'הוספת לוגו/תווית לכל השקופיות' },
-    description: { en: 'Pins an icon or small text label to a corner of the Slide Master so it appears on every slide.', he: 'מצמיד סמל או תווית טקסט קטנה לפינה של השקופית האב, כך שתופיע בכל השקופיות.' },
+  edit_master_element: {
+    label: { en: 'Edit master element', he: 'עריכת רכיב באב' },
+    description: { en: 'Adds, moves, or removes an element on the slide master or one layout.', he: 'מוסיף, מזיז או מסיר רכיב באב השקופיות או בפריסה אחת.' },
   },
-  set_master_element_transform: {
-    label: { en: 'Move/resize master element', he: 'הזזה/שינוי גודל של רכיב בשקופית האב' },
-    description: { en: 'Moves, resizes, or rotates an element already on the Slide Master.', he: 'מזיז, משנה גודל או מסובב רכיב שכבר נמצא בשקופית האב.' },
-  },
-  remove_master_element: {
-    label: { en: 'Remove master element', he: 'הסרת רכיב מהשקופית האב' },
-    description: { en: 'Deletes a shape that was added to the Slide Master.', he: 'מוחק אובייקט שנוסף לשקופית האב.' },
-  },
-  read_master_elements: {
-    label: { en: 'Read master elements', he: 'קריאת רכיבי השקופית האב' },
-    description: { en: 'Lists the shapes placed on the Slide Master.', he: 'מציג רשימה של האובייקטים הממוקמים על השקופית האב.' },
-  },
-  list_layouts: {
-    label: { en: 'List layouts', he: 'רשימת פריסות' },
-    description: { en: "Lists every layout name in the presentation's theme.", he: 'מציג רשימה של כל שמות הפריסות בעיצוב המצגת.' },
+  read_master: {
+    label: { en: 'Read slide master', he: 'קריאת אב השקופיות' },
+    description: { en: 'Lists the slide master\'s or a layout\'s shapes, or the deck\'s layout names.', he: 'מציג את האובייקטים באב השקופיות או בפריסה, או את שמות הפריסות במצגת.' },
   },
   undo_last_action: {
     label: { en: 'Undo', he: 'ביטול' },

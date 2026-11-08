@@ -92,6 +92,6 @@ original vertically instead of keeping the normal offsetY gap.
 Real-user-confirmed (2026-09-22, live testing): Shape.Duplicate()
 keeps the EXACT source Name (unlike a UI Ctrl+D/paste, which
 auto-renames) - two shapes end up identically named, confusing
-read_slide/read_group output. Dedupe it the same way an explicit
+read_slide output. Dedupe it the same way an explicit
 name would be, using the duplicate's own (source-inherited) name
 as the "desired" one.

@@ -4,23 +4,19 @@ Current-state reference for every tool the AI can call in PowerPoint. See
 [`docs/architecture.md`](../architecture.md) for the shared editing-mode/transport
 architecture.
 
-## Tools (32 total, all genuinely implemented)
+## Tools (25 total, all genuinely implemented)
 
 The largest tool surface of the four apps. Organized here by area rather than as one
 flat table.
 
-**Reading (8, always allowed, never gated — `READER_TOOLS` in `tools.ts`)**
+**Reading (4, always allowed, never gated — `READER_TOOLS` in `tools.ts`)**
 
 | Tool | Notes |
 |---|---|
 | `get_deck_context` | One-line-per-slide outline: slide index + text preview of its shapes. No per-element type/id inventory. |
-| `read_slide` | Full text of every shape on one slide, plus its layout, transition, animation count, and speaker notes. Shapes listed back-to-front (z-order). A group is shown as one line with a child count — see `read_group`. |
-| `read_group` | Lists a group's children recursively (nested groups expanded in place), each prefixed with a dotted path (e.g. `"3.1.0"`) usable as `shapeIndex` for `set_element_text`/`format_element`. Positional/structural edits still require `group_element` with `action:"ungroup"` first. |
-| `read_animations` | A slide's animations in play order (shape, effect, entrance/exit, trigger, timing) — `animationIndex` in `edit_animation` addresses this same order. |
+| `read_slide` | `view:"slide"` (default) — Full text of every shape on one slide, plus its layout, transition, animation count, and speaker notes. Shapes listed back-to-front (z-order). A group is shown as one line with a child count — see `read_slide (view=group)`.; `view:"group"` — Lists a group's children recursively (nested groups expanded in place), each prefixed with a dotted path (e.g. `"3.1.0"`) usable as `shapeIndex` for `set_element_text`/`format_element`. Positional/structural edits still require `group_element` with `action:"ungroup"` first.; `view:"animations"` — A slide's animations in play order (shape, effect, entrance/exit, trigger, timing) — `animationIndex` in `edit_animation` addresses this same order.; `view:"smartart"` — Node text of SmartArt diagrams on a slide; omitting `smartArtIndex` reads every diagram on the slide. |
 | `find_text` | Read-only substring/regex search across every slide's shape text (text boxes, placeholders, table cells, SmartArt node text) and speaker notes. Returns `[slide i, shape j] text` or `[slide i, notes] text`. |
-| `read_smartart` | Node text of SmartArt diagrams on a slide; omitting `smartArtIndex` reads every diagram on the slide. |
-| `list_layouts` | Every layout name in the presentation (across every design/theme), plus how many slides use each — call before passing `layoutName` elsewhere instead of guessing. |
-| `read_master_elements` | Shapes placed directly on the Slide Master, or one specific layout's own shapes (`layoutName`, substring-matched). |
+| `read_master` | `view:"elements"` (default) — Shapes placed directly on the Slide Master, or one specific layout's own shapes (`layoutName`, substring-matched).; `view:"layouts"` — Every layout name in the presentation (across every design/theme), plus how many slides use each — call before passing `layoutName` elsewhere instead of guessing. |
 
 **Slide management**
 
@@ -38,8 +34,7 @@ flat table.
 | `format_element` | One kind of formatting per call (mixing groups errors): text style (bold/italic/underline/shadow/fontSize/fontName/`color`/alignment/baselineOffset), `fill` (hex or `"none"`), stroke (`strokeColor`/`strokeWidthPt` or `removeStroke`), or `opacity` (via `Fill.Transparency`). **Strikethrough deliberately not implemented** — this PIA has no `TextFrame2` member on `Shape` at all (confirmed via a `CS0234` compile failure), unlike Excel's newer text model. |
 | `set_element_transform` | One of: left/top/width/height/rotation, or `order` (z-order: `bringToFront`/`sendToBack`/`bringForward`/`sendBackward`). Changing the order shifts other shapes' `shapeIndex` on the slide — re-read before addressing another shape by index in the same run. Top-level shapes only. |
 | `delete_element` | Deletes one shape. |
-| `crop_image` | Fractional crop (0..1) against current on-slide size. Documented imprecision under repeated crops. |
-| `replace_image` | **Full local drive path only** (`PathGuard`, same rule as Excel/Word; also `add_master_element` icons) — swaps a picture's content in place, keeping position/size/rotation/approximate z-order. |
+| `edit_picture` | `kind:"add"` — inserts a picture on a slide from a **full local drive path only** (`PathGuard`, same rule as the other image paths); natural size shrunk to fit the slide, or proportional from one of `width`/`height`, or stretched to both; omitted `left`/`top` centers that axis; returns the new `shapeIndex`; the shape is deleted again if placing it fails. Both `crop` and `replace` work only on a picture (plain or linked); anything else errors with "is not a picture" and changes nothing. `crop` also accepts a placeholder that holds a picture; `replace` refuses any placeholder, because replacing deletes the old shape and PowerPoint recreates an empty placeholder (seen live on a title: its text was lost). `kind:"crop"` — Fractional crop (0..1) against current on-slide size. Documented imprecision under repeated crops.; `kind:"replace"` — **Full local drive path only** (`PathGuard`, same rule as Excel/Word; also `edit_master_element` icons) — swaps a picture's content in place, keeping position/size/rotation/approximate z-order. |
 
 **Shape creation, copy/move, and grouping**
 
@@ -60,7 +55,7 @@ flat table.
 
 | Tool | Notes |
 |---|---|
-| `edit_chart` | `kind:"create"`: column/columnStacked/bar/barStacked/line/area/pie/doughnut (`chartType`, enum'd from the corrected chart-type map), writes real data into the chart's embedded Excel workbook; a series/categories length mismatch errors instead of drawing a silently wrong chart; position/size default 100/100/400/300. `kind:"update"`: `chartType`, `title`, `legendPos` (`none`/`right`/`top`/`left`/`bottom` + short aliases `r`/`t`/`l`/`b`), `dataLabels` (`none`/`value`/`percent`), `gridlines` (errors with a clear message on chart types with no value axis, e.g. pie/doughnut); several properties may be combined in one update. |
+| `edit_chart` | `kind:"create"`: column/columnStacked/bar/barStacked/line/area/pie/doughnut (`chartType`, enum'd from the corrected chart-type map), writes real data into the chart's embedded Excel workbook; a series/categories length mismatch errors instead of drawing a silently wrong chart; position/size default 100/100/400/300. `kind:"update"`: `chartType`, `title`, `legendPos` (`none`/`right`/`top`/`left`/`bottom` + short aliases `r`/`t`/`l`/`b`), `dataLabels` (`none`/`value`/`percent`), `gridlines` (errors with a clear message on chart types with no value axis, e.g. pie/doughnut); exactly one property per update call (more than one errors), so a call is one edit and one undo step. |
 
 **SmartArt**
 
@@ -72,21 +67,19 @@ flat table.
 
 | Tool | Notes |
 |---|---|
-| `edit_animation` | `kind`: `add` (entrance by default or `exit:true`, 20 effect names, `trigger` (`onClick`/`withPrevious`/`afterPrevious`), duration/delay; no directional variants, e.g. "wipe from the left" — base effect only; returns the new `animationIndex`), `delete`, `set_timing` (duration/delay/trigger), `reorder` (`toIndex`). `animationIndex` addresses current play order (call `read_animations` first); delete/reorder shift later indices. |
+| `edit_animation` | `kind`: `add` (entrance by default or `exit:true`, 20 effect names, `trigger` (`onClick`/`withPrevious`/`afterPrevious`), duration/delay; no directional variants, e.g. "wipe from the left" — base effect only; returns the new `animationIndex`), `delete`, `set_timing` (duration/delay/trigger), `reorder` (`toIndex`). `animationIndex` addresses current play order (call `read_slide (view=animations)` first); delete/reorder shift later indices. |
 
 **Slide Master**
 
 | Tool | Notes |
 |---|---|
-| `add_master_element` | Pins a persistent icon or text label to the Slide Master (shows on every slide) or one specific layout (`layoutName`). Corner placement (inset by `marginPt`) or exact `left`+`top`. Known limits: only the default (first) Slide Master is reachable without `layoutName`; a layout with "Hide Background Graphics" won't show a master-level element. |
-| `set_master_element_transform` | Moves/resizes/rotates an existing master element by `masterShapeIndex` (from `read_master_elements`) — works on theme placeholders too. |
-| `remove_master_element` | Deletes a master shape by index. Refuses to delete a theme placeholder (marked `(placeholder)` in `read_master_elements`) — use `set_headers_footers`'s `*Visible:false` to turn one off instead. |
+| `edit_master_element` | `kind:"add"` (`contentType` `icon` or `text`) — Pins a persistent icon or text label to the Slide Master (shows on every slide) or one specific layout (`layoutName`). Corner placement (inset by `marginPt`) or exact `left`+`top`. Known limits: only the default (first) Slide Master is reachable without `layoutName`; a layout with "Hide Background Graphics" won't show a master-level element.; `kind:"move"` — Moves/resizes/rotates an existing master element by `masterShapeIndex` (from `read_master`) — works on theme placeholders too.; `kind:"remove"` — Deletes a master shape by index. Refuses to delete a theme placeholder (marked `(placeholder)` in `read_master`) — use `set_headers_footers`'s `*Visible:false` to turn one off instead. |
 
 **Search/replace across the deck**
 
 | Tool | Notes |
 |---|---|
-| `replace_text` | Every text-frame shape (text boxes, title/body placeholders) on every slide, plus speaker notes unless `includeNotes:false`. **Not** table cells or SmartArt node text — use `edit_table_cell`/`edit_smartart`. `regex:true` supports `$1`-style backreferences. Reports the number of occurrences actually replaced. |
+| `replace_text` | Every text-frame shape (text boxes, title/body placeholders) on every slide, plus speaker notes unless `includeNotes:false`. **Not** table cells or SmartArt node text — use `edit_table`/`edit_smartart`. `regex:true` supports `$1`-style backreferences. Reports the number of occurrences actually replaced. |
 
 **Undo/redo (2)**
 

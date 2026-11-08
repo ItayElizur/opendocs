@@ -75,6 +75,21 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = sb.ToString() };
         }
 
+        // view selects what to read: the slide itself (default), a group's contents, the slide's animations,
+        // or its SmartArt diagrams. All read-only, so the whole tool stays in the always-allowed tier.
+        private static ToolResult ReadSlideView(JsonElement input)
+        {
+            string view = input.TryGetProperty("view", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : "slide";
+            switch (view)
+            {
+                case "slide": return ReadSlide(input);
+                case "group": return ReadGroup(input);
+                case "animations": return ReadAnimations(input);
+                case "smartart": return ReadSmartArt(input);
+                default: throw new ArgumentException("read_slide: unknown view '" + view + "'. Valid: slide, group, animations, smartart.");
+            }
+        }
+
         private static ToolResult ReadSlide(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
@@ -99,7 +114,7 @@ namespace PowerPointAiAddIn
             sb.AppendLine("Transition: " + (transitionName ?? (slide.SlideShowTransition.EntryEffect == PowerPoint.PpEntryEffect.ppEffectNone ? "none" : slide.SlideShowTransition.EntryEffect.ToString())));
 
             int animCount = slide.TimeLine.MainSequence.Count;
-            if (animCount > 0) sb.AppendLine(animCount + " animation(s) - call read_animations to see them.");
+            if (animCount > 0) sb.AppendLine(animCount + " animation(s) - call read_slide (view=animations) to see them.");
 
             // Guarded: HeadersFooters access can throw "HeaderFooter (unknown member)"
             // in several real COM states (see PowerPointTools.Master.cs.md) - don't let
@@ -117,7 +132,7 @@ namespace PowerPointAiAddIn
                 if (shape.Type == Microsoft.Office.Core.MsoShapeType.msoGroup)
                 {
                     int n = shape.GroupItems.Count;
-                    sb.AppendLine($"[{shapeIndex}] {shape.Name}: (group, {n} child{(n == 1 ? "" : "ren")} - call read_group for its contents)");
+                    sb.AppendLine($"[{shapeIndex}] {shape.Name}: (group, {n} child{(n == 1 ? "" : "ren")} - call read_slide (view=group) for its contents)");
                 }
                 else
                 {
