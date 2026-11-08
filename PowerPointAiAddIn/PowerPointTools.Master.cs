@@ -18,8 +18,7 @@ namespace PowerPointAiAddIn
             return ActivePresentation.SlideMaster;
         }
 
-        // Lets edit_master_element/read_master/edit_master_element/
-        // edit_master_element target one specific layout (optional
+        // Lets edit_master_element and read_master target one specific layout (optional
         // layoutName, resolved by substring like ResolveCustomLayout) instead of
         // only the top-level Slide Master. See PowerPointTools.Master.cs.md.
         private struct MasterTarget
@@ -414,7 +413,6 @@ namespace PowerPointAiAddIn
 
         private static readonly string[] MasterCorners = { "topLeft", "topRight", "bottomLeft", "bottomRight" };
 
-        // kind selects the operation: add (contentType icon|text), move (position/size/rotation), or remove.
         private static ToolResult EditMasterElement(JsonElement input)
         {
             string kind = input.GetProperty("kind").GetString();
@@ -427,7 +425,6 @@ namespace PowerPointAiAddIn
             }
         }
 
-        // view "elements" (default) lists the Slide Master's or one layout's shapes; "layouts" lists the layout names.
         private static ToolResult ReadMaster(JsonElement input)
         {
             string view = input.TryGetProperty("view", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : "elements";
@@ -446,8 +443,8 @@ namespace PowerPointAiAddIn
                 throw new ArgumentException("edit_master_element: unknown contentType '" + kind + "'. Valid: icon, text.");
 
             string corner = input.TryGetProperty("corner", out var cEl) && cEl.ValueKind == JsonValueKind.String ? cEl.GetString() : null;
-            float? left = input.TryGetProperty("left", out var lEl) && lEl.ValueKind == JsonValueKind.Number ? (float?)lEl.GetDouble() : null;
-            float? top = input.TryGetProperty("top", out var tEl) && tEl.ValueKind == JsonValueKind.Number ? (float?)tEl.GetDouble() : null;
+            float? left = ToolArgs.OptionalFloat(input, "left");
+            float? top = ToolArgs.OptionalFloat(input, "top");
             // left/top must be given together, or a single coordinate is silently
             // dropped in favor of corner-based placement. See PowerPointTools.Master.cs.md.
             if (left.HasValue != top.HasValue)
@@ -464,9 +461,9 @@ namespace PowerPointAiAddIn
                     throw new ArgumentException("edit_master_element: unknown corner '" + corner + "'. Valid: " + string.Join(", ", MasterCorners) + ".");
             }
 
-            float? width = input.TryGetProperty("width", out var wEl) && wEl.ValueKind == JsonValueKind.Number ? (float?)wEl.GetDouble() : null;
-            float? height = input.TryGetProperty("height", out var hEl) && hEl.ValueKind == JsonValueKind.Number ? (float?)hEl.GetDouble() : null;
-            float marginPt = input.TryGetProperty("marginPt", out var mEl) && mEl.ValueKind == JsonValueKind.Number ? (float)mEl.GetDouble() : 12f;
+            float? width = ToolArgs.OptionalFloat(input, "width");
+            float? height = ToolArgs.OptionalFloat(input, "height");
+            float marginPt = ToolArgs.OptionalFloat(input, "marginPt") ?? 12f;
 
             // Resolve/validate color and font size up front, before creating
             // anything - doing it after shape creation orphaned an unpositioned,
@@ -477,7 +474,7 @@ namespace PowerPointAiAddIn
             if (kind == "text")
             {
                 text = input.GetProperty("text").GetString();
-                textFontSize = input.TryGetProperty("fontSize", out var fsEl) && fsEl.ValueKind == JsonValueKind.Number ? (float)fsEl.GetDouble() : 10f;
+                textFontSize = ToolArgs.OptionalFloat(input, "fontSize") ?? 10f;
                 textColor = input.TryGetProperty("color", out var colorEl) && colorEl.ValueKind == JsonValueKind.String
                     ? ColorUtil.HexToOle(colorEl.GetString())
                     : ColorUtil.HexToOle("#808080");
@@ -526,7 +523,7 @@ namespace PowerPointAiAddIn
                 else
                 {
                     PowerPoint.TextRange range = shape.TextFrame.TextRange;
-                    range.Text = text;
+                    SetText(range, text);
                     range.Font.Size = textFontSize;
                     range.Font.Color.RGB = textColor;
                 }

@@ -128,14 +128,14 @@ namespace PowerPointAiAddIn
                 transition.EntryEffect = effectValue;
             }
 
-            if (input.TryGetProperty("durationSeconds", out var durEl) && durEl.ValueKind == JsonValueKind.Number)
-                transition.Duration = (float)durEl.GetDouble();
+            if (ToolArgs.OptionalFloat(input, "durationSeconds") is float duration)
+                transition.Duration = duration;
             if (input.TryGetProperty("advanceOnClick", out var clickEl))
                 transition.AdvanceOnClick = Tri(clickEl.ValueKind == JsonValueKind.True);
-            if (input.TryGetProperty("advanceAfterSeconds", out var advEl) && advEl.ValueKind == JsonValueKind.Number)
+            if (ToolArgs.OptionalFloat(input, "advanceAfterSeconds") is float advanceAfter)
             {
                 transition.AdvanceOnTime = Microsoft.Office.Core.MsoTriState.msoTrue;
-                transition.AdvanceTime = (float)advEl.GetDouble();
+                transition.AdvanceTime = advanceAfter;
             }
 
             return effectKey != null
@@ -179,6 +179,16 @@ namespace PowerPointAiAddIn
             ["afterPrevious"] = PowerPoint.MsoAnimTriggerType.msoAnimTriggerAfterPrevious,
         };
 
+        // Applies durationSeconds/delaySeconds when given; returns whether either was.
+        private static bool ApplyEffectTiming(PowerPoint.Effect effect, JsonElement input)
+        {
+            float? duration = ToolArgs.OptionalFloat(input, "durationSeconds");
+            float? delay = ToolArgs.OptionalFloat(input, "delaySeconds");
+            if (duration.HasValue) effect.Timing.Duration = duration.Value;
+            if (delay.HasValue) effect.Timing.TriggerDelayTime = delay.Value;
+            return duration.HasValue || delay.HasValue;
+        }
+
         private static ToolResult AddAnimation(JsonElement input)
         {
             PowerPoint.Shape shape = ResolveTopLevelShape(input, "edit_animation");
@@ -206,10 +216,7 @@ namespace PowerPointAiAddIn
 
             if (isExit)
                 effect.Exit = Microsoft.Office.Core.MsoTriState.msoTrue;
-            if (input.TryGetProperty("durationSeconds", out var durEl) && durEl.ValueKind == JsonValueKind.Number)
-                effect.Timing.Duration = (float)durEl.GetDouble();
-            if (input.TryGetProperty("delaySeconds", out var delEl) && delEl.ValueKind == JsonValueKind.Number)
-                effect.Timing.TriggerDelayTime = (float)delEl.GetDouble();
+            ApplyEffectTiming(effect, input);
 
             int newIndex = sequence.Count - 1; // AddEffect(-1) appends; stable immediately after the call
             return new ToolResult
@@ -263,12 +270,11 @@ namespace PowerPointAiAddIn
             {
                 case "delete":
                     effect.Delete();
-                    return new ToolResult { Output = "Animation " + animationIndex + " deleted. Later animation indices have shifted - re-read (read_slide (view=animations)) before another edit in the same run.", Mutated = true };
+                    return new ToolResult { Output = "Animation " + animationIndex + " deleted. Later animation indices have shifted - re-read (read_slide view=animations) before another edit in the same run.", Mutated = true };
                 case "set_timing":
                 {
                     bool changed = false;
-                    if (input.TryGetProperty("durationSeconds", out var durEl) && durEl.ValueKind == JsonValueKind.Number) { effect.Timing.Duration = (float)durEl.GetDouble(); changed = true; }
-                    if (input.TryGetProperty("delaySeconds", out var delEl) && delEl.ValueKind == JsonValueKind.Number) { effect.Timing.TriggerDelayTime = (float)delEl.GetDouble(); changed = true; }
+                    if (ApplyEffectTiming(effect, input)) changed = true;
                     if (input.TryGetProperty("trigger", out var trEl) && trEl.ValueKind == JsonValueKind.String)
                     {
                         PowerPoint.MsoAnimTriggerType triggerValue;
@@ -293,7 +299,7 @@ namespace PowerPointAiAddIn
                     // off, MoveBefore/MoveAfter (relative-position moves
                     // against another Effect reference) are the fallback.
                     effect.MoveTo(toIndex + 1);
-                    return new ToolResult { Output = "Animation moved from " + animationIndex + " to " + toIndex + ". Indices have shifted - re-read (read_slide (view=animations)) before another edit in the same run.", Mutated = true };
+                    return new ToolResult { Output = "Animation moved from " + animationIndex + " to " + toIndex + ". Indices have shifted - re-read (read_slide view=animations) before another edit in the same run.", Mutated = true };
                 }
                 default:
                     throw new ArgumentException("edit_animation: unknown kind '" + kind + "'. Valid: add, delete, set_timing, reorder.");

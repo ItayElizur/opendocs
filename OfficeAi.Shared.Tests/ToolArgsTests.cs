@@ -95,4 +95,14 @@ public class ToolArgsTests
         Assert.Contains("italic", ex.Message);
         Assert.Contains("bogus", ex.Message);
     }
+
+    [Fact]
+    public void OptionalFloat_ReadsNumbersAndTreatsEverythingElseAsAbsent()
+    {
+        var input = Parse("{\"n\": 2.5, \"s\": \"7\", \"z\": null}");
+        Assert.Equal(2.5f, ToolArgs.OptionalFloat(input, "n"));
+        Assert.Null(ToolArgs.OptionalFloat(input, "s"));
+        Assert.Null(ToolArgs.OptionalFloat(input, "z"));
+        Assert.Null(ToolArgs.OptionalFloat(input, "missing"));
+    }
 }

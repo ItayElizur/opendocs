@@ -10,8 +10,7 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
-        // kind "create" adds a chart (chartType required); "update" changes ONE property of an existing one
-        // (so a call is one edit and one undo step).
+        // update changes one property per call, so a call is one edit and one undo step.
         private static ToolResult EditChart(JsonElement input)
         {
             string kind = input.GetProperty("kind").GetString();
@@ -30,10 +29,10 @@ namespace PowerPointAiAddIn
         private static ToolResult AddChartPpt(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            string kindStr = input.GetProperty("chartType").GetString();
+            string chartType = input.GetProperty("chartType").GetString();
             int typeCode;
-            if (!ChartTypes.ByName.TryGetValue(kindStr, out typeCode))
-                throw new ArgumentException("edit_chart: unknown chartType '" + kindStr + "'. Valid: " +
+            if (!ChartTypes.ByName.TryGetValue(chartType, out typeCode))
+                throw new ArgumentException("edit_chart: unknown chartType '" + chartType + "'. Valid: " +
                                             string.Join(", ", ChartTypes.ByName.Keys) + ".");
             var categories = new List<string>();
             foreach (JsonElement c in input.GetProperty("categories").EnumerateArray()) categories.Add(c.GetString());

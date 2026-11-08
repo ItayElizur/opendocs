@@ -84,7 +84,7 @@ namespace PowerPointAiAddIn
         // Shared by ApplyOptionalName below and DuplicateElement/CopyOrMoveElement
         // (PowerPointTools.CrossSlide.cs) - disambiguates `desired` against every
         // OTHER shape's current Name with a numeric suffix ("Rectangle 5" ->
-        // "Rectangle 5 2"), the same convention read_slide key their
+        // "Rectangle 5 2"), the same convention read_slide keys its
         // output on. siblingShapes defaults to resolving from the shape's own
         // slide; pass it explicitly for a Slide Master/layout shape, whose parent
         // is never a PowerPoint.Slide. See PowerPointTools.Elements.cs.md for why
@@ -110,7 +110,7 @@ namespace PowerPointAiAddIn
         }
 
         // Optional model-chosen shape name. PowerPoint permits duplicate names,
-        // but read_slide key their output on the name, so a collision
+        // but read_slide keys its output on the name, so a collision
         // among the sibling shapes is disambiguated with a numeric suffix.
         // Returns the name actually applied, or null when none was requested.
         private static string ApplyOptionalName(PowerPoint.Shape shape, JsonElement input, PowerPoint.Shapes siblingShapes = null)
@@ -236,73 +236,43 @@ namespace PowerPointAiAddIn
             PowerPoint.TextRange range = shape.TextFrame.TextRange;
             var applied = new List<string>();
             string field = null; // the parameter being applied, so a COM failure can name it
+            void Apply(string name, Action set) { field = name; set(); applied.Add(name); }
 
             try
             {
-
-            if (input.TryGetProperty("bold", out var bold))
-            {
-                field = "bold";
-                range.Font.Bold = Tri(bold.GetBoolean());
-                applied.Add("bold");
-            }
-            if (input.TryGetProperty("italic", out var italic))
-            {
-                field = "italic";
-                range.Font.Italic = Tri(italic.GetBoolean());
-                applied.Add("italic");
-            }
-            if (input.TryGetProperty("fontSize", out var fontSize))
-            {
-                field = "fontSize";
-                range.Font.Size = (float)fontSize.GetDouble();
-                applied.Add("fontSize");
-            }
-            if (input.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
-            {
-                field = "color";
-                range.Font.Color.RGB = ColorUtil.HexToOle(color.GetString());
-                applied.Add("color");
-            }
-            if (input.TryGetProperty("fontName", out var fontName) && fontName.ValueKind == JsonValueKind.String)
-            {
-                field = "fontName";
-                range.Font.Name = fontName.GetString();
-                applied.Add("fontName");
-            }
-            if (input.TryGetProperty("underline", out var underline))
-            {
-                field = "underline";
-                range.Font.Underline = Tri(underline.ValueKind == JsonValueKind.True);
-                applied.Add("underline");
-            }
-            if (input.TryGetProperty("shadow", out var shadow))
-            {
-                field = "shadow";
-                range.Font.Shadow = Tri(shadow.ValueKind == JsonValueKind.True);
-                applied.Add("shadow");
-            }
-            if (input.TryGetProperty("alignment", out var align) && align.ValueKind == JsonValueKind.String)
-            {
-                field = "alignment";
-                PowerPoint.PpParagraphAlignment a;
-                if (!AlignmentMap.TryGetValue(align.GetString(), out a))
-                    throw new ArgumentException("format_element: unknown alignment '" + align.GetString() +
-                                                "'. Valid: " + string.Join(", ", AlignmentMap.Keys) + ".");
-                range.ParagraphFormat.Alignment = a;
-                applied.Add("alignment");
-            }
-            if (input.TryGetProperty("baselineOffset", out var baseline) && baseline.ValueKind == JsonValueKind.String)
-            {
-                field = "baselineOffset";
-                string b = baseline.GetString();
-                if (b != "SUPERSCRIPT" && b != "SUBSCRIPT" && b != "NONE")
-                    throw new ArgumentException("format_element: unknown baselineOffset '" + b +
-                                                "'. Valid: SUPERSCRIPT, SUBSCRIPT, NONE.");
-                range.Font.Superscript = Tri(b == "SUPERSCRIPT");
-                range.Font.Subscript = Tri(b == "SUBSCRIPT");
-                applied.Add("baselineOffset");
-            }
+                if (input.TryGetProperty("bold", out var bold))
+                    Apply("bold", () => range.Font.Bold = Tri(bold.GetBoolean()));
+                if (input.TryGetProperty("italic", out var italic))
+                    Apply("italic", () => range.Font.Italic = Tri(italic.GetBoolean()));
+                if (input.TryGetProperty("fontSize", out var fontSize))
+                    Apply("fontSize", () => range.Font.Size = (float)fontSize.GetDouble());
+                if (input.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
+                    Apply("color", () => range.Font.Color.RGB = ColorUtil.HexToOle(color.GetString()));
+                if (input.TryGetProperty("fontName", out var fontName) && fontName.ValueKind == JsonValueKind.String)
+                    Apply("fontName", () => range.Font.Name = fontName.GetString());
+                if (input.TryGetProperty("underline", out var underline))
+                    Apply("underline", () => range.Font.Underline = Tri(underline.ValueKind == JsonValueKind.True));
+                if (input.TryGetProperty("shadow", out var shadow))
+                    Apply("shadow", () => range.Font.Shadow = Tri(shadow.ValueKind == JsonValueKind.True));
+                if (input.TryGetProperty("alignment", out var align) && align.ValueKind == JsonValueKind.String)
+                {
+                    if (!AlignmentMap.TryGetValue(align.GetString(), out PowerPoint.PpParagraphAlignment a))
+                        throw new ArgumentException("format_element: unknown alignment '" + align.GetString() +
+                                                    "'. Valid: " + string.Join(", ", AlignmentMap.Keys) + ".");
+                    Apply("alignment", () => range.ParagraphFormat.Alignment = a);
+                }
+                if (input.TryGetProperty("baselineOffset", out var baseline) && baseline.ValueKind == JsonValueKind.String)
+                {
+                    string b = baseline.GetString();
+                    if (b != "SUPERSCRIPT" && b != "SUBSCRIPT" && b != "NONE")
+                        throw new ArgumentException("format_element: unknown baselineOffset '" + b +
+                                                    "'. Valid: SUPERSCRIPT, SUBSCRIPT, NONE.");
+                    Apply("baselineOffset", () =>
+                    {
+                        range.Font.Superscript = Tri(b == "SUPERSCRIPT");
+                        range.Font.Subscript = Tri(b == "SUBSCRIPT");
+                    });
+                }
             }
             catch (Exception ex) when (field != null && !(ex is ArgumentException))
             {
@@ -347,15 +317,15 @@ namespace PowerPointAiAddIn
         private static ToolResult SetElementOrder(JsonElement input)
         {
             PowerPoint.Shape shape = ResolveTopLevelShape(input, "set_element_transform");
-            string kind = input.GetProperty("order").GetString();
+            string order = input.GetProperty("order").GetString();
             Microsoft.Office.Core.MsoZOrderCmd cmd;
-            if (!ZOrderMap.TryGetValue(kind, out cmd))
-                throw new ArgumentException("set_element_transform: unknown order '" + kind + "'. Valid: " + string.Join(", ", ZOrderMap.Keys) + ".");
+            if (!ZOrderMap.TryGetValue(order, out cmd))
+                throw new ArgumentException("set_element_transform: unknown order '" + order + "'. Valid: " + string.Join(", ", ZOrderMap.Keys) + ".");
             shape.ZOrder(cmd);
             // ZOrderPosition is 1-based in COM; reported 0-based to match
             // read_slide's shapeIndex convention.
             int newShapeIndex = shape.ZOrderPosition - 1;
-            return new ToolResult { Output = "Shape order changed (" + kind + ") - now at shapeIndex " + newShapeIndex + ". Other shapes on this slide may have shifted index - re-read the slide (read_slide) before addressing another shape by index in the same run.", Mutated = true };
+            return new ToolResult { Output = "Shape order changed (" + order + ") - now at shapeIndex " + newShapeIndex + ". Other shapes on this slide may have shifted index - re-read the slide (read_slide) before addressing another shape by index in the same run.", Mutated = true };
         }
 
         private static ToolResult AddTextBox(JsonElement input)
@@ -389,7 +359,7 @@ namespace PowerPointAiAddIn
             Microsoft.Office.Core.MsoAutoShapeType autoShapeType = (Microsoft.Office.Core.MsoAutoShapeType)autoShapeTypeInt;
             ReadRect(input, out float left, out float top, out float width, out float height);
             PowerPoint.Shape shape = slide.Shapes.AddShape(autoShapeType, left, top, width, height);
-            if (input.TryGetProperty("text", out var text)) shape.TextFrame.TextRange.Text = text.GetString();
+            if (input.TryGetProperty("text", out var text)) SetText(shape.TextFrame.TextRange, text.GetString());
             string named = ApplyOptionalName(shape, input);
             return new ToolResult { Output = "Shape added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true };
         }

@@ -12,7 +12,6 @@ namespace PowerPointAiAddIn
     {
         private static readonly string[] TextStyleKeys = { "bold", "italic", "underline", "shadow", "fontSize", "fontName", "color", "alignment", "baselineOffset" };
 
-        // One kind of formatting per call: text style, fill, stroke, or opacity.
         private static ToolResult FormatElement(JsonElement input)
         {
             switch (RequireOneGroup("format_element", input,
@@ -59,7 +58,7 @@ namespace PowerPointAiAddIn
                 {
                     shape.Line.ForeColor.RGB = ColorUtil.HexToOle(color.GetString());
                 }
-                shape.Line.Weight = input.TryGetProperty("strokeWidthPt", out var width) && width.ValueKind == JsonValueKind.Number ? (float)width.GetDouble() : 1f;
+                shape.Line.Weight = ToolArgs.OptionalFloat(input, "strokeWidthPt") ?? 1f;
             }
             return new ToolResult { Output = "Stroke updated.", Mutated = true };
         }
@@ -91,7 +90,6 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = "Shape ungrouped - re-read the slide (read_slide) to get updated shape indices before addressing the promoted children.", Mutated = true };
         }
 
-        // action "group" (shapeIndexes) or "ungroup" (shapeIndex).
         private static ToolResult GroupElement(JsonElement input)
         {
             string action = input.GetProperty("action").GetString();
@@ -109,7 +107,7 @@ namespace PowerPointAiAddIn
             PowerPoint.Slide slide = ResolveSlide(input);
 
             if (!input.TryGetProperty("shapeIndexes", out var idxArr) || idxArr.ValueKind != JsonValueKind.Array)
-                return new ToolResult { Output = "group_element needs shapeIndexes: an array of at least two 0-based top-level shape indices.", IsError = true };
+                throw new ArgumentException("group_element needs shapeIndexes: an array of at least two 0-based top-level shape indices.");
 
             var seen = new HashSet<int>();
             var comIndexes = new List<object>();
@@ -117,11 +115,11 @@ namespace PowerPointAiAddIn
             {
                 int i = el.GetInt32();
                 if (i < 0 || i >= slide.Shapes.Count)
-                    return new ToolResult { Output = "group_element: shapeIndex " + i + " is out of range (slide has " + slide.Shapes.Count + " shapes).", IsError = true };
+                    throw new ArgumentException("group_element: shapeIndex " + i + " is out of range (slide has " + slide.Shapes.Count + " shapes).");
                 if (seen.Add(i)) comIndexes.Add(i + 1); // ShapeRange is 1-based
             }
             if (comIndexes.Count < 2)
-                return new ToolResult { Output = "group_element needs at least two distinct shapeIndexes.", IsError = true };
+                throw new ArgumentException("group_element needs at least two distinct shapeIndexes.");
 
             PowerPoint.ShapeRange range = slide.Shapes.Range(comIndexes.ToArray());
             PowerPoint.Shape group = range.Group();

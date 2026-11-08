@@ -10,7 +10,7 @@ namespace PowerPointAiAddIn
     {
         // Plain Shape-to-Shape native-value copies (no JSON parsing, no hex round
         // trip) powering copy_element_style below. See PowerPointTools.FormatPainter.cs.md
-        // for why copy_element (move:true) no longer share this code.
+        // for why copy_element's cross-slide path no longer shares this code.
 
         // Shape.PickUp()/Shape.Apply() is PowerPoint's own native format painter (an
         // Application-level "last picked up formatting" slot, not the clipboard).
