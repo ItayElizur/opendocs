@@ -1,8 +1,8 @@
 # PowerPointTools.CrossSlide.cs
 
-## File header - copy_element/move_element design
+## File header - copy_element (move:true) design
 
-copy_element/move_element: cross-slide relocation via PowerPoint's
+copy_element (move:true): cross-slide relocation via PowerPoint's
 own native Copy/Paste (Shape.Copy() + Slide.Shapes.Paste()).
 
 History (2026-09-23): an earlier version of this file avoided the
@@ -34,7 +34,7 @@ restoring the clipboard's prior contents around the operation
 (SaveClipboard/RestoreClipboard below) - a narrow window remains
 where something else changes the clipboard mid-call, the same risk
 any programmatic clipboard user (including a PowerPoint macro)
-accepts. duplicate_element (PowerPointTools.Elements.cs) and
+accepts. copy_element (same slide) (PowerPointTools.Elements.cs) and
 copy_element_style (PowerPointTools.FormatPainter.cs) are
 unaffected - Shape.Duplicate() and Shape.PickUp()/Apply() are both
 native, non-clipboard mechanisms and still avoid this tradeoff
@@ -80,7 +80,7 @@ If anything from here fails, the paste already succeeded -
 the destination slide has a real, pasted shape on it, so
 just rethrowing (as the code did originally) would leave
 that shape as a silent orphan while reporting an error,
-contradicting move_element's own documented "on any error
+contradicting copy_element move:true's own documented "on any error
 nothing is changed" guarantee. Delete it before rethrowing,
 matching the orphan-cleanup discipline the old
 reconstruction-based version of this file used to have.
@@ -91,7 +91,7 @@ A native paste lands wherever PowerPoint's own paste
 logic puts it (typically the same Left/Top as the
 source, on top of whatever's already on the
 destination slide) - honor an explicit left/top
-override the same way duplicate_element does,
+override the same way copy_element (same slide) does,
 otherwise leave PowerPoint's own placement alone.
 
 ## `CopyOrMoveElement` - naming collision
@@ -109,4 +109,4 @@ positioning/naming try/catch above: if the delete itself
 fails (stale COM reference, a locked/linked source, a
 transient PowerPoint refusal), the paste already
 succeeded - undo it too, rather than leaving two copies
-of the shape behind while move_element reports failure.
+of the shape behind while copy_element move:true reports failure.

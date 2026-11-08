@@ -10,6 +10,24 @@ namespace PowerPointAiAddIn
 {
     public static partial class PowerPointTools
     {
+        private static readonly string[] TextStyleKeys = { "bold", "italic", "underline", "shadow", "fontSize", "fontName", "color", "alignment", "baselineOffset" };
+
+        // One kind of formatting per call: text style, fill, stroke, or opacity.
+        private static ToolResult FormatElement(JsonElement input)
+        {
+            switch (RequireOneGroup("format_element", input,
+                Group("text style", TextStyleKeys),
+                Group("fill", "fill"),
+                Group("stroke", "strokeColor", "strokeWidthPt", "removeStroke"),
+                Group("opacity", "opacity")))
+            {
+                case "text style": return SetElementStyle(input);
+                case "fill": return SetElementFill(input);
+                case "stroke": return SetElementStroke(input);
+                default: return SetPictureOpacity(input);
+            }
+        }
+
         private static ToolResult SetElementFill(JsonElement input)
         {
             PowerPoint.Shape shape = ResolveShape(input);
@@ -29,7 +47,7 @@ namespace PowerPointAiAddIn
         private static ToolResult SetElementStroke(JsonElement input)
         {
             PowerPoint.Shape shape = ResolveShape(input);
-            bool remove = ToolArgs.OptionalFlag(input, "remove");
+            bool remove = ToolArgs.OptionalFlag(input, "removeStroke");
             if (remove)
             {
                 shape.Line.Visible = Microsoft.Office.Core.MsoTriState.msoFalse;
@@ -37,11 +55,11 @@ namespace PowerPointAiAddIn
             else
             {
                 shape.Line.Visible = Microsoft.Office.Core.MsoTriState.msoTrue;
-                if (input.TryGetProperty("color", out var color) && color.ValueKind == JsonValueKind.String)
+                if (input.TryGetProperty("strokeColor", out var color) && color.ValueKind == JsonValueKind.String)
                 {
                     shape.Line.ForeColor.RGB = ColorUtil.HexToOle(color.GetString());
                 }
-                shape.Line.Weight = input.TryGetProperty("widthPt", out var width) && width.ValueKind == JsonValueKind.Number ? (float)width.GetDouble() : 1f;
+                shape.Line.Weight = input.TryGetProperty("strokeWidthPt", out var width) && width.ValueKind == JsonValueKind.Number ? (float)width.GetDouble() : 1f;
             }
             return new ToolResult { Output = "Stroke updated.", Mutated = true };
         }
@@ -73,7 +91,19 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = "Shape ungrouped - re-read the slide (read_slide) to get updated shape indices before addressing the promoted children.", Mutated = true };
         }
 
+        // action "group" (shapeIndexes) or "ungroup" (shapeIndex).
         private static ToolResult GroupElement(JsonElement input)
+        {
+            string action = input.GetProperty("action").GetString();
+            switch (action)
+            {
+                case "group": return GroupShapes(input);
+                case "ungroup": return UngroupElement(input);
+                default: throw new ArgumentException("group_element: unknown action '" + action + "'. Valid: group, ungroup.");
+            }
+        }
+
+        private static ToolResult GroupShapes(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
             PowerPoint.Slide slide = ResolveSlide(input);

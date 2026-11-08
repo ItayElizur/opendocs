@@ -69,7 +69,7 @@ z-order stack) - only those 4 are exposed.
 ## `DuplicateElement`
 
 Shape.Duplicate() is a native in-place COM clone independent of
-Shape.Type - unlike copy_element/move_element (PowerPointTools.
+Shape.Type - unlike copy_element (move:true) (PowerPointTools.
 CrossSlide.cs), it needs no shape-kind dispatch at all and works
 uniformly for every kind, including groups/pictures/tables/charts/
 SmartArt. Positioning of the duplicate by Duplicate() itself is

@@ -25,37 +25,25 @@ export const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'Edit shape text', he: 'עריכת טקסט באובייקט' },
     description: { en: 'Replaces the text content of a shape.', he: 'מחליף את תוכן הטקסט של אובייקט.' },
   },
-  set_element_style: {
-    label: { en: 'Format shape text', he: 'עיצוב טקסט באובייקט' },
-    description: { en: 'Changes the text formatting of a shape, such as bold, color, or font size.', he: 'משנה את עיצוב הטקסט של אובייקט, כגון הדגשה, צבע או גודל גופן.' },
+  format_element: {
+    label: { en: 'Format shape', he: 'עיצוב אובייקט' },
+    description: { en: 'Changes a shape\'s text style, fill, outline, or opacity.', he: 'משנה את סגנון הטקסט, המילוי, המתאר או השקיפות של אובייקט.' },
   },
   set_element_transform: {
-    label: { en: 'Move/resize shape', he: 'הזזה/שינוי גודל של אובייקט' },
-    description: { en: 'Moves, resizes, or rotates a shape.', he: 'מזיז, משנה גודל או מסובב אובייקט.' },
-  },
-  set_element_order: {
-    label: { en: 'Reorder shape', he: 'שינוי סדר אובייקט' },
-    description: { en: 'Brings a shape forward or backward in the stacking order.', he: 'מקדם או מרחיק אובייקט בסדר הערימה.' },
-  },
-  add_text_box: {
-    label: { en: 'Add text box', he: 'הוספת תיבת טקסט' },
-    description: { en: 'Creates a new text box on a slide.', he: 'יוצר תיבת טקסט חדשה בשקופית.' },
+    label: { en: 'Move/resize/reorder shape', he: 'הזזה/שינוי גודל/סדר של אובייקט' },
+    description: { en: 'Moves, resizes, or rotates a shape, or changes its stacking order.', he: 'מזיז, משנה גודל או מסובב אובייקט, או משנה את סדר הערימה שלו.' },
   },
   add_shape: {
-    label: { en: 'Add shape', he: 'הוספת צורה' },
-    description: { en: 'Creates a new shape, such as a rectangle, ellipse, or arrow.', he: 'יוצר צורה חדשה, כגון מלבן, אליפסה או חץ.' },
+    label: { en: 'Add shape or text box', he: 'הוספת צורה או תיבת טקסט' },
+    description: { en: 'Creates a new shape (such as a rectangle, ellipse, or arrow) or a text box.', he: 'יוצר צורה חדשה (כגון מלבן, אליפסה או חץ) או תיבת טקסט.' },
   },
   delete_element: {
     label: { en: 'Delete shape', he: 'מחיקת אובייקט' },
     description: { en: 'Deletes a shape from a slide.', he: 'מוחק אובייקט משקופית.' },
   },
-  duplicate_element: {
-    label: { en: 'Duplicate shape', he: 'שכפול אובייקט' },
-    description: { en: 'Creates a copy of a shape on the same slide.', he: 'יוצר עותק של אובייקט באותה שקופית.' },
-  },
   copy_element: {
-    label: { en: 'Copy shape to another slide', he: 'העתקת אובייקט לשקופית אחרת' },
-    description: { en: 'Copies a shape to a different slide, with full native formatting.', he: 'מעתיק אובייקט לשקופית אחרת, כולל כל העיצוב המקורי.' },
+    label: { en: 'Copy or move shape', he: 'העתקה או העברה של אובייקט' },
+    description: { en: 'Copies a shape on the same slide or to another slide, or moves it to another slide, with full native formatting.', he: 'מעתיק אובייקט באותה שקופית או לשקופית אחרת, או מעביר אותו לשקופית אחרת, כולל כל העיצוב המקורי.' },
   },
   manage_slide: {
     label: { en: 'Manage slide', he: 'ניהול שקופית' },
@@ -64,10 +52,6 @@ export const POWERPOINT_TOOL_DISPLAY = {
   set_slide: {
     label: { en: 'Update slide', he: 'עדכון שקופית' },
     description: { en: "Changes a slide's layout, background, transition, or speaker notes.", he: 'משנה את פריסת השקופית, הרקע, המעבר או הערות הדובר.' },
-  },
-  move_element: {
-    label: { en: 'Move shape to another slide', he: 'העברת אובייקט לשקופית אחרת' },
-    description: { en: 'Moves a shape to a different slide, removing it from its original slide.', he: 'מעביר אובייקט לשקופית אחרת, ומסיר אותו מהשקופית המקורית.' },
   },
   add_animation: {
     label: { en: 'Add animation', he: 'הוספת אנימציה' },
@@ -81,25 +65,13 @@ export const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'Edit animation', he: 'עריכת אנימציה' },
     description: { en: "Deletes, retimes, or reorders an existing animation.", he: 'מוחק, משנה תזמון או מסדר מחדש אנימציה קיימת.' },
   },
-  set_element_fill: {
-    label: { en: 'Set shape fill', he: 'צביעת אובייקט' },
-    description: { en: "Sets or removes a shape's fill color.", he: 'מגדיר או מסיר את צבע המילוי של אובייקט.' },
-  },
-  set_element_stroke: {
-    label: { en: 'Set shape outline', he: 'מתאר אובייקט' },
-    description: { en: "Sets or removes a shape's outline color and width.", he: 'מגדיר או מסיר את צבע ועובי המתאר של אובייקט.' },
-  },
   copy_element_style: {
     label: { en: 'Copy shape formatting', he: 'העתקת עיצוב אובייקט' },
     description: { en: 'Copies text, fill, and outline formatting from one shape onto others (like a format painter).', he: 'מעתיק עיצוב טקסט, מילוי ומתאר מאובייקט אחד לאובייקטים אחרים (כמו מכחול עיצוב).' },
   },
-  ungroup_element: {
-    label: { en: 'Ungroup shapes', he: 'פירוק קבוצת אובייקטים' },
-    description: { en: 'Breaks a grouped shape into its individual parts.', he: 'מפרק אובייקט מקובץ לחלקיו הבודדים.' },
-  },
   group_element: {
-    label: { en: 'Group shapes', he: 'קיבוץ אובייקטים' },
-    description: { en: 'Combines two or more shapes into a single group.', he: 'מאחד שני אובייקטים או יותר לקבוצה אחת.' },
+    label: { en: 'Group or ungroup shapes', he: 'קיבוץ או פירוק קבוצת אובייקטים' },
+    description: { en: 'Combines shapes into a group, or breaks a group into its parts.', he: 'מאחד אובייקטים לקבוצה, או מפרק קבוצה לחלקיה.' },
   },
   add_table: {
     label: { en: 'Add table', he: 'הוספת טבלה' },
@@ -140,10 +112,6 @@ export const POWERPOINT_TOOL_DISPLAY = {
   crop_image: {
     label: { en: 'Crop image', he: 'חיתוך תמונה' },
     description: { en: 'Crops a picture without permanently discarding the cropped-out parts.', he: 'חותך תמונה מבלי למחוק לצמיתות את החלקים שנחתכו.' },
-  },
-  set_picture_opacity: {
-    label: { en: 'Set image opacity', he: 'שקיפות תמונה' },
-    description: { en: 'Sets how transparent or opaque a picture appears.', he: 'מגדיר עד כמה התמונה תהיה שקופה או אטומה.' },
   },
   replace_image: {
     label: { en: 'Replace image', he: 'החלפת תמונה' },

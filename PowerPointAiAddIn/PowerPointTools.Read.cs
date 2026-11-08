@@ -109,7 +109,7 @@ namespace PowerPointAiAddIn
 
             // slide.Shapes is already ordered back-to-front by z-order; this just states
             // that explicitly rather than needing a new read tool. See .md.
-            if (slide.Shapes.Count > 1) sb.AppendLine("Shapes below are listed back-to-front (z-order) - index 0 is furthest back, the last index is drawn on top. Use set_element_order to change this.");
+            if (slide.Shapes.Count > 1) sb.AppendLine("Shapes below are listed back-to-front (z-order) - index 0 is furthest back, the last index is drawn on top. Use set_element_transform (order) to change this.");
 
             int shapeIndex = 0;
             foreach (PowerPoint.Shape shape in slide.Shapes)
@@ -135,7 +135,7 @@ namespace PowerPointAiAddIn
         // Recursive listing of a group's contents, nested groups indented in place.
         // Each line's dotted "[path]" (e.g. "3.1.0") is accepted directly by
         // set_element_text/_style/_fill/_stroke; positional/structural edits still
-        // require ungroup_element first.
+        // require group_element with action:"ungroup" first.
         private static ToolResult ReadGroup(JsonElement input)
         {
             ShapeRef r;

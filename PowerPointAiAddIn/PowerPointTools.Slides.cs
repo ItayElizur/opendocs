@@ -72,22 +72,17 @@ namespace PowerPointAiAddIn
         private static ToolResult SetSlide(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            var groups = new List<string>();
-            if (input.TryGetProperty("layout", out _) || input.TryGetProperty("layoutName", out _)) groups.Add("layout");
-            if (input.TryGetProperty("background", out _)) groups.Add("background");
-            if (SlideTransitionKeys.Any(k => input.TryGetProperty(k, out _))) groups.Add("transition");
-            if (input.TryGetProperty("notes", out _)) groups.Add("notes");
-
-            if (groups.Count == 0)
-                throw new ArgumentException("set_slide: nothing to set - give layout/layoutName, background, notes, or the transition fields (effect/durationSeconds/advanceOnClick/advanceAfterSeconds).");
-            if (groups.Count > 1)
-                throw new ArgumentException("set_slide: change one thing per call - got " + string.Join(", ", groups) + ". Make a separate set_slide call for each.");
-            if (slideIndex == -1 && groups[0] != "background")
+            string group = RequireOneGroup("set_slide", input,
+                Group("layout", "layout", "layoutName"),
+                Group("background", "background"),
+                Group("transition", SlideTransitionKeys),
+                Group("notes", "notes"));
+            if (slideIndex == -1 && group != "background")
                 throw new ArgumentException("set_slide: slideIndex -1 (every slide) is only valid with background.");
 
             PowerPoint.Slide slide = slideIndex == -1 ? null : ResolveSlide(input);
             string message;
-            switch (groups[0])
+            switch (group)
             {
                 case "layout": message = ApplySlideLayout(slide, slideIndex, input); break;
                 case "background": message = ApplySlideBackground(slideIndex, input); break;
