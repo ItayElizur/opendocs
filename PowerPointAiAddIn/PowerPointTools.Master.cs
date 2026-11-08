@@ -114,8 +114,8 @@ namespace PowerPointAiAddIn
                 }
             }
             if (i == 0)
-                return new ToolResult { Output = "No layouts found in this presentation's theme(s).", Summary = "list_layouts" };
-            return new ToolResult { Output = "This presentation has " + i + " layout(s)" + (multipleDesigns ? " across " + ActivePresentation.Designs.Count + " design(s)" : "") + ":\n" + sb.ToString().TrimEnd(), Summary = "list_layouts" };
+                return new ToolResult { Output = "No layouts found in this presentation's theme(s)." };
+            return new ToolResult { Output = "This presentation has " + i + " layout(s)" + (multipleDesigns ? " across " + ActivePresentation.Designs.Count + " design(s)" : "") + ":\n" + sb.ToString().TrimEnd() };
         }
 
         private static string CapitalizeFirst(string s)
@@ -165,13 +165,13 @@ namespace PowerPointAiAddIn
             bool? dateVisible, string dateMode, string dateText, PowerPoint.PpDateTimeFormat dateFormat)
         {
             if (slideNumberVisible.HasValue)
-                hf.SlideNumber.Visible = slideNumberVisible.Value ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
+                hf.SlideNumber.Visible = Tri(slideNumberVisible.Value);
             if (footerVisible.HasValue)
-                hf.Footer.Visible = footerVisible.Value ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
+                hf.Footer.Visible = Tri(footerVisible.Value);
             if (footerText != null)
                 hf.Footer.Text = footerText;
             if (dateVisible.HasValue)
-                hf.DateAndTime.Visible = dateVisible.Value ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
+                hf.DateAndTime.Visible = Tri(dateVisible.Value);
             if (dateMode == "auto")
             {
                 hf.DateAndTime.UseFormat = Microsoft.Office.Core.MsoTriState.msoTrue;
@@ -291,7 +291,7 @@ namespace PowerPointAiAddIn
             if (startNumber.HasValue) applied.Add("startNumber");
 
             if (applied.Count == 0)
-                return new ToolResult { Output = "set_headers_footers: no recognized fields were provided - nothing changed.", IsError = true, Summary = "set_headers_footers" };
+                return new ToolResult { Output = "set_headers_footers: no recognized fields were provided - nothing changed.", IsError = true };
 
             bool anyPerSlideField = slideNumberVisible.HasValue || footerVisible.HasValue || footerText != null || dateVisible.HasValue || dateMode != null;
             int layoutFailures = 0;
@@ -386,7 +386,6 @@ namespace PowerPointAiAddIn
                                                     : deckWideFailures.Count > 0 ? " skipTitleSlide/startNumber were also rejected: " + string.Join(", ", deckWideFailures) + "." : ""),
                     IsError = true,
                     Mutated = deckWideStillApplied,
-                    Summary = "set_headers_footers",
                 };
             }
 
@@ -410,7 +409,6 @@ namespace PowerPointAiAddIn
                          " If slide numbers/footer/date still don't appear, this slide's layout may not include that placeholder - " +
                          "check read_master_elements or try a different layout (set_slide_layout).",
                 Mutated = true,
-                Summary = "set_headers_footers",
             };
         }
 
@@ -468,7 +466,7 @@ namespace PowerPointAiAddIn
                 string localPath = input.GetProperty("localPath").GetString();
                 string pathError = PathGuard.LocalFileError(localPath);
                 if (pathError != null)
-                    return new ToolResult { Output = "add_master_element: " + pathError, IsError = true, Summary = "add_master_element" };
+                    return new ToolResult { Output = "add_master_element: " + pathError, IsError = true };
                 localPath = localPath.Trim();
 
                 shape = target.Shapes.AddPicture(localPath, Microsoft.Office.Core.MsoTriState.msoFalse, Microsoft.Office.Core.MsoTriState.msoTrue, 0, 0, -1, -1);
@@ -542,7 +540,6 @@ namespace PowerPointAiAddIn
                              : ". It will appear only on slides using " + target.Label + " (not other layouts, and not through the Slide Master).") +
                          " Only this presentation's default Slide Master/theme is affected - a deck combining more than one theme has more than one.",
                 Mutated = true,
-                Summary = "add_master_element",
             };
         }
 
@@ -557,21 +554,15 @@ namespace PowerPointAiAddIn
                 throw new ArgumentOutOfRangeException("masterShapeIndex", "masterShapeIndex must be between 0 and " + (target.Shapes.Count - 1) + " (in " + target.Label + ").");
             PowerPoint.Shape shape = target.Shapes[masterShapeIndex + 1];
 
-            var applied = new List<string>();
-            if (input.TryGetProperty("left", out var left)) { shape.Left = (float)left.GetDouble(); applied.Add("left"); }
-            if (input.TryGetProperty("top", out var top)) { shape.Top = (float)top.GetDouble(); applied.Add("top"); }
-            if (input.TryGetProperty("width", out var width)) { shape.Width = (float)width.GetDouble(); applied.Add("width"); }
-            if (input.TryGetProperty("height", out var height)) { shape.Height = (float)height.GetDouble(); applied.Add("height"); }
-            if (input.TryGetProperty("rotation", out var rotation)) { shape.Rotation = (float)rotation.GetDouble(); applied.Add("rotation"); }
+            var applied = ApplyTransform(shape, input);
 
             if (applied.Count == 0)
-                return new ToolResult { Output = "set_master_element_transform: no recognized fields were provided - nothing changed.", IsError = true, Summary = "set_master_element_transform" };
+                return new ToolResult { Output = "set_master_element_transform: no recognized fields were provided - nothing changed.", IsError = true };
 
             return new ToolResult
             {
                 Output = "Master element " + masterShapeIndex + " in " + target.Label + " updated (" + string.Join(", ", applied) + ").",
                 Mutated = true,
-                Summary = "set_master_element_transform",
             };
         }
 
@@ -600,7 +591,6 @@ namespace PowerPointAiAddIn
             {
                 Output = "Master element " + masterShapeIndex + " deleted from " + target.Label + ". Other master shapes' indices may have shifted - call read_master_elements before another edit in the same run.",
                 Mutated = true,
-                Summary = "remove_master_element",
             };
         }
 
@@ -609,7 +599,7 @@ namespace PowerPointAiAddIn
             MasterTarget target = ResolveMasterTarget(input, "read_master_elements");
             int count = target.Shapes.Count;
             if (count == 0)
-                return new ToolResult { Output = "No shapes in " + target.Label + ".", Summary = "read_master_elements" };
+                return new ToolResult { Output = "No shapes in " + target.Label + "." };
 
             var sb = new StringBuilder();
             sb.AppendLine(CapitalizeFirst(target.Label) + " has " + count + " shape(s):");
@@ -626,7 +616,7 @@ namespace PowerPointAiAddIn
                 sb.AppendLine("[" + (i - 1) + "] \"" + shape.Name + "\" (" + ShapeKindLabel(shape) + ") left=" + shape.Left + " top=" + shape.Top +
                               " width=" + shape.Width + " height=" + shape.Height + (text.Length > 0 ? " text=\"" + text + "\"" : ""));
             }
-            return new ToolResult { Output = sb.ToString().TrimEnd(), Summary = "read_master_elements" };
+            return new ToolResult { Output = sb.ToString().TrimEnd() };
         }
     }
 }

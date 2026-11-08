@@ -46,7 +46,7 @@ namespace PowerPointAiAddIn
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
             int[] path = ParseShapePath(input.GetProperty("shapeIndex"));
-            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
 
             PowerPoint.Shape shape = slide.Shapes[path[0] + 1];
             for (int i = 1; i < path.Length; i++)
@@ -202,26 +202,24 @@ namespace PowerPointAiAddIn
         {
             string text = input.GetProperty("text").GetString();
             PowerPoint.TextRange range = ResolveShape(input).TextFrame.TextRange;
-            range.Text = text;
-            ApplyAutoDirection(range, text);
+            SetText(range, text);
             ApplyBulletSetting(range, input);
-            return new ToolResult { Output = "Text updated.", Mutated = true, Summary = "set_element_text" };
+            return new ToolResult { Output = "Text updated.", Mutated = true };
         }
 
         private static ToolResult SetSlideNotes(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
             string text = input.GetProperty("text").GetString();
-            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
             PowerPoint.Shape body = ResolveNotesBodyPlaceholder(slide);
             if (body == null)
             {
-                return new ToolResult { Output = "Slide has no notes body placeholder.", IsError = true, Summary = "set_slide_notes" };
+                return new ToolResult { Output = "Slide has no notes body placeholder.", IsError = true };
             }
             PowerPoint.TextRange range = body.TextFrame.TextRange;
-            range.Text = text;
-            ApplyAutoDirection(range, text);
-            return new ToolResult { Output = "Notes updated.", Mutated = true, Summary = "set_slide_notes" };
+            SetText(range, text);
+            return new ToolResult { Output = "Notes updated.", Mutated = true };
         }
 
         // PP-20: left|center|right|justify -> PpParagraphAlignment, mirroring
@@ -243,12 +241,12 @@ namespace PowerPointAiAddIn
 
             if (input.TryGetProperty("bold", out var bold))
             {
-                range.Font.Bold = bold.GetBoolean() ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
+                range.Font.Bold = Tri(bold.GetBoolean());
                 applied.Add("bold");
             }
             if (input.TryGetProperty("italic", out var italic))
             {
-                range.Font.Italic = italic.GetBoolean() ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
+                range.Font.Italic = Tri(italic.GetBoolean());
                 applied.Add("italic");
             }
             if (input.TryGetProperty("fontSize", out var fontSize))
@@ -268,12 +266,12 @@ namespace PowerPointAiAddIn
             }
             if (input.TryGetProperty("underline", out var underline))
             {
-                range.Font.Underline = underline.ValueKind == JsonValueKind.True ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
+                range.Font.Underline = Tri(underline.ValueKind == JsonValueKind.True);
                 applied.Add("underline");
             }
             if (input.TryGetProperty("shadow", out var shadow))
             {
-                range.Font.Shadow = shadow.ValueKind == JsonValueKind.True ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
+                range.Font.Shadow = Tri(shadow.ValueKind == JsonValueKind.True);
                 applied.Add("shadow");
             }
             if (input.TryGetProperty("alignment", out var align) && align.ValueKind == JsonValueKind.String)
@@ -291,8 +289,8 @@ namespace PowerPointAiAddIn
                 if (b != "SUPERSCRIPT" && b != "SUBSCRIPT" && b != "NONE")
                     throw new ArgumentException("set_element_style: unknown baselineOffset '" + b +
                                                 "'. Valid: SUPERSCRIPT, SUBSCRIPT, NONE.");
-                range.Font.Superscript = b == "SUPERSCRIPT" ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
-                range.Font.Subscript = b == "SUBSCRIPT" ? Microsoft.Office.Core.MsoTriState.msoTrue : Microsoft.Office.Core.MsoTriState.msoFalse;
+                range.Font.Superscript = Tri(b == "SUPERSCRIPT");
+                range.Font.Subscript = Tri(b == "SUBSCRIPT");
                 applied.Add("baselineOffset");
             }
             // Strikethrough deliberately NOT implemented: this PIA's TextFrame has no
@@ -305,19 +303,14 @@ namespace PowerPointAiAddIn
                     ? "Style updated: " + string.Join(", ", applied) + "."
                     : "No recognized style properties were provided - nothing changed.",
                 Mutated = applied.Count > 0,
-                Summary = "set_element_style",
             };
         }
 
         private static ToolResult SetElementTransform(JsonElement input)
         {
             PowerPoint.Shape shape = ResolveTopLevelShape(input, "set_element_transform");
-            if (input.TryGetProperty("left", out var left)) shape.Left = (float)left.GetDouble();
-            if (input.TryGetProperty("top", out var top)) shape.Top = (float)top.GetDouble();
-            if (input.TryGetProperty("width", out var width)) shape.Width = (float)width.GetDouble();
-            if (input.TryGetProperty("height", out var height)) shape.Height = (float)height.GetDouble();
-            if (input.TryGetProperty("rotation", out var rotation)) shape.Rotation = (float)rotation.GetDouble();
-            return new ToolResult { Output = "Transform updated.", Mutated = true, Summary = "set_element_transform" };
+            ApplyTransform(shape, input);
+            return new ToolResult { Output = "Transform updated.", Mutated = true };
         }
 
         // Stacking/z-order control, distinct from set_element_transform's
@@ -342,24 +335,20 @@ namespace PowerPointAiAddIn
             // ZOrderPosition is 1-based in COM; reported 0-based to match
             // read_slide's shapeIndex convention.
             int newShapeIndex = shape.ZOrderPosition - 1;
-            return new ToolResult { Output = "Shape order changed (" + kind + ") - now at shapeIndex " + newShapeIndex + ". Other shapes on this slide may have shifted index - re-read the slide (read_slide) before addressing another shape by index in the same run.", Mutated = true, Summary = "set_element_order" };
+            return new ToolResult { Output = "Shape order changed (" + kind + ") - now at shapeIndex " + newShapeIndex + ". Other shapes on this slide may have shifted index - re-read the slide (read_slide) before addressing another shape by index in the same run.", Mutated = true };
         }
 
         private static ToolResult AddTextBox(JsonElement input)
         {
-            PowerPoint.Slide slide = ActivePresentation.Slides[input.GetProperty("slideIndex").GetInt32() + 1];
-            float left = (float)input.GetProperty("left").GetDouble();
-            float top = (float)input.GetProperty("top").GetDouble();
-            float width = (float)input.GetProperty("width").GetDouble();
-            float height = (float)input.GetProperty("height").GetDouble();
+            PowerPoint.Slide slide = ResolveSlide(input);
+            ReadRect(input, out float left, out float top, out float width, out float height);
             PowerPoint.Shape shape = slide.Shapes.AddTextbox(Microsoft.Office.Core.MsoTextOrientation.msoTextOrientationHorizontal, left, top, width, height);
             string text = input.GetProperty("text").GetString();
             PowerPoint.TextRange range = shape.TextFrame.TextRange;
-            range.Text = text;
-            ApplyAutoDirection(range, text);
+            SetText(range, text);
             ApplyBulletSetting(range, input);
             string named = ApplyOptionalName(shape, input);
-            return new ToolResult { Output = "Text box added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true, Summary = "add_text_box" };
+            return new ToolResult { Output = "Text box added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true };
         }
 
         // Shape-name lookup now lives in OfficeAi.Shared.ShapeTypes (Phase 0) -
@@ -367,27 +356,24 @@ namespace PowerPointAiAddIn
         // app's rectangle/oval aliases for rect/ellipse.
         private static ToolResult AddShape(JsonElement input)
         {
-            PowerPoint.Slide slide = ActivePresentation.Slides[input.GetProperty("slideIndex").GetInt32() + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
             string shapeType = input.GetProperty("shapeType").GetString();
             int autoShapeTypeInt;
             if (!ShapeTypes.ByName.TryGetValue(shapeType, out autoShapeTypeInt))
                 throw new ArgumentException("add_shape: unknown shapeType '" + shapeType + "'. Valid: " +
                                             string.Join(", ", ShapeTypes.ByName.Keys) + ".");
             Microsoft.Office.Core.MsoAutoShapeType autoShapeType = (Microsoft.Office.Core.MsoAutoShapeType)autoShapeTypeInt;
-            float left = (float)input.GetProperty("left").GetDouble();
-            float top = (float)input.GetProperty("top").GetDouble();
-            float width = (float)input.GetProperty("width").GetDouble();
-            float height = (float)input.GetProperty("height").GetDouble();
+            ReadRect(input, out float left, out float top, out float width, out float height);
             PowerPoint.Shape shape = slide.Shapes.AddShape(autoShapeType, left, top, width, height);
             if (input.TryGetProperty("text", out var text)) shape.TextFrame.TextRange.Text = text.GetString();
             string named = ApplyOptionalName(shape, input);
-            return new ToolResult { Output = "Shape added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true, Summary = "add_shape" };
+            return new ToolResult { Output = "Shape added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true };
         }
 
         private static ToolResult DeleteElement(JsonElement input)
         {
             ResolveTopLevelShape(input, "delete_element").Delete();
-            return new ToolResult { Output = "Shape deleted.", Mutated = true, Summary = "delete_element" };
+            return new ToolResult { Output = "Shape deleted.", Mutated = true };
         }
 
         // Shape.Duplicate() is a native in-place COM clone, uniform across every
@@ -431,7 +417,6 @@ namespace PowerPointAiAddIn
                 Output = "Shape duplicated" + (named != null ? " (\"" + named + "\")" : "") + " - new shape at shapeIndex " + newShapeIndex +
                          ". Other shapes' indices on this slide may have shifted - re-read the slide (read_slide) before addressing another shape by index in the same run.",
                 Mutated = true,
-                Summary = "duplicate_element",
             };
         }
     }

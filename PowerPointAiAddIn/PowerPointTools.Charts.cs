@@ -37,12 +37,9 @@ namespace PowerPointAiAddIn
                 }
             }
 
-            float left = input.TryGetProperty("x", out var x) ? (float)x.GetDouble() : 100f;
-            float top = input.TryGetProperty("y", out var y) ? (float)y.GetDouble() : 100f;
-            float width = input.TryGetProperty("w", out var w) ? (float)w.GetDouble() : 400f;
-            float height = input.TryGetProperty("h", out var h) ? (float)h.GetDouble() : 300f;
+            ReadXywh(input, 300f, out float left, out float top, out float width, out float height);
 
-            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
             dynamic chartShape = slide.Shapes.AddChart2(-1, (Microsoft.Office.Core.XlChartType)typeCode, left, top, width, height);
             // 0-based index into slide.Shapes - AddChart2 appends the new shape at
             // the end of the collection, so this is stable immediately after the
@@ -139,7 +136,7 @@ namespace PowerPointAiAddIn
                 chart.ChartTitle.Text = title.GetString();
             }
             string named = ApplyOptionalName(slide.Shapes[newShapeIndex + 1], input);
-            return new ToolResult { Output = "Chart added at shapeIndex " + newShapeIndex + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true, Summary = "add_chart" };
+            return new ToolResult { Output = "Chart added at shapeIndex " + newShapeIndex + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true };
         }
 
         // Natural position names ("right") plus the original short aliases ("r") for
@@ -232,7 +229,6 @@ namespace PowerPointAiAddIn
                     ? "Chart updated: " + string.Join(", ", applied) + "."
                     : "No recognized chart properties were provided - nothing changed.",
                 Mutated = applied.Count > 0,
-                Summary = "edit_chart",
             };
         }
 

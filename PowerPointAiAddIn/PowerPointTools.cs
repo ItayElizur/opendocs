@@ -30,7 +30,15 @@ namespace PowerPointAiAddIn
         private static readonly System.Collections.Generic.HashSet<string> AlwaysAllowedTools =
             new System.Collections.Generic.HashSet<string> { "get_deck_context", "read_slide", "read_group", "read_animations", "find_text", "read_smartart", "read_master_elements", "list_layouts" };
 
+        // Handlers leave Summary null; it defaults to the tool name here.
         public static ToolResult Execute(string docKey, string name, JsonElement input)
+        {
+            ToolResult result = ExecuteCore(docKey, name, input);
+            if (result.Summary == null) result.Summary = name;
+            return result;
+        }
+
+        private static ToolResult ExecuteCore(string docKey, string name, JsonElement input)
         {
             try
             {

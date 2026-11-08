@@ -17,7 +17,7 @@ namespace PowerPointAiAddIn
             PowerPoint.Slides slides = ActivePresentation.Slides;
             if (sourceIndex < 0 || sourceIndex >= slides.Count)
             {
-                return new ToolResult { Output = "Invalid sourceIndex.", IsError = true, Summary = "add_slide" };
+                return new ToolResult { Output = "Invalid sourceIndex.", IsError = true };
             }
             dynamic source = slides[sourceIndex + 1];
             dynamic dupRange = source.Duplicate(); // returns a SlideRange containing exactly the new slide
@@ -33,7 +33,7 @@ namespace PowerPointAiAddIn
                     }
                 }
             }
-            return new ToolResult { Output = "Slide added after index " + sourceIndex + ".", Mutated = true, Summary = "add_slide" };
+            return new ToolResult { Output = "Slide added after index " + sourceIndex + ".", Mutated = true };
         }
 
         // delete_slide: deliberately one slide per call, no batch form - see
@@ -54,7 +54,6 @@ namespace PowerPointAiAddIn
                 Output = "Deleted slide " + slideIndex + ". " + pres.Slides.Count + " slide(s) remain; " +
                          "slides after it have shifted down by one index.",
                 Mutated = true,
-                Summary = "delete_slide",
             };
         }
 
@@ -74,23 +73,17 @@ namespace PowerPointAiAddIn
             {
                 Output = "Moved slide " + slideIndex + " to position " + toIndex + ".",
                 Mutated = true,
-                Summary = "move_slide",
             };
         }
 
         private static ToolResult DuplicateSlide(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            PowerPoint.Slides slides = ActivePresentation.Slides;
-            if (slideIndex < 0 || slideIndex >= slides.Count)
-                throw new ArgumentOutOfRangeException("slideIndex",
-                    "slideIndex must be between 0 and " + (slides.Count - 1) + ".");
-            slides[slideIndex + 1].Duplicate();
+            ResolveSlide(input).Duplicate();
             return new ToolResult
             {
                 Output = "Duplicated slide " + slideIndex + " (content included) - the copy is now at index " + (slideIndex + 1) + ".",
                 Mutated = true,
-                Summary = "duplicate_slide",
             };
         }
 

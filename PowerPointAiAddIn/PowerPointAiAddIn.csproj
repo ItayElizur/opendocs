@@ -126,6 +126,10 @@
     <Compile Include="PowerPointTools.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="PowerPointTools.Args.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>PowerPointTools.cs</DependentUpon>
+    </Compile>
     <Compile Include="PowerPointTools.Read.cs">
       <SubType>Code</SubType>
       <DependentUpon>PowerPointTools.cs</DependentUpon>

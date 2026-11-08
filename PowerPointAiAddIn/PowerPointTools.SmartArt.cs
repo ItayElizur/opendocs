@@ -102,7 +102,7 @@ namespace PowerPointAiAddIn
 
             var shapes = ListSmartArtShapesOnSlide(slides[slideIndex + 1]);
             if (shapes.Count == 0)
-                return new ToolResult { Output = "No SmartArt diagrams on slide " + slideIndex + ".", Summary = "read_smartart" };
+                return new ToolResult { Output = "No SmartArt diagrams on slide " + slideIndex + "." };
 
             // No smartArtIndex given: read every diagram on the slide in one
             // call rather than forcing a round trip per diagram (matches
@@ -112,7 +112,7 @@ namespace PowerPointAiAddIn
             {
                 var all = new List<string>();
                 for (int i = 0; i < shapes.Count; i++) all.Add(ReadOneSmartArt(shapes[i], i, shapes.Count));
-                return new ToolResult { Output = string.Join("\n\n", all), Summary = "read_smartart" };
+                return new ToolResult { Output = string.Join("\n\n", all) };
             }
 
             int index = si.GetInt32();
@@ -120,7 +120,7 @@ namespace PowerPointAiAddIn
                 throw new ArgumentOutOfRangeException("smartArtIndex",
                     "smartArtIndex must be between 0 and " + (shapes.Count - 1) +
                     " (" + shapes.Count + " diagram(s) on slide " + slideIndex + ").");
-            return new ToolResult { Output = ReadOneSmartArt(shapes[index], index, shapes.Count), Summary = "read_smartart" };
+            return new ToolResult { Output = ReadOneSmartArt(shapes[index], index, shapes.Count) };
         }
 
         private static string ReadOneSmartArt(dynamic shape, int index, int total)
@@ -154,14 +154,14 @@ namespace PowerPointAiAddIn
                     if (nodeIndex < 0 || nodeIndex >= count)
                         throw new ArgumentOutOfRangeException("nodeIndex", "nodeIndex must be between 0 and " + (count - 1) + " (" + count + " node(s)).");
                     nodes.Item(nodeIndex + 1).TextFrame2.TextRange.Text = input.GetProperty("text").GetString();
-                    return new ToolResult { Output = "Node " + nodeIndex + " updated.", Mutated = true, Summary = "edit_smartart" };
+                    return new ToolResult { Output = "Node " + nodeIndex + " updated.", Mutated = true };
                 }
                 case "add_node":
                 {
                     dynamic newNode = nodes.Add();
                     if (input.TryGetProperty("text", out var textEl) && textEl.ValueKind == JsonValueKind.String)
                         newNode.TextFrame2.TextRange.Text = textEl.GetString();
-                    return new ToolResult { Output = "Node added at index " + ((int)nodes.Count - 1) + ".", Mutated = true, Summary = "edit_smartart" };
+                    return new ToolResult { Output = "Node added at index " + ((int)nodes.Count - 1) + ".", Mutated = true };
                 }
                 case "delete_node":
                 {
@@ -170,7 +170,7 @@ namespace PowerPointAiAddIn
                     if (nodeIndex < 0 || nodeIndex >= count)
                         throw new ArgumentOutOfRangeException("nodeIndex", "nodeIndex must be between 0 and " + (count - 1) + " (" + count + " node(s)).");
                     nodes.Item(nodeIndex + 1).Delete();
-                    return new ToolResult { Output = "Node " + nodeIndex + " deleted. Later node indices have shifted - re-read (read_smartart) before another node edit in the same run.", Mutated = true, Summary = "edit_smartart" };
+                    return new ToolResult { Output = "Node " + nodeIndex + " deleted. Later node indices have shifted - re-read (read_smartart) before another node edit in the same run.", Mutated = true };
                 }
                 case "set_style":
                 {
@@ -189,13 +189,13 @@ namespace PowerPointAiAddIn
                     }
                     if (!changed)
                         throw new ArgumentException("edit_smartart: set_style requires at least one of colorName or quickStyleName.");
-                    return new ToolResult { Output = "SmartArt style updated.", Mutated = true, Summary = "edit_smartart" };
+                    return new ToolResult { Output = "SmartArt style updated.", Mutated = true };
                 }
                 case "set_layout":
                 {
                     string layoutKey = input.GetProperty("layout").GetString();
                     smartArt.Layout = ResolveSmartArtLayout(layoutKey);
-                    return new ToolResult { Output = "SmartArt layout changed to '" + layoutKey + "'.", Mutated = true, Summary = "edit_smartart" };
+                    return new ToolResult { Output = "SmartArt layout changed to '" + layoutKey + "'.", Mutated = true };
                 }
                 default:
                     throw new ArgumentException("edit_smartart: unknown kind '" + kind + "'. Valid: set_text, add_node, delete_node, set_style, set_layout.");
@@ -206,13 +206,10 @@ namespace PowerPointAiAddIn
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
             string layoutKey = input.GetProperty("layout").GetString();
-            float left = input.TryGetProperty("x", out var x) ? (float)x.GetDouble() : 100f;
-            float top = input.TryGetProperty("y", out var y) ? (float)y.GetDouble() : 100f;
-            float width = input.TryGetProperty("w", out var w) ? (float)w.GetDouble() : 400f;
-            float height = input.TryGetProperty("h", out var h) ? (float)h.GetDouble() : 300f;
+            ReadXywh(input, 300f, out float left, out float top, out float width, out float height);
 
             dynamic layout = ResolveSmartArtLayout(layoutKey);
-            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
             dynamic shape = slide.Shapes.AddSmartArt(layout, left, top, width, height);
             dynamic smartArt = shape.SmartArt;
 
@@ -233,7 +230,7 @@ namespace PowerPointAiAddIn
                 node.TextFrame2.TextRange.Text = item.GetString();
             }
             string named = ApplyOptionalName((PowerPoint.Shape)shape, input);
-            return new ToolResult { Output = "SmartArt added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true, Summary = "add_smartart" };
+            return new ToolResult { Output = "SmartArt added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true };
         }
 
     }

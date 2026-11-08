@@ -23,13 +23,13 @@ namespace PowerPointAiAddIn
                 shape.Fill.Visible = Microsoft.Office.Core.MsoTriState.msoTrue;
                 shape.Fill.ForeColor.RGB = ColorUtil.HexToOle(fill);
             }
-            return new ToolResult { Output = "Fill updated.", Mutated = true, Summary = "set_element_fill" };
+            return new ToolResult { Output = "Fill updated.", Mutated = true };
         }
 
         private static ToolResult SetElementStroke(JsonElement input)
         {
             PowerPoint.Shape shape = ResolveShape(input);
-            bool remove = input.TryGetProperty("remove", out var r) && r.ValueKind == JsonValueKind.True;
+            bool remove = ToolArgs.OptionalFlag(input, "remove");
             if (remove)
             {
                 shape.Line.Visible = Microsoft.Office.Core.MsoTriState.msoFalse;
@@ -43,7 +43,7 @@ namespace PowerPointAiAddIn
                 }
                 shape.Line.Weight = input.TryGetProperty("widthPt", out var width) && width.ValueKind == JsonValueKind.Number ? (float)width.GetDouble() : 1f;
             }
-            return new ToolResult { Output = "Stroke updated.", Mutated = true, Summary = "set_element_stroke" };
+            return new ToolResult { Output = "Stroke updated.", Mutated = true };
         }
 
         private static ToolResult SetSlideBackground(JsonElement input)
@@ -66,23 +66,23 @@ namespace PowerPointAiAddIn
             {
                 Apply(slides[slideIndex + 1]);
             }
-            return new ToolResult { Output = "Background updated.", Mutated = true, Summary = "set_slide_background" };
+            return new ToolResult { Output = "Background updated.", Mutated = true };
         }
 
         private static ToolResult UngroupElement(JsonElement input)
         {
             PowerPoint.Shape shape = ResolveShape(input);
             shape.Ungroup();
-            return new ToolResult { Output = "Shape ungrouped - re-read the slide (read_slide) to get updated shape indices before addressing the promoted children.", Mutated = true, Summary = "ungroup_element" };
+            return new ToolResult { Output = "Shape ungrouped - re-read the slide (read_slide) to get updated shape indices before addressing the promoted children.", Mutated = true };
         }
 
         private static ToolResult GroupElement(JsonElement input)
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            PowerPoint.Slide slide = ActivePresentation.Slides[slideIndex + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
 
             if (!input.TryGetProperty("shapeIndexes", out var idxArr) || idxArr.ValueKind != JsonValueKind.Array)
-                return new ToolResult { Output = "group_element needs shapeIndexes: an array of at least two 0-based top-level shape indices.", IsError = true, Summary = "group_element" };
+                return new ToolResult { Output = "group_element needs shapeIndexes: an array of at least two 0-based top-level shape indices.", IsError = true };
 
             var seen = new HashSet<int>();
             var comIndexes = new List<object>();
@@ -90,11 +90,11 @@ namespace PowerPointAiAddIn
             {
                 int i = el.GetInt32();
                 if (i < 0 || i >= slide.Shapes.Count)
-                    return new ToolResult { Output = "group_element: shapeIndex " + i + " is out of range (slide has " + slide.Shapes.Count + " shapes).", IsError = true, Summary = "group_element" };
+                    return new ToolResult { Output = "group_element: shapeIndex " + i + " is out of range (slide has " + slide.Shapes.Count + " shapes).", IsError = true };
                 if (seen.Add(i)) comIndexes.Add(i + 1); // ShapeRange is 1-based
             }
             if (comIndexes.Count < 2)
-                return new ToolResult { Output = "group_element needs at least two distinct shapeIndexes.", IsError = true, Summary = "group_element" };
+                return new ToolResult { Output = "group_element needs at least two distinct shapeIndexes.", IsError = true };
 
             PowerPoint.ShapeRange range = slide.Shapes.Range(comIndexes.ToArray());
             PowerPoint.Shape group = range.Group();
@@ -107,7 +107,6 @@ namespace PowerPointAiAddIn
                          ". Other shapes' indices on this slide shifted - call read_slide before addressing another shape by index in the same run. " +
                          "Address the grouped children with a dotted path (e.g. \"" + newIndex + ".0\") via read_group.",
                 Mutated = true,
-                Summary = "group_element",
             };
         }
 
