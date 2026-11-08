@@ -46,11 +46,10 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = "Stroke updated.", Mutated = true };
         }
 
-        private static ToolResult SetSlideBackground(JsonElement input)
+        // slideIndex -1 paints every slide.
+        private static string ApplySlideBackground(int slideIndex, JsonElement input)
         {
-            int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            int oleColor = ColorUtil.HexToOle(input.GetProperty("color").GetString());
-            PowerPoint.Slides slides = ActivePresentation.Slides;
+            int oleColor = ColorUtil.HexToOle(input.GetProperty("background").GetString());
 
             void Apply(PowerPoint.Slide s)
             {
@@ -60,13 +59,11 @@ namespace PowerPointAiAddIn
 
             if (slideIndex == -1)
             {
-                foreach (PowerPoint.Slide s in slides) Apply(s);
+                foreach (PowerPoint.Slide s in ActivePresentation.Slides) Apply(s);
+                return "Background updated on every slide.";
             }
-            else
-            {
-                Apply(slides[slideIndex + 1]);
-            }
-            return new ToolResult { Output = "Background updated.", Mutated = true };
+            Apply(ResolveSlide(input));
+            return "Slide " + slideIndex + " background updated.";
         }
 
         private static ToolResult UngroupElement(JsonElement input)

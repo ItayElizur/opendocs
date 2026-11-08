@@ -22,7 +22,7 @@ caused the footer-text-not-inheriting bug). optional layoutName
 resolves by case-insensitive substring against this presentation's
 own layout names - same resolve-by-substring pattern
 ResolveCustomLayout (PowerPointTools.LayoutAnim.cs) already uses
-for set_slide_layout - and returns that layout's own Shapes
+for set_slide - and returns that layout's own Shapes
 collection instead of the master's when given.
 
 ## `ResolveLayoutByQuery`
@@ -230,7 +230,7 @@ Record the failure and keep going instead.
 ## `SetHeadersFooters` - startNumber/skipTitleSlide guarding
 
 Both deck-wide regardless of slideIndex, same as
-set_slide_background's slideIndex:-1 convention but stronger:
+set_slide's slideIndex:-1 background convention but stronger:
 FirstSlideNumber (PageSetup) and DisplayOnTitleSlide (the
 Slide/Title Master's HeadersFooters) are simply not per-slide
 properties in PowerPoint's object model at all. Applied even

@@ -64,7 +64,7 @@ export const READER_TOOLS = [
     name: 'list_layouts',
     description:
       'Lists every layout name in this presentation (e.g. "Title Slide", "Title and Content"), plus how many slides currently use each one - across every design/theme in the deck if it has more than one, not just the default. ' +
-      'Call this before passing layoutName to add_master_element/read_master_elements/remove_master_element/set_master_element_transform/set_slide_layout, instead of guessing a name. ' +
+      'Call this before passing layoutName to add_master_element/read_master_elements/remove_master_element/set_master_element_transform/set_slide, instead of guessing a name. ' +
       'A layoutName matching more than one layout (e.g. two designs both have a layout with that name) errors instead of guessing - pass a more specific or exact name.',
     inputSchema: { type: 'object', properties: {} },
   },
@@ -119,12 +119,51 @@ const MUTATION_TOOLS = [
     },
   },
   {
-    name: 'set_slide_notes',
-    description: 'Replaces a slide\'s speaker notes (0-based slideIndex). Overwrites any existing notes text; read_slide shows the current notes first.',
+    name: 'manage_slide',
+    description:
+      'Adds, duplicates, moves, or deletes one slide (0-based slideIndex). ' +
+      'action:"add" inserts a new slide right after slideIndex with the same layout and every text frame cleared. ' +
+      'action:"duplicate" inserts a full copy (content included) right after it. ' +
+      'action:"move" moves it to the 0-based position toIndex; other slides shift accordingly. ' +
+      'action:"delete" removes it; slides after it shift DOWN by one index, so re-read the deck with get_deck_context before deleting or editing another slide by index in the same run. The last remaining slide cannot be deleted.',
     inputSchema: {
       type: 'object',
-      properties: { slideIndex: SLIDE_INDEX, text: { type: 'string' } },
-      required: ['slideIndex', 'text'],
+      properties: {
+        action: { type: 'string', enum: ['add', 'duplicate', 'move', 'delete'] },
+        slideIndex: SLIDE_INDEX,
+        toIndex: { type: 'number', description: 'For action:"move" only: the 0-based destination position.' },
+      },
+      required: ['action', 'slideIndex'],
+    },
+  },
+  {
+    name: 'set_slide',
+    description:
+      'Changes one thing about one slide per call (0-based slideIndex): its layout, background, entry transition, or speaker notes. Giving fields from more than one of these errors - make a separate call for each. ' +
+      'Layout: layout (classic, a fixed set) or layoutName (custom: free text matched against this slide\'s own theme layouts - exact match preferred, else substring; an unmatched name errors listing the real available names, and a name matching more than one layout errors asking for a more specific one) - give one, not both. ' +
+      'Background: a solid color; slideIndex=-1 applies it to every slide in the deck (the only change that allows -1). ' +
+      'Notes: replaces the speaker notes (read_slide shows the current notes first). ' +
+      'Transition: effect sets or removes the entry transition ("none" removes it); durationSeconds is how long the transition animation takes; advanceOnClick (default true in PowerPoint) and advanceAfterSeconds (an automatic timed advance) are independent - both can be on at once, and they can be changed without restating effect. These count as one change, so they may be combined. When both advance options are off the slide only advances from the keyboard or menu.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'number', description: '0-based, or -1 for the whole deck (background only).' },
+        layout: {
+          type: 'string',
+          enum: ['title', 'titleOnly', 'blank', 'text', 'twoColumnText', 'object', 'objectAndText', 'textAndObject', 'twoObjects', 'twoObjectsAndText', 'fourObjects', 'table', 'chart', 'sectionHeader', 'comparison', 'contentWithCaption', 'pictureWithCaption'],
+        },
+        layoutName: { type: 'string' },
+        background: { type: 'string', description: 'Solid color, e.g. "#F2F2F2".' },
+        notes: { type: 'string' },
+        effect: {
+          type: 'string',
+          enum: ['none', 'cut', 'fade', 'dissolve', 'random', 'wipeLeft', 'wipeRight', 'wipeUp', 'wipeDown', 'pushLeft', 'pushRight', 'pushUp', 'pushDown', 'coverLeft', 'coverRight', 'coverUp', 'coverDown', 'uncoverLeft', 'uncoverRight', 'uncoverUp', 'uncoverDown', 'zoomIn', 'zoomOut', 'zoomCenter', 'circle', 'diamond', 'splitHorizontal', 'splitVertical', 'wheel', 'blindsHorizontal', 'blindsVertical', 'checkerboard'],
+        },
+        durationSeconds: { type: 'number' },
+        advanceOnClick: { type: 'boolean' },
+        advanceAfterSeconds: { type: 'number' },
+      },
+      required: ['slideIndex'],
     },
   },
   {
@@ -299,73 +338,6 @@ const MUTATION_TOOLS = [
     },
   },
   {
-    name: 'add_slide',
-    description: 'Clones an existing slide\'s layout as a new blank (or templated) slide inserted right after it.',
-    inputSchema: {
-      type: 'object',
-      properties: { sourceIndex: { type: 'number' }, clearText: { type: 'boolean' } },
-      required: ['sourceIndex'],
-    },
-  },
-  {
-    name: 'delete_slide',
-    description: 'Deletes one slide (0-based slideIndex). Slides after it shift DOWN by one index - re-read the deck with get_deck_context before deleting another slide in the same run. Cannot delete the last remaining slide.',
-    inputSchema: { type: 'object', properties: { slideIndex: SLIDE_INDEX }, required: ['slideIndex'] },
-  },
-  {
-    name: 'move_slide',
-    description: 'Moves a slide to a new 0-based position; other slides shift accordingly.',
-    inputSchema: {
-      type: 'object',
-      properties: { slideIndex: SLIDE_INDEX, toIndex: { type: 'number' } },
-      required: ['slideIndex', 'toIndex'],
-    },
-  },
-  {
-    name: 'duplicate_slide',
-    description: 'Inserts a copy of a slide (content included) directly after it. Use add_slide instead to create a new slide from a slide\'s layout without its content.',
-    inputSchema: { type: 'object', properties: { slideIndex: SLIDE_INDEX }, required: ['slideIndex'] },
-  },
-  {
-    name: 'set_slide_layout',
-    description:
-      'Changes a slide\'s layout. kind:"classic" (default) uses layout, a fixed set: title, titleOnly, blank, text, twoColumnText, object, objectAndText, textAndObject, twoObjects, twoObjectsAndText, fourObjects, table, chart, sectionHeader, comparison, contentWithCaption, pictureWithCaption. ' +
-      'kind:"custom" uses layoutName instead - free text, matched against this slide\'s own theme layouts (exact match preferred, else substring; an unmatched name errors listing the real available names, and a name matching more than one layout errors asking for a more specific one).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX,
-        kind: { type: 'string', enum: ['classic', 'custom'] },
-        layout: {
-          type: 'string',
-          enum: ['title', 'titleOnly', 'blank', 'text', 'twoColumnText', 'object', 'objectAndText', 'textAndObject', 'twoObjects', 'twoObjectsAndText', 'fourObjects', 'table', 'chart', 'sectionHeader', 'comparison', 'contentWithCaption', 'pictureWithCaption'],
-        },
-        layoutName: { type: 'string' },
-      },
-      required: ['slideIndex'],
-    },
-  },
-  {
-    name: 'set_slide_transition',
-    description:
-      'Sets or removes a slide\'s entry transition. effect:"none" removes it. durationSeconds controls how long the transition animation itself takes. ' +
-      'advanceOnClick (default true in PowerPoint) and advanceAfterSeconds (sets an automatic timed advance) are independent - both can be on at once.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: SLIDE_INDEX,
-        effect: {
-          type: 'string',
-          enum: ['none', 'cut', 'fade', 'dissolve', 'random', 'wipeLeft', 'wipeRight', 'wipeUp', 'wipeDown', 'pushLeft', 'pushRight', 'pushUp', 'pushDown', 'coverLeft', 'coverRight', 'coverUp', 'coverDown', 'uncoverLeft', 'uncoverRight', 'uncoverUp', 'uncoverDown', 'zoomIn', 'zoomOut', 'zoomCenter', 'circle', 'diamond', 'splitHorizontal', 'splitVertical', 'wheel', 'blindsHorizontal', 'blindsVertical', 'checkerboard'],
-        },
-        durationSeconds: { type: 'number' },
-        advanceOnClick: { type: 'boolean' },
-        advanceAfterSeconds: { type: 'number' },
-      },
-      required: ['slideIndex', 'effect'],
-    },
-  },
-  {
     name: 'add_animation',
     description:
       'Adds an entrance (default) or exit animation to a shape. effect: appear, fade, fly, flashOnce, wipe, zoom, dissolve, bounce, spiral, swivel, wheel, split, box, circle, diamond, plus, checkerboard, randomBars, growAndTurn, riseUp. ' +
@@ -452,15 +424,6 @@ const MUTATION_TOOLS = [
         },
       },
       required: ['slideIndex', 'shapeIndex', 'targets'],
-    },
-  },
-  {
-    name: 'set_slide_background',
-    description: 'Sets a solid background color for one slide, or slideIndex=-1 for every slide in the deck.',
-    inputSchema: {
-      type: 'object',
-      properties: { slideIndex: SLIDE_INDEX, color: { type: 'string' } },
-      required: ['slideIndex', 'color'],
     },
   },
   {
@@ -643,7 +606,7 @@ const MUTATION_TOOLS = [
       'dateMode defaults to and stays "fixed" unless you pass dateMode:"auto" explicitly - it is never inferred from dateFormat. ' +
       'dateMode "auto" shows a self-updating today\'s-date (in dateFormat, default "M/d/yy" - requires dateMode:"auto" to have any effect), "fixed" shows dateText verbatim. ' +
       'skipTitleSlide and startNumber are both ALWAYS deck-wide, regardless of slideIndex - PowerPoint has no per-slide version of either (skipTitleSlide sets the Slide/Title Master\'s "Don\'t show on title slide" flag, startNumber sets the deck\'s first slide number). ' +
-      'If nothing appears after enabling a toggle, the slide\'s layout may simply not include that placeholder - try set_slide_layout or check read_master_elements.',
+      'If nothing appears after enabling a toggle, the slide\'s layout may simply not include that placeholder - try set_slide or check read_master_elements.',
     inputSchema: {
       type: 'object',
       properties: {

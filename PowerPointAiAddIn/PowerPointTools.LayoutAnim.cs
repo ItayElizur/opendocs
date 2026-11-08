@@ -43,34 +43,34 @@ namespace PowerPointAiAddIn
             var candidates = new List<LayoutCandidate>();
             foreach (PowerPoint.CustomLayout layout in slide.Design.SlideMaster.CustomLayouts)
                 candidates.Add(new LayoutCandidate { Layout = layout, DesignLabel = null });
-            return ResolveLayoutByQuery(candidates, query, "set_slide_layout", "this slide's theme").Layout;
+            return ResolveLayoutByQuery(candidates, query, "set_slide", "this slide's theme").Layout;
         }
 
-        private static ToolResult SetSlideLayout(JsonElement input)
+        // layoutName selects a custom (theme) layout, layout a classic PpSlideLayout; exactly one is required.
+        private static string ApplySlideLayout(PowerPoint.Slide slide, int slideIndex, JsonElement input)
         {
-            int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            PowerPoint.Slide slide = ResolveSlide(input);
-            string kind = input.TryGetProperty("kind", out var kindEl) && kindEl.ValueKind == JsonValueKind.String ? kindEl.GetString() : "classic";
+            bool hasName = input.TryGetProperty("layoutName", out var nameEl);
+            bool hasClassic = input.TryGetProperty("layout", out var classicEl);
+            if (hasName == hasClassic)
+                throw new ArgumentException("set_slide: give exactly one of layout (classic) or layoutName (custom theme layout).");
 
-            if (kind == "custom")
+            if (hasName)
             {
-                string layoutName = input.GetProperty("layoutName").GetString();
+                string layoutName = nameEl.GetString();
                 // Guard against an empty string - IndexOf("") matches every layout,
                 // which would otherwise silently pick the first one. See .md.
                 if (string.IsNullOrEmpty(layoutName))
-                    throw new ArgumentException("set_slide_layout: layoutName must be a non-empty string for kind:\"custom\".");
+                    throw new ArgumentException("set_slide: layoutName must be a non-empty string.");
                 slide.CustomLayout = ResolveCustomLayout(slide, layoutName);
-                return new ToolResult { Output = "Slide " + slideIndex + " layout set to custom layout '" + layoutName + "'.", Mutated = true };
+                return "Slide " + slideIndex + " layout set to custom layout '" + layoutName + "'.";
             }
-            if (kind != "classic")
-                throw new ArgumentException("set_slide_layout: unknown kind '" + kind + "'. Valid: classic, custom.");
 
-            string layoutKey = input.GetProperty("layout").GetString();
+            string layoutKey = classicEl.GetString();
             PowerPoint.PpSlideLayout layoutValue;
             if (!SlideLayoutMap.TryGetValue(layoutKey, out layoutValue))
-                throw new ArgumentException("set_slide_layout: unknown layout '" + layoutKey + "'. Valid: " + string.Join(", ", SlideLayoutMap.Keys) + ".");
+                throw new ArgumentException("set_slide: unknown layout '" + layoutKey + "'. Valid: " + string.Join(", ", SlideLayoutMap.Keys) + ".");
             slide.Layout = layoutValue;
-            return new ToolResult { Output = "Slide " + slideIndex + " layout set to '" + layoutKey + "'.", Mutated = true };
+            return "Slide " + slideIndex + " layout set to '" + layoutKey + "'.";
         }
 
         // PP-24: curated subset of PpEntryEffect's 189 values, all confirmed
@@ -111,17 +111,22 @@ namespace PowerPointAiAddIn
             ["checkerboard"] = PowerPoint.PpEntryEffect.ppEffectCheckerboardAcross,
         };
 
-        private static ToolResult SetSlideTransition(JsonElement input)
+        private static readonly string[] SlideTransitionKeys = { "effect", "durationSeconds", "advanceOnClick", "advanceAfterSeconds" };
+
+        // effect is optional so advance settings can change without re-stating the transition.
+        private static string ApplySlideTransition(PowerPoint.Slide slide, int slideIndex, JsonElement input)
         {
-            int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            PowerPoint.Slide slide = ResolveSlide(input);
             PowerPoint.SlideShowTransition transition = slide.SlideShowTransition;
 
-            string effectKey = input.GetProperty("effect").GetString();
-            PowerPoint.PpEntryEffect effectValue;
-            if (!TransitionEffectMap.TryGetValue(effectKey, out effectValue))
-                throw new ArgumentException("set_slide_transition: unknown effect '" + effectKey + "'. Valid: " + string.Join(", ", TransitionEffectMap.Keys) + ".");
-            transition.EntryEffect = effectValue;
+            string effectKey = null;
+            if (input.TryGetProperty("effect", out var effectEl))
+            {
+                effectKey = effectEl.GetString();
+                PowerPoint.PpEntryEffect effectValue;
+                if (!TransitionEffectMap.TryGetValue(effectKey, out effectValue))
+                    throw new ArgumentException("set_slide: unknown effect '" + effectKey + "'. Valid: " + string.Join(", ", TransitionEffectMap.Keys) + ".");
+                transition.EntryEffect = effectValue;
+            }
 
             if (input.TryGetProperty("durationSeconds", out var durEl) && durEl.ValueKind == JsonValueKind.Number)
                 transition.Duration = (float)durEl.GetDouble();
@@ -133,7 +138,9 @@ namespace PowerPointAiAddIn
                 transition.AdvanceTime = (float)advEl.GetDouble();
             }
 
-            return new ToolResult { Output = "Slide " + slideIndex + " transition set to '" + effectKey + "'.", Mutated = true };
+            return effectKey != null
+                ? "Slide " + slideIndex + " transition set to '" + effectKey + "'."
+                : "Slide " + slideIndex + " transition updated.";
         }
 
         // PP-24: curated subset of MsoAnimEffect's 151 values, all confirmed

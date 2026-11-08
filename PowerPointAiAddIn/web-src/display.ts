@@ -57,37 +57,17 @@ export const POWERPOINT_TOOL_DISPLAY = {
     label: { en: 'Copy shape to another slide', he: 'העתקת אובייקט לשקופית אחרת' },
     description: { en: 'Copies a shape to a different slide, with full native formatting.', he: 'מעתיק אובייקט לשקופית אחרת, כולל כל העיצוב המקורי.' },
   },
+  manage_slide: {
+    label: { en: 'Manage slide', he: 'ניהול שקופית' },
+    description: { en: 'Adds, duplicates, moves, or deletes a slide.', he: 'מוסיף, משכפל, מעביר או מוחק שקופית.' },
+  },
+  set_slide: {
+    label: { en: 'Update slide', he: 'עדכון שקופית' },
+    description: { en: "Changes a slide's layout, background, transition, or speaker notes.", he: 'משנה את פריסת השקופית, הרקע, המעבר או הערות הדובר.' },
+  },
   move_element: {
     label: { en: 'Move shape to another slide', he: 'העברת אובייקט לשקופית אחרת' },
     description: { en: 'Moves a shape to a different slide, removing it from its original slide.', he: 'מעביר אובייקט לשקופית אחרת, ומסיר אותו מהשקופית המקורית.' },
-  },
-  add_slide: {
-    label: { en: 'Add slide', he: 'הוספת שקופית' },
-    description: { en: "Adds a new slide, based on an existing slide's layout.", he: 'מוסיף שקופית חדשה, בהתבסס על פריסה של שקופית קיימת.' },
-  },
-  delete_slide: {
-    label: { en: 'Delete slide', he: 'מחיקת שקופית' },
-    description: { en: 'Deletes a slide from the presentation.', he: 'מוחק שקופית מהמצגת.' },
-  },
-  move_slide: {
-    label: { en: 'Move slide', he: 'העברת שקופית' },
-    description: { en: 'Moves a slide to a different position in the presentation.', he: 'מעביר שקופית למיקום אחר במצגת.' },
-  },
-  set_slide_notes: {
-    label: { en: 'Set speaker notes', he: 'עריכת הערות דובר' },
-    description: { en: "Replaces a slide's speaker notes.", he: 'מחליף את הערות הדובר של שקופית.' },
-  },
-  duplicate_slide: {
-    label: { en: 'Duplicate slide', he: 'שכפול שקופית' },
-    description: { en: 'Inserts a copy of a slide, including its content.', he: 'מוסיף עותק של שקופית, כולל תוכנה.' },
-  },
-  set_slide_layout: {
-    label: { en: 'Change slide layout', he: 'שינוי פריסת שקופית' },
-    description: { en: "Changes a slide's layout (e.g. title, blank, two content).", he: 'משנה את פריסת השקופית (למשל כותרת, ריקה, שני תכנים).' },
-  },
-  set_slide_transition: {
-    label: { en: 'Set slide transition', he: 'הגדרת מעבר שקופית' },
-    description: { en: 'Sets or removes the transition effect shown when this slide appears.', he: 'מגדיר או מסיר את אפקט המעבר המוצג בכניסה לשקופית.' },
   },
   add_animation: {
     label: { en: 'Add animation', he: 'הוספת אנימציה' },
@@ -112,10 +92,6 @@ export const POWERPOINT_TOOL_DISPLAY = {
   copy_element_style: {
     label: { en: 'Copy shape formatting', he: 'העתקת עיצוב אובייקט' },
     description: { en: 'Copies text, fill, and outline formatting from one shape onto others (like a format painter).', he: 'מעתיק עיצוב טקסט, מילוי ומתאר מאובייקט אחד לאובייקטים אחרים (כמו מכחול עיצוב).' },
-  },
-  set_slide_background: {
-    label: { en: 'Set slide background', he: 'רקע שקופית' },
-    description: { en: 'Sets a solid background color for one slide or the whole deck.', he: 'מגדיר צבע רקע אחיד לשקופית אחת או לכל המצגת.' },
   },
   ungroup_element: {
     label: { en: 'Ungroup shapes', he: 'פירוק קבוצת אובייקטים' },
