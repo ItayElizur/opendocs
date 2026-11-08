@@ -390,18 +390,19 @@ const MUTATION_TOOLS = [
     description:
       'Creates or edits a shape-composed SmartArt diagram. kind is one of: create (layout + items - flat node texts, one per top-level node; optional position/size; returns the diagram), set_text (needs nodeIndex + text), add_node (optional text, appends), ' +
       'delete_node (needs nodeIndex), set_style (needs colorName and/or quickStyleName, matched loosely against this Office install\'s gallery), ' +
-      'set_layout (needs layout). For every kind except create, smartArtIndex is 0-based WITHIN THAT SLIDE and defaults to 0. ' +
+      'set_layout (needs layout), set_direction (needs reverse: true flows the diagram right-to-left, for Hebrew/Arabic; false restores left-to-right; only layouts that flow sideways honor it). For every kind except create, smartArtIndex is 0-based WITHIN THAT SLIDE and defaults to 0. ' +
       'delete_node shifts later node indices - call read_slide (view=smartart) again before a second node edit on the same diagram in one run.',
     inputSchema: {
       type: 'object',
       properties: {
         slideIndex: SLIDE_INDEX,
         smartArtIndex: { type: 'number', description: '0-based among the SmartArt diagrams on that slide. Default 0. Not used by create.' },
-        kind: { type: 'string', enum: ['create', 'set_text', 'add_node', 'delete_node', 'set_style', 'set_layout'] },
+        kind: { type: 'string', enum: ['create', 'set_text', 'add_node', 'delete_node', 'set_style', 'set_layout', 'set_direction'] },
         nodeIndex: { type: 'number', description: '0-based. Required for set_text and delete_node.' },
         text: { type: 'string' },
         colorName: { type: 'string', description: 'set_style: substring-matched against the gallery, e.g. "Colorful".' },
         quickStyleName: { type: 'string', description: 'set_style: substring-matched, e.g. "Intense".' },
+        reverse: { type: 'boolean', description: 'Required for set_direction.' },
         layout: { type: 'string', enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'], description: 'Required for create and set_layout.' },
         items: { type: 'array', items: { type: 'string' }, description: 'create only.' },
         ...createRect(300),

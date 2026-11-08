@@ -140,6 +140,15 @@ namespace PowerPointAiAddIn
             return sb.ToString().TrimEnd();
         }
 
+        // Node text is TextFrame2, which ApplyAutoDirection (TextRange) cannot take. Sets only the paragraph
+        // direction, not alignment: the layout owns alignment (PowerPoint's own UI writes just rtl="1").
+        private static void SetNodeText(dynamic node, string text)
+        {
+            node.TextFrame2.TextRange.Text = text;
+            if (TextUtil.IsRtlMajority(text))
+                node.TextFrame2.TextRange.ParagraphFormat.TextDirection = (int)Microsoft.Office.Core.MsoTextDirection.msoTextDirectionRightToLeft;
+        }
+
         private static ToolResult EditSmartArt(JsonElement input)
         {
             string kind = input.GetProperty("kind").GetString();
@@ -154,14 +163,14 @@ namespace PowerPointAiAddIn
                     int count = (int)nodes.Count;
                     if (nodeIndex < 0 || nodeIndex >= count)
                         throw new ArgumentOutOfRangeException("nodeIndex", "nodeIndex must be between 0 and " + (count - 1) + " (" + count + " node(s)).");
-                    nodes.Item(nodeIndex + 1).TextFrame2.TextRange.Text = input.GetProperty("text").GetString();
+                    SetNodeText(nodes.Item(nodeIndex + 1), input.GetProperty("text").GetString());
                     return new ToolResult { Output = "Node " + nodeIndex + " updated.", Mutated = true };
                 }
                 case "add_node":
                 {
                     dynamic newNode = nodes.Add();
                     if (input.TryGetProperty("text", out var textEl) && textEl.ValueKind == JsonValueKind.String)
-                        newNode.TextFrame2.TextRange.Text = textEl.GetString();
+                        SetNodeText(newNode, textEl.GetString());
                     return new ToolResult { Output = "Node added at index " + ((int)nodes.Count - 1) + ".", Mutated = true };
                 }
                 case "delete_node":
@@ -198,8 +207,18 @@ namespace PowerPointAiAddIn
                     smartArt.Layout = ResolveSmartArtLayout(layoutKey);
                     return new ToolResult { Output = "SmartArt layout changed to '" + layoutKey + "'.", Mutated = true };
                 }
+                case "set_direction":
+                {
+                    if (!input.TryGetProperty("reverse", out _))
+                        throw new ArgumentException("edit_smartart: set_direction needs reverse (true = right-to-left flow, false = left-to-right).");
+                    bool reverse = ToolArgs.OptionalFlag(input, "reverse");
+                    smartArt.Reverse = (int)Tri(reverse);
+                    if (((int)smartArt.Reverse == (int)Microsoft.Office.Core.MsoTriState.msoTrue) != reverse)
+                        throw new InvalidOperationException("edit_smartart: this layout did not accept reverse = " + (reverse ? "true" : "false") + " - its flow cannot be reversed.");
+                    return new ToolResult { Output = "SmartArt flow is now " + (reverse ? "right-to-left" : "left-to-right") + ".", Mutated = true };
+                }
                 default:
-                    throw new ArgumentException("edit_smartart: unknown kind '" + kind + "'. Valid: create, set_text, add_node, delete_node, set_style, set_layout.");
+                    throw new ArgumentException("edit_smartart: unknown kind '" + kind + "'. Valid: create, set_text, add_node, delete_node, set_style, set_layout, set_direction.");
             }
         }
 
@@ -228,7 +247,7 @@ namespace PowerPointAiAddIn
             foreach (JsonElement item in input.GetProperty("items").EnumerateArray())
             {
                 dynamic node = smartArt.Nodes.Add();
-                node.TextFrame2.TextRange.Text = item.GetString();
+                SetNodeText(node, item.GetString());
             }
             string named = ApplyOptionalName((PowerPoint.Shape)shape, input);
             return new ToolResult { Output = "SmartArt added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true };
