@@ -132,6 +132,7 @@ namespace WordAiAddIn
                         WriteInlineNodes(cursor, li.Nodes(), false, false, false);
                         if (tag == "ul") para.Range.ListFormat.ApplyBulletDefault();
                         else para.Range.ListFormat.ApplyNumberDefault();
+                        ApplyAutoDirection(para.Range);
                     }
                 }
                 else
@@ -145,6 +146,7 @@ namespace WordAiAddIn
                     {
                         para.Range.set_Style("Heading " + tag[1]);
                     }
+                    ApplyAutoDirection(para.Range);
                 }
             }
         }

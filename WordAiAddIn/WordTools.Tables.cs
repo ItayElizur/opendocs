@@ -51,6 +51,7 @@ namespace WordAiAddIn
                     {
                         if (c >= cols) break;
                         table.Cell(r + 1, c + 1).Range.Text = cellEl.GetString();
+                        ApplyAutoDirection(table.Cell(r + 1, c + 1).Range);
                         c++;
                     }
                     r++;
@@ -81,6 +82,7 @@ namespace WordAiAddIn
                     if (col < 0 || col >= table.Columns.Count)
                         throw new ArgumentOutOfRangeException("col", "col must be between 0 and " + (table.Columns.Count - 1) + ".");
                     table.Cell(row + 1, col + 1).Range.Text = input.GetProperty("text").GetString();
+                    ApplyAutoDirection(table.Cell(row + 1, col + 1).Range);
                     return new ToolResult { Output = "Cell [" + row + "," + col + "] updated.", Mutated = true, Summary = "edit_table" };
                 }
                 case "insert_row":

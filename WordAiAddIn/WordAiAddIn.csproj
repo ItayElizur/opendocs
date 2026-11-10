@@ -137,6 +137,10 @@
       <SubType>Code</SubType>
       <DependentUpon>WordTools.cs</DependentUpon>
     </Compile>
+    <Compile Include="WordTools.Direction.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>WordTools.cs</DependentUpon>
+    </Compile>
     <Compile Include="WordTools.Charts.cs">
       <SubType>Code</SubType>
       <DependentUpon>WordTools.cs</DependentUpon>

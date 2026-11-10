@@ -19,10 +19,10 @@ overload fits.
 ## `ApplyAutoDirection`
 
 Post-hoc fix (2026-08-26, user-reported): PowerPoint's TextRange
-never auto-flips paragraph direction/alignment based on typed
-content the way Word's editor does with "detect language
-automatically" - every write here always came out left-to-right/
-left-aligned, even for Hebrew. Same bidi mismatch class as
+never auto-flips paragraph direction/alignment from the written
+content. Typing in an editor can, but a COM write does not (Word's
+object model behaves the same, checked by hand) - every write here
+always came out left-to-right/left-aligned, even for Hebrew. Same bidi mismatch class as
 chat-ui.ts's dir="auto" fix, but PowerPoint's COM object model has
 no built-in "auto" direction - it has to be decided per write from
 the text's own script mix. The detection (TextUtil.DetectDirection)
@@ -33,8 +33,9 @@ Hebrew text box overwritten with English stayed right-to-left and
 right-aligned. Now clearly left-to-right text resets a paragraph that is
 currently right-to-left (and a right alignment with it). Text with no
 letters (digits, punctuation) changes nothing, and a paragraph that is
-already left-to-right is never written to, so a deliberate centered or
-justified alignment survives.
+already left-to-right is never written to. Right-to-left text likewise
+only flips a left alignment to right; a centered or justified paragraph
+keeps its alignment in both directions.
 
 ## `ApplyBulletSetting`
 

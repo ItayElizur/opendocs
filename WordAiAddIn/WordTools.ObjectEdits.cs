@@ -152,7 +152,11 @@ namespace WordAiAddIn
             bool? isChecked = OptBool(input, "checked");
             if (title != null) cc.Title = title;
             if (tag != null) cc.Tag = tag;
-            if (text != null) cc.Range.Text = text;
+            if (text != null)
+            {
+                cc.Range.Text = text;
+                ApplyAutoDirection((Word.Range)cc.Range);
+            }
             if (isChecked.HasValue) cc.Checked = isChecked.Value;
             if (input.TryGetProperty("entries", out var entries) && entries.ValueKind == JsonValueKind.Array)
             {
@@ -285,6 +289,7 @@ namespace WordAiAddIn
                         insertedFields++;
                     }
                 }
+                ApplyAutoDirection((Word.Range)hf.Range);
             }
 
             return new ToolResult
@@ -363,6 +368,7 @@ namespace WordAiAddIn
                     at = RangeAtEndOfBlockText(after.Value);
                 }
                 dynamic note = notes.Add(at, Type.Missing, text);
+                ApplyAutoDirection((Word.Range)note.Range);
                 return new ToolResult
                 {
                     Output = "Added " + noteKind + " (index " + ((int)note.Index - 1) + "). Later " + noteKind + " indices may have shifted.",
@@ -380,6 +386,7 @@ namespace WordAiAddIn
                 string text = OptStr(input, "text");
                 if (text == null) throw new ArgumentException("edit_note: text is required for edit.");
                 target.Range.Text = text;
+                ApplyAutoDirection((Word.Range)target.Range);
                 return new ToolResult { Output = "Updated " + noteKind + " " + index + ".", Mutated = true, Summary = "edit_note edit" };
             }
             target.Delete();
@@ -474,7 +481,11 @@ namespace WordAiAddIn
                 {
                     string name = OptStr(input, "name");
                     if (name != null) shape.Name = name;
-                    if (text != null) shape.TextFrame.TextRange.Text = text;
+                    if (text != null)
+                    {
+                        shape.TextFrame.TextRange.Text = text;
+                        ApplyAutoDirection((Word.Range)shape.TextFrame.TextRange);
+                    }
                     // AddTextbox positions are relative to the anchor paragraph; x/y are documented as points from the page corner.
                     shape.RelativeHorizontalPosition = 1; // wdRelativeHorizontalPositionPage
                     shape.RelativeVerticalPosition = 1;   // wdRelativeVerticalPositionPage
@@ -518,7 +529,11 @@ namespace WordAiAddIn
                 throw new ArgumentException("edit_textbox: pass text and/or x, y, w, h for edit.");
             if (text != null)
             {
-                try { info.Shape.TextFrame.TextRange.Text = text; }
+                try
+                {
+                    info.Shape.TextFrame.TextRange.Text = text;
+                    ApplyAutoDirection((Word.Range)info.Shape.TextFrame.TextRange);
+                }
                 catch (Exception ex) { throw new ArgumentException("edit_textbox: shape " + target + " (" + info.TypeName + ") has no editable text frame: " + ex.Message); }
             }
             if (x.HasValue) { info.Shape.RelativeHorizontalPosition = 1; info.Shape.Left = x.Value; } // points from the page corner
