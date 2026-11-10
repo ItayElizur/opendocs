@@ -471,19 +471,21 @@ export const ALL_WORD_TOOLS = [
         'Edits an existing SmartArt diagram. kind: "set_text" (nodeIndex,text), "add_node" (text?), "delete_node" (nodeIndex), ' +
         '"set_style" (colorName?,quickStyleName? - free-text, matched by substring against this Office install\'s actual color/quick-style gallery; ' +
         'an unmatched name errors listing the real available names to retry with, e.g. try "Colorful" or "Accent" for colorName, "Intense" or "Simple" for quickStyleName), ' +
-        '"set_layout" (layout - same layout keys as add_smartart: list/process/cycle/hierarchy/pyramid/matrix/venn; changes an existing diagram\'s layout, keeping its current node text). ' +
+        '"set_layout" (layout - same layout keys as add_smartart: list/process/cycle/hierarchy/pyramid/matrix/venn; changes an existing diagram\'s layout, keeping its current node text), ' +
+        '"set_direction" (reverse: true flows the diagram right-to-left, for Hebrew/Arabic; false restores left-to-right; only layouts that flow sideways honor it). ' +
         'smartArtIndex addresses the diagram (0-based, document order); omit to target the first one. ' +
         'delete_node shifts later node indices - re-read (read_object kind "smartart") before another node edit in the same run.',
       inputSchema: {
         type: 'object',
         properties: {
           smartArtIndex: { type: 'number' },
-          kind: { type: 'string', enum: ['set_text', 'add_node', 'delete_node', 'set_style', 'set_layout'] },
+          kind: { type: 'string', enum: ['set_text', 'add_node', 'delete_node', 'set_style', 'set_layout', 'set_direction'] },
           nodeIndex: { type: 'number' },
           text: { type: 'string' },
           colorName: { type: 'string' },
           quickStyleName: { type: 'string' },
           layout: { type: 'string', enum: ['list', 'process', 'cycle', 'hierarchy', 'pyramid', 'matrix', 'venn'] },
+          reverse: { type: 'boolean', description: 'Required for set_direction.' },
         },
         required: ['kind'],
       },

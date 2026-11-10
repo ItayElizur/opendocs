@@ -94,7 +94,7 @@ namespace WordAiAddIn
             foreach (JsonElement item in input.GetProperty("items").EnumerateArray())
             {
                 dynamic node = smartArt.Nodes.Add();
-                node.TextFrame2.TextRange.Text = item.GetString();
+                SetNodeText(node, item.GetString());
             }
             return new ToolResult { Output = "SmartArt added (" + input.GetProperty("items").GetArrayLength() + " node(s)).", Mutated = true, Summary = "add_smartart" };
         }
@@ -156,14 +156,14 @@ namespace WordAiAddIn
                     int count = (int)nodes.Count;
                     if (nodeIndex < 0 || nodeIndex >= count)
                         throw new ArgumentOutOfRangeException("nodeIndex", "nodeIndex must be between 0 and " + (count - 1) + " (" + count + " node(s)).");
-                    nodes.Item(nodeIndex + 1).TextFrame2.TextRange.Text = input.GetProperty("text").GetString();
+                    SetNodeText(nodes.Item(nodeIndex + 1), input.GetProperty("text").GetString());
                     return new ToolResult { Output = "Node " + nodeIndex + " updated.", Mutated = true, Summary = "edit_smartart" };
                 }
                 case "add_node":
                 {
                     dynamic newNode = nodes.Add();
                     if (input.TryGetProperty("text", out var textEl) && textEl.ValueKind == JsonValueKind.String)
-                        newNode.TextFrame2.TextRange.Text = textEl.GetString();
+                        SetNodeText(newNode, textEl.GetString());
                     return new ToolResult { Output = "Node added at index " + ((int)nodes.Count - 1) + ".", Mutated = true, Summary = "edit_smartart" };
                 }
                 case "delete_node":
@@ -203,8 +203,18 @@ namespace WordAiAddIn
                     smartArt.Layout = ResolveSmartArtLayout(layoutKey);
                     return new ToolResult { Output = "SmartArt layout changed to '" + layoutKey + "'.", Mutated = true, Summary = "edit_smartart" };
                 }
+                case "set_direction":
+                {
+                    if (!input.TryGetProperty("reverse", out _))
+                        throw new ArgumentException("edit_smartart: set_direction needs reverse (true = right-to-left flow, false = left-to-right).");
+                    bool reverse = ToolArgs.OptionalFlag(input, "reverse");
+                    smartArt.Reverse = reverse ? -1 : 0; // MsoTriState msoTrue / msoFalse
+                    if (((int)smartArt.Reverse == -1) != reverse)
+                        throw new InvalidOperationException("edit_smartart: this layout did not accept reverse = " + (reverse ? "true" : "false") + " - its flow cannot be reversed.");
+                    return new ToolResult { Output = "SmartArt flow is now " + (reverse ? "right-to-left" : "left-to-right") + ".", Mutated = true, Summary = "edit_smartart" };
+                }
                 default:
-                    throw new ArgumentException("edit_smartart: unknown kind '" + kind + "'. Valid: set_text, add_node, delete_node, set_style, set_layout.");
+                    throw new ArgumentException("edit_smartart: unknown kind '" + kind + "'. Valid: set_text, add_node, delete_node, set_style, set_layout, set_direction.");
             }
         }
 
