@@ -18,8 +18,7 @@ namespace PowerPointAiAddIn
             return ActivePresentation.SlideMaster;
         }
 
-        // Lets add_master_element/read_master_elements/remove_master_element/
-        // set_master_element_transform target one specific layout (optional
+        // Lets edit_master_element and read_master target one specific layout (optional
         // layoutName, resolved by substring like ResolveCustomLayout) instead of
         // only the top-level Slide Master. See PowerPointTools.Master.cs.md.
         private struct MasterTarget
@@ -407,26 +406,49 @@ namespace PowerPointAiAddIn
                          (deckWideFailures.Count > 0 ? " (" + string.Join(", ", deckWideFailures) + " rejected and were skipped.)" : "") +
                          " (skipTitleSlide/startNumber, if given, always apply deck-wide regardless of slideIndex)." +
                          " If slide numbers/footer/date still don't appear, this slide's layout may not include that placeholder - " +
-                         "check read_master_elements or try a different layout (set_slide_layout).",
+                         "check read_master or try a different layout (set_slide).",
                 Mutated = true,
             };
         }
 
         private static readonly string[] MasterCorners = { "topLeft", "topRight", "bottomLeft", "bottomRight" };
 
-        private static ToolResult AddMasterElement(JsonElement input)
+        private static ToolResult EditMasterElement(JsonElement input)
         {
             string kind = input.GetProperty("kind").GetString();
+            switch (kind)
+            {
+                case "add": return AddMasterElement(input);
+                case "move": return SetMasterElementTransform(input);
+                case "remove": return RemoveMasterElement(input);
+                default: throw new ArgumentException("edit_master_element: unknown kind '" + kind + "'. Valid: add, move, remove.");
+            }
+        }
+
+        private static ToolResult ReadMaster(JsonElement input)
+        {
+            string view = input.TryGetProperty("view", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : "elements";
+            switch (view)
+            {
+                case "elements": return ReadMasterElements(input);
+                case "layouts": return ListLayouts(input);
+                default: throw new ArgumentException("read_master: unknown view '" + view + "'. Valid: elements, layouts.");
+            }
+        }
+
+        private static ToolResult AddMasterElement(JsonElement input)
+        {
+            string kind = input.GetProperty("contentType").GetString();
             if (kind != "icon" && kind != "text")
-                throw new ArgumentException("add_master_element: unknown kind '" + kind + "'. Valid: icon, text.");
+                throw new ArgumentException("edit_master_element: unknown contentType '" + kind + "'. Valid: icon, text.");
 
             string corner = input.TryGetProperty("corner", out var cEl) && cEl.ValueKind == JsonValueKind.String ? cEl.GetString() : null;
-            float? left = input.TryGetProperty("left", out var lEl) && lEl.ValueKind == JsonValueKind.Number ? (float?)lEl.GetDouble() : null;
-            float? top = input.TryGetProperty("top", out var tEl) && tEl.ValueKind == JsonValueKind.Number ? (float?)tEl.GetDouble() : null;
+            float? left = ToolArgs.OptionalFloat(input, "left");
+            float? top = ToolArgs.OptionalFloat(input, "top");
             // left/top must be given together, or a single coordinate is silently
             // dropped in favor of corner-based placement. See PowerPointTools.Master.cs.md.
             if (left.HasValue != top.HasValue)
-                throw new ArgumentException("add_master_element: left and top must be given together (a single coordinate alone is not supported) - provide both, or use corner instead.");
+                throw new ArgumentException("edit_master_element: left and top must be given together (a single coordinate alone is not supported) - provide both, or use corner instead.");
             bool hasExplicitPosition = left.HasValue && top.HasValue;
             // Only require/validate corner when it will actually be used - checking it
             // before hasExplicitPosition is known would reject valid left+top alongside
@@ -434,14 +456,14 @@ namespace PowerPointAiAddIn
             if (!hasExplicitPosition)
             {
                 if (corner == null)
-                    throw new ArgumentException("add_master_element: provide either corner, or both left and top.");
+                    throw new ArgumentException("edit_master_element: provide either corner, or both left and top.");
                 if (Array.IndexOf(MasterCorners, corner) < 0)
-                    throw new ArgumentException("add_master_element: unknown corner '" + corner + "'. Valid: " + string.Join(", ", MasterCorners) + ".");
+                    throw new ArgumentException("edit_master_element: unknown corner '" + corner + "'. Valid: " + string.Join(", ", MasterCorners) + ".");
             }
 
-            float? width = input.TryGetProperty("width", out var wEl) && wEl.ValueKind == JsonValueKind.Number ? (float?)wEl.GetDouble() : null;
-            float? height = input.TryGetProperty("height", out var hEl) && hEl.ValueKind == JsonValueKind.Number ? (float?)hEl.GetDouble() : null;
-            float marginPt = input.TryGetProperty("marginPt", out var mEl) && mEl.ValueKind == JsonValueKind.Number ? (float)mEl.GetDouble() : 12f;
+            float? width = ToolArgs.OptionalFloat(input, "width");
+            float? height = ToolArgs.OptionalFloat(input, "height");
+            float marginPt = ToolArgs.OptionalFloat(input, "marginPt") ?? 12f;
 
             // Resolve/validate color and font size up front, before creating
             // anything - doing it after shape creation orphaned an unpositioned,
@@ -452,13 +474,13 @@ namespace PowerPointAiAddIn
             if (kind == "text")
             {
                 text = input.GetProperty("text").GetString();
-                textFontSize = input.TryGetProperty("fontSize", out var fsEl) && fsEl.ValueKind == JsonValueKind.Number ? (float)fsEl.GetDouble() : 10f;
+                textFontSize = ToolArgs.OptionalFloat(input, "fontSize") ?? 10f;
                 textColor = input.TryGetProperty("color", out var colorEl) && colorEl.ValueKind == JsonValueKind.String
                     ? ColorUtil.HexToOle(colorEl.GetString())
                     : ColorUtil.HexToOle("#808080");
             }
 
-            MasterTarget target = ResolveMasterTarget(input, "add_master_element");
+            MasterTarget target = ResolveMasterTarget(input, "edit_master_element");
             PowerPoint.Shape shape;
 
             if (kind == "icon")
@@ -466,7 +488,7 @@ namespace PowerPointAiAddIn
                 string localPath = input.GetProperty("localPath").GetString();
                 string pathError = PathGuard.LocalFileError(localPath);
                 if (pathError != null)
-                    return new ToolResult { Output = "add_master_element: " + pathError, IsError = true };
+                    return new ToolResult { Output = "edit_master_element: " + pathError, IsError = true };
                 localPath = localPath.Trim();
 
                 shape = target.Shapes.AddPicture(localPath, Microsoft.Office.Core.MsoTriState.msoFalse, Microsoft.Office.Core.MsoTriState.msoTrue, 0, 0, -1, -1);
@@ -501,7 +523,7 @@ namespace PowerPointAiAddIn
                 else
                 {
                     PowerPoint.TextRange range = shape.TextFrame.TextRange;
-                    range.Text = text;
+                    SetText(range, text);
                     range.Font.Size = textFontSize;
                     range.Font.Color.RGB = textColor;
                 }
@@ -549,7 +571,7 @@ namespace PowerPointAiAddIn
         private static ToolResult SetMasterElementTransform(JsonElement input)
         {
             int masterShapeIndex = input.GetProperty("masterShapeIndex").GetInt32();
-            MasterTarget target = ResolveMasterTarget(input, "set_master_element_transform");
+            MasterTarget target = ResolveMasterTarget(input, "edit_master_element");
             if (masterShapeIndex < 0 || masterShapeIndex >= target.Shapes.Count)
                 throw new ArgumentOutOfRangeException("masterShapeIndex", "masterShapeIndex must be between 0 and " + (target.Shapes.Count - 1) + " (in " + target.Label + ").");
             PowerPoint.Shape shape = target.Shapes[masterShapeIndex + 1];
@@ -557,7 +579,7 @@ namespace PowerPointAiAddIn
             var applied = ApplyTransform(shape, input);
 
             if (applied.Count == 0)
-                return new ToolResult { Output = "set_master_element_transform: no recognized fields were provided - nothing changed.", IsError = true };
+                return new ToolResult { Output = "edit_master_element: no recognized fields were provided - nothing changed.", IsError = true };
 
             return new ToolResult
             {
@@ -568,7 +590,7 @@ namespace PowerPointAiAddIn
 
         // Incident (2026-09-22, live-tested): the Slide Master's own theme
         // placeholders (Title/Text/Footer/Date/SlideNumber) live in master.Shapes
-        // alongside anything add_master_element adds, and deleting one does NOT
+        // alongside anything edit_master_element adds, and deleting one does NOT
         // remove its appearance from slides - each slide's own CustomLayout carries
         // an independent, non-shared placeholder copy. Two theme placeholders were
         // lost this way with no undo path, which is why this refuses to delete any
@@ -576,27 +598,27 @@ namespace PowerPointAiAddIn
         private static ToolResult RemoveMasterElement(JsonElement input)
         {
             int masterShapeIndex = input.GetProperty("masterShapeIndex").GetInt32();
-            MasterTarget target = ResolveMasterTarget(input, "remove_master_element");
+            MasterTarget target = ResolveMasterTarget(input, "edit_master_element");
             if (masterShapeIndex < 0 || masterShapeIndex >= target.Shapes.Count)
                 throw new ArgumentOutOfRangeException("masterShapeIndex", "masterShapeIndex must be between 0 and " + (target.Shapes.Count - 1) + " (in " + target.Label + ").");
             PowerPoint.Shape shape = target.Shapes[masterShapeIndex + 1];
             if (shape.Type == Microsoft.Office.Core.MsoShapeType.msoPlaceholder)
-                throw new ArgumentException("remove_master_element: masterShapeIndex " + masterShapeIndex + " (\"" + shape.Name + "\") in " + target.Label + " is one of this theme's own placeholders " +
-                    "(Title/Text/Footer/Date/SlideNumber style), not something add_master_element created - refusing to delete it. " +
+                throw new ArgumentException("edit_master_element: masterShapeIndex " + masterShapeIndex + " (\"" + shape.Name + "\") in " + target.Label + " is one of this theme's own placeholders " +
+                    "(Title/Text/Footer/Date/SlideNumber style), not something edit_master_element created - refusing to delete it. " +
                     "To turn off a slide number/footer/date placeholder's visibility (not delete the shape), use set_headers_footers with the matching *Visible:false field instead. " +
                     "Deleting a Slide Master placeholder would not even remove its appearance from slides using a layout with its own independent copy - " +
                     "use PowerPoint's own Slide Master view (Master Layout dialog) if you really need to remove a theme placeholder.");
             shape.Delete();
             return new ToolResult
             {
-                Output = "Master element " + masterShapeIndex + " deleted from " + target.Label + ". Other master shapes' indices may have shifted - call read_master_elements before another edit in the same run.",
+                Output = "Master element " + masterShapeIndex + " deleted from " + target.Label + ". Other master shapes' indices may have shifted - call read_master before another edit in the same run.",
                 Mutated = true,
             };
         }
 
         private static ToolResult ReadMasterElements(JsonElement input)
         {
-            MasterTarget target = ResolveMasterTarget(input, "read_master_elements");
+            MasterTarget target = ResolveMasterTarget(input, "read_master");
             int count = target.Shapes.Count;
             if (count == 0)
                 return new ToolResult { Output = "No shapes in " + target.Label + "." };

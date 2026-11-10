@@ -17,7 +17,7 @@ these fields into a SelectionContext.
 ```
 PowerPoint (user-requested, 2026-09-22): the selected slide's current
 layout name (custom-theme layouts, e.g. "Title Slide") - lets the model
-address add_master_element/read_master_elements/etc.'s layoutName
+address edit_master_element/read_master/etc.'s layoutName
 directly from context instead of a separate read_slide call. Sent for
 all three selKind variants (a shapes/shapeText selection is always
 within exactly one slide, so this is unambiguous there too).

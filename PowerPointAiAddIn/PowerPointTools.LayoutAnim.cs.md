@@ -18,7 +18,7 @@ scope is unchanged, always just this one slide's own Design).
 
 Review finding: unlike ResolveMasterTarget's explicit
 !string.IsNullOrEmpty(query) check for the identical field
-on add_master_element/read_master_elements/etc., this path
+on edit_master_element/read_master/etc., this path
 never guarded against an empty string - IndexOf("") matches
 every layout, so it silently picked the first one (or threw
 a confusing "matches more than one" error with >1 layout)

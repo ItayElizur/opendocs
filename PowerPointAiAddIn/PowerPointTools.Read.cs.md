@@ -4,7 +4,7 @@
 
 PP-23 Task 8 (post-hoc fix): previously only checked HasTextFrame,
 so read_slide/get_deck_context reported table and SmartArt shapes
-with no content at all - the model could add_table/add_smartart
+with no content at all - the model could create a table/SmartArt
 and then have no way to see what it just created. Table reading
 reuses the same statically-typed Table.Cell(r,c).Shape.TextFrame
 pattern AddTable/EditTableCell already use in this file; SmartArt
@@ -14,8 +14,8 @@ Shape interface), matching AddSmartArt's own existing pattern.
 ## `ReadSlide` - layout/transition/animation surfacing
 
 PP-24: surfaces layout/transition/animation-count so the model
-isn't blind to state set_slide_layout/set_slide_transition/
-add_animation just created - same "the model can add
+isn't blind to state set_slide/
+edit_animation just created - same "the model can add
 something but then can't see it" gap PP-23's read_chart/
 read_table/read_smartart all exist to close.
 

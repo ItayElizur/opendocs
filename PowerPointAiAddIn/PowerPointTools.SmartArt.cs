@@ -17,7 +17,7 @@ namespace PowerPointAiAddIn
         {
             string targetName;
             if (!SmartArtLayouts.ByName.TryGetValue(layoutKey, out targetName))
-                throw new ArgumentException("add_smartart: unknown layout '" + layoutKey + "'. Valid: " +
+                throw new ArgumentException("edit_smartart: unknown layout '" + layoutKey + "'. Valid: " +
                                             string.Join(", ", SmartArtLayouts.ByName.Keys) + ".");
             dynamic layouts = Globals.ThisAddIn.Application.SmartArtLayouts;
             foreach (dynamic layout in layouts)
@@ -29,7 +29,7 @@ namespace PowerPointAiAddIn
             }
             // Distinct from the unknown-key case above: a valid key with no matching
             // gallery entry points at a non-English Office install. See .md.
-            throw new InvalidOperationException("add_smartart: no SmartArt layout named '" + targetName +
+            throw new InvalidOperationException("edit_smartart: no SmartArt layout named '" + targetName +
                                                 "' was found in this Office install's gallery - this install may be " +
                                                 "non-English, where the built-in gallery's display names differ from " +
                                                 "the standard English ones this tool assumes (see plan Task 6 Step 1).");
@@ -106,7 +106,7 @@ namespace PowerPointAiAddIn
 
             // No smartArtIndex given: read every diagram on the slide in one
             // call rather than forcing a round trip per diagram (matches
-            // Word's read_smartart).
+            // Word's read_smartart.
             bool hasIndex = input.TryGetProperty("smartArtIndex", out var si) && si.ValueKind == JsonValueKind.Number;
             if (!hasIndex)
             {
@@ -140,11 +140,31 @@ namespace PowerPointAiAddIn
             return sb.ToString().TrimEnd();
         }
 
+        // Node text is TextFrame2, which ApplyAutoDirection (TextRange) cannot take. Sets only the paragraph
+        // direction, not alignment: the layout owns alignment (PowerPoint's own UI writes just rtl="1").
+        // Left-to-right text only resets a node that is currently right-to-left.
+        private static void SetNodeText(dynamic node, string text)
+        {
+            node.TextFrame2.TextRange.Text = text;
+            dynamic paragraph = node.TextFrame2.TextRange.ParagraphFormat;
+            switch (TextUtil.DetectDirection(text))
+            {
+                case TextDirection.Rtl:
+                    paragraph.TextDirection = (int)Microsoft.Office.Core.MsoTextDirection.msoTextDirectionRightToLeft;
+                    break;
+                case TextDirection.Ltr:
+                    if ((int)paragraph.TextDirection == (int)Microsoft.Office.Core.MsoTextDirection.msoTextDirectionRightToLeft)
+                        paragraph.TextDirection = (int)Microsoft.Office.Core.MsoTextDirection.msoTextDirectionLeftToRight;
+                    break;
+            }
+        }
+
         private static ToolResult EditSmartArt(JsonElement input)
         {
+            string kind = input.GetProperty("kind").GetString();
+            if (kind == "create") return AddSmartArt(input);
             dynamic smartArt = ResolveSmartArtOnSlide(input, "edit_smartart");
             dynamic nodes = smartArt.Nodes;
-            string kind = input.GetProperty("kind").GetString();
             switch (kind)
             {
                 case "set_text":
@@ -153,14 +173,14 @@ namespace PowerPointAiAddIn
                     int count = (int)nodes.Count;
                     if (nodeIndex < 0 || nodeIndex >= count)
                         throw new ArgumentOutOfRangeException("nodeIndex", "nodeIndex must be between 0 and " + (count - 1) + " (" + count + " node(s)).");
-                    nodes.Item(nodeIndex + 1).TextFrame2.TextRange.Text = input.GetProperty("text").GetString();
+                    SetNodeText(nodes.Item(nodeIndex + 1), input.GetProperty("text").GetString());
                     return new ToolResult { Output = "Node " + nodeIndex + " updated.", Mutated = true };
                 }
                 case "add_node":
                 {
                     dynamic newNode = nodes.Add();
                     if (input.TryGetProperty("text", out var textEl) && textEl.ValueKind == JsonValueKind.String)
-                        newNode.TextFrame2.TextRange.Text = textEl.GetString();
+                        SetNodeText(newNode, textEl.GetString());
                     return new ToolResult { Output = "Node added at index " + ((int)nodes.Count - 1) + ".", Mutated = true };
                 }
                 case "delete_node":
@@ -170,7 +190,7 @@ namespace PowerPointAiAddIn
                     if (nodeIndex < 0 || nodeIndex >= count)
                         throw new ArgumentOutOfRangeException("nodeIndex", "nodeIndex must be between 0 and " + (count - 1) + " (" + count + " node(s)).");
                     nodes.Item(nodeIndex + 1).Delete();
-                    return new ToolResult { Output = "Node " + nodeIndex + " deleted. Later node indices have shifted - re-read (read_smartart) before another node edit in the same run.", Mutated = true };
+                    return new ToolResult { Output = "Node " + nodeIndex + " deleted. Later node indices have shifted - re-read (read_slide view=smartart) before another node edit in the same run.", Mutated = true };
                 }
                 case "set_style":
                 {
@@ -197,8 +217,18 @@ namespace PowerPointAiAddIn
                     smartArt.Layout = ResolveSmartArtLayout(layoutKey);
                     return new ToolResult { Output = "SmartArt layout changed to '" + layoutKey + "'.", Mutated = true };
                 }
+                case "set_direction":
+                {
+                    if (!input.TryGetProperty("reverse", out _))
+                        throw new ArgumentException("edit_smartart: set_direction needs reverse (true = right-to-left flow, false = left-to-right).");
+                    bool reverse = ToolArgs.OptionalFlag(input, "reverse");
+                    smartArt.Reverse = (int)Tri(reverse);
+                    if (((int)smartArt.Reverse == (int)Microsoft.Office.Core.MsoTriState.msoTrue) != reverse)
+                        throw new InvalidOperationException("edit_smartart: this layout did not accept reverse = " + (reverse ? "true" : "false") + " - its flow cannot be reversed.");
+                    return new ToolResult { Output = "SmartArt flow is now " + (reverse ? "right-to-left" : "left-to-right") + ".", Mutated = true };
+                }
                 default:
-                    throw new ArgumentException("edit_smartart: unknown kind '" + kind + "'. Valid: set_text, add_node, delete_node, set_style, set_layout.");
+                    throw new ArgumentException("edit_smartart: unknown kind '" + kind + "'. Valid: create, set_text, add_node, delete_node, set_style, set_layout, set_direction.");
             }
         }
 
@@ -206,7 +236,7 @@ namespace PowerPointAiAddIn
         {
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
             string layoutKey = input.GetProperty("layout").GetString();
-            ReadXywh(input, 300f, out float left, out float top, out float width, out float height);
+            ReadRectDefaulted(input, 300f, out float left, out float top, out float width, out float height);
 
             dynamic layout = ResolveSmartArtLayout(layoutKey);
             PowerPoint.Slide slide = ResolveSlide(input);
@@ -227,7 +257,7 @@ namespace PowerPointAiAddIn
             foreach (JsonElement item in input.GetProperty("items").EnumerateArray())
             {
                 dynamic node = smartArt.Nodes.Add();
-                node.TextFrame2.TextRange.Text = item.GetString();
+                SetNodeText(node, item.GetString());
             }
             string named = ApplyOptionalName((PowerPoint.Shape)shape, input);
             return new ToolResult { Output = "SmartArt added" + (named != null ? " (\"" + named + "\")" : "") + ".", Mutated = true };

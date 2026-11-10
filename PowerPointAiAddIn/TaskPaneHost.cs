@@ -94,7 +94,7 @@ namespace PowerPointAiAddIn
             // Task 3 Step 3: Slides is 1-based in COM, ResolveShape's tools
             // are 0-based - convert once, here, and never again downstream.
             foreach (PowerPoint.Slide s in sel.SlideRange) indexes.Add(s.SlideIndex - 1);
-            // Surfaces the layout name for direct use (e.g. add_master_element's
+            // Surfaces the layout name for direct use (e.g. edit_master_element's
             // layoutName). Reflects the FIRST selected slide only.
             string layoutName = null;
             try { layoutName = sel.SlideRange[1].CustomLayout.Name; } catch { }

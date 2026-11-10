@@ -12,9 +12,8 @@ theme has more than one Slide Master, and only this default
 
 ## `MasterTarget`
 
-User-requested (2026-09-22, live testing): add_master_element/
-read_master_elements/remove_master_element/set_master_element_
-transform previously only ever targeted the single top-level
+User-requested (2026-09-22, live testing): edit_master_element and
+read_master previously only ever targeted the single top-level
 Slide Master - there was no way to address one specific layout
 (Title Slide, Title and Content, etc.), even though each layout
 has its own independent shape collection (the exact thing that
@@ -22,7 +21,7 @@ caused the footer-text-not-inheriting bug). optional layoutName
 resolves by case-insensitive substring against this presentation's
 own layout names - same resolve-by-substring pattern
 ResolveCustomLayout (PowerPointTools.LayoutAnim.cs) already uses
-for set_slide_layout - and returns that layout's own Shapes
+for set_slide - and returns that layout's own Shapes
 collection instead of the master's when given.
 
 ## `ResolveLayoutByQuery`
@@ -50,9 +49,8 @@ ResolveCustomLayout (PowerPointTools.LayoutAnim.cs), which is
 handed a specific slide and correctly searches THAT slide's own
 Design. A deck combining more than one theme/design (e.g. slides
 pasted in with "Preserve Source Formatting") could never reach a
-non-default design's layout by name through add_master_element/
-read_master_elements/remove_master_element/set_master_element_
-transform's layoutName. Now searches every design in the
+non-default design's layout by name through edit_master_element
+and read_master's layoutName. Now searches every design in the
 presentation (confirmed via reflection: Presentation.Designs is a
 real, enumerable collection, each with its own SlideMaster).
 
@@ -230,7 +228,7 @@ Record the failure and keep going instead.
 ## `SetHeadersFooters` - startNumber/skipTitleSlide guarding
 
 Both deck-wide regardless of slideIndex, same as
-set_slide_background's slideIndex:-1 convention but stronger:
+set_slide's slideIndex:-1 background convention but stronger:
 FirstSlideNumber (PageSetup) and DisplayOnTitleSlide (the
 Slide/Title Master's HeadersFooters) are simply not per-slide
 properties in PowerPoint's object model at all. Applied even
@@ -286,14 +284,14 @@ color and font size up front, before creating anything.
 Review finding: ApplyOptionalName's dedup-against-siblings
 used to resolve the shape's parent via `shape.Parent as
 PowerPoint.Slide`, which is always null for a master/layout
-shape - two add_master_element calls with the same name
+shape - two edit_master_element calls with the same name
 both got the literal name, unlike slide shapes which
 auto-suffix. Pass target.Shapes explicitly so dedup works
 here too.
 
 ## `SetMasterElementTransform`
 
-User-reported gap (2026-09-22, live testing): add_master_element
+User-reported gap (2026-09-22, live testing): edit_master_element
 takes a starting position/size, but there was no way to adjust an
 EXISTING master element afterward short of remove + re-add.
 Mirrors PowerPointTools.Elements.cs's SetElementTransform exactly,
@@ -303,7 +301,7 @@ just addressed by masterShapeIndex instead of slideIndex+shapeIndex.
 
 Real-user-confirmed (2026-09-22, live testing): the Slide Master's
 Title/Text/Footer/DateAndTime/SlideNumber theme placeholders live
-in master.Shapes right alongside anything add_master_element adds
+in master.Shapes right alongside anything edit_master_element adds
 - masterShapeIndex 0 is the Title Placeholder on a typical theme,
 NOT whatever was added last. Deleting one of these did NOT remove
 its appearance from actual slides even after save/close/reopen -
@@ -314,5 +312,5 @@ Master's OWN copy. Net effect of the naive index-0-by-default
 testing: two theme placeholders (Title, Text) were deleted from
 the Slide Master with no visible effect and no way to undo via
 this tool surface. Refusing to delete a placeholder here closes
-that hole - a custom element add_master_element actually created
+that hole - a custom element edit_master_element actually created
 (msoTextBox/msoPicture, never msoPlaceholder) is unaffected.

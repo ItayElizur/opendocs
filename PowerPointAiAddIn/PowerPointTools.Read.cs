@@ -75,19 +75,27 @@ namespace PowerPointAiAddIn
             return new ToolResult { Output = sb.ToString() };
         }
 
+        // Every view is read-only, so the whole tool stays in the always-allowed tier.
+        private static ToolResult ReadSlideView(JsonElement input)
+        {
+            string view = input.TryGetProperty("view", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : "slide";
+            switch (view)
+            {
+                case "slide": return ReadSlide(input);
+                case "group": return ReadGroup(input);
+                case "animations": return ReadAnimations(input);
+                case "smartart": return ReadSmartArt(input);
+                default: throw new ArgumentException("read_slide: unknown view '" + view + "'. Valid: slide, group, animations, smartart.");
+            }
+        }
+
         private static ToolResult ReadSlide(JsonElement input)
         {
-            int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            PowerPoint.Slides slides = ActivePresentation.Slides;
-            if (slideIndex < 0 || slideIndex >= slides.Count)
-            {
-                return new ToolResult { Output = "Invalid slide index.", IsError = true };
-            }
-            PowerPoint.Slide slide = slides[slideIndex + 1];
+            PowerPoint.Slide slide = ResolveSlide(input);
             var sb = new StringBuilder();
 
             // Surfaces layout/transition/animation-count so the model isn't blind to
-            // state set_slide_layout/set_slide_transition/add_animation just created.
+            // state set_slide/edit_animation just created.
             string layoutName = null;
             foreach (var kv in SlideLayoutMap) { if (kv.Value == slide.Layout) { layoutName = kv.Key; break; } }
             if (layoutName != null) sb.AppendLine("Layout: " + layoutName);
@@ -99,7 +107,7 @@ namespace PowerPointAiAddIn
             sb.AppendLine("Transition: " + (transitionName ?? (slide.SlideShowTransition.EntryEffect == PowerPoint.PpEntryEffect.ppEffectNone ? "none" : slide.SlideShowTransition.EntryEffect.ToString())));
 
             int animCount = slide.TimeLine.MainSequence.Count;
-            if (animCount > 0) sb.AppendLine(animCount + " animation(s) - call read_animations to see them.");
+            if (animCount > 0) sb.AppendLine(animCount + " animation(s) - call read_slide (view=animations) to see them.");
 
             // Guarded: HeadersFooters access can throw "HeaderFooter (unknown member)"
             // in several real COM states (see PowerPointTools.Master.cs.md) - don't let
@@ -109,7 +117,7 @@ namespace PowerPointAiAddIn
 
             // slide.Shapes is already ordered back-to-front by z-order; this just states
             // that explicitly rather than needing a new read tool. See .md.
-            if (slide.Shapes.Count > 1) sb.AppendLine("Shapes below are listed back-to-front (z-order) - index 0 is furthest back, the last index is drawn on top. Use set_element_order to change this.");
+            if (slide.Shapes.Count > 1) sb.AppendLine("Shapes below are listed back-to-front (z-order) - index 0 is furthest back, the last index is drawn on top. Use set_element_transform (order) to change this.");
 
             int shapeIndex = 0;
             foreach (PowerPoint.Shape shape in slide.Shapes)
@@ -117,7 +125,7 @@ namespace PowerPointAiAddIn
                 if (shape.Type == Microsoft.Office.Core.MsoShapeType.msoGroup)
                 {
                     int n = shape.GroupItems.Count;
-                    sb.AppendLine($"[{shapeIndex}] {shape.Name}: (group, {n} child{(n == 1 ? "" : "ren")} - call read_group for its contents)");
+                    sb.AppendLine($"[{shapeIndex}] {shape.Name}: (group, {n} child{(n == 1 ? "" : "ren")} - call read_slide (view=group) for its contents)");
                 }
                 else
                 {
@@ -134,16 +142,13 @@ namespace PowerPointAiAddIn
 
         // Recursive listing of a group's contents, nested groups indented in place.
         // Each line's dotted "[path]" (e.g. "3.1.0") is accepted directly by
-        // set_element_text/_style/_fill/_stroke; positional/structural edits still
-        // require ungroup_element first.
+        // set_element_text and format_element; positional/structural edits still
+        // require group_element with action:"ungroup" first.
         private static ToolResult ReadGroup(JsonElement input)
         {
-            ShapeRef r;
-            try { r = ResolveShapeRef(input); }
-            catch (Exception ex) { return new ToolResult { Output = ex.Message, IsError = true }; }
-
+            ShapeRef r = ResolveShapeRef(input);
             if (r.Shape.Type != Microsoft.Office.Core.MsoShapeType.msoGroup)
-                return new ToolResult { Output = "Shape " + r.Path + " is a " + ShapeKindLabel(r.Shape) + ", not a group. Call read_slide to see which shapes are groups.", IsError = true };
+                throw new ArgumentException("Shape " + r.Path + " is a " + ShapeKindLabel(r.Shape) + ", not a group. Call read_slide to see which shapes are groups.");
 
             var sb = new StringBuilder();
             sb.AppendLine($"[{r.Path}] {r.Shape.Name} (group, {r.Shape.GroupItems.Count} children)");
@@ -228,7 +233,7 @@ namespace PowerPointAiAddIn
 
         // Scoped to simple text-frame shapes (title/body placeholders, text
         // boxes) and speaker notes - NOT table cells or SmartArt node text,
-        // which have their own dedicated edit tools (edit_table_cell,
+        // which have their own dedicated edit tools (edit_table,
         // edit_smartart) and aren't safely addressable by a single
         // TextRange.Text assignment the way a plain text frame is.
         private static ToolResult ReplaceTextPpt(JsonElement input)
@@ -276,7 +281,7 @@ namespace PowerPointAiAddIn
                         string newNotes = ApplyReplace(notesRange.Text, out int notesCount);
                         if (notesCount > 0)
                         {
-                            notesRange.Text = newNotes;
+                            SetText(notesRange, newNotes);
                             replaced += notesCount;
                         }
                     }

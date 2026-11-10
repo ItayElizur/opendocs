@@ -43,34 +43,34 @@ namespace PowerPointAiAddIn
             var candidates = new List<LayoutCandidate>();
             foreach (PowerPoint.CustomLayout layout in slide.Design.SlideMaster.CustomLayouts)
                 candidates.Add(new LayoutCandidate { Layout = layout, DesignLabel = null });
-            return ResolveLayoutByQuery(candidates, query, "set_slide_layout", "this slide's theme").Layout;
+            return ResolveLayoutByQuery(candidates, query, "set_slide", "this slide's theme").Layout;
         }
 
-        private static ToolResult SetSlideLayout(JsonElement input)
+        // layoutName selects a custom (theme) layout, layout a classic PpSlideLayout; exactly one is required.
+        private static string ApplySlideLayout(PowerPoint.Slide slide, int slideIndex, JsonElement input)
         {
-            int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            PowerPoint.Slide slide = ResolveSlide(input);
-            string kind = input.TryGetProperty("kind", out var kindEl) && kindEl.ValueKind == JsonValueKind.String ? kindEl.GetString() : "classic";
+            bool hasName = input.TryGetProperty("layoutName", out var nameEl);
+            bool hasClassic = input.TryGetProperty("layout", out var classicEl);
+            if (hasName == hasClassic)
+                throw new ArgumentException("set_slide: give exactly one of layout (classic) or layoutName (custom theme layout).");
 
-            if (kind == "custom")
+            if (hasName)
             {
-                string layoutName = input.GetProperty("layoutName").GetString();
+                string layoutName = nameEl.GetString();
                 // Guard against an empty string - IndexOf("") matches every layout,
                 // which would otherwise silently pick the first one. See .md.
                 if (string.IsNullOrEmpty(layoutName))
-                    throw new ArgumentException("set_slide_layout: layoutName must be a non-empty string for kind:\"custom\".");
+                    throw new ArgumentException("set_slide: layoutName must be a non-empty string.");
                 slide.CustomLayout = ResolveCustomLayout(slide, layoutName);
-                return new ToolResult { Output = "Slide " + slideIndex + " layout set to custom layout '" + layoutName + "'.", Mutated = true };
+                return "Slide " + slideIndex + " layout set to custom layout '" + layoutName + "'.";
             }
-            if (kind != "classic")
-                throw new ArgumentException("set_slide_layout: unknown kind '" + kind + "'. Valid: classic, custom.");
 
-            string layoutKey = input.GetProperty("layout").GetString();
+            string layoutKey = classicEl.GetString();
             PowerPoint.PpSlideLayout layoutValue;
             if (!SlideLayoutMap.TryGetValue(layoutKey, out layoutValue))
-                throw new ArgumentException("set_slide_layout: unknown layout '" + layoutKey + "'. Valid: " + string.Join(", ", SlideLayoutMap.Keys) + ".");
+                throw new ArgumentException("set_slide: unknown layout '" + layoutKey + "'. Valid: " + string.Join(", ", SlideLayoutMap.Keys) + ".");
             slide.Layout = layoutValue;
-            return new ToolResult { Output = "Slide " + slideIndex + " layout set to '" + layoutKey + "'.", Mutated = true };
+            return "Slide " + slideIndex + " layout set to '" + layoutKey + "'.";
         }
 
         // PP-24: curated subset of PpEntryEffect's 189 values, all confirmed
@@ -111,29 +111,36 @@ namespace PowerPointAiAddIn
             ["checkerboard"] = PowerPoint.PpEntryEffect.ppEffectCheckerboardAcross,
         };
 
-        private static ToolResult SetSlideTransition(JsonElement input)
+        private static readonly string[] SlideTransitionKeys = { "effect", "durationSeconds", "advanceOnClick", "advanceAfterSeconds" };
+
+        // effect is optional so advance settings can change without re-stating the transition.
+        private static string ApplySlideTransition(PowerPoint.Slide slide, int slideIndex, JsonElement input)
         {
-            int slideIndex = input.GetProperty("slideIndex").GetInt32();
-            PowerPoint.Slide slide = ResolveSlide(input);
             PowerPoint.SlideShowTransition transition = slide.SlideShowTransition;
 
-            string effectKey = input.GetProperty("effect").GetString();
-            PowerPoint.PpEntryEffect effectValue;
-            if (!TransitionEffectMap.TryGetValue(effectKey, out effectValue))
-                throw new ArgumentException("set_slide_transition: unknown effect '" + effectKey + "'. Valid: " + string.Join(", ", TransitionEffectMap.Keys) + ".");
-            transition.EntryEffect = effectValue;
-
-            if (input.TryGetProperty("durationSeconds", out var durEl) && durEl.ValueKind == JsonValueKind.Number)
-                transition.Duration = (float)durEl.GetDouble();
-            if (input.TryGetProperty("advanceOnClick", out var clickEl))
-                transition.AdvanceOnClick = Tri(clickEl.ValueKind == JsonValueKind.True);
-            if (input.TryGetProperty("advanceAfterSeconds", out var advEl) && advEl.ValueKind == JsonValueKind.Number)
+            string effectKey = null;
+            if (input.TryGetProperty("effect", out var effectEl))
             {
-                transition.AdvanceOnTime = Microsoft.Office.Core.MsoTriState.msoTrue;
-                transition.AdvanceTime = (float)advEl.GetDouble();
+                effectKey = effectEl.GetString();
+                PowerPoint.PpEntryEffect effectValue;
+                if (!TransitionEffectMap.TryGetValue(effectKey, out effectValue))
+                    throw new ArgumentException("set_slide: unknown effect '" + effectKey + "'. Valid: " + string.Join(", ", TransitionEffectMap.Keys) + ".");
+                transition.EntryEffect = effectValue;
             }
 
-            return new ToolResult { Output = "Slide " + slideIndex + " transition set to '" + effectKey + "'.", Mutated = true };
+            if (ToolArgs.OptionalFloat(input, "durationSeconds") is float duration)
+                transition.Duration = duration;
+            if (input.TryGetProperty("advanceOnClick", out var clickEl))
+                transition.AdvanceOnClick = Tri(clickEl.ValueKind == JsonValueKind.True);
+            if (ToolArgs.OptionalFloat(input, "advanceAfterSeconds") is float advanceAfter)
+            {
+                transition.AdvanceOnTime = Microsoft.Office.Core.MsoTriState.msoTrue;
+                transition.AdvanceTime = advanceAfter;
+            }
+
+            return effectKey != null
+                ? "Slide " + slideIndex + " transition set to '" + effectKey + "'."
+                : "Slide " + slideIndex + " transition updated.";
         }
 
         // PP-24: curated subset of MsoAnimEffect's 151 values, all confirmed
@@ -164,7 +171,7 @@ namespace PowerPointAiAddIn
 
         // All 7 real MsoAnimTriggerType values are not exposed - msoAnimTriggerNone
         // and msoAnimTriggerOnMediaBookmark/msoAnimTriggerMixed are not
-        // meaningful choices for add_animation/edit_animation's caller.
+        // meaningful choices for edit_animation's caller.
         private static readonly Dictionary<string, PowerPoint.MsoAnimTriggerType> AnimationTriggerMap = new Dictionary<string, PowerPoint.MsoAnimTriggerType>
         {
             ["onClick"] = PowerPoint.MsoAnimTriggerType.msoAnimTriggerOnPageClick,
@@ -172,21 +179,31 @@ namespace PowerPointAiAddIn
             ["afterPrevious"] = PowerPoint.MsoAnimTriggerType.msoAnimTriggerAfterPrevious,
         };
 
+        // Applies durationSeconds/delaySeconds when given; returns whether either was.
+        private static bool ApplyEffectTiming(PowerPoint.Effect effect, JsonElement input)
+        {
+            float? duration = ToolArgs.OptionalFloat(input, "durationSeconds");
+            float? delay = ToolArgs.OptionalFloat(input, "delaySeconds");
+            if (duration.HasValue) effect.Timing.Duration = duration.Value;
+            if (delay.HasValue) effect.Timing.TriggerDelayTime = delay.Value;
+            return duration.HasValue || delay.HasValue;
+        }
+
         private static ToolResult AddAnimation(JsonElement input)
         {
-            PowerPoint.Shape shape = ResolveTopLevelShape(input, "add_animation");
+            PowerPoint.Shape shape = ResolveTopLevelShape(input, "edit_animation");
             PowerPoint.Slide slide = (PowerPoint.Slide)shape.Parent;
             PowerPoint.Sequence sequence = slide.TimeLine.MainSequence;
 
             string effectKey = input.GetProperty("effect").GetString();
             PowerPoint.MsoAnimEffect effectValue;
             if (!AnimationEffectMap.TryGetValue(effectKey, out effectValue))
-                throw new ArgumentException("add_animation: unknown effect '" + effectKey + "'. Valid: " + string.Join(", ", AnimationEffectMap.Keys) + ".");
+                throw new ArgumentException("edit_animation: unknown effect '" + effectKey + "'. Valid: " + string.Join(", ", AnimationEffectMap.Keys) + ".");
 
             string triggerKey = input.TryGetProperty("trigger", out var trEl) && trEl.ValueKind == JsonValueKind.String ? trEl.GetString() : "onClick";
             PowerPoint.MsoAnimTriggerType triggerValue;
             if (!AnimationTriggerMap.TryGetValue(triggerKey, out triggerValue))
-                throw new ArgumentException("add_animation: unknown trigger '" + triggerKey + "'. Valid: " + string.Join(", ", AnimationTriggerMap.Keys) + ".");
+                throw new ArgumentException("edit_animation: unknown trigger '" + triggerKey + "'. Valid: " + string.Join(", ", AnimationTriggerMap.Keys) + ".");
 
             bool isExit = ToolArgs.OptionalFlag(input, "exit");
 
@@ -199,10 +216,7 @@ namespace PowerPointAiAddIn
 
             if (isExit)
                 effect.Exit = Microsoft.Office.Core.MsoTriState.msoTrue;
-            if (input.TryGetProperty("durationSeconds", out var durEl) && durEl.ValueKind == JsonValueKind.Number)
-                effect.Timing.Duration = (float)durEl.GetDouble();
-            if (input.TryGetProperty("delaySeconds", out var delEl) && delEl.ValueKind == JsonValueKind.Number)
-                effect.Timing.TriggerDelayTime = (float)delEl.GetDouble();
+            ApplyEffectTiming(effect, input);
 
             int newIndex = sequence.Count - 1; // AddEffect(-1) appends; stable immediately after the call
             return new ToolResult
@@ -242,6 +256,8 @@ namespace PowerPointAiAddIn
 
         private static ToolResult EditAnimation(JsonElement input)
         {
+            string kind = input.GetProperty("kind").GetString();
+            if (kind == "add") return AddAnimation(input);
             int slideIndex = input.GetProperty("slideIndex").GetInt32();
             int animationIndex = input.GetProperty("animationIndex").GetInt32();
             PowerPoint.Slide slide = ResolveSlide(input);
@@ -250,17 +266,15 @@ namespace PowerPointAiAddIn
                 throw new ArgumentOutOfRangeException("animationIndex", "animationIndex must be between 0 and " + (sequence.Count - 1) + " (" + sequence.Count + " animation(s) on this slide).");
             PowerPoint.Effect effect = sequence[animationIndex + 1];
 
-            string kind = input.GetProperty("kind").GetString();
             switch (kind)
             {
                 case "delete":
                     effect.Delete();
-                    return new ToolResult { Output = "Animation " + animationIndex + " deleted. Later animation indices have shifted - re-read (read_animations) before another edit in the same run.", Mutated = true };
+                    return new ToolResult { Output = "Animation " + animationIndex + " deleted. Later animation indices have shifted - re-read (read_slide view=animations) before another edit in the same run.", Mutated = true };
                 case "set_timing":
                 {
                     bool changed = false;
-                    if (input.TryGetProperty("durationSeconds", out var durEl) && durEl.ValueKind == JsonValueKind.Number) { effect.Timing.Duration = (float)durEl.GetDouble(); changed = true; }
-                    if (input.TryGetProperty("delaySeconds", out var delEl) && delEl.ValueKind == JsonValueKind.Number) { effect.Timing.TriggerDelayTime = (float)delEl.GetDouble(); changed = true; }
+                    if (ApplyEffectTiming(effect, input)) changed = true;
                     if (input.TryGetProperty("trigger", out var trEl) && trEl.ValueKind == JsonValueKind.String)
                     {
                         PowerPoint.MsoAnimTriggerType triggerValue;
@@ -285,10 +299,10 @@ namespace PowerPointAiAddIn
                     // off, MoveBefore/MoveAfter (relative-position moves
                     // against another Effect reference) are the fallback.
                     effect.MoveTo(toIndex + 1);
-                    return new ToolResult { Output = "Animation moved from " + animationIndex + " to " + toIndex + ". Indices have shifted - re-read (read_animations) before another edit in the same run.", Mutated = true };
+                    return new ToolResult { Output = "Animation moved from " + animationIndex + " to " + toIndex + ". Indices have shifted - re-read (read_slide view=animations) before another edit in the same run.", Mutated = true };
                 }
                 default:
-                    throw new ArgumentException("edit_animation: unknown kind '" + kind + "'. Valid: delete, set_timing, reorder.");
+                    throw new ArgumentException("edit_animation: unknown kind '" + kind + "'. Valid: add, delete, set_timing, reorder.");
             }
         }
 

@@ -15,8 +15,8 @@ Per-document since PP-1 - see WordTools.cs's identical pattern for the rationale
 PowerPoint's native undo manager can coalesce several
 back-to-back COM-driven mutations into a single undo entry
 when there's no UI tick between them (confirmed live,
-2026-10-02: add_table immediately followed by
-edit_table_structure's delete-row got merged - one
+2026-10-02: edit_table create immediately followed by
+edit_table's delete-row got merged - one
 undo_last_action removed the whole table, not just the
 row). StartNewUndoEntry() (confirmed via reflection against
 the referenced PIA - Microsoft.Office.Interop.PowerPoint

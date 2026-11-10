@@ -25,8 +25,16 @@ automatically" - every write here always came out left-to-right/
 left-aligned, even for Hebrew. Same bidi mismatch class as
 chat-ui.ts's dir="auto" fix, but PowerPoint's COM object model has
 no built-in "auto" direction - it has to be decided per write from
-the text's own script mix. IsRtlMajority itself now lives in
-TextUtil (Phase 0) since it's free of COM types.
+the text's own script mix. The detection (TextUtil.DetectDirection)
+lives in TextUtil since it's free of COM types.
+
+Left-to-right text used to leave an earlier Hebrew write in place: a
+Hebrew text box overwritten with English stayed right-to-left and
+right-aligned. Now clearly left-to-right text resets a paragraph that is
+currently right-to-left (and a right alignment with it). Text with no
+letters (digits, punctuation) changes nothing, and a paragraph that is
+already left-to-right is never written to, so a deliberate centered or
+justified alignment survives.
 
 ## `ApplyBulletSetting`
 
@@ -69,7 +77,7 @@ z-order stack) - only those 4 are exposed.
 ## `DuplicateElement`
 
 Shape.Duplicate() is a native in-place COM clone independent of
-Shape.Type - unlike copy_element/move_element (PowerPointTools.
+Shape.Type - unlike copy_element (move:true) (PowerPointTools.
 CrossSlide.cs), it needs no shape-kind dispatch at all and works
 uniformly for every kind, including groups/pictures/tables/charts/
 SmartArt. Positioning of the duplicate by Duplicate() itself is
@@ -92,6 +100,6 @@ original vertically instead of keeping the normal offsetY gap.
 Real-user-confirmed (2026-09-22, live testing): Shape.Duplicate()
 keeps the EXACT source Name (unlike a UI Ctrl+D/paste, which
 auto-renames) - two shapes end up identically named, confusing
-read_slide/read_group output. Dedupe it the same way an explicit
+read_slide output. Dedupe it the same way an explicit
 name would be, using the duplicate's own (source-inherited) name
 as the "desired" one.

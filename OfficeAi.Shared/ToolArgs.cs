@@ -27,6 +27,16 @@ namespace OfficeAi.Shared
             throw new ArgumentException(name + " must be true or false (got " + e.GetRawText() + ").");
         }
 
+        /// <summary>
+        /// Reads an optional number leniently: a missing property, or one that is not a JSON number, is null.
+        /// Use OptionalFlag's strict style instead where a mistyped value must not be ignored.
+        /// </summary>
+        public static float? OptionalFloat(JsonElement input, string name)
+        {
+            if (input.ValueKind != JsonValueKind.Object || !input.TryGetProperty(name, out var e) || e.ValueKind != JsonValueKind.Number) return null;
+            return (float)e.GetDouble();
+        }
+
         public static void ValidateRequired(string kind, JsonElement element, IReadOnlyDictionary<string, string[]> requiredFields, string noun,
             IReadOnlyDictionary<string, string[]> nonNullFields = null)
         {
