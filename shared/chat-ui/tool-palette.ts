@@ -38,7 +38,7 @@ export function paletteState(text: string): PaletteState {
   return { kind: 'signature', name, argsText: text.slice(open + 1) }
 }
 
-/** Prefix match on the tool name, in the app's own order. */
+/** Prefix match on the tool name; read tools first, otherwise in the app's own order. */
 export function filterTools(tools: readonly PaletteTool[], query: string): PaletteTool[] {
   const q = query.toLowerCase()
   // Read tools first, so each group header appears once and the arrow keys walk the list as it is drawn.

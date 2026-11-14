@@ -524,6 +524,8 @@ export function startAddIn(config: AddInConfig): void {
     onNewChat: () => {
       postNewChatDivider()
       loop.reset()
+      // A message queued behind the old conversation's run must not fire into the new one.
+      pendingQueuedText = null
       if (directCallRunning) {
         // The call's late completion must not touch the new conversation (see runDirectCall).
         directCallGeneration++
