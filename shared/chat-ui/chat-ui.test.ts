@@ -1360,7 +1360,8 @@ describe('"!" direct-call palette', () => {
     press('ArrowDown')
     expect((palette.querySelector('.ai-palette-row.sel') as HTMLElement).dataset.tool).toBe('edit_smartart')
     press('Tab')
-    expect(textarea.value).toBe('!edit_smartart(')
+    expect(textarea.value).toBe('!edit_smartart({})')
+    expect(textarea.selectionStart).toBe('!edit_smartart({'.length)
   })
 
   it('shows the signature after a parenthesis, with required and optional parameters', () => {

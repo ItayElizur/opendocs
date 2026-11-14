@@ -660,11 +660,6 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           </div>
         </div>
         <div class="ai-settings-section">
-          <h4 data-t="sectionDeveloper">Developer tools</h4>
-          <p class="ai-settings-section-note" data-t="developerToolsNote">Type ! at the start of a message to run any tool directly, without the model. The editing mode still limits which tools run.</p>
-          <label class="ai-checkbox-row"><input type="checkbox" data-field="developerTools" /> <span data-t="developerToolsLabel">Enable the ! tool palette</span></label>
-        </div>
-        <div class="ai-settings-section">
           <h4><span data-t="sectionTools">Tools</span> <span class="ai-tools-count" id="toolsCount"></span></h4>
           <div class="ai-tools-list" id="toolsList"></div>
         </div>
@@ -673,7 +668,13 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <textarea class="ai-doc-message" id="docMessageInput" data-t-placeholder="docMessagePlaceholder" maxlength="8192"></textarea>
           <p class="ai-settings-section-note" data-t="docMessageSaveNote">Applies at the start of the next New chat, not the current conversation.</p>
         </div>
+        <div class="ai-settings-section">
+          <h4 data-t="sectionDeveloper">Developer tools</h4>
+          <p class="ai-settings-section-note" data-t="developerToolsNote">Type ! at the start of a message to run any tool directly, without the model. The editing mode still limits which tools run.</p>
+          <label class="ai-checkbox-row"><input type="checkbox" data-field="developerTools" /> <span data-t="developerToolsLabel" data-bang>Enable the ! tool palette</span></label>
+        </div>
         <div class="ai-settings-view-actions">
+          <button class="ai-btn-secondary" id="settingsViewBack" data-t="backToChat" type="button">Back to conversation</button>
           <div class="ai-settings-saved-note" id="settingsSavedNote" data-t="savedNote">Saved</div>
           <button class="ai-btn-primary" id="settingsViewSave" data-t="save">Save</button>
         </div>
@@ -850,6 +851,13 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   function applyStrings(): void {
     root.querySelectorAll<HTMLElement>('[data-t]').forEach((el) => {
       el.textContent = t(el.dataset.t!)
+      if (el.dataset.bang !== undefined) {
+        const [before = '', ...rest] = el.textContent.split('!')
+        const bang = document.createElement('b')
+        bang.className = 'ai-bang'
+        bang.textContent = '!'
+        el.replaceChildren(before, bang, rest.join('!'))
+      }
     })
     root.querySelectorAll<HTMLElement>('[data-t-title]').forEach((el) => {
       const s = t(el.dataset.tTitle!)
@@ -1225,8 +1233,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   }
 
   function completePaletteTool(name: string): void {
-    textarea.value = `!${name}(`
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    textarea.value = `!${name}({})`
+    textarea.setSelectionRange(textarea.value.length - 2, textarea.value.length - 2)
     paletteSel = 0
     paletteShowErrors = false
     updateTextareaDir()
@@ -1608,17 +1616,21 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // The header gear button does double duty (Task 1 Step 4): opens/closes
   // the quick dropdown in chat view, is "back to conversation" in settings
   // view - one handler, not two rebound listeners.
+  function leaveSettingsView(): void {
+    // Task 9 Step 3: unsaved-changes guard, shown inline rather than a
+    // blocking native dialog.
+    if (dirty && !window.confirm(t('discardChangesConfirm'))) return
+    closeSettingsView()
+  }
   settingsBtn.addEventListener('click', () => {
     if (inSettingsView) {
-      // Task 9 Step 3: unsaved-changes guard, shown inline rather than a
-      // blocking native dialog.
-      if (dirty && !window.confirm(t('discardChangesConfirm'))) return
-      closeSettingsView()
+      leaveSettingsView()
     } else {
       settingsPanel.classList.toggle('open')
       setApiKeyVisible(false)
     }
   })
+  root.querySelector<HTMLButtonElement>('#settingsViewBack')!.addEventListener('click', leaveSettingsView)
 
   // A plain 'click' listener can't tell "clicked outside" from "dragged a
   // selection that started inside and released outside": when mousedown and
