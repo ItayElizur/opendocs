@@ -15,14 +15,13 @@ reports the raw turn text so app UIs keep their localized fallbacks
 instead of surfacing this English placeholder.
 ```
 
-## `sanitizeAgentPayload`
+## `redact` option
 
 ```
-Redact secret-looking tokens from an outgoing user message so accidentally
-pasted API keys, URL credentials, and password assignments don't reach
-remote model APIs verbatim.
-
-Imported from public PR #32 (BuiltByHarshil), with the credential pattern
-narrowed to URL userinfo (scheme://user:pass@host) so ordinary "a:b@c"
-prose is never rewritten.
+Redacts the user's own configured model API key from an outgoing user message,
+so a key pasted into the chat does not reach the model API verbatim. The app
+shell supplies the function (it knows the configured keys). It used to be a
+regex that rewrote anything key-shaped (sk-..., URL credentials, password
+assignments); that was narrowed on purpose. Tool inputs and tool results are
+never redacted: a direct "!" tool call stores its arguments as typed.
 ```

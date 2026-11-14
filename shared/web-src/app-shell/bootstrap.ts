@@ -524,6 +524,12 @@ export function startAddIn(config: AddInConfig): void {
     onNewChat: () => {
       postNewChatDivider()
       loop.reset()
+      if (directCallRunning) {
+        // The call's late completion must not touch the new conversation (see runDirectCall).
+        directCallGeneration++
+        directCallRunning = false
+        ui.setBusy(false)
+      }
       beginConversation()
       ui.resetToEmpty()
     },
@@ -668,6 +674,10 @@ export function startAddIn(config: AddInConfig): void {
 
   function continueRun(): void {
     if (loop.busy) return
+    if (directCallRunning) {
+      ui.showError(ui.translate('paletteBusy'))
+      return
+    }
     ui.beginAssistantMessage()
     ui.setBusy(true)
     // Not persisted to ChatStore as a user message - it is machine-generated
@@ -676,9 +686,20 @@ export function startAddIn(config: AddInConfig): void {
     loop.run(CONTINUE_INSTRUCTION)
   }
 
+  // Only the user's own model API keys are redacted from what they type; tool inputs and results never are.
+  function redactModelKeys(text: string): string {
+    return Object.values(getSettings().ai.providers)
+      .map((p) => p.apiKey)
+      .filter((k): k is string => !!k && k.length >= 8)
+      .reduce((out, k) => out.split(k).join('[REDACTED_API_KEY]'), text)
+  }
+
   let directCallRunning = false
+  // Bumped by New chat so a call that finishes afterwards is dropped, as AgentLoop does for model runs.
+  let directCallGeneration = 0
   function runDirectCall(name: string, args: Record<string, unknown>, text: string): void {
     const call = { id: randomId(), name, input: args }
+    const generation = directCallGeneration
     directCallRunning = true
     ui.addUserMessage(text)
     persistMessage('user', text)
@@ -688,12 +709,15 @@ export function startAddIn(config: AddInConfig): void {
     void Promise.resolve(skill.executeTool(call))
       .catch((e: unknown): ToolExecution => ({ output: e instanceof Error ? e.message : String(e), isError: true, summary: name }))
       .then((execution) => {
+        if (generation !== directCallGeneration) return
         // Release the panel first so a throw below can't leave it busy with every later message queued.
         directCallRunning = false
         ui.setBusy(false)
         step.complete({ output: execution.output, isError: execution.isError, mutated: execution.mutated })
         group.end()
         loop.recordToolExchange(text, call, execution)
+        // A reply after the typed line keeps the exchange when the saved chat is restored (restore drops unanswered user lines).
+        persistMessage('assistant', `${name}${execution.isError ? ' failed' : ''}: ${execution.output.replace(/\s+/g, ' ').slice(0, 200)}`)
         dispatchQueuedIfAny()
       })
   }
@@ -713,6 +737,7 @@ export function startAddIn(config: AddInConfig): void {
   const loop = new AgentLoop({
     transport: makeTransport(),
     skill,
+    redact: redactModelKeys,
     // Called every turn. The date line (todayContextLine()) is computed
     // fresh each call, on purpose - see its own comment. activeDocMessage
     // only changes at conversation-start boundaries - see beginConversation()

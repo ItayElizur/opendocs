@@ -20,6 +20,7 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   send:                 { en: 'Send', he: 'שלח' },
   stop:                 { en: 'Stop', he: 'עצור' },
   paletteUnknownKey:    { en: 'not a parameter of this tool', he: 'אינו פרמטר של הכלי' },
+  paletteNoParams:      { en: '(no parameters)', he: '(ללא פרמטרים)' },
   stopDirect:           { en: "A direct tool call can't be stopped", he: 'לא ניתן לעצור הרצה ישירה של כלי' },
   newChat:              { en: 'New chat', he: 'שיחה חדשה' },
   settings:             { en: 'Settings', he: 'הגדרות' },
@@ -1226,7 +1227,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     const detail = current.length === 1 ? current[0]!.description : undefined
     const foot = `<div class="ai-palette-foot"><span><kbd>Enter</kbd> ${escapeHtml(t('paletteRunKey'))}</span><span><kbd>Esc</kbd> ${escapeHtml(t('paletteClose'))}</span></div>`
     return paletteHeader(toolLabel(tool)) +
-      `<div class="ai-palette-sig" dir="ltr"><div class="fn"><span class="name">${escapeHtml(tool.name)}</span>({</div><div class="params">${lines || '<div class="p opt">(no parameters)</div>'}${unknownLines}</div><div class="fn">})</div>` +
+      `<div class="ai-palette-sig" dir="ltr"><div class="fn"><span class="name">${escapeHtml(tool.name)}</span>({</div><div class="params">${lines || `<div class="p opt">${escapeHtml(t('paletteNoParams'))}</div>`}${unknownLines}</div><div class="fn">})</div>` +
       (detail ? `<div class="detail">${escapeHtml(detail)}</div>` : '') + `</div>` + foot
   }
 
@@ -1287,7 +1288,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   function doSend(): void {
     const text = textarea.value.trim()
     if (!text) return
-    if (trySendDirect(text)) return
+    // The raw box text, so a leading space means an ordinary message, as it does for the palette.
+    if (trySendDirect(textarea.value.trimEnd())) return
     textarea.value = ''
     updateTextareaDir()
     pushSentHistory(text)
@@ -1307,7 +1309,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   })
   // The signature follows the caret between keys, so a click or arrow key re-reads it.
   textarea.addEventListener('keyup', (e) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return
     renderPalette()
   })
   textarea.addEventListener('click', renderPalette)
@@ -1908,7 +1910,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       // stop button toggles with busy state (see `chat-ui.ts.md`).
       stopBtn.hidden = !busy
       stopBtn.classList.toggle('unavailable', busy && !stoppable)
-      stopBtn.title = t(busy && !stoppable ? 'stopDirect' : 'stop')
+      stopBtn.dataset.tTitle = busy && !stoppable ? 'stopDirect' : 'stop'
+      stopBtn.title = t(stopBtn.dataset.tTitle)
       // Return focus to the textarea once the current run finishes, so the
       // user doesn't have to click back into it - harmless even if they're
       // mid-typing a queued message, since .focus() doesn't touch content

@@ -261,6 +261,10 @@ Runs a tool the user typed by hand through `skill.executeTool` (the same bridge 
 ordinary user bubble and tool-step row, and then records the exchange into the loop's history with
 `AgentLoop.recordToolExchange` (user text, assistant tool call, tool result, a closing assistant marker) so the next model turn
 sees it. Refused while a run or another direct call is in flight (the text stays in the box); a normal send during a direct
-call is queued like a send during a run. Only the typed user line is persisted to the ChatStore, so a reloaded conversation
-shows what was typed but not a reply. The palette's pill needs each tool's lowest mode, computed by `minModeOf` from the same
+call is queued like a send during a run; Continue is refused with the same busy message. The typed line and a one-line assistant
+reply (`name: first 200 chars of the output`) are persisted to the ChatStore: `AgentLoop.restore` drops a user line that has no
+reply, so without the reply a reloaded conversation would lose the call. New chat bumps `directCallGeneration` and clears
+`directCallRunning`, so a call that finishes afterwards is ignored (as `AgentLoop` does for a reset model run) and a call that
+never replies cannot wedge the panel. Tool arguments and results are never redacted; the loop's `redact` option (see
+`redactModelKeys`) removes only the user's configured model API key from what they type. The palette's pill needs each tool's lowest mode, computed by `minModeOf` from the same
 sets `availableForMode()` uses.

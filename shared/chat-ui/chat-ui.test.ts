@@ -1471,4 +1471,34 @@ describe('"!" direct-call palette', () => {
     type('!edit_table({"kind": "set_cell"')
     expect(palette.querySelector('.p.unk')).toBeNull()
   })
+  it('sends a message with a leading space as an ordinary message', () => {
+    const { type, onSend, onDirectCall, root } = paletteSetup(true)
+    type(' !edit_table({"kind": "set_cell"})')
+    root.querySelector<HTMLButtonElement>('.ai-send-btn')!.click()
+    expect(onDirectCall).not.toHaveBeenCalled()
+    expect(onSend).toHaveBeenCalledWith('!edit_table({"kind": "set_cell"})')
+  })
+
+  it('shows the no-parameters line in Hebrew', () => {
+    const { type, palette, handle } = paletteSetup(true)
+    handle.setLang('he')
+    type('!get_document_context(')
+    expect(palette.textContent).not.toContain('(no parameters)')
+    expect(palette.textContent).toContain('(ללא פרמטרים)')
+  })
+
+  it('keeps the stop note for a direct call after a language switch', () => {
+    const { root, handle } = paletteSetup(true)
+    handle.setBusy(true, false)
+    handle.setLang('he')
+    expect(root.querySelector<HTMLButtonElement>('.ai-stop-btn')!.title).toBe('לא ניתן לעצור הרצה ישירה של כלי')
+  })
+
+  it('re-reads the highlight when ArrowUp or ArrowDown moves the caret', () => {
+    const { type, textarea, palette } = paletteSetup(true)
+    type('!edit_table({\n"kind": "set_cell",\n"row": 1})')
+    textarea.setSelectionRange(textarea.value.indexOf('"kind"') + 3, textarea.value.indexOf('"kind"') + 3)
+    textarea.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowUp', bubbles: true }))
+    expect([...palette.querySelectorAll('.p.cur')].map((el) => el.textContent?.split(':')[0])).toEqual(['kind'])
+  })
 })

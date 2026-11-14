@@ -41,7 +41,9 @@ export function paletteState(text: string): PaletteState {
 /** Prefix match on the tool name, in the app's own order. */
 export function filterTools(tools: readonly PaletteTool[], query: string): PaletteTool[] {
   const q = query.toLowerCase()
-  return tools.filter((t) => t.name.toLowerCase().startsWith(q))
+  // Read tools first, so each group header appears once and the arrow keys walk the list as it is drawn.
+  const rank = (t: PaletteTool): number => (t.minMode === 'readOnly' ? 0 : 1)
+  return tools.filter((t) => t.name.toLowerCase().startsWith(q)).sort((a, b) => rank(a) - rank(b))
 }
 
 export function schemaParams(schema: Record<string, unknown> | undefined): SchemaParam[] {
@@ -115,6 +117,10 @@ export interface ArgScan {
   partial: string
 }
 
+function decodeKey(raw: string): string {
+  try { return JSON.parse(`"${raw}"`) as string } catch { return raw }
+}
+
 /** Reads the argument text up to the caret, tolerating the half-written JSON a user has while typing. */
 export function scanArgs(text: string, caret = text.length): ArgScan {
   let depth = 0, inStr = false, esc = false, buf = '', strIsKey = false
@@ -124,8 +130,8 @@ export function scanArgs(text: string, caret = text.length): ArgScan {
   const keys: string[] = []
   for (const c of text.slice(0, caret)) {
     if (inStr) {
-      if (esc) { esc = false; buf += c } else if (c === '\\') esc = true
-      else if (c === '"') { inStr = false; if (strIsKey) pending = buf } else buf += c
+      if (esc) { esc = false; buf += '\\' + c } else if (c === '\\') esc = true
+      else if (c === '"') { inStr = false; if (strIsKey) pending = decodeKey(buf) } else buf += c
     } else if (c === '"') {
       inStr = true; buf = ''; strIsKey = depth === 1 && at === 'key'
     } else if (c === '{' || c === '[') {

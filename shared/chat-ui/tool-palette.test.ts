@@ -42,6 +42,10 @@ describe('filterTools', () => {
     expect(filterTools(tools, 'EDIT_S').map((t) => t.name)).toEqual(['edit_smartart'])
     expect(filterTools(tools, '').length).toBe(3)
   })
+  it('lists read tools before the rest so each group is contiguous', () => {
+    const mixed = [{ ...tool('write_a'), minMode: 'trackChanges' as const }, { ...tool('write_b'), minMode: 'trackChanges' as const }, { ...tool('read_a'), minMode: 'readOnly' as const }, tool('x')]
+    expect(filterTools(mixed, '').map((t) => t.name)).toEqual(['read_a', 'write_a', 'write_b', 'x'])
+  })
   it('does not match in the middle of a name', () => {
     expect(filterTools(tools, 'table')).toEqual([])
   })
@@ -124,5 +128,8 @@ describe('suggestTool', () => {
   })
   it('gives nothing for a name that is far from every tool', () => {
     expect(suggestTool(tools, 'zzzzzzzz')).toBeNull()
+  })
+  it('reads an escaped key by the name it parses to', () => {
+    expect(scanArgs('{"kind": "set_cell", "\u0074ext": 1')).toMatchObject({ keys: ['kind', 'text'] })
   })
 })

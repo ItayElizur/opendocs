@@ -65,6 +65,8 @@ export interface AgentLoopOptions<TSnapshot = unknown> {
   captureSnapshot?(): TSnapshot
   /** wrap instruction + skill context into the user message text */
   formatUserMessage?(instruction: string, context: string): string
+  /** redacts the user's own model API key from outgoing user text (see `loop.ts.md`) */
+  redact?(text: string): string
   /** appended to the system prompt each turn (e.g. reply-language directive following the UI language) */
   systemSuffix?(): string
 }
@@ -238,7 +240,7 @@ export class AgentLoop<TSnapshot = unknown> {
     if (this.running) return
     while (this.history.at(-1)?.role === 'user') this.history.pop()
     this.history.push(
-      { role: 'user', text: sanitizeAgentPayload(userText) },
+      { role: 'user', text: this.options.redact?.(userText) ?? userText },
       { role: 'assistant', text: '', toolCalls: [call] },
       { role: 'tool', results: [{ id: call.id, name: call.name, output: execution.output, isError: execution.isError }] },
       { role: 'assistant', text: COMPLETED_VIA_TOOLS_TEXT },
@@ -286,7 +288,7 @@ export class AgentLoop<TSnapshot = unknown> {
     while (this.history.at(-1)?.role === 'user') this.history.pop()
     this.trimHistory()
     if (userMsg.role === 'user') {
-      userMsg = { ...userMsg, text: sanitizeAgentPayload(userMsg.text) }
+      userMsg = { ...userMsg, text: this.options.redact?.(userMsg.text) ?? userMsg.text }
     }
     this.runUserMsg = userMsg
     this.history.push(userMsg)
@@ -631,16 +633,4 @@ export class AgentLoop<TSnapshot = unknown> {
     events?.onTurnEnd?.()
     this.startTurn()
   }
-}
-
-/** Redacts secret-looking tokens (API keys, URL credentials, password assignments)
- * from an outgoing user message before it reaches remote model APIs (see `loop.ts.md`). */
-export function sanitizeAgentPayload(payload: string): string {
-  return payload
-    .replace(/\b(?:sk-|AIza|ghp_|secret_)[A-Za-z0-9_-]{16,}/g, '[REDACTED_API_KEY]')
-    .replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):[^\s@/]+@/gi, '$1:[REDACTED_CREDENTIALS]@')
-    .replace(
-      /(password|passwd|secret_key|private_key)(\s*[:=]\s*)["'][^"']+["']/gi,
-      '$1$2"[REDACTED_SECURE_TOKEN]"',
-    )
 }
