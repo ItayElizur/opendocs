@@ -413,6 +413,10 @@ cd shared/chat-ui
 npx vitest run
 ```
 
+### Running a tool without the model
+
+For local testing there is a direct tool-call palette, off by default. Turn on **Developer tools** in the full settings view, then type `!` at the start of the message box. A list of the app's tools opens and filters by name prefix (arrow keys, Tab to complete, Esc to close). Typing `(` after a name shows its signature, and a warning if the name is unknown or the current editing mode does not offer the tool. Enter on `!tool_name({ ...json... })` runs the call through the same bridge the model uses, so the editing-mode gate still applies, and the exchange stays in the conversation like any other tool call. It needs no AI provider or key.
+
 ### COM integration testing
 
 There is **no automated test coverage for the COM-calling code itself** (`*Tools*.cs`).

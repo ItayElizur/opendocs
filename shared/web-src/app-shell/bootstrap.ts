@@ -1,4 +1,4 @@
-import { AgentLoop, type AgentSkill } from '@officeai/agent-core'
+import { AgentLoop, randomId, type AgentSkill, type ToolExecution } from '@officeai/agent-core'
 import { streamForProvider, type AiProviderConfig } from '@officeai/ai-provider'
 import { defaultModeFor, mountChatUI, resolveModes, type EditingMode, type ModeOverrides, type SelectionExtent, type ToolDisplayEntry } from '@officeai/chat-ui'
 import {
@@ -379,6 +379,13 @@ export function startAddIn(config: AddInConfig): void {
     return config.tools.filter((t) => available.has(t.name) && (registeredTools === null || registeredTools.has(t.name)))
   }
 
+  // The lowest editing mode that offers a tool, for the "!" palette's pill. Same sets availableForMode() filters by.
+  function minModeOf(name: string): EditingMode {
+    if (readOnlySet.has(name)) return 'readOnly'
+    if (commentOnlySet.has(name)) return 'commentOnly'
+    return trackChangesSet === null || trackChangesSet.has(name) ? 'trackChanges' : 'fullAutonomy'
+  }
+
   // FT-1 Task 5: build the settings-screen tool list from the app's raw
   // toolDisplay map, so entry.ts only needs to supply {label, description}
   // per tool name - one shared place decides the fallback-on-drift behavior
@@ -388,9 +395,9 @@ export function startAddIn(config: AddInConfig): void {
     if (!entry) {
       // eslint-disable-next-line no-console
       console.warn(`[app-shell] tool "${t.name}" has no toolDisplay entry - falling back to its raw schema name`)
-      return { name: t.name, label: { en: t.name, he: t.name }, description: { en: '', he: '' } }
+      return { name: t.name, label: { en: t.name, he: t.name }, description: { en: '', he: '' }, inputSchema: t.inputSchema, minMode: minModeOf(t.name) }
     }
-    return { name: t.name, label: entry.label, description: entry.description }
+    return { name: t.name, label: entry.label, description: entry.description, inputSchema: t.inputSchema, minMode: minModeOf(t.name) }
   })
 
   // Task 12 (Word)/FT-2 Task 4: the current selection, updated live from the
@@ -476,8 +483,19 @@ export function startAddIn(config: AddInConfig): void {
         theme: s.theme,
         lang: s.lang,
         reasoningEffort: s.reasoningEffort,
+        developerTools: s.developerTools,
       }
     })(),
+    // Developer tools: runs `!tool({...})` through the same bridge the model's calls use, so the C# editing-mode gate
+    // still applies. The exchange is recorded into the loop's history so the next model turn sees it.
+    onDirectCall: (name, args, text) => {
+      if (loop.busy || directCallRunning) {
+        ui.showError(ui.translate('paletteBusy'))
+        return false
+      }
+      runDirectCall(name, args, text)
+      return true
+    },
     // Wires AgentLoop.cancel() to the stop button (same forward-reference-via-
     // closure pattern onSend uses for `loop` below, declared further down this
     // file; see `bootstrap.ts.md`).
@@ -487,7 +505,7 @@ export function startAddIn(config: AddInConfig): void {
       // once the current run finishes (onDone below). The user's message is
       // shown and persisted immediately; only the model run is deferred (see
       // `bootstrap.ts.md`).
-      if (loop.busy) {
+      if (loop.busy || directCallRunning) {
         pendingQueuedText = text
         ui.addUserMessage(text)
         persistMessage('user', text)
@@ -506,6 +524,14 @@ export function startAddIn(config: AddInConfig): void {
     onNewChat: () => {
       postNewChatDivider()
       loop.reset()
+      // A message queued behind the old conversation's run must not fire into the new one.
+      pendingQueuedText = null
+      if (directCallRunning) {
+        // The call's late completion must not touch the new conversation (see runDirectCall).
+        directCallGeneration++
+        directCallRunning = false
+        ui.setBusy(false)
+      }
       beginConversation()
       ui.resetToEmpty()
     },
@@ -537,6 +563,7 @@ export function startAddIn(config: AddInConfig): void {
         // as docSystemMessage/registeredTools below) - fall back to the
         // current value so a quick-dropdown save never wipes it out.
         reasoningEffort: settings.reasoningEffort ?? current.reasoningEffort,
+        developerTools: settings.developerTools ?? current.developerTools,
       })
       postTlsBypass(settings.skipTlsVerify)
       // Folded into setSettings() above and applied immediately, same as theme,
@@ -649,12 +676,52 @@ export function startAddIn(config: AddInConfig): void {
 
   function continueRun(): void {
     if (loop.busy) return
+    if (directCallRunning) {
+      ui.showError(ui.translate('paletteBusy'))
+      return
+    }
     ui.beginAssistantMessage()
     ui.setBusy(true)
     // Not persisted to ChatStore as a user message - it is machine-generated
     // plumbing, not something the user typed, and would be confusing in
     // restored history.
     loop.run(CONTINUE_INSTRUCTION)
+  }
+
+  // Only the user's own model API keys are redacted from what they type; tool inputs and results never are.
+  function redactModelKeys(text: string): string {
+    return Object.values(getSettings().ai.providers)
+      .map((p) => p.apiKey)
+      .filter((k): k is string => !!k && k.length >= 8)
+      .reduce((out, k) => out.split(k).join('[REDACTED_API_KEY]'), text)
+  }
+
+  let directCallRunning = false
+  // Bumped by New chat so a call that finishes afterwards is dropped, as AgentLoop does for model runs.
+  let directCallGeneration = 0
+  function runDirectCall(name: string, args: Record<string, unknown>, text: string): void {
+    const call = { id: randomId(), name, input: args }
+    const generation = directCallGeneration
+    directCallRunning = true
+    ui.addUserMessage(text)
+    persistMessage('user', text)
+    ui.setBusy(true, false)
+    const group = ui.beginToolGroup()
+    const step = group.addStep(name, args)
+    void Promise.resolve(skill.executeTool(call))
+      .catch((e: unknown): ToolExecution => ({ output: e instanceof Error ? e.message : String(e), isError: true, summary: name }))
+      .then((execution) => {
+        if (generation !== directCallGeneration) return
+        // Release the panel first so a throw below can't leave it busy with every later message queued.
+        directCallRunning = false
+        ui.setBusy(false)
+        step.complete({ output: execution.output, isError: execution.isError, mutated: execution.mutated })
+        group.end()
+        loop.recordToolExchange(text, call, execution)
+        // A reply after the typed line keeps the exchange when the saved chat is restored (restore drops unanswered user lines).
+        persistMessage('assistant', `${name}${execution.isError ? ' failed' : ''}: ${execution.output.replace(/\s+/g, ' ').slice(0, 200)}`)
+        dispatchQueuedIfAny()
+      })
   }
 
   // Dispatches a message queued via onSend while the previous run was busy -
@@ -672,6 +739,7 @@ export function startAddIn(config: AddInConfig): void {
   const loop = new AgentLoop({
     transport: makeTransport(),
     skill,
+    redact: redactModelKeys,
     // Called every turn. The date line (todayContextLine()) is computed
     // fresh each call, on purpose - see its own comment. activeDocMessage
     // only changes at conversation-start boundaries - see beginConversation()

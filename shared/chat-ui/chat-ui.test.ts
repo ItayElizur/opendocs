@@ -1302,3 +1302,203 @@ describe('defaultModeFor', () => {
     expect(defaultModeFor(['readOnly', 'fullAutonomy'], 'commentOnly')).toBe('readOnly')
   })
 })
+
+describe('"!" direct-call palette', () => {
+  const PALETTE_TOOLS: ToolDisplayEntry[] = [
+    { name: 'get_document_context', label: { en: 'Read document', he: 'קרא מסמך' }, description: { en: 'Reads a summary.', he: 'קורא תקציר.' }, minMode: 'readOnly', inputSchema: { type: 'object', properties: {} } },
+    {
+      name: 'edit_table', label: { en: 'Edit table', he: 'עריכת טבלה' }, description: { en: 'Edits a table.', he: 'עורך טבלה.' }, minMode: 'trackChanges',
+      inputSchema: { type: 'object', properties: { kind: { type: 'string', enum: ['set_cell', 'insert_row'] }, row: { type: 'number' } }, required: ['kind'] },
+    },
+    { name: 'edit_smartart', label: { en: 'Edit SmartArt', he: 'עריכת SmartArt' }, description: { en: 'Edits SmartArt.', he: 'עורך SmartArt.' }, minMode: 'trackChanges', inputSchema: { type: 'object', properties: {} } },
+  ]
+
+  function paletteSetup(developerTools: boolean, onDirectCall = vi.fn(() => true)) {
+    const made = setup({ tools: PALETTE_TOOLS, onDirectCall, initialSettings: { developerTools } })
+    made.handle.setToolScope(['get_document_context', 'edit_table', 'edit_smartart'], ['get_document_context', 'edit_table', 'edit_smartart'])
+    const textarea = made.root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    const type = (text: string) => {
+      textarea.value = text
+      textarea.setSelectionRange(text.length, text.length)
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const press = (key: string) => {
+      const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      textarea.dispatchEvent(e)
+      return e
+    }
+    const palette = made.root.querySelector<HTMLDivElement>('#palette')!
+    return { ...made, textarea, type, press, palette, onDirectCall }
+  }
+
+  it('does nothing while Developer tools is off', () => {
+    const { type, palette, onSend, root } = paletteSetup(false)
+    type('!edit')
+    expect(palette.hidden).toBe(true)
+    root.querySelector<HTMLButtonElement>('.ai-send-btn')!.click()
+    expect(onSend).toHaveBeenCalledWith('!edit')
+  })
+
+  it('opens the menu on a leading ! and filters by name prefix', () => {
+    const { type, palette } = paletteSetup(true)
+    type('!')
+    expect(palette.hidden).toBe(false)
+    expect(palette.querySelectorAll('.ai-palette-row').length).toBe(3)
+    type('!edit_')
+    expect([...palette.querySelectorAll('.ai-palette-row')].map((r) => (r as HTMLElement).dataset.tool)).toEqual(['edit_table', 'edit_smartart'])
+  })
+
+  it('does not open for a ! that is not the first character', () => {
+    const { type, palette } = paletteSetup(true)
+    type('wow!')
+    expect(palette.hidden).toBe(true)
+  })
+
+  it('moves the selection with the arrow keys and completes with Tab', () => {
+    const { type, press, palette, textarea } = paletteSetup(true)
+    type('!edit_')
+    press('ArrowDown')
+    expect((palette.querySelector('.ai-palette-row.sel') as HTMLElement).dataset.tool).toBe('edit_smartart')
+    press('Tab')
+    expect(textarea.value).toBe('!edit_smartart({})')
+    expect(textarea.selectionStart).toBe('!edit_smartart({'.length)
+  })
+
+  it('shows the signature after a parenthesis, with required and optional parameters', () => {
+    const { type, palette } = paletteSetup(true)
+    type('!edit_table(')
+    const sig = palette.querySelector('.ai-palette-sig')!
+    expect(sig.textContent).toContain('kind: string')
+    expect(sig.textContent).toContain('row?: number')
+  })
+
+  it('warns about an unknown tool and suggests the near one', () => {
+    const { type, palette, press, onDirectCall } = paletteSetup(true)
+    type('!edit_tabel(')
+    expect(palette.textContent).toContain('Unknown tool')
+    expect(palette.textContent).toContain('edit_table')
+    press('Enter')
+    expect(onDirectCall).not.toHaveBeenCalled()
+  })
+
+  it('warns and refuses a tool the current mode does not offer', () => {
+    const { type, palette, press, onDirectCall, handle } = paletteSetup(true)
+    handle.setToolScope(['get_document_context'], ['get_document_context'])
+    type('!edit_table({"kind":"set_cell"})')
+    expect(palette.textContent).toContain('Not available in the current mode')
+    press('Enter')
+    expect(onDirectCall).not.toHaveBeenCalled()
+  })
+
+  it('refuses arguments that miss a required key and keeps the text', () => {
+    const { type, palette, press, onDirectCall, textarea } = paletteSetup(true)
+    type('!edit_table({"row":1})')
+    press('Enter')
+    expect(palette.textContent).toContain('kind is required')
+    expect(onDirectCall).not.toHaveBeenCalled()
+    expect(textarea.value).toBe('!edit_table({"row":1})')
+  })
+
+  it('runs a valid call with no model: Enter calls onDirectCall and clears the box', () => {
+    const { type, press, onDirectCall, onSend, textarea, palette } = paletteSetup(true)
+    type('!edit_table({"kind":"set_cell","row":0})')
+    press('Enter')
+    expect(onDirectCall).toHaveBeenCalledWith('edit_table', { kind: 'set_cell', row: 0 }, '!edit_table({"kind":"set_cell","row":0})')
+    expect(onSend).not.toHaveBeenCalled()
+    expect(textarea.value).toBe('')
+    expect(palette.hidden).toBe(true)
+  })
+
+  it('keeps the typed text when the host refuses the call', () => {
+    const { type, press, textarea } = paletteSetup(true, vi.fn(() => false))
+    type('!get_document_context()')
+    press('Enter')
+    expect(textarea.value).toBe('!get_document_context()')
+  })
+
+  it('Escape closes the popup and the message is then sent as ordinary text', () => {
+    const { type, press, palette, root, onSend } = paletteSetup(true)
+    type('!important note')
+    expect(palette.hidden).toBe(true)
+    root.querySelector<HTMLButtonElement>('.ai-send-btn')!.click()
+    expect(onSend).toHaveBeenCalledWith('!important note')
+  })
+
+  it('the Developer tools checkbox is sent on a full-view Save', () => {
+    const { root, onSettingsSave } = paletteSetup(false)
+    root.querySelector<HTMLInputElement>('[data-field="developerTools"]')!.checked = true
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+    expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ developerTools: true }))
+  })
+  it('keeps the stop button inert, with a hover note, while a direct call runs', () => {
+    const onStop = vi.fn()
+    const { root, handle } = setup({ onStop })
+    const stop = root.querySelector<HTMLButtonElement>('.ai-stop-btn')!
+    handle.setBusy(true, false)
+    stop.click()
+    expect(onStop).not.toHaveBeenCalled()
+    expect(stop.title).toBe("A direct tool call can't be stopped")
+    handle.setBusy(false)
+    handle.setBusy(true)
+    stop.click()
+    expect(onStop).toHaveBeenCalledTimes(1)
+    expect(stop.title).toBe('Stop')
+  })
+  it('keeps showing the signature right after a tool is completed, with no error box', () => {
+    const { type, press, palette } = paletteSetup(true)
+    type('!edit_table')
+    press('Tab')
+    expect(palette.querySelector('.ai-palette-sig')).not.toBeNull()
+    expect(palette.querySelector('.ai-palette-warn')).toBeNull()
+  })
+
+  it('highlights the parameter whose value is being typed, nothing right after a comma, then the names matching a key being typed', () => {
+    const { type, palette } = paletteSetup(true)
+    const current = () => [...palette.querySelectorAll('.p.cur')].map((el) => el.textContent)
+    type('!edit_table({"kind": "set_cell", "row": ')
+    expect(current()).toEqual(['row?: number'])
+    type('!edit_table({"kind": "set_cell",')
+    expect(current()).toEqual([])
+    type('!edit_table({"kind": "set_cell", "ro')
+    expect(current()).toEqual(['row?: number'])
+  })
+
+  it('marks a key the tool does not have, with the closest name', () => {
+    const { type, palette } = paletteSetup(true)
+    type('!edit_table({"knd": "set_cell"')
+    expect(palette.querySelector('.p.unk')!.textContent).toContain('knd')
+    expect(palette.querySelector('.p.unk')!.textContent).toContain('Did you mean kind?')
+    type('!edit_table({"kind": "set_cell"')
+    expect(palette.querySelector('.p.unk')).toBeNull()
+  })
+  it('sends a message with a leading space as an ordinary message', () => {
+    const { type, onSend, onDirectCall, root } = paletteSetup(true)
+    type(' !edit_table({"kind": "set_cell"})')
+    root.querySelector<HTMLButtonElement>('.ai-send-btn')!.click()
+    expect(onDirectCall).not.toHaveBeenCalled()
+    expect(onSend).toHaveBeenCalledWith('!edit_table({"kind": "set_cell"})')
+  })
+
+  it('shows the no-parameters line in Hebrew', () => {
+    const { type, palette, handle } = paletteSetup(true)
+    handle.setLang('he')
+    type('!get_document_context(')
+    expect(palette.textContent).not.toContain('(no parameters)')
+    expect(palette.textContent).toContain('(ללא פרמטרים)')
+  })
+
+  it('keeps the stop note for a direct call after a language switch', () => {
+    const { root, handle } = paletteSetup(true)
+    handle.setBusy(true, false)
+    handle.setLang('he')
+    expect(root.querySelector<HTMLButtonElement>('.ai-stop-btn')!.title).toBe('לא ניתן לעצור הרצה ישירה של כלי')
+  })
+
+  it('re-reads the highlight when ArrowUp or ArrowDown moves the caret', () => {
+    const { type, textarea, palette } = paletteSetup(true)
+    type('!edit_table({\n"kind": "set_cell",\n"row": 1})')
+    textarea.setSelectionRange(textarea.value.indexOf('"kind"') + 3, textarea.value.indexOf('"kind"') + 3)
+    textarea.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowUp', bubbles: true }))
+    expect([...palette.querySelectorAll('.p.cur')].map((el) => el.textContent?.split(':')[0])).toEqual(['kind'])
+  })
+})
