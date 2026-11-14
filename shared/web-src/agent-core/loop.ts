@@ -229,6 +229,22 @@ export class AgentLoop<TSnapshot = unknown> {
     this.trimHistory()
   }
 
+  /**
+   * Adds a tool call the user ran by hand (the "!" palette) to the conversation as a finished exchange, so the next
+   * model turn sees what was typed and what came back, shaped exactly like a run that called the tool. No-op while a run
+   * is in flight; the caller queues the exchange until the loop is idle.
+   */
+  recordToolExchange(userText: string, call: AgentToolCall, execution: ToolExecution): void {
+    if (this.running) return
+    while (this.history.at(-1)?.role === 'user') this.history.pop()
+    this.history.push(
+      { role: 'user', text: sanitizeAgentPayload(userText) },
+      { role: 'assistant', text: '', toolCalls: [call] },
+      { role: 'tool', results: [{ id: call.id, name: call.name, output: execution.output, isError: execution.isError }] },
+      { role: 'assistant', text: COMPLETED_VIA_TOOLS_TEXT },
+    )
+  }
+
   /** images: inline attachments for this user turn (vision input; see AgentImage) */
   run(instruction: string, images?: AgentImage[]): void {
     if (this.running || !instruction) return

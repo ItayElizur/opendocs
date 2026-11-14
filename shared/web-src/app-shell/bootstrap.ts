@@ -1,4 +1,4 @@
-import { AgentLoop, type AgentSkill } from '@officeai/agent-core'
+import { AgentLoop, randomId, type AgentSkill, type ToolExecution } from '@officeai/agent-core'
 import { streamForProvider, type AiProviderConfig } from '@officeai/ai-provider'
 import { defaultModeFor, mountChatUI, resolveModes, type EditingMode, type ModeOverrides, type SelectionExtent, type ToolDisplayEntry } from '@officeai/chat-ui'
 import {
@@ -379,6 +379,13 @@ export function startAddIn(config: AddInConfig): void {
     return config.tools.filter((t) => available.has(t.name) && (registeredTools === null || registeredTools.has(t.name)))
   }
 
+  // The lowest editing mode that offers a tool, for the "!" palette's pill. Same sets availableForMode() filters by.
+  function minModeOf(name: string): EditingMode {
+    if (readOnlySet.has(name)) return 'readOnly'
+    if (commentOnlySet.has(name)) return 'commentOnly'
+    return trackChangesSet === null || trackChangesSet.has(name) ? 'trackChanges' : 'fullAutonomy'
+  }
+
   // FT-1 Task 5: build the settings-screen tool list from the app's raw
   // toolDisplay map, so entry.ts only needs to supply {label, description}
   // per tool name - one shared place decides the fallback-on-drift behavior
@@ -388,9 +395,9 @@ export function startAddIn(config: AddInConfig): void {
     if (!entry) {
       // eslint-disable-next-line no-console
       console.warn(`[app-shell] tool "${t.name}" has no toolDisplay entry - falling back to its raw schema name`)
-      return { name: t.name, label: { en: t.name, he: t.name }, description: { en: '', he: '' } }
+      return { name: t.name, label: { en: t.name, he: t.name }, description: { en: '', he: '' }, inputSchema: t.inputSchema, minMode: minModeOf(t.name) }
     }
-    return { name: t.name, label: entry.label, description: entry.description }
+    return { name: t.name, label: entry.label, description: entry.description, inputSchema: t.inputSchema, minMode: minModeOf(t.name) }
   })
 
   // Task 12 (Word)/FT-2 Task 4: the current selection, updated live from the
@@ -476,8 +483,19 @@ export function startAddIn(config: AddInConfig): void {
         theme: s.theme,
         lang: s.lang,
         reasoningEffort: s.reasoningEffort,
+        developerTools: s.developerTools,
       }
     })(),
+    // Developer tools: runs `!tool({...})` through the same bridge the model's calls use, so the C# editing-mode gate
+    // still applies. The exchange is recorded into the loop's history so the next model turn sees it.
+    onDirectCall: (name, args, text) => {
+      if (loop.busy || directCallRunning) {
+        ui.showError(ui.translate('paletteBusy'))
+        return false
+      }
+      runDirectCall(name, args, text)
+      return true
+    },
     // Wires AgentLoop.cancel() to the stop button (same forward-reference-via-
     // closure pattern onSend uses for `loop` below, declared further down this
     // file; see `bootstrap.ts.md`).
@@ -487,7 +505,7 @@ export function startAddIn(config: AddInConfig): void {
       // once the current run finishes (onDone below). The user's message is
       // shown and persisted immediately; only the model run is deferred (see
       // `bootstrap.ts.md`).
-      if (loop.busy) {
+      if (loop.busy || directCallRunning) {
         pendingQueuedText = text
         ui.addUserMessage(text)
         persistMessage('user', text)
@@ -537,6 +555,7 @@ export function startAddIn(config: AddInConfig): void {
         // as docSystemMessage/registeredTools below) - fall back to the
         // current value so a quick-dropdown save never wipes it out.
         reasoningEffort: settings.reasoningEffort ?? current.reasoningEffort,
+        developerTools: settings.developerTools ?? current.developerTools,
       })
       postTlsBypass(settings.skipTlsVerify)
       // Folded into setSettings() above and applied immediately, same as theme,
@@ -655,6 +674,27 @@ export function startAddIn(config: AddInConfig): void {
     // plumbing, not something the user typed, and would be confusing in
     // restored history.
     loop.run(CONTINUE_INSTRUCTION)
+  }
+
+  let directCallRunning = false
+  function runDirectCall(name: string, args: Record<string, unknown>, text: string): void {
+    const call = { id: randomId(), name, input: args }
+    directCallRunning = true
+    ui.addUserMessage(text)
+    persistMessage('user', text)
+    ui.setBusy(true)
+    const group = ui.beginToolGroup()
+    const step = group.addStep(name, args)
+    void Promise.resolve(skill.executeTool(call))
+      .catch((e: unknown): ToolExecution => ({ output: e instanceof Error ? e.message : String(e), isError: true, summary: name }))
+      .then((execution) => {
+        step.complete({ output: execution.output, isError: execution.isError, mutated: execution.mutated })
+        group.end()
+        loop.recordToolExchange(text, call, execution)
+        directCallRunning = false
+        ui.setBusy(false)
+        dispatchQueuedIfAny()
+      })
   }
 
   // Dispatches a message queued via onSend while the previous run was busy -

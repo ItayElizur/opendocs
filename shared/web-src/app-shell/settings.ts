@@ -31,6 +31,8 @@ export interface PanelSettings {
   lang: 'en' | 'he' | 'default'
   /** Global, not per-provider - see chat-ui.ts's "More settings" reasoning section. 'default' omits the param entirely (today's behavior). */
   reasoningEffort: ReasoningEffort
+  /** Opt-in "!" direct tool-call palette in the message box; see chat-ui.ts's Developer tools section. */
+  developerTools: boolean
 }
 
 // PP-0's flat { baseUrl, apiKey, model, skipTlsVerify } shape, kept only as
@@ -70,7 +72,7 @@ function loadSettings(): PanelSettings {
   const defaults = defaultsForThisRepo()
   try {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY)
-    if (!raw) return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default', reasoningEffort: 'default' }
+    if (!raw) return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default', reasoningEffort: 'default', developerTools: false }
     const parsed = JSON.parse(raw) as Partial<PanelSettings> & LegacyStoredSettings
     const loaded: PanelSettings = {
       // resolveAiSettings migrates the legacy flat {baseUrl, apiKey, model}
@@ -81,6 +83,7 @@ function loadSettings(): PanelSettings {
       theme: normalizeTheme(parsed.theme),
       lang: normalizeLang(parsed.lang),
       reasoningEffort: normalizeReasoningEffort(parsed.reasoningEffort),
+      developerTools: parsed.developerTools === true,
     }
     // API keys come from the host's encrypted store. A key still sitting in localStorage (saved by an older build)
     // is moved there: persistSettings below writes it to the store and blanks it in localStorage.
@@ -94,7 +97,7 @@ function loadSettings(): PanelSettings {
     if (hasPlainKey) persistSettings(loaded)
     return loaded
   } catch {
-    return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default', reasoningEffort: 'default' }
+    return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default', reasoningEffort: 'default', developerTools: false }
   }
 }
 

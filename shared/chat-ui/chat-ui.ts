@@ -1,5 +1,6 @@
 import './chat-ui.css'
 import { AI_PROVIDERS, type AiProviderId, type ReasoningEffort } from '@officeai/ai-provider'
+import { filterTools, keyAtCaret, paletteState, parseDirectCall, schemaParams, suggestTool, validateArgs, type PaletteState } from './tool-palette'
 
 export type EditingMode = 'readOnly' | 'commentOnly' | 'trackChanges' | 'fullAutonomy'
 
@@ -78,6 +79,27 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   reasoningMedium:      { en: 'Medium', he: 'בינוני' },
   reasoningHigh:        { en: 'High', he: 'גבוה' },
   reasoningXHigh:       { en: 'Extra high', he: 'גבוה במיוחד' },
+  sectionDeveloper:     { en: 'Developer tools', he: 'כלי פיתוח' },
+  developerToolsLabel:  { en: 'Enable the ! tool palette', he: 'הפעל את לוח הכלים !' },
+  developerToolsNote:   { en: 'Type ! at the start of a message to run any tool directly, without the model. The editing mode still limits which tools run.', he: 'הקלד ! בתחילת הודעה כדי להריץ כלי ישירות, בלי המודל. מצב העריכה עדיין מגביל אילו כלים רצים.' },
+  paletteTitle:         { en: 'Direct call', he: 'קריאה ישירה' },
+  paletteRun:           { en: 'runs the call without the model', he: 'מריץ את הקריאה בלי המודל' },
+  paletteOf:            { en: 'of', he: 'מתוך' },
+  paletteRead:          { en: 'Read', he: 'קריאה' },
+  paletteWrite:         { en: 'Write', he: 'כתיבה' },
+  paletteNavigate:      { en: 'navigate', he: 'ניווט' },
+  paletteComplete:      { en: 'complete', he: 'השלמה' },
+  paletteRunKey:        { en: 'run', he: 'הרצה' },
+  paletteClose:         { en: 'close', he: 'סגירה' },
+  paletteNoMatch:       { en: 'No tool matches', he: 'אין כלי תואם' },
+  paletteNoMatchHint:   { en: 'Type ! alone to list every tool.', he: 'הקלד ! לבד כדי לראות את כל הכלים.' },
+  paletteUnknown:       { en: 'Unknown tool', he: 'כלי לא מוכר' },
+  paletteUnknownHint:   { en: 'It has no signature, so Enter will not run it.', he: 'אין לו חתימה, ולכן Enter לא יריץ אותו.' },
+  paletteDidYouMean:    { en: 'Did you mean', he: 'התכוונת ל' },
+  paletteBlocked:       { en: 'Not available in the current mode', he: 'לא זמין במצב הנוכחי' },
+  paletteBlockedHint:   { en: 'Change the edit mode first. The add-in refuses this tool otherwise.', he: 'שנה קודם את מצב העריכה. אחרת התוסף ידחה את הכלי.' },
+  paletteBadArgs:       { en: 'Arguments do not match the signature', he: 'הארגומנטים לא תואמים לחתימה' },
+  paletteBusy:          { en: 'Wait for the current run to finish before a direct call.', he: 'המתן לסיום ההרצה הנוכחית לפני קריאה ישירה.' },
   sectionDocMessage:    { en: 'Document guidelines', he: 'הנחיות למסמך' },
   scopeNote:            { en: 'Applies immediately and resets tool registration below.', he: 'חל מיידית ומאפס את רישום הכלים למטה.' },
   docMessagePlaceholder:{ en: 'Background and guidelines about this document - included at the start of every new conversation.', he: 'רקע והנחיות לגבי המסמך הזה - ייכלל בתחילת כל שיחה חדשה.' },
@@ -149,6 +171,8 @@ export interface SettingsSavePayload {
   registeredTools?: string[]
   /** only present when saved from the full settings view, same gating as docSystemMessage above - global, not per-provider */
   reasoningEffort?: ReasoningEffort
+  /** only present when saved from the full settings view, same gating as docSystemMessage above */
+  developerTools?: boolean
 }
 
 /** One tool's UI-only display info (FT-1 Task 5) - distinct from the tool's
@@ -158,6 +182,10 @@ export interface ToolDisplayEntry {
   name: string
   label: { en: string; he: string }
   description: { en: string; he: string }
+  /** The model-facing JSON schema, for the "!" palette's signature and argument check. */
+  inputSchema?: Record<string, unknown>
+  /** Lowest editing mode that offers this tool, for the "!" palette's pill. */
+  minMode?: EditingMode
 }
 
 export interface InitialSettings {
@@ -174,10 +202,14 @@ export interface InitialSettings {
   lang?: LangPref
   /** Seeds the Reasoning effort section's selected button. Defaults to 'default' if omitted. */
   reasoningEffort?: ReasoningEffort
+  /** Seeds the Developer tools checkbox. Defaults to false if omitted. */
+  developerTools?: boolean
 }
 
 export interface ChatUIOptions {
   onSend: (text: string) => void
+  /** Runs `!tool({...})` without the model. Return false when it cannot start (e.g. a run is in flight); the typed text then stays in the box. Only called while Developer tools is on. */
+  onDirectCall?: (name: string, args: Record<string, unknown>, text: string) => boolean
   /** Stops the in-flight run; the send button becomes a stop button while busy. Omit to leave it disabled while busy instead (see `chat-ui.ts.md`). */
   onStop?: () => void
   onNewChat: () => void
@@ -628,6 +660,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           </div>
         </div>
         <div class="ai-settings-section">
+          <h4 data-t="sectionDeveloper">Developer tools</h4>
+          <p class="ai-settings-section-note" data-t="developerToolsNote">Type ! at the start of a message to run any tool directly, without the model. The editing mode still limits which tools run.</p>
+          <label class="ai-checkbox-row"><input type="checkbox" data-field="developerTools" /> <span data-t="developerToolsLabel">Enable the ! tool palette</span></label>
+        </div>
+        <div class="ai-settings-section">
           <h4><span data-t="sectionTools">Tools</span> <span class="ai-tools-count" id="toolsCount"></span></h4>
           <div class="ai-tools-list" id="toolsList"></div>
         </div>
@@ -642,6 +679,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         </div>
       </div>
       <div class="ai-composer">
+        <div class="ai-palette" id="palette" hidden></div>
         <div class="ai-input-box">
           <span class="ai-scope-hint"><span class="dot"></span><span class="label" id="scopeHintLabel">Whole document</span></span>
           <textarea class="ai-textarea" rows="1" dir="auto" placeholder="Ask OpenDocs to edit this document..." data-t-placeholder="inputPlaceholder"></textarea>
@@ -909,6 +947,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     // FT-1 Task 6 Step 6: tool labels/descriptions come from config, not
     // STRINGS, so applyStrings() alone cannot relocalize them - re-render.
     renderToolsList()
+    renderPalette()
     const existingEmpty = chatEl.querySelector('.ai-chat-empty')
     if (existingEmpty) {
       existingEmpty.remove()
@@ -1092,9 +1131,141 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     return true
   }
 
+  // ---- "!" direct-call palette (Developer tools) ----
+  // Pure rules live in tool-palette.ts; this is the popup and the keyboard.
+  const paletteEl = root.querySelector<HTMLDivElement>('#palette')!
+  const developerToolsBox = root.querySelector<HTMLInputElement>('[data-field="developerTools"]')!
+  let developerTools = options.initialSettings?.developerTools ?? false
+  developerToolsBox.checked = developerTools
+  let paletteSel = 0
+  let paletteDismissed = false
+  let paletteShowErrors = false
+
+  function toolIsLocked(name: string): boolean {
+    return !availableToolNames.includes(name)
+  }
+
+  function paletteNow(): PaletteState {
+    return developerTools && !paletteDismissed ? paletteState(textarea.value) : { kind: 'off' }
+  }
+
+  function paletteHeader(right: string): string {
+    return `<div class="ai-palette-head"><b>${escapeHtml(t('paletteTitle'))}</b><span>${escapeHtml(right)}</span></div>`
+  }
+
+  function paletteWarning(kind: 'warn' | 'error', title: string, body: string, suggestion?: string): string {
+    const suggest = suggestion ? `<br>${escapeHtml(t('paletteDidYouMean'))} <span class="ai-palette-chip" dir="ltr">${escapeHtml(suggestion)}</span> ?` : ''
+    return `<div class="ai-palette-warn ${kind}"><span class="ic">${kind === 'error' ? '✗' : '⚠'}</span><div><b>${title}</b><br>${body}${suggest}</div></div>`
+  }
+
+  function paletteMenuHtml(query: string): string {
+    const list = filterTools(allTools, query)
+    paletteSel = list.length === 0 ? 0 : Math.min(paletteSel, list.length - 1)
+    let body = ''
+    if (list.length === 0) {
+      body = paletteWarning('warn', escapeHtml(t('paletteNoMatch')), escapeHtml(t('paletteNoMatchHint')))
+    } else {
+      let lastGroup = ''
+      list.forEach((tool, i) => {
+        const group = tool.minMode === 'readOnly' ? 'paletteRead' : 'paletteWrite'
+        if (group !== lastGroup) body += `<div class="ai-palette-group">${escapeHtml(t(group))}</div>`
+        lastGroup = group
+        const pill = tool.minMode ? `<span class="ai-palette-tier tier-${tool.minMode}">${escapeHtml(t(modeStringKey(tool.minMode)))}</span>` : ''
+        const name = `<mark>${escapeHtml(tool.name.slice(0, query.length))}</mark>${escapeHtml(tool.name.slice(query.length))}`
+        body += `<div class="ai-palette-row${i === paletteSel ? ' sel' : ''}${toolIsLocked(tool.name) ? ' locked' : ''}" data-tool="${escapeHtml(tool.name)}">` +
+          `<div class="nm" dir="ltr">${name}</div>${pill}<div class="ds">${escapeHtml(toolLabel(tool))} · ${escapeHtml(tool.description[currentLang])}</div></div>`
+      })
+    }
+    const foot = `<div class="ai-palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> ${escapeHtml(t('paletteNavigate'))}</span><span><kbd>Tab</kbd> ${escapeHtml(t('paletteComplete'))}</span><span><kbd>Esc</kbd> ${escapeHtml(t('paletteClose'))}</span></div>`
+    return paletteHeader(`${list.length} ${t('paletteOf')} ${allTools.length}`) + `<div class="ai-palette-list">${body}</div>` + foot
+  }
+
+  // What is wrong with the typed call, if anything - shared by the popup (to show it) and by Enter (to refuse).
+  function directProblem(st: Extract<PaletteState, { kind: 'signature' }>): string | null {
+    const tool = allTools.find((x) => x.name === st.name)
+    if (!tool) return paletteWarning('warn', `${escapeHtml(t('paletteUnknown'))}: <code>${escapeHtml(st.name)}</code>`, escapeHtml(t('paletteUnknownHint')), suggestTool(allTools, st.name) ?? undefined)
+    if (toolIsLocked(tool.name)) return paletteWarning('warn', escapeHtml(t('paletteBlocked')), escapeHtml(t('paletteBlockedHint')))
+    const complete = st.argsText.trimEnd().endsWith(')')
+    if (!complete && !paletteShowErrors) return null
+    const parsed = parseDirectCall(textarea.value)
+    if (!parsed.ok) return paletteWarning('error', escapeHtml(t('paletteBadArgs')), escapeHtml(parsed.error))
+    const errors = validateArgs(tool.inputSchema, parsed.args)
+    return errors.length ? paletteWarning('error', escapeHtml(t('paletteBadArgs')), errors.map(escapeHtml).join('<br>')) : null
+  }
+
+  function paletteSignatureHtml(st: Extract<PaletteState, { kind: 'signature' }>): string {
+    const tool = allTools.find((x) => x.name === st.name)!
+    const caret = Math.max(0, textarea.selectionStart - (1 + st.name.length + 1))
+    const current = keyAtCaret(st.argsText, caret)
+    const lines = schemaParams(tool.inputSchema).map((p) => {
+      const values = p.enumValues ? ` <span class="en">${escapeHtml(p.enumValues.slice(0, 4).map((v) => `"${v}"`).join(' | '))}${p.enumValues.length > 4 ? ' | …' : ''}</span>` : ''
+      return `<div class="p${p.required ? '' : ' opt'}${p.name === current ? ' cur' : ''}">${escapeHtml(p.name)}${p.required ? '' : '?'}<span class="ty">: ${escapeHtml(p.type)}</span>${values}</div>`
+    }).join('')
+    const detail = schemaParams(tool.inputSchema).find((p) => p.name === current)?.description
+    const foot = `<div class="ai-palette-foot"><span><kbd>Enter</kbd> ${escapeHtml(t('paletteRunKey'))}</span><span><kbd>Esc</kbd> ${escapeHtml(t('paletteClose'))}</span></div>`
+    return paletteHeader(toolLabel(tool)) +
+      `<div class="ai-palette-sig" dir="ltr"><div class="fn"><span class="name">${escapeHtml(tool.name)}</span>({</div><div class="params">${lines || '<div class="p opt">(no parameters)</div>'}</div><div class="fn">})</div>` +
+      (detail ? `<div class="detail">${escapeHtml(detail)}</div>` : '') + `</div>` + foot
+  }
+
+  function renderPalette(): void {
+    const st = paletteNow()
+    if (st.kind === 'off') {
+      paletteEl.hidden = true
+      paletteEl.innerHTML = ''
+      return
+    }
+    paletteEl.hidden = false
+    if (st.kind === 'menu') {
+      paletteEl.innerHTML = paletteMenuHtml(st.query)
+      return
+    }
+    const problem = directProblem(st)
+    paletteEl.innerHTML = problem ? paletteHeader(st.name) + problem : paletteSignatureHtml(st)
+  }
+
+  function completePaletteTool(name: string): void {
+    textarea.value = `!${name}(`
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    paletteSel = 0
+    paletteShowErrors = false
+    updateTextareaDir()
+    renderPalette()
+    textarea.focus()
+  }
+
+  // Returns true when the text was a direct call that has been handled (run, or refused with the reason shown).
+  function trySendDirect(text: string): boolean {
+    const st = developerTools ? paletteState(text) : ({ kind: 'off' } as const)
+    if (st.kind !== 'signature') return false
+    paletteShowErrors = true
+    paletteDismissed = false
+    if (directProblem(st) !== null) {
+      renderPalette()
+      return true
+    }
+    const parsed = parseDirectCall(text)
+    if (!parsed.ok || !options.onDirectCall?.(parsed.name, parsed.args, text)) return true
+    textarea.value = ''
+    updateTextareaDir()
+    pushSentHistory(text)
+    chipDockEl.hidden = true
+    paletteShowErrors = false
+    renderPalette()
+    return true
+  }
+
+  paletteEl.addEventListener('mousedown', (e) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>('.ai-palette-row')
+    if (!row) return
+    e.preventDefault() // keep the caret in the message box
+    completePaletteTool(row.dataset.tool!)
+  })
+
   function doSend(): void {
     const text = textarea.value.trim()
     if (!text) return
+    if (trySendDirect(text)) return
     textarea.value = ''
     updateTextareaDir()
     pushSentHistory(text)
@@ -1105,7 +1276,19 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     options.onSend(text)
   }
 
-  textarea.addEventListener('input', updateTextareaDir)
+  textarea.addEventListener('input', () => {
+    updateTextareaDir()
+    paletteDismissed = false
+    paletteShowErrors = false
+    paletteSel = 0
+    renderPalette()
+  })
+  // The signature follows the caret between keys, so a click or arrow key re-reads it.
+  textarea.addEventListener('keyup', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return
+    renderPalette()
+  })
+  textarea.addEventListener('click', renderPalette)
 
   // Shared by both the inline empty-state starters (.ai-starter, inside
   // .ai-chat) and the chip dock's starter chips (.ai-chip, a sibling outside
@@ -1164,6 +1347,28 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // `chat-ui.ts.md`).
   sendBtn.addEventListener('click', doSend)
   textarea.addEventListener('keydown', (e) => {
+    const palette = paletteNow()
+    if (palette.kind === 'menu') {
+      const list = filterTools(allTools, palette.query)
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && list.length > 0) {
+        e.preventDefault()
+        paletteSel = (paletteSel + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length
+        renderPalette()
+        paletteEl.querySelector('.ai-palette-row.sel')?.scrollIntoView?.({ block: 'nearest' })
+        return
+      }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault()
+        if (list.length > 0) completePaletteTool(list[paletteSel]!.name)
+        return
+      }
+    }
+    if (e.key === 'Escape' && palette.kind !== 'off') {
+      e.preventDefault()
+      paletteDismissed = true
+      renderPalette()
+      return
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       doSend()
@@ -1472,7 +1677,10 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       docSystemMessage: docMessageInput.value,
       registeredTools: registeredToolNames,
       reasoningEffort: pendingReasoningEffort,
+      developerTools: developerToolsBox.checked,
     })
+    developerTools = developerToolsBox.checked
+    renderPalette()
     dirty = false
     settingsSavedNote.classList.add('visible')
     window.setTimeout(() => settingsSavedNote.classList.remove('visible'), 2000)
@@ -1761,6 +1969,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       availableToolNames = available
       registeredToolNames = registered
       renderToolsList()
+      renderPalette()
     },
     setDocSystemMessage(message) {
       docMessageInput.value = message
