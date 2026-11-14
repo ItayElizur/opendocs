@@ -1,6 +1,6 @@
 import './chat-ui.css'
 import { AI_PROVIDERS, type AiProviderId, type ReasoningEffort } from '@officeai/ai-provider'
-import { filterTools, keyAtCaret, paletteState, parseDirectCall, schemaParams, suggestTool, validateArgs, type PaletteState } from './tool-palette'
+import { closestName, filterTools, paletteState, parseDirectCall, scanArgs, schemaParams, suggestTool, validateArgs, type PaletteState } from './tool-palette'
 
 export type EditingMode = 'readOnly' | 'commentOnly' | 'trackChanges' | 'fullAutonomy'
 
@@ -19,6 +19,8 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   inputPlaceholder:     { en: 'Ask OpenDocs to edit this document...', he: 'בקש מ-אופן דוקס לערוך את המסמך...' },
   send:                 { en: 'Send', he: 'שלח' },
   stop:                 { en: 'Stop', he: 'עצור' },
+  paletteUnknownKey:    { en: 'not a parameter of this tool', he: 'אינו פרמטר של הכלי' },
+  stopDirect:           { en: "A direct tool call can't be stopped", he: 'לא ניתן לעצור הרצה ישירה של כלי' },
   newChat:              { en: 'New chat', he: 'שיחה חדשה' },
   settings:             { en: 'Settings', he: 'הגדרות' },
   settingsTitle:        { en: 'OpenDocs Settings', he: 'הגדרות אופן דוקס' },
@@ -260,7 +262,8 @@ export interface ChatUIHandle {
    *  again for the reasoning gap before the next turn. */
   endTurn(): void
   beginToolGroup(): ToolGroupHandle
-  setBusy(busy: boolean): void
+  /** stoppable=false (a direct tool call) keeps the stop button visible but inert, with a hover note saying why */
+  setBusy(busy: boolean, stoppable?: boolean): void
   showError(message: string): void
   resetToEmpty(): void
   showHistoric(messages: Array<{ role: 'user' | 'assistant'; text: string }>): void
@@ -1193,8 +1196,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     const tool = allTools.find((x) => x.name === st.name)
     if (!tool) return paletteWarning('warn', `${escapeHtml(t('paletteUnknown'))}: <code>${escapeHtml(st.name)}</code>`, escapeHtml(t('paletteUnknownHint')), suggestTool(allTools, st.name) ?? undefined)
     if (toolIsLocked(tool.name)) return paletteWarning('warn', escapeHtml(t('paletteBlocked')), escapeHtml(t('paletteBlockedHint')))
-    const complete = st.argsText.trimEnd().endsWith(')')
-    if (!complete && !paletteShowErrors) return null
+    // Missing keys and bad JSON only matter once the user tries to run it; while typing they would hide the signature.
+    if (!paletteShowErrors) return null
     const parsed = parseDirectCall(textarea.value)
     if (!parsed.ok) return paletteWarning('error', escapeHtml(t('paletteBadArgs')), escapeHtml(parsed.error))
     const errors = validateArgs(tool.inputSchema, parsed.args)
@@ -1204,15 +1207,26 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   function paletteSignatureHtml(st: Extract<PaletteState, { kind: 'signature' }>): string {
     const tool = allTools.find((x) => x.name === st.name)!
     const caret = Math.max(0, textarea.selectionStart - (1 + st.name.length + 1))
-    const current = keyAtCaret(st.argsText, caret)
-    const lines = schemaParams(tool.inputSchema).map((p) => {
+    const scan = scanArgs(st.argsText, caret)
+    const params = schemaParams(tool.inputSchema)
+    // The row the caret is on: the key whose value is being typed, or the keys matching a name being typed.
+    const isCurrent = (name: string): boolean =>
+      scan.at === 'value' ? name === scan.key : scan.at === 'key' && scan.partial !== '' && name.startsWith(scan.partial)
+    const lines = params.map((p) => {
       const values = p.enumValues ? ` <span class="en">${escapeHtml(p.enumValues.slice(0, 4).map((v) => `"${v}"`).join(' | '))}${p.enumValues.length > 4 ? ' | …' : ''}</span>` : ''
-      return `<div class="p${p.required ? '' : ' opt'}${p.name === current ? ' cur' : ''}">${escapeHtml(p.name)}${p.required ? '' : '?'}<span class="ty">: ${escapeHtml(p.type)}</span>${values}</div>`
+      return `<div class="p${p.required ? '' : ' opt'}${isCurrent(p.name) ? ' cur' : ''}">${escapeHtml(p.name)}${p.required ? '' : '?'}<span class="ty">: ${escapeHtml(p.type)}</span>${values}</div>`
     }).join('')
-    const detail = schemaParams(tool.inputSchema).find((p) => p.name === current)?.description
+    const known = params.map((p) => p.name)
+    const unknown = params.length === 0 ? [] : [...new Set(scanArgs(st.argsText).keys)].filter((k) => !known.includes(k))
+    const unknownLines = unknown.map((k) => {
+      const hint = closestName(known, k)
+      return `<div class="p unk">${escapeHtml(k)}<span class="ty">: ${escapeHtml(t('paletteUnknownKey'))}${hint ? ` - ${escapeHtml(t('paletteDidYouMean'))} ${escapeHtml(hint)}?` : ''}</span></div>`
+    }).join('')
+    const current = params.filter((p) => isCurrent(p.name))
+    const detail = current.length === 1 ? current[0]!.description : undefined
     const foot = `<div class="ai-palette-foot"><span><kbd>Enter</kbd> ${escapeHtml(t('paletteRunKey'))}</span><span><kbd>Esc</kbd> ${escapeHtml(t('paletteClose'))}</span></div>`
     return paletteHeader(toolLabel(tool)) +
-      `<div class="ai-palette-sig" dir="ltr"><div class="fn"><span class="name">${escapeHtml(tool.name)}</span>({</div><div class="params">${lines || '<div class="p opt">(no parameters)</div>'}</div><div class="fn">})</div>` +
+      `<div class="ai-palette-sig" dir="ltr"><div class="fn"><span class="name">${escapeHtml(tool.name)}</span>({</div><div class="params">${lines || '<div class="p opt">(no parameters)</div>'}${unknownLines}</div><div class="fn">})</div>` +
       (detail ? `<div class="detail">${escapeHtml(detail)}</div>` : '') + `</div>` + foot
   }
 
@@ -1348,7 +1362,9 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
 
   // A separate stop button next to send (not send doubling as stop), shown
   // only while busy (see `chat-ui.ts.md`).
-  stopBtn.addEventListener('click', () => options.onStop?.())
+  stopBtn.addEventListener('click', () => {
+    if (!stopBtn.classList.contains('unavailable')) options.onStop?.()
+  })
   // Send stays clickable (and the textarea stays enabled, see setBusy below)
   // even while busy, so the user can queue their next message; queueing
   // itself is bootstrap.ts's job - this layer just relays the send (see
@@ -1885,12 +1901,14 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         },
       }
     },
-    setBusy(busy) {
+    setBusy(busy, stoppable = true) {
       thinkingBusy = busy
       refreshThinking()
       // Neither textarea nor send button are disabled while busy; only the
       // stop button toggles with busy state (see `chat-ui.ts.md`).
       stopBtn.hidden = !busy
+      stopBtn.classList.toggle('unavailable', busy && !stoppable)
+      stopBtn.title = t(busy && !stoppable ? 'stopDirect' : 'stop')
       // Return focus to the textarea once the current run finishes, so the
       // user doesn't have to click back into it - harmless even if they're
       // mid-typing a queued message, since .focus() doesn't touch content

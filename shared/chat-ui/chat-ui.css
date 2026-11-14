@@ -523,6 +523,7 @@
   .ai-palette-sig .params { padding-inline-start: 16px; line-height: 1.7; }
   .ai-palette-sig .p.opt { color: var(--color-text-secondary); }
   .ai-palette-sig .p.cur { background: var(--direct-ghost); border-radius: 4px; box-shadow: 0 1px 0 var(--direct); }
+  .ai-palette-sig .p.unk { color: var(--docs-warn-ink); background: var(--docs-warn-bg); border-radius: 4px; }
   .ai-palette-sig .ty { color: var(--color-text-tertiary); }
   .ai-palette-sig .en { color: var(--mode-comment); }
   .ai-palette-sig .detail { margin-top: 8px; font: 11.5px var(--font-sans); color: var(--color-text-secondary); line-height: 1.45; }
@@ -531,6 +532,7 @@
   .ai-palette-warn .ic { font-weight: 700; flex: none; }
   .ai-palette-warn code { font-family: Consolas, monospace; font-size: 11.5px; background: rgb(0 0 0 / 7%); border-radius: 4px; padding: 0 4px; }
   .ai-palette-chip { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; font-family: Consolas, monospace; font-size: 11px; }
+  .ai-stop-btn.unavailable { opacity: 0.4; cursor: not-allowed; }
   .ai-bang { color: var(--direct); font-weight: 700; }
   .ai-checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 

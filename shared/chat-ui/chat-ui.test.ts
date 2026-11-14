@@ -1393,8 +1393,8 @@ describe('"!" direct-call palette', () => {
   it('refuses arguments that miss a required key and keeps the text', () => {
     const { type, palette, press, onDirectCall, textarea } = paletteSetup(true)
     type('!edit_table({"row":1})')
-    expect(palette.textContent).toContain('kind is required')
     press('Enter')
+    expect(palette.textContent).toContain('kind is required')
     expect(onDirectCall).not.toHaveBeenCalled()
     expect(textarea.value).toBe('!edit_table({"row":1})')
   })
@@ -1429,5 +1429,46 @@ describe('"!" direct-call palette', () => {
     root.querySelector<HTMLInputElement>('[data-field="developerTools"]')!.checked = true
     root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
     expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ developerTools: true }))
+  })
+  it('keeps the stop button inert, with a hover note, while a direct call runs', () => {
+    const onStop = vi.fn()
+    const { root, handle } = setup({ onStop })
+    const stop = root.querySelector<HTMLButtonElement>('.ai-stop-btn')!
+    handle.setBusy(true, false)
+    stop.click()
+    expect(onStop).not.toHaveBeenCalled()
+    expect(stop.title).toBe("A direct tool call can't be stopped")
+    handle.setBusy(false)
+    handle.setBusy(true)
+    stop.click()
+    expect(onStop).toHaveBeenCalledTimes(1)
+    expect(stop.title).toBe('Stop')
+  })
+  it('keeps showing the signature right after a tool is completed, with no error box', () => {
+    const { type, press, palette } = paletteSetup(true)
+    type('!edit_table')
+    press('Tab')
+    expect(palette.querySelector('.ai-palette-sig')).not.toBeNull()
+    expect(palette.querySelector('.ai-palette-warn')).toBeNull()
+  })
+
+  it('highlights the parameter whose value is being typed, nothing right after a comma, then the names matching a key being typed', () => {
+    const { type, palette } = paletteSetup(true)
+    const current = () => [...palette.querySelectorAll('.p.cur')].map((el) => el.textContent)
+    type('!edit_table({"kind": "set_cell", "row": ')
+    expect(current()).toEqual(['row?: number'])
+    type('!edit_table({"kind": "set_cell",')
+    expect(current()).toEqual([])
+    type('!edit_table({"kind": "set_cell", "ro')
+    expect(current()).toEqual(['row?: number'])
+  })
+
+  it('marks a key the tool does not have, with the closest name', () => {
+    const { type, palette } = paletteSetup(true)
+    type('!edit_table({"knd": "set_cell"')
+    expect(palette.querySelector('.p.unk')!.textContent).toContain('knd')
+    expect(palette.querySelector('.p.unk')!.textContent).toContain('Did you mean kind?')
+    type('!edit_table({"kind": "set_cell"')
+    expect(palette.querySelector('.p.unk')).toBeNull()
   })
 })

@@ -104,11 +104,43 @@ export function validateArgs(schema: Record<string, unknown> | undefined, args: 
   return errors
 }
 
-/** The argument key the caret is inside, for highlighting it in the signature. */
-export function keyAtCaret(argsText: string, caret: number): string | null {
+export interface ArgScan {
+  /** keys written so far (a key counts once its closing quote and colon are typed) */
+  keys: string[]
+  /** where the caret is in the top-level object: in a key, in a value, or neither */
+  at: 'key' | 'value' | null
+  /** the key whose value the caret is in */
+  key: string | null
+  /** the key name being typed */
+  partial: string
+}
+
+/** Reads the argument text up to the caret, tolerating the half-written JSON a user has while typing. */
+export function scanArgs(text: string, caret = text.length): ArgScan {
+  let depth = 0, inStr = false, esc = false, buf = '', strIsKey = false
+  let pending: string | null = null
+  let at: ArgScan['at'] = null
   let key: string | null = null
-  for (const m of argsText.slice(0, caret).matchAll(/"([^"\\]+)"\s*:/g)) key = m[1]!
-  return key
+  const keys: string[] = []
+  for (const c of text.slice(0, caret)) {
+    if (inStr) {
+      if (esc) { esc = false; buf += c } else if (c === '\\') esc = true
+      else if (c === '"') { inStr = false; if (strIsKey) pending = buf } else buf += c
+    } else if (c === '"') {
+      inStr = true; buf = ''; strIsKey = depth === 1 && at === 'key'
+    } else if (c === '{' || c === '[') {
+      depth++
+      if (depth === 1) at = 'key'
+    } else if (c === '}' || c === ']') {
+      depth--
+      if (depth === 0) at = null
+    } else if (depth === 1 && c === ':' && pending !== null) {
+      keys.push(pending); key = pending; pending = null; at = 'value'
+    } else if (depth === 1 && c === ',') {
+      at = 'key'; key = null; pending = null
+    }
+  }
+  return { keys, at, key, partial: inStr && strIsKey ? buf : (pending ?? '') }
 }
 
 function distance(a: string, b: string): number {
@@ -125,16 +157,20 @@ function distance(a: string, b: string): number {
   return row[b.length]!
 }
 
-/** The closest tool name, when one is near enough to be a typo. */
-export function suggestTool(tools: readonly PaletteTool[], name: string): string | null {
+/** The closest of the names, when one is near enough to be a typo. */
+export function closestName(names: readonly string[], name: string): string | null {
   let best: string | null = null
   let bestDistance = 3
-  for (const t of tools) {
-    const d = distance(name.toLowerCase(), t.name.toLowerCase())
+  for (const n of names) {
+    const d = distance(name.toLowerCase(), n.toLowerCase())
     if (d < bestDistance) {
-      best = t.name
+      best = n
       bestDistance = d
     }
   }
   return best
+}
+
+export function suggestTool(tools: readonly PaletteTool[], name: string): string | null {
+  return closestName(tools.map((t) => t.name), name)
 }

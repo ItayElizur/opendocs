@@ -682,17 +682,18 @@ export function startAddIn(config: AddInConfig): void {
     directCallRunning = true
     ui.addUserMessage(text)
     persistMessage('user', text)
-    ui.setBusy(true)
+    ui.setBusy(true, false)
     const group = ui.beginToolGroup()
     const step = group.addStep(name, args)
     void Promise.resolve(skill.executeTool(call))
       .catch((e: unknown): ToolExecution => ({ output: e instanceof Error ? e.message : String(e), isError: true, summary: name }))
       .then((execution) => {
+        // Release the panel first so a throw below can't leave it busy with every later message queued.
+        directCallRunning = false
+        ui.setBusy(false)
         step.complete({ output: execution.output, isError: execution.isError, mutated: execution.mutated })
         group.end()
         loop.recordToolExchange(text, call, execution)
-        directCallRunning = false
-        ui.setBusy(false)
         dispatchQueuedIfAny()
       })
   }

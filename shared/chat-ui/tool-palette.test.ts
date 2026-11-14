@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterTools, keyAtCaret, paletteState, parseDirectCall, schemaParams, suggestTool, validateArgs, type PaletteTool } from './tool-palette'
+import { filterTools, scanArgs, paletteState, parseDirectCall, schemaParams, suggestTool, validateArgs, type PaletteTool } from './tool-palette'
 
 const tool = (name: string, inputSchema?: Record<string, unknown>): PaletteTool => ({
   name, label: { en: name, he: name }, description: { en: '', he: '' }, inputSchema,
@@ -95,14 +95,25 @@ describe('validateArgs', () => {
   })
 })
 
-describe('keyAtCaret', () => {
-  const text = '{"kind": "set_cell", "row": '
-  it('is the last key before the caret', () => {
-    expect(keyAtCaret(text, text.length)).toBe('row')
-    expect(keyAtCaret(text, 10)).toBe('kind')
+describe('scanArgs', () => {
+  it('is in the value of the last key until a comma', () => {
+    expect(scanArgs('{"kind": "set_cell", "row": ')).toMatchObject({ at: 'value', key: 'row', keys: ['kind', 'row'] })
+    expect(scanArgs('{"kind": "set_cell", "row": 1')).toMatchObject({ at: 'value', key: 'row' })
   })
-  it('is null before any key', () => {
-    expect(keyAtCaret('{', 1)).toBeNull()
+  it('lets go of the previous key after a comma, and reads the name being typed', () => {
+    expect(scanArgs('{"kind": "set_cell",')).toMatchObject({ at: 'key', key: null, partial: '' })
+    expect(scanArgs('{"kind": "set_cell", "ro')).toMatchObject({ at: 'key', key: null, partial: 'ro' })
+  })
+  it('follows the caret inside earlier text', () => {
+    const text = '{"kind": "set_cell", "row": 1}'
+    expect(scanArgs(text, 10)).toMatchObject({ at: 'value', key: 'kind' })
+  })
+  it('ignores commas, colons and keys inside strings and nested values', () => {
+    expect(scanArgs('{"text": "a, \\"b\\": c", "opts": {"x": 1, "y": 2}, ')).toMatchObject({ at: 'key', keys: ['text', 'opts'] })
+  })
+  it('is empty before any key', () => {
+    expect(scanArgs('{')).toMatchObject({ at: 'key', keys: [], key: null })
+    expect(scanArgs('')).toMatchObject({ at: null, keys: [] })
   })
 })
 
