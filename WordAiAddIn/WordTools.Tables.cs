@@ -50,8 +50,9 @@ namespace WordAiAddIn
                     foreach (JsonElement cellEl in rowEl.EnumerateArray())
                     {
                         if (c >= cols) break;
-                        table.Cell(r + 1, c + 1).Range.Text = cellEl.GetString();
-                        ApplyAutoDirection(table.Cell(r + 1, c + 1).Range);
+                        Word.Range cellRange = table.Cell(r + 1, c + 1).Range;
+                        cellRange.Text = cellEl.GetString();
+                        ApplyAutoDirection(cellRange);
                         c++;
                     }
                     r++;
@@ -81,8 +82,9 @@ namespace WordAiAddIn
                         throw new ArgumentOutOfRangeException("row", "row must be between 0 and " + (table.Rows.Count - 1) + ".");
                     if (col < 0 || col >= table.Columns.Count)
                         throw new ArgumentOutOfRangeException("col", "col must be between 0 and " + (table.Columns.Count - 1) + ".");
-                    table.Cell(row + 1, col + 1).Range.Text = input.GetProperty("text").GetString();
-                    ApplyAutoDirection(table.Cell(row + 1, col + 1).Range);
+                    Word.Range cellRange = table.Cell(row + 1, col + 1).Range;
+                    cellRange.Text = input.GetProperty("text").GetString();
+                    ApplyAutoDirection(cellRange);
                     return new ToolResult { Output = "Cell [" + row + "," + col + "] updated.", Mutated = true, Summary = "edit_table" };
                 }
                 case "insert_row":

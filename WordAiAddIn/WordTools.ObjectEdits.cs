@@ -532,9 +532,9 @@ namespace WordAiAddIn
                 try
                 {
                     info.Shape.TextFrame.TextRange.Text = text;
-                    ApplyAutoDirection((Word.Range)info.Shape.TextFrame.TextRange);
                 }
                 catch (Exception ex) { throw new ArgumentException("edit_textbox: shape " + target + " (" + info.TypeName + ") has no editable text frame: " + ex.Message); }
+                ApplyAutoDirection((Word.Range)info.Shape.TextFrame.TextRange);
             }
             if (x.HasValue) { info.Shape.RelativeHorizontalPosition = 1; info.Shape.Left = x.Value; } // points from the page corner
             if (y.HasValue) { info.Shape.RelativeVerticalPosition = 1; info.Shape.Top = y.Value; }

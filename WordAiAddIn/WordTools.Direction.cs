@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using OfficeAi.Shared;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -10,17 +11,25 @@ namespace WordAiAddIn
         // so alignment is never written. See WordTools.Direction.cs.md.
         private static void ApplyAutoDirection(Word.Range range)
         {
+            // A collapsed range (a deleted block, an empty line) has no text of its own; Paragraphs would return the
+            // neighbouring paragraph and flip it.
+            if (range.Start == range.End) return;
             foreach (Word.Paragraph paragraph in range.Paragraphs)
             {
-                switch (TextUtil.DetectDirection(paragraph.Range.Text))
+                // The text is already written, so a refused direction must not turn a successful edit into an error.
+                try
                 {
-                    case TextDirection.Rtl:
-                        paragraph.ReadingOrder = Word.WdReadingOrder.wdReadingOrderRtl;
-                        break;
-                    case TextDirection.Ltr:
-                        paragraph.ReadingOrder = Word.WdReadingOrder.wdReadingOrderLtr;
-                        break;
+                    switch (TextUtil.DetectDirection(paragraph.Range.Text))
+                    {
+                        case TextDirection.Rtl:
+                            paragraph.ReadingOrder = Word.WdReadingOrder.wdReadingOrderRtl;
+                            break;
+                        case TextDirection.Ltr:
+                            paragraph.ReadingOrder = Word.WdReadingOrder.wdReadingOrderLtr;
+                            break;
+                    }
                 }
+                catch (COMException) { }
             }
         }
 

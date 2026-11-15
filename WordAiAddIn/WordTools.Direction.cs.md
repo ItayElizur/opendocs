@@ -36,6 +36,19 @@ as `9999999` (undefined), and `replace_blocks` or `insert_content` can write sev
 paragraphs at once, so the text of each paragraph decides its own direction.
 Neutral text (digits, punctuation, empty) changes nothing.
 
+## Collapsed ranges and refused writes
+
+A collapsed range (`replace_blocks` with empty text, an empty line in `insert_content`) has no
+text of its own, and `Range.Paragraphs` on it returns the paragraph that now sits at that point.
+Checked against an installed Word: an English paragraph set right-to-left, after the paragraph
+before it was deleted this way, flipped to left-to-right and left-aligned. `ApplyAutoDirection`
+therefore returns early when `Start == End`.
+
+Each `ReadingOrder` write is wrapped in a `COMException` catch, because the text is already
+written by then and a refused direction must not report a successful edit as an error. Setting
+the order did not throw under Track Changes, in a text box (add and edit) or in a table cell, so
+the catch is a guard that was never seen to fire.
+
 ## Not verified
 
 Rendering of the result in a live document was not looked at by eye, and the add-in
