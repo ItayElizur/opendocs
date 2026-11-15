@@ -793,8 +793,8 @@ namespace OutlookAiAddIn
         // tail (leave unsaved + Display, nothing persisted) and a send tail
         // (Save/Send + undo records); the validation and target resolution
         // they share live in the helpers above and in BuildNewEvent.
-        // Each handler still sets its own Summary (its old tool name); the result's
-        // Summary is overwritten with the real tool name here.
+        // Each handler sets its own Summary; it is overwritten here with the tool
+        // actually called (draft_event or send_event).
         private static ToolResult EventAction(string mbxKey, JsonElement input, bool send)
         {
             string tool = send ? "send_event" : "draft_event";
@@ -823,7 +823,7 @@ namespace OutlookAiAddIn
         private static ToolResult EditEvent(string mbxKey, JsonElement input)
         {
             EventEdit e;
-            ToolResult? invalid = ParseEventEdit(input, "edit_event", out e);
+            ToolResult? invalid = ParseEventEdit(input, "send_event", out e);
             if (invalid != null) return invalid.Value;
             Outlook.AppointmentItem master = e.Master, appt = e.Appt;
             string occDate = e.OccDate;
@@ -913,7 +913,7 @@ namespace OutlookAiAddIn
                 {
                     Output = "Updated" + (isMeetingNow ? " and sent update notice" : "") + scopeNote + ": \"" + (appt.Subject ?? "") + "\"." + changeSummary + FormatUnresolvedAttendeesNote(unresolvedAttendees),
                     Mutated = true,
-                    Summary = "edit_event",
+                    Summary = "send_event",
                 };
             }
 
@@ -933,7 +933,7 @@ namespace OutlookAiAddIn
                     // requested, else by the unchanged occDate.
                     Outlook.AppointmentItem recheck;
                     string checkDate = start.HasValue ? Iso(start.Value) : occDate;
-                    ToolResult? stillMissing = ResolveOccurrenceTarget(master, checkDate, "edit_event", out recheck);
+                    ToolResult? stillMissing = ResolveOccurrenceTarget(master, checkDate, "send_event", out recheck);
                     if (stillMissing == null)
                     {
                         appt = recheck;
@@ -945,7 +945,7 @@ namespace OutlookAiAddIn
                             Output = "Could not save changes to \"" + (appt.Subject ?? "") + "\": " + ex.Message +
                                      (start.HasValue ? " If this was a time change, it may have crossed another occurrence of the same series - check list_events for this series' other occurrence dates." : ""),
                             IsError = true,
-                            Summary = "edit_event",
+                            Summary = "send_event",
                         };
                     }
                 }
@@ -955,7 +955,7 @@ namespace OutlookAiAddIn
                     {
                         Output = "Could not save changes to \"" + (appt.Subject ?? "") + "\": " + ex.Message,
                         IsError = true,
-                        Summary = "edit_event",
+                        Summary = "send_event",
                     };
                 }
             }
@@ -970,7 +970,7 @@ namespace OutlookAiAddIn
             {
                 Output = "Updated" + scopeNote + ": \"" + (appt.Subject ?? "") + "\"." + changeSummary + FormatUnresolvedAttendeesNote(unresolvedAttendees),
                 Mutated = true,
-                Summary = "edit_event",
+                Summary = "send_event",
             };
         }
 
@@ -983,7 +983,7 @@ namespace OutlookAiAddIn
         private static ToolResult DraftEditEvent(JsonElement input)
         {
             EventEdit e;
-            ToolResult? invalid = ParseEventEdit(input, "draft_edit_event", out e);
+            ToolResult? invalid = ParseEventEdit(input, "draft_event", out e);
             if (invalid != null) return invalid.Value;
             Outlook.AppointmentItem master = e.Master, appt = e.Appt;
             string occDate = e.OccDate;
@@ -1025,12 +1025,12 @@ namespace OutlookAiAddIn
             {
                 Output = "Opened \"" + (appt.Subject ?? "") + "\"" + scopeNote + " with the requested changes in Outlook for the user to review and " +
                          (isMeeting ? "save/send." : "save.") + (attendeesChanged ? " Attendee list updated - review before sending." : "") + FormatUnresolvedAttendeesNote(unresolvedAttendees),
-                Summary = "draft_edit_event",
+                Summary = "draft_event",
             };
         }
 
         // Shared by draft_event/send_event (cancel) - same organizer-authority
-        // shape as edit_event above (IsCanceledMeeting/IsReceivedMeeting
+        // shape as send_event (edit) above (IsCanceledMeeting/IsReceivedMeeting
         // reused, not duplicated), but an attendee's remedy for a meeting they
         // don't organize is respond_meeting (decline), not "Propose New Time".
         private static string ReceivedMeetingCancelError(Outlook.AppointmentItem appt)
@@ -1041,7 +1041,7 @@ namespace OutlookAiAddIn
                    "Use respond_meeting with response \"decline\" (Automate approvals or above), or draft_email with event_id to write to the organizer, instead.";
         }
 
-        // Only used by draft_cancel_event now - cancel_event treats an
+        // Only used by draft_event (cancel) now - send_event (cancel) treats an
         // already-canceled event as a cleanup (move to Deleted Items, no
         // resend) rather than refusing, so it never needs this message.
         private static string AlreadyCanceledError(Outlook.AppointmentItem appt)
@@ -1058,13 +1058,13 @@ namespace OutlookAiAddIn
         {
             Outlook.AppointmentItem master, appt;
             string occDate;
-            ToolResult? targetError = ResolveEventTarget(input, "draft_cancel_event", out master, out appt, out occDate);
+            ToolResult? targetError = ResolveEventTarget(input, "draft_event", out master, out appt, out occDate);
             if (targetError != null) return targetError.Value;
 
             if (IsCanceledMeeting(master))
-                return new ToolResult { Output = AlreadyCanceledError(appt), IsError = true, Summary = "draft_cancel_event" };
+                return new ToolResult { Output = AlreadyCanceledError(appt), IsError = true, Summary = "draft_event" };
             if (IsReceivedMeeting(master))
-                return new ToolResult { Output = ReceivedMeetingCancelError(appt), IsError = true, Summary = "draft_cancel_event" };
+                return new ToolResult { Output = ReceivedMeetingCancelError(appt), IsError = true, Summary = "draft_event" };
 
             bool isMeeting = master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
             string scopeNote = occDate != null ? " (just this occurrence)" : "";
@@ -1074,11 +1074,11 @@ namespace OutlookAiAddIn
                 Output = "Opened \"" + (appt.Subject ?? "") + "\"" + scopeNote + " in Outlook for the user to review and " +
                          (isMeeting ? "cancel it themselves (Cancel Meeting, then Send Cancellation) if they want to proceed."
                                     : "delete from the calendar."),
-                Summary = "draft_cancel_event",
+                Summary = "draft_event",
             };
         }
 
-        // Full-autonomy-only counterpart to draft_cancel_event: for an
+        // Full-autonomy-only counterpart to draft_event (cancel): for an
         // organized meeting, sends the cancellation notice immediately then
         // moves it to Deleted Items (recoverable); for a plain appointment,
         // just moves it. An already-canceled event is treated as cleanup,
@@ -1088,7 +1088,7 @@ namespace OutlookAiAddIn
         {
             Outlook.AppointmentItem master, appt;
             string occDate;
-            ToolResult? targetError = ResolveEventTarget(input, "cancel_event", out master, out appt, out occDate);
+            ToolResult? targetError = ResolveEventTarget(input, "send_event", out master, out appt, out occDate);
             if (targetError != null) return targetError.Value;
 
             bool isOccurrence = occDate != null;
@@ -1098,7 +1098,7 @@ namespace OutlookAiAddIn
             // that date" error above instead of reaching this point.
             bool alreadyCanceled = !isOccurrence && IsCanceledMeeting(appt);
             if (!alreadyCanceled && IsReceivedMeeting(master))
-                return new ToolResult { Output = ReceivedMeetingCancelError(appt), IsError = true, Summary = "cancel_event" };
+                return new ToolResult { Output = ReceivedMeetingCancelError(appt), IsError = true, Summary = "send_event" };
 
             string subject = appt.Subject ?? "";
             bool isMeeting = !alreadyCanceled && master.MeetingStatus == Outlook.OlMeetingStatus.olMeeting;
@@ -1130,7 +1130,7 @@ namespace OutlookAiAddIn
                         // ResolveOccurrenceTarget rather than assume the
                         // exception means the delete failed.
                         Outlook.AppointmentItem recheck;
-                        ToolResult? stillGone = ResolveOccurrenceTarget(master, occDate, "cancel_event", out recheck);
+                        ToolResult? stillGone = ResolveOccurrenceTarget(master, occDate, "send_event", out recheck);
                         removedLocally = stillGone != null; // non-null = "no occurrence found" = it's gone = delete succeeded despite the exception
                     }
                     return new ToolResult
@@ -1139,7 +1139,7 @@ namespace OutlookAiAddIn
                                  (removedLocally ? "" : " Outlook would not remove this occurrence - delete it manually.") +
                                  " This occurrence cannot be undone.",
                         Mutated = true,
-                        Summary = "cancel_event",
+                        Summary = "send_event",
                     };
                 }
 
@@ -1160,7 +1160,7 @@ namespace OutlookAiAddIn
                                  ? " removed from your calendar."
                                  : " (Outlook would not remove it from your calendar after sending - delete it manually)."),
                     Mutated = true,
-                    Summary = "cancel_event",
+                    Summary = "send_event",
                 };
             }
 
@@ -1178,12 +1178,12 @@ namespace OutlookAiAddIn
                     // reschedule tool's occurrence Save() - re-check before
                     // reporting failure.
                     Outlook.AppointmentItem recheck;
-                    ToolResult? stillGone = ResolveOccurrenceTarget(master, occDate, "cancel_event", out recheck);
+                    ToolResult? stillGone = ResolveOccurrenceTarget(master, occDate, "send_event", out recheck);
                     if (stillGone == null)
-                        return new ToolResult { Output = "Could not cancel \"" + subject + "\": " + ex.Message, IsError = true, Summary = "cancel_event" };
+                        return new ToolResult { Output = "Could not cancel \"" + subject + "\": " + ex.Message, IsError = true, Summary = "send_event" };
                 }
                 RecordIrreversible(mbxKey, "send_event (cancel) of \"" + subject + "\" occurrence");
-                return new ToolResult { Output = "Canceled" + scopeNote + ": \"" + subject + "\". This occurrence cannot be undone.", Mutated = true, Summary = "cancel_event" };
+                return new ToolResult { Output = "Canceled" + scopeNote + ": \"" + subject + "\". This occurrence cannot be undone.", Mutated = true, Summary = "send_event" };
             }
 
             {
@@ -1200,7 +1200,7 @@ namespace OutlookAiAddIn
                                  : "Canceled: \"" + subject + "\" moved") +
                              " to Deleted Items.\nevent_id: " + newId,
                     Mutated = true,
-                    Summary = "cancel_event",
+                    Summary = "send_event",
                 };
             }
         }

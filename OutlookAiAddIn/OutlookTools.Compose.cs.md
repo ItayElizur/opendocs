@@ -7,7 +7,7 @@ tested in RecurrenceValidatorTests) to an AppointmentItem, converting
 to the actual Outlook enums/flags OfficeAi.Shared can't reference
 directly (it has no Outlook PIA reference, same split as
 ColorUtil/BusyStatus in OutlookTools.Categories.cs). Called after
-attendees are set but before .Save()/.Send() in both create_event
+attendees are set but before .Save()/.Send() in both send_event (new)
 and draft_event - unverified whether GetRecurrencePattern() before
 vs. after setting MeetingStatus/attendees matters; this ordering
 (identity first, schedule second) matches natural Outlook UI flow
@@ -57,7 +57,7 @@ expecting a response to.
 Unlike draft_event (where an omitted start/end just leaves
 Outlook's own new-appointment default - "now", 30 min - sitting
 in a review window the user sees before sending/saving),
-create_event has no review step at all: a caller that forgets
+send_event (new) has no review step at all: a caller that forgets
 either would otherwise create a real, immediately-live calendar
 entry at an unintended time with nothing surfacing that it was
 defaulted. Required here specifically.
