@@ -480,7 +480,7 @@ namespace OutlookAiAddIn
                 {
                     Output = "Created and sent invite: \"" + (a.Subject ?? "") + "\" to " + attendeeList + "." + (recurrence != null ? " Repeats " + recurrence.Type + "." : "") + FormatUnresolvedAttendeesNote(unresolvedAttendees),
                     Mutated = true,
-                    Summary = "create_event",
+                    Summary = "send_event",
                 };
             }
 
@@ -490,7 +490,7 @@ namespace OutlookAiAddIn
             {
                 Output = "Created event: \"" + (a.Subject ?? "") + "\"." + (recurrence != null ? " Repeats " + recurrence.Type + "." : ""),
                 Mutated = true,
-                Summary = "create_event",
+                Summary = "send_event",
             };
         }
     }

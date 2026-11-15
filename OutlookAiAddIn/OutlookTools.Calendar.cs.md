@@ -198,7 +198,7 @@ confirmed the same sequence with the extra Save() reads
 Saved=True on a fresh re-fetch. The Save() is wrapped
 since it runs after the irreversible Send() has already
 succeeded - a failure here must not be reported as a
-failed edit_event call (the update already went out).
+failed send_event (edit) call (the update already went out).
 
 ## `EditEvent` - RecordSnapshot's props is always non-empty
 
@@ -223,16 +223,16 @@ user clicking "Send Cancellation" (unlike Start/End, an unsaved
 MeetingStatus change apparently isn't purely cosmetic here). That
 silently canceled the meeting locally with attendees never
 notified - worse than doing nothing, since it also means this tool
-can no longer be un-done or reattempted (cancel_event/edit_event
+can no longer be un-done or reattempted (send_event (cancel)/send_event (edit)
 both refuse on an already-canceled item). Never mutates the item at
 all now.
 
 ## `CancelEvent`
 
-Full-autonomy-only counterpart to draft_cancel_event above: for a
+Full-autonomy-only counterpart to draft_event (cancel) above: for a
 meeting the user organizes, sends the cancellation notice
-immediately (no review step, mirroring edit_event's/
-create_event's attendee-present branches) then removes it from the
+immediately (no review step, mirroring send_event (edit)'s/
+send_event (new)'s attendee-present branches) then removes it from the
 user's own calendar; for a plain appointment, just removes it -
 nobody to notify. Either way the item is moved to Deleted Items
 (recoverable there), same as delete_email's non-permanent path, not
@@ -243,5 +243,5 @@ organizer's own olMeetingCanceled copy, or an attendee's stale
 olMeetingReceivedAndCanceled one) is treated as cleanup, not
 refused: there's nothing new to notify anyone of, so it just moves
 straight to Deleted Items like a plain appointment. This is the
-only way to dismiss a canceled event at all - draft_cancel_event
+only way to dismiss a canceled event at all - draft_event (cancel)
 still refuses on one (nothing to preview/review for a cleanup).
