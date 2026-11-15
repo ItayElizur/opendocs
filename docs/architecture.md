@@ -50,6 +50,10 @@ sets) are maintained by hand in two different languages and **will silently drif
 tool is added to one side and not the other — see `CLAUDE.md` for the concrete example
 and the rule to follow when touching either side.
 
+## Direct tool calls (Developer tools)
+
+An opt-in setting (`developerTools`, saved with the other panel settings, off by default) turns on a `!` palette in the shared chat UI (`shared/chat-ui/tool-palette.ts` for the rules, `chat-ui.ts` for the popup). `!name({json})` runs one tool without the model: `bootstrap.ts` sends it through `skill.executeTool` (the same `callDotNetTool` bridge the model's calls use), so the server-side editing-mode gate applies unchanged and nothing here bypasses it. The client also locks tools outside the current mode, using the same `availableForMode()` sets that filter what the model is offered. The finished call is added to the loop's history (`AgentLoop.recordToolExchange`), so the next model turn sees what was run. No tool or tier list changes are involved.
+
 ## Provenance / data-source enforcement
 
 There is no `dataSource`/provenance-enforcement mechanism anywhere in OpenDocs (a

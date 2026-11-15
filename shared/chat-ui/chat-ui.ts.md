@@ -190,3 +190,16 @@ The chip dock (a sibling outside .ai-chat entirely) replaces it as
 this reopened conversation's way back to both actions, and stays
 visible for the rest of the session (only resetToEmpty hides it).
 ```
+
+## The "!" direct-call palette (Developer tools)
+
+Opt-in (the full settings view's Developer tools checkbox, Save-gated like the other fields there). When on, a message that
+starts with `!` opens a popup above the composer: a tool list filtered by name prefix, then a signature once `(` follows a
+name, then a warning when the name is unknown or the tool is outside the current mode. Enter on `!name({json})` calls
+`options.onDirectCall`; if the host returns false (a run is in flight) the text stays in the box. The rules (what opens it,
+filtering, signature params, JSON parse, schema check, did-you-mean) are pure and live in `tool-palette.ts` with their own
+tests; this file only draws and handles keys. A `!` that is not the first character never opens it, Esc closes it for the
+current text, and a message like `!important` that cannot be a tool call after Esc is sent as ordinary text. Tools outside the
+current mode are dimmed with a lock and refused on Enter with the reason, never hidden. Colors reuse the mode tokens plus a
+new `--direct` accent pair. The schema check only covers required keys, JSON types and enum values; keys a schema does not
+list are let through.
