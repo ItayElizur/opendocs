@@ -4,6 +4,13 @@ Current-state reference for every tool the AI can call in Word. See
 [`docs/architecture.md`](../architecture.md) for the shared editing-mode/transport
 architecture.
 
+**Text direction.** A COM text write does not flip a paragraph's reading order, so every tool that writes text
+(`insert_content`, `replace_blocks` including html, `add_table`/`edit_table` cells, text boxes, content controls,
+footnotes/endnotes, headers/footers, SmartArt nodes) sets it from the written text: mostly right-to-left text becomes
+right-to-left, clearly left-to-right text becomes left-to-right, and text with no letters changes nothing. Word mirrors a
+left/right alignment with the reading order and keeps a centered or justified one, so alignment is never written.
+**Not verified against live Word** beyond reading alignment back in a scratch document.
+
 ## Top-level tools (23)
 
 | Tool | Kind | Notes |
@@ -19,7 +26,7 @@ architecture.
 | `add_table` | Write | Adds a native Word table, optionally pre-filled with cell text (row-major array of arrays). |
 | `edit_table` | Write | `kind`: `set_cell`, `insert_row`/`delete_row`/`insert_col`/`delete_col`, `set_style` (styleName/headerRow/bandedRows/borders/borderColor), `set_shading` (cell/row/col/table scope, hex color). Structural edits shift later indices — re-read before a second structural edit in the same run. Row/col index 0 is just the first physical row/column, including a header row — there's no separate header concept in the index space. |
 | `add_smartart` | Write | `layout`: list/process/cycle/hierarchy/pyramid/matrix/venn. Flat item list, one per top-level node. |
-| `edit_smartart` | Write | `kind`: `set_text`, `add_node`, `delete_node`, `set_style` (colorName/quickStyleName, substring-matched against the install's real gallery), `set_layout`. `delete_node` shifts later node indices. |
+| `edit_smartart` | Write | `kind`: `set_text`, `add_node`, `delete_node`, `set_style` (colorName/quickStyleName, substring-matched against the install's real gallery), `set_layout`, `set_direction` (`reverse:true` flows the diagram right-to-left, `false` restores left-to-right; fails if the layout cannot reverse). `delete_node` shifts later node indices. |
 | `edit_chart` | Write — gateway | Creates or edits a native Word chart. Supports categories + one or more named series (multi-series, chart- selection: column/columnStacked/bar/barStacked/line/area/pie/doughnut). `chartIndex` addresses an existing chart (0-based, inline then floating shapes, document order); `create:true` always adds a new one. `afterBlockIndex` anchors a new chart inline instead of floating at document origin. |
 | `apply_commands` | Write — gateway, see below | |
 | `add_comment` | Write (every mode) | Anchors a real Word comment to the first match of given text. Available in every editing mode, including Comment Only. |

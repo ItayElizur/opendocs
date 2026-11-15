@@ -54,7 +54,7 @@ export const WORD_TOOL_DISPLAY = {
   },
   edit_smartart: {
     label: { en: 'Edit SmartArt', he: 'עריכת SmartArt' },
-    description: { en: 'Edits an existing SmartArt diagram\'s node text.', he: 'עורך את טקסט הצמתים של דיאגרמת SmartArt קיימת.' },
+    description: { en: 'Edits an existing SmartArt diagram\'s node text, style, layout, or flow direction.', he: 'עורך את טקסט הצמתים, הסגנון, הפריסה או כיוון הזרימה של דיאגרמת SmartArt קיימת.' },
   },
   apply_commands: {
     label: { en: 'Edit and format', he: 'עריכה ועיצוב' },

@@ -173,16 +173,18 @@ namespace PowerPointAiAddIn
             return body.TextFrame.TextRange.Text;
         }
 
-        // PowerPoint's TextRange never auto-flips direction/alignment for RTL text
-        // the way Word's editor does - decided per write from the text's own script
-        // mix via TextUtil.IsRtlMajority. See PowerPointTools.Elements.cs.md.
+        // A COM text write never auto-flips direction/alignment for RTL text (typing
+        // in the editor does) - decided per write from the text's own script
+        // mix via TextUtil.DetectDirection. See PowerPointTools.Elements.cs.md.
         private static void ApplyAutoDirection(PowerPoint.TextRange range, string text)
         {
             switch (TextUtil.DetectDirection(text))
             {
                 case TextDirection.Rtl:
                     range.ParagraphFormat.TextDirection = PowerPoint.PpDirection.ppDirectionRightToLeft;
-                    range.ParagraphFormat.Alignment = PowerPoint.PpParagraphAlignment.ppAlignRight;
+                    // Only the default left alignment is the leftover to flip; centered or justified is deliberate.
+                    if (range.ParagraphFormat.Alignment == PowerPoint.PpParagraphAlignment.ppAlignLeft)
+                        range.ParagraphFormat.Alignment = PowerPoint.PpParagraphAlignment.ppAlignRight;
                     break;
                 case TextDirection.Ltr:
                     // Undo an earlier Hebrew write, but never touch text that is already left-to-right, and keep a

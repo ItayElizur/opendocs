@@ -65,9 +65,9 @@ namespace OfficeAi.Shared
             return count;
         }
 
-        // PowerPoint's TextRange never auto-flips paragraph direction the way
-        // Word's editor does with "detect language automatically" - direction
-        // has to be decided per write from the text's own script mix.
+        // A COM text write (PowerPoint or Word) never auto-flips paragraph
+        // direction the way typing does - direction has to be decided per
+        // write from the text's own script mix.
         public static bool IsRtlMajority(string text) => DetectDirection(text) == TextDirection.Rtl;
 
         // Neutral = no letters at all (digits, punctuation, empty): carries no direction of its own.

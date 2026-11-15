@@ -265,6 +265,7 @@ namespace WordAiAddIn
                     at.InsertParagraphAfter();
                     at.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
                     at.Text = line.TrimEnd('\r');
+                    ApplyAutoDirection(at);
                 }
                 reportedText = text;
             }
@@ -476,6 +477,8 @@ namespace WordAiAddIn
             {
                 preservedNote = " (formatting stripped, preserveFormatting:false)";
             }
+
+            ApplyAutoDirection(range);
 
             return new ToolResult { Output = $"Replaced paragraphs {startIndex}-{endIndex} with: {text}{preservedNote}", Mutated = true, Summary = "replace_blocks" };
         }
