@@ -49,6 +49,8 @@ if you touch either list, and update both in the same commit. The same applies t
 each of Word/Excel/PowerPoint's own `readOnlyTools`/`commentOnlyExtraTools` arrays
 against their C# `Tools.Execute()` gating.
 
+Outlook's `preview_action` (the panel's Approve/Deny card lookup) is the one name handled before the tier gate; it is deliberately in no C# set and no `entry.ts` array, so do not add it to either.
+
 `OfficeAi.Shared.Tests/TierListsAgreeTests.cs` now reads the C# sets and the matching TypeScript arrays (`entry.ts`, or `tools.ts` for Excel's and PowerPoint's read-only lists) and fails when they differ
 (Word, Excel and PowerPoint read-only lists; all of Outlook's tiers), so run `dotnet test OfficeAi.Shared.Tests` after touching either side.
 

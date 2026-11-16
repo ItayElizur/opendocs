@@ -42,3 +42,10 @@ growing in PP-6/FT-1.
 (`OfficeAi.Shared/SecretStore.cs`) and injects them into the page before its scripts run as `window.__opendocsSecrets`
 (`WebViewBridgeHost`), which `loadSettings` reads. A key still in `localStorage` from an older build is moved over the first time
 the settings load. If the secrets file is lost, the keys are simply blank and the user enters them again.
+
+## `PanelSettings.confirmIrreversible`
+
+Whether the panel asks for an Approve/Deny before the actions an add-in lists in `confirmActions` (see `bootstrap.ts.md`).
+It is on unless the stored value is exactly `false`, so a user who saved settings before this field existed gets the safe
+default, and a missing or malformed value also means on. Only Outlook lists any actions; in the other add-ins the checkbox is
+shown but there is nothing for it to gate.
