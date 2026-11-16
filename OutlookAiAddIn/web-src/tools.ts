@@ -4,7 +4,7 @@
 
 const FOLDER = {
   type: 'string',
-  description: 'Folder name: "inbox" (default), "sent", "drafts", "deleted", "junk", or any custom folder name from list_folders.',
+  description: 'Folder name: "inbox" (default), "sent", "drafts", "deleted", "junk", or any custom folder from list_folders - a bare name, or the full path as list_folders prints it for a subfolder (e.g. "[Gmail]\\Trash").',
 }
 
 const MESSAGE_ID = { type: 'string', description: 'Outlook EntryID from search_emails or the current selection.' }
