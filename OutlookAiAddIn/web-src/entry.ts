@@ -7,29 +7,25 @@ import { SYSTEM_PROMPT } from './prompt'
 // (prompt.ts) into the shared app shell, which holds everything else.
 
 // Asked before they run (Approve/Deny card; the user can turn this off in settings). The first matching rule wins,
-// so the specific delete_email and send_event rules come before the general ones. Sends and deletes show what the
-// id points at by reading it with get_email / get_event.
-const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined)
-const describeMessage: ConfirmRule['describe'] = (input) => {
-  const message_id = str(input.message_id)
-  return message_id ? { tool: 'get_email', input: { message_id, ...(str(input.folder) ? { folder: input.folder } : {}) } } : null
-}
-const describeEvent: ConfirmRule['describe'] = (input) => {
-  const event_id = str(input.event_id)
-  return event_id ? { tool: 'get_event', input: { event_id, ...(str(input.store_id) ? { store_id: input.store_id } : {}) } } : null
-}
+// so the specific delete_email and send_event rules come before the general ones. `preview` asks the add-in for the item
+// behind the call (type, subject, sender, date) and skips the card when the call would be refused; `fields` adds rows from
+// the call's own arguments when there is no item yet. The body is never shown.
+const text = (v: unknown): string => (Array.isArray(v) ? v.join(', ') : typeof v === 'string' ? v : '')
 const confirmActions: ConfirmRule[] = [
-  { name: 'delete_email', when: (i) => i.permanent === true, danger: true, describe: describeMessage,
+  { name: 'delete_email', when: (i) => i.permanent === true, danger: true, preview: true,
     title: { en: 'Delete this message permanently? This cannot be undone.', he: 'למחוק את ההודעה לצמיתות? אי אפשר לבטל.' } },
-  { name: 'delete_email', describe: describeMessage,
+  { name: 'delete_email', preview: true,
     title: { en: 'Move this message to Deleted Items?', he: 'להעביר את ההודעה לפריטים שנמחקו?' } },
-  { name: 'send_email', danger: true,
+  { name: 'send_email', danger: true, preview: true,
+    fields: (i) => [{ key: 'to', value: text(i.to) }, { key: 'subject', value: text(i.subject) }],
     title: { en: 'Send this email now? A sent email cannot be taken back.', he: 'לשלוח את ההודעה עכשיו? אי אפשר להחזיר הודעה שנשלחה.' } },
-  { name: 'send_event', when: (i) => i.action === 'cancel', danger: true, describe: describeEvent,
+  { name: 'send_event', when: (i) => i.action === 'cancel', danger: true, preview: true,
     title: { en: 'Cancel this event? Attendees may be notified.', he: 'לבטל את האירוע? ייתכן שהמשתתפים יקבלו הודעה.' } },
-  { name: 'send_event', danger: true, describe: describeEvent,
+  { name: 'send_event', danger: true, preview: true,
+    fields: (i) => (i.event_id ? [] : [{ key: 'subject', value: text(i.subject) }, { key: 'start', value: text(i.start) }, { key: 'end', value: text(i.end) }]),
     title: { en: 'Create or update this event now? Attendees may be notified.', he: 'ליצור או לעדכן את האירוע עכשיו? ייתכן שהמשתתפים יקבלו הודעה.' } },
-  { name: 'respond_meeting', danger: true, describe: describeEvent,
+  { name: 'respond_meeting', danger: true, preview: true,
+    fields: (i) => [{ key: 'response', value: text(i.response) }],
     title: { en: 'Send this response to the organizer?', he: 'לשלוח את התגובה למארגן?' } },
 ]
 

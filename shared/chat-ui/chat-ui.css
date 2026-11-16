@@ -500,10 +500,11 @@
   .ai-confirm.danger { border-color: var(--color-danger, #c0392b); }
   .ai-confirm-title { font-weight: 600; margin-bottom: 6px; }
   .ai-confirm.danger .ai-confirm-title { color: var(--color-danger, #c0392b); }
-  .ai-confirm-details {
-    margin: 0 0 8px; padding: 6px 8px; max-height: 160px; overflow: auto; white-space: pre-wrap;
-    word-break: break-word; font: inherit; font-size: 12px; background: var(--color-bg-subtle); border-radius: var(--radius-30);
+  .ai-confirm-rows {
+    display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 0 0 8px; font-size: 12px;
   }
+  .ai-confirm-rows dt { color: var(--color-text-tertiary); }
+  .ai-confirm-rows dd { margin: 0; word-break: break-word; }
   .ai-confirm-actions { display: flex; gap: 8px; }
   .ai-confirm-approve, .ai-confirm-deny {
     border: 1px solid var(--color-border-default); border-radius: var(--radius-30);

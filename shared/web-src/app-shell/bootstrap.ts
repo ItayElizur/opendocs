@@ -27,8 +27,10 @@ export interface ConfirmRule {
   title: { en: string; he: string }
   /** The action cannot be undone. */
   danger?: boolean
-  /** A read-only tool call whose output is shown on the card, so an id is shown as what it points at. */
-  describe?: (input: Record<string, unknown>) => { tool: string; input: Record<string, unknown> } | null
+  /** Ask the app (a preview_action call) about the item behind the call: its type, subject, sender and date, or the reason the call would be refused (then no card is shown). */
+  preview?: boolean
+  /** Extra rows taken from the call's own arguments, for a call with no existing item (a new email, a new event). */
+  fields?: (input: Record<string, unknown>) => Array<{ key: string; value: string }>
 }
 
 export interface ToolDisplayInfo {
@@ -465,18 +467,23 @@ export function startAddIn(config: AddInConfig): void {
       : undefined
     if (rule) {
       const lang = effectiveLang(currentLangPref)
-      const parts: string[] = []
-      const described = rule.describe?.(call.input)
-      if (described) {
+      const rows: Array<{ label: string; value: string }> = []
+      if (rule.preview) {
         try {
-          const read = await callDotNetTool(described.tool, described.input)
-          if (!read.isError) parts.push(read.output.slice(0, 700))
+          const read = await callDotNetTool('preview_action', { tool: call.name, input: call.input })
+          if (!read.isError) {
+            const p = JSON.parse(read.output) as Record<string, string>
+            // The call would be refused anyway: say so now instead of asking first.
+            if (p.blocked) return { output: p.blocked, isError: true, summary: call.name }
+            if (p.type) rows.push({ label: ui.translate('confirmField_type'), value: ui.translate(`confirmType_${p.type}`) })
+            for (const key of ['subject', 'from', 'date']) if (p[key]) rows.push({ label: ui.translate(`confirmField_${key}`), value: p[key]! })
+          }
         } catch {
-          // The card still shows the call's own arguments.
+          // No preview: the card shows only the question and the call's own fields.
         }
       }
-      parts.push(`${call.name}(${JSON.stringify(call.input).slice(0, 500)})`)
-      const approved = await ui.confirmAction({ title: rule.title[lang], details: parts.join('\n\n'), danger: rule.danger === true }, signal)
+      for (const f of rule.fields?.(call.input) ?? []) if (f.value) rows.push({ label: ui.translate(`confirmField_${f.key}`), value: f.value })
+      const approved = await ui.confirmAction({ title: rule.title[lang], rows, danger: rule.danger === true }, signal)
       if (!approved) return { output: DECLINED_TEXT, isError: true, summary: call.name }
     }
     return callDotNetTool(call.name, call.input)
@@ -573,8 +580,9 @@ export function startAddIn(config: AddInConfig): void {
         // The call's late completion must not touch the new conversation (see runDirectCall).
         directCallGeneration++
         directCallRunning = false
-        ui.setBusy(false)
       }
+      // loop.reset() ends a model run without an onDone, so the stop button would stay up.
+      ui.setBusy(false)
       beginConversation()
       ui.resetToEmpty()
     },

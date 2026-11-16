@@ -209,6 +209,7 @@ list are let through.
 `confirmAction(spec, signal)` appends an `.ai-confirm` card to the chat and resolves a promise: true on Approve, false on Deny,
 Escape, or when `signal` aborts (an already-aborted signal resolves false without drawing the card). Focus starts on Deny so a
 stray Enter or Space cannot approve. After the answer the buttons are replaced by an Approved/Declined label and the card stays in
-the transcript. `danger` only changes the colours. The card's text comes from the caller (the app's `ConfirmRule`), so it is
-not in `STRINGS`; the buttons, the verdicts and the Safety setting's label are. The Safety section sits above Developer tools,
+the transcript. `danger` only changes the colours. The card is a title and a list of label/value rows (`spec.rows`, each value `dir="auto"`); the title comes from the caller (the
+app's `ConfirmRule`) and so is not in `STRINGS`, while the row labels (`confirmField_*`), the item types (`confirmType_*`), the buttons,
+the verdicts and the Safety setting's label are. The Safety section sits above Developer tools,
 which stays last. The checkbox is on unless saved off (`confirmIrreversible`).

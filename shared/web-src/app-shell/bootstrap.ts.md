@@ -273,8 +273,11 @@ sets `availableForMode()` uses.
 
 `skill.executeTool` is `executeConfirmed`. When `getSettings().confirmIrreversible` is on and a `ConfirmRule` in
 `config.confirmActions` matches the call (first match wins, `when` narrows by arguments), it asks through `ui.confirmAction`
-before calling the bridge. The card's details are the rule's `describe` read call (failure is ignored; the card then shows only
-the call) followed by the call's own arguments, cut to 700 and 500 characters. The `AbortSignal` the loop passes in is handed to
+before calling the bridge. A rule with `preview` first calls the app's `preview_action` read tool: a `blocked` answer is returned to the
+model as the result and no card is shown; otherwise its type, subject, sender and date become the card's rows (a failed preview is ignored,
+so the card shows only the question). The rule's `fields` add rows from the call's own arguments. The body and the tool call itself
+are never shown. New chat always calls `ui.setBusy(false)`, because `loop.reset()` ends a run without an `onDone` and the stop
+button would otherwise stay up. The `AbortSignal` the loop passes in is handed to
 the card: `AgentLoop.cancel()` and `reset()` both abort it, so Stop and New chat deny a pending card and nothing runs. A denied
 call returns an error result, `DECLINED_TEXT`, which tells the model not to retry and to ask the user. The setting is read per call,
 so toggling it in settings applies at once. The `!` palette bypasses this on purpose (see `onDirectCall`).

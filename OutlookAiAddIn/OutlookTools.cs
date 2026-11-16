@@ -89,12 +89,21 @@ namespace OutlookAiAddIn
             }
         }
 
+        // Null when mode allows a permanent delete; shared by ExecuteAsync and the card's preview so both say the same thing.
+        private static string PermanentModeRefusal(EditingMode mode)
+        {
+            return (int)mode >= (int)EditingMode.FullAutonomy ? null
+                : "Blocked: permanent delete requires " + TierLabel(EditingMode.FullAutonomy) + " mode or higher (currently " + TierLabel(mode) + "). Omit permanent, or set it to false, to move the message to Deleted Items instead.";
+        }
+
         public static async Task<ToolResult> ExecuteAsync(string mbxKey, string name, JsonElement input)
         {
             try
             {
                 DebugLog.Write("OutlookTools.Execute " + name);
                 EditingMode mode = ModeFor(mbxKey);
+                // Read-only lookup for the panel's Approve/Deny card; not a model tool, so in none of the tier sets.
+                if (name == "preview_action") return PreviewAction(mbxKey, input);
                 if (!AlwaysAllowedTools.Contains(name))
                 {
                     EditingMode required =
@@ -117,11 +126,12 @@ namespace OutlookAiAddIn
                     // gate too, despite the tool NAME sitting in
                     // DraftTierTools). This is name-based gating's one
                     // input-aware exception - see OutlookTools.cs.md.
-                    if (name == "delete_email" && Bool(input, "permanent", false) && (int)mode < (int)EditingMode.FullAutonomy)
+                    string permanentRefusal = name == "delete_email" && Bool(input, "permanent", false) ? PermanentModeRefusal(mode) : null;
+                    if (permanentRefusal != null)
                     {
                         return new ToolResult
                         {
-                            Output = "Blocked: permanent delete requires " + TierLabel(EditingMode.FullAutonomy) + " mode or higher (currently " + TierLabel(mode) + "). Omit permanent, or set it to false, to move the message to Deleted Items instead.",
+                            Output = permanentRefusal,
                             IsError = true,
                             Summary = name,
                         };

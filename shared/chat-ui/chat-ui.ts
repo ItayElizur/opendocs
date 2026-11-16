@@ -88,6 +88,21 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   sectionSafety:        { en: 'Safety', he: 'בטיחות' },
   confirmSettingLabel:  { en: 'Ask before irreversible actions and deletes', he: 'שאל לפני פעולות בלתי הפיכות ומחיקות' },
   confirmSettingNote:   { en: 'The assistant shows what it is about to do and waits for Approve or Deny. Calls you type with ! never ask.', he: 'העוזר מציג מה הוא עומד לעשות וממתין לאישור או לדחייה. קריאות שהקלדת עם ! אינן שואלות.' },
+  confirmField_type:    { en: 'Type', he: 'סוג' },
+  confirmField_subject: { en: 'Subject', he: 'נושא' },
+  confirmField_from:    { en: 'From', he: 'מאת' },
+  confirmField_to:      { en: 'To', he: 'אל' },
+  confirmField_date:    { en: 'Date', he: 'תאריך' },
+  confirmField_start:   { en: 'Starts', he: 'התחלה' },
+  confirmField_end:     { en: 'Ends', he: 'סיום' },
+  confirmField_response: { en: 'Response', he: 'תגובה' },
+  confirmType_mail:     { en: 'Email', he: 'דוא"ל' },
+  confirmType_meetingRequest: { en: 'Meeting invitation', he: 'הזמנה לפגישה' },
+  confirmType_meetingResponse: { en: 'Meeting response', he: 'תגובה לפגישה' },
+  confirmType_meetingCancellation: { en: 'Meeting cancellation', he: 'ביטול פגישה' },
+  confirmType_event:    { en: 'Event', he: 'אירוע' },
+  confirmType_task:     { en: 'Task', he: 'משימה' },
+  confirmType_other:    { en: 'Item', he: 'פריט' },
   confirmApprove:       { en: 'Approve', he: 'אשר' },
   confirmDeny:          { en: 'Deny', he: 'דחה' },
   confirmApproved:      { en: 'Approved', he: 'אושר' },
@@ -266,8 +281,8 @@ export interface ToolGroupHandle {
 
 export interface ConfirmSpec {
   title: string
-  /** Shown as plain text, in the reading direction of its own content. */
-  details: string
+  /** Labelled facts about the item, one per line; each value is shown in the reading direction of its own text. */
+  rows: Array<{ label: string; value: string }>
   /** Styled as a warning: the action cannot be undone. */
   danger?: boolean
 }
@@ -1941,10 +1956,16 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         const title = document.createElement('div')
         title.className = 'ai-confirm-title'
         title.textContent = spec.title
-        const details = document.createElement('pre')
-        details.className = 'ai-confirm-details'
-        details.dir = 'auto'
-        details.textContent = spec.details
+        const details = document.createElement('dl')
+        details.className = 'ai-confirm-rows'
+        for (const row of spec.rows) {
+          const dt = document.createElement('dt')
+          dt.textContent = row.label
+          const dd = document.createElement('dd')
+          dd.dir = 'auto'
+          dd.textContent = row.value
+          details.append(dt, dd)
+        }
         const actions = document.createElement('div')
         actions.className = 'ai-confirm-actions'
         const mk = (key: string, cls: string): HTMLButtonElement => {
@@ -1958,7 +1979,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         const approve = mk('confirmApprove', 'ai-confirm-approve')
         const deny = mk('confirmDeny', 'ai-confirm-deny')
         actions.append(approve, deny)
-        card.append(title, details, actions)
+        card.append(title, ...(spec.rows.length ? [details] : []), actions)
         const settle = (ok: boolean): void => {
           signal?.removeEventListener('abort', onAbort)
           card.removeEventListener('keydown', onKey)
