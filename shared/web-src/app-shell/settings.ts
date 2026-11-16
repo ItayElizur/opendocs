@@ -33,6 +33,8 @@ export interface PanelSettings {
   reasoningEffort: ReasoningEffort
   /** Opt-in "!" direct tool-call palette in the message box; see chat-ui.ts's Developer tools section. */
   developerTools: boolean
+  /** Ask before an app's irreversible actions and deletes (the app's confirmActions rules); on unless the user turned it off. */
+  confirmIrreversible: boolean
 }
 
 // PP-0's flat { baseUrl, apiKey, model, skipTlsVerify } shape, kept only as
@@ -72,7 +74,7 @@ function loadSettings(): PanelSettings {
   const defaults = defaultsForThisRepo()
   try {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY)
-    if (!raw) return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default', reasoningEffort: 'default', developerTools: false }
+    if (!raw) return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default', reasoningEffort: 'default', developerTools: false, confirmIrreversible: true }
     const parsed = JSON.parse(raw) as Partial<PanelSettings> & LegacyStoredSettings
     const loaded: PanelSettings = {
       // resolveAiSettings migrates the legacy flat {baseUrl, apiKey, model}
@@ -84,6 +86,7 @@ function loadSettings(): PanelSettings {
       lang: normalizeLang(parsed.lang),
       reasoningEffort: normalizeReasoningEffort(parsed.reasoningEffort),
       developerTools: parsed.developerTools === true,
+      confirmIrreversible: parsed.confirmIrreversible !== false,
     }
     // API keys come from the host's encrypted store. A key still sitting in localStorage (saved by an older build)
     // is moved there: persistSettings below writes it to the store and blanks it in localStorage.
@@ -97,7 +100,7 @@ function loadSettings(): PanelSettings {
     if (hasPlainKey) persistSettings(loaded)
     return loaded
   } catch {
-    return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default', reasoningEffort: 'default', developerTools: false }
+    return { ai: defaults, skipTlsVerify: false, theme: 'default', lang: 'default', reasoningEffort: 'default', developerTools: false, confirmIrreversible: true }
   }
 }
 

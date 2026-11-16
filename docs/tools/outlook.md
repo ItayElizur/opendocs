@@ -50,6 +50,12 @@ shared-calendar path — each because the COM object model either can't do the j
   reversible move). A fresh session defaults to **Draft only** (`defaultMode:
   'commentOnly'`, resolved via `chat-ui.ts`'s `defaultModeFor()` — the same helper
   Word/Excel/PowerPoint use to default to their own `trackChanges`).
+- **Approve before they run.** On top of the tier gate, the panel asks for an Approve/Deny on a card before `send_email`,
+  `send_event`, `respond_meeting` and every `delete_email` (a plain delete says it moves to Deleted Items and can be undone;
+  a permanent one is marked as irreversible). The card shows what the id points at, read with `get_email` / `get_event`.
+  It is a client-side rule list in `entry.ts` (`confirmActions`), so no C# tier set changes. Turn it off with **Ask before
+  irreversible actions and deletes** in the full settings view (Safety). Calls typed with `!` never ask. Not verified
+  against a live Outlook with a real model.
 - **Selection context.** The Explorer's `SelectionChange` pushes the selected mail
   item(s) / conversation into per-turn context as a `mail` `SelectionContext` variant
   (`shared/web-src/app-shell/bootstrap.ts`) carrying each item's `EntryID`, so the

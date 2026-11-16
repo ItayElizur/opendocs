@@ -1502,3 +1502,47 @@ describe('"!" direct-call palette', () => {
     expect([...palette.querySelectorAll('.p.cur')].map((el) => el.textContent?.split(':')[0])).toEqual(['kind'])
   })
 })
+
+describe('confirmAction card', () => {
+  it('renders title, details and Approve/Deny in the panel language, focusing Deny', () => {
+    const { root, handle } = setup()
+    handle.setLang('he')
+    void handle.confirmAction({ title: 'למחוק?', details: 'delete_email({})', danger: true })
+    const card = root.querySelector<HTMLElement>('.ai-confirm')!
+    expect(card.classList.contains('danger')).toBe(true)
+    expect(card.querySelector('.ai-confirm-title')!.textContent).toBe('למחוק?')
+    expect(card.querySelector('.ai-confirm-approve')!.textContent).toBe('אשר')
+    expect(card.querySelector('.ai-confirm-deny')!.textContent).toBe('דחה')
+    expect(document.activeElement).toBe(card.querySelector('.ai-confirm-deny'))
+  })
+
+  it('resolves true on Approve, false on Deny, and records the verdict', async () => {
+    const { root, handle } = setup()
+    const yes = handle.confirmAction({ title: 'a', details: 'x' })
+    root.querySelector<HTMLButtonElement>('.ai-confirm-approve')!.click()
+    expect(await yes).toBe(true)
+    expect(root.querySelector('.ai-confirm-verdict')!.textContent).toBe('Approved')
+
+    const no = handle.confirmAction({ title: 'b', details: 'y' })
+    root.querySelectorAll<HTMLButtonElement>('.ai-confirm-deny')[0]!.click()
+    expect(await no).toBe(false)
+  })
+
+  it('resolves false when the signal aborts, and at once when it is already aborted', async () => {
+    const { handle } = setup()
+    const ctl = new AbortController()
+    const pending = handle.confirmAction({ title: 'a', details: 'x' }, ctl.signal)
+    ctl.abort()
+    expect(await pending).toBe(false)
+    expect(await handle.confirmAction({ title: 'b', details: 'y' }, ctl.signal)).toBe(false)
+  })
+
+  it('keeps the Safety checkbox on by default and saves its value', () => {
+    const { root, onSettingsSave } = setup()
+    const box = root.querySelector<HTMLInputElement>('[data-field="confirmIrreversible"]')!
+    expect(box.checked).toBe(true)
+    box.checked = false
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+    expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ confirmIrreversible: false }))
+  })
+})

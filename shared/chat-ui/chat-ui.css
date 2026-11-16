@@ -492,6 +492,29 @@
   }
   .ai-notice-action:hover { background: var(--color-bg-subtle); }
 
+  /* Approve/Deny card for an action the assistant wants to take; see confirmAction(). */
+  .ai-confirm {
+    border: 1px solid var(--color-border-default); border-radius: var(--radius-30);
+    background: var(--color-bg-page); padding: 10px 12px; margin: 6px 0; font-size: 13px;
+  }
+  .ai-confirm.danger { border-color: var(--color-danger, #c0392b); }
+  .ai-confirm-title { font-weight: 600; margin-bottom: 6px; }
+  .ai-confirm.danger .ai-confirm-title { color: var(--color-danger, #c0392b); }
+  .ai-confirm-details {
+    margin: 0 0 8px; padding: 6px 8px; max-height: 160px; overflow: auto; white-space: pre-wrap;
+    word-break: break-word; font: inherit; font-size: 12px; background: var(--color-bg-subtle); border-radius: var(--radius-30);
+  }
+  .ai-confirm-actions { display: flex; gap: 8px; }
+  .ai-confirm-approve, .ai-confirm-deny {
+    border: 1px solid var(--color-border-default); border-radius: var(--radius-30);
+    background: var(--color-bg-page); color: var(--color-brand-secondary);
+    padding: 3px 14px; font-size: 12px; cursor: pointer;
+  }
+  .ai-confirm-approve:hover, .ai-confirm-deny:hover { background: var(--color-bg-subtle); }
+  .ai-confirm.danger .ai-confirm-approve { color: var(--color-danger, #c0392b); }
+  .ai-confirm-verdict { color: var(--color-text-tertiary); }
+  .ai-confirm.decided { opacity: 0.85; }
+
   .ai-composer { padding: 8px 12px 12px; background: var(--color-bg-page); flex-shrink: 0; position: relative; }
 
   /* "!" direct-call palette (Developer tools): a popup above the message box, in the style of Claude Code's / menu. */

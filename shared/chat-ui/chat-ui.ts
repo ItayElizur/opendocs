@@ -85,6 +85,13 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   sectionDeveloper:     { en: 'Developer tools', he: 'כלי פיתוח' },
   developerToolsLabel:  { en: 'Enable the ! tool palette', he: 'הפעל את לוח הכלים !' },
   developerToolsNote:   { en: 'Type ! at the start of a message to run any tool directly, without the model. The editing mode still limits which tools run.', he: 'הקלד ! בתחילת הודעה כדי להריץ כלי ישירות, בלי המודל. מצב העריכה עדיין מגביל אילו כלים רצים.' },
+  sectionSafety:        { en: 'Safety', he: 'בטיחות' },
+  confirmSettingLabel:  { en: 'Ask before irreversible actions and deletes', he: 'שאל לפני פעולות בלתי הפיכות ומחיקות' },
+  confirmSettingNote:   { en: 'The assistant shows what it is about to do and waits for Approve or Deny. Calls you type with ! never ask.', he: 'העוזר מציג מה הוא עומד לעשות וממתין לאישור או לדחייה. קריאות שהקלדת עם ! אינן שואלות.' },
+  confirmApprove:       { en: 'Approve', he: 'אשר' },
+  confirmDeny:          { en: 'Deny', he: 'דחה' },
+  confirmApproved:      { en: 'Approved', he: 'אושר' },
+  confirmDeclined:      { en: 'Declined', he: 'נדחה' },
   paletteTitle:         { en: 'Direct call', he: 'קריאה ישירה' },
   paletteRun:           { en: 'runs the call without the model', he: 'מריץ את הקריאה בלי המודל' },
   paletteOf:            { en: 'of', he: 'מתוך' },
@@ -176,6 +183,8 @@ export interface SettingsSavePayload {
   reasoningEffort?: ReasoningEffort
   /** only present when saved from the full settings view, same gating as docSystemMessage above */
   developerTools?: boolean
+  /** only present when saved from the full settings view, same gating as docSystemMessage above */
+  confirmIrreversible?: boolean
 }
 
 /** One tool's UI-only display info (FT-1 Task 5) - distinct from the tool's
@@ -207,6 +216,8 @@ export interface InitialSettings {
   reasoningEffort?: ReasoningEffort
   /** Seeds the Developer tools checkbox. Defaults to false if omitted. */
   developerTools?: boolean
+  /** Seeds the Safety checkbox. Defaults to true if omitted. */
+  confirmIrreversible?: boolean
 }
 
 export interface ChatUIOptions {
@@ -253,6 +264,14 @@ export interface ToolGroupHandle {
   end(): void
 }
 
+export interface ConfirmSpec {
+  title: string
+  /** Shown as plain text, in the reading direction of its own content. */
+  details: string
+  /** Styled as a warning: the action cannot be undone. */
+  danger?: boolean
+}
+
 export interface ChatUIHandle {
   addUserMessage(text: string): void
   beginAssistantMessage(): void
@@ -263,6 +282,8 @@ export interface ChatUIHandle {
    *  again for the reasoning gap before the next turn. */
   endTurn(): void
   beginToolGroup(): ToolGroupHandle
+  /** Shows an Approve/Deny card in the chat and resolves true only on Approve. Resolves false on Deny, Escape, or when `signal` aborts (Stop, New chat). */
+  confirmAction(spec: ConfirmSpec, signal?: AbortSignal): Promise<boolean>
   /** stoppable=false (a direct tool call) keeps the stop button visible but inert, with a hover note saying why */
   setBusy(busy: boolean, stoppable?: boolean): void
   showError(message: string): void
@@ -671,6 +692,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <h4 data-t="sectionDocMessage">Document guidelines</h4>
           <textarea class="ai-doc-message" id="docMessageInput" data-t-placeholder="docMessagePlaceholder" maxlength="8192"></textarea>
           <p class="ai-settings-section-note" data-t="docMessageSaveNote">Applies at the start of the next New chat, not the current conversation.</p>
+        </div>
+        <div class="ai-settings-section">
+          <h4 data-t="sectionSafety">Safety</h4>
+          <p class="ai-settings-section-note" data-t="confirmSettingNote">The assistant shows what it is about to do and waits for Approve or Deny. Calls you type with ! never ask.</p>
+          <label class="ai-checkbox-row"><input type="checkbox" data-field="confirmIrreversible" checked /> <span data-t="confirmSettingLabel">Ask before irreversible actions and deletes</span></label>
         </div>
         <div class="ai-settings-section">
           <h4 data-t="sectionDeveloper">Developer tools</h4>
@@ -1149,6 +1175,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const developerToolsBox = root.querySelector<HTMLInputElement>('[data-field="developerTools"]')!
   let developerTools = options.initialSettings?.developerTools ?? false
   developerToolsBox.checked = developerTools
+  const confirmBox = root.querySelector<HTMLInputElement>('[data-field="confirmIrreversible"]')!
+  confirmBox.checked = options.initialSettings?.confirmIrreversible ?? true
   let paletteSel = 0
   let paletteDismissed = false
   let paletteShowErrors = false
@@ -1708,6 +1736,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       registeredTools: registeredToolNames,
       reasoningEffort: pendingReasoningEffort,
       developerTools: developerToolsBox.checked,
+      confirmIrreversible: confirmBox.checked,
     })
     developerTools = developerToolsBox.checked
     renderPalette()
@@ -1902,6 +1931,58 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           groupEl.classList.remove('running')
         },
       }
+    },
+    confirmAction(spec, signal) {
+      return new Promise<boolean>((resolve) => {
+        if (signal?.aborted) return resolve(false)
+        const card = document.createElement('div')
+        card.className = 'ai-confirm' + (spec.danger ? ' danger' : '')
+        card.setAttribute('role', 'alertdialog')
+        const title = document.createElement('div')
+        title.className = 'ai-confirm-title'
+        title.textContent = spec.title
+        const details = document.createElement('pre')
+        details.className = 'ai-confirm-details'
+        details.dir = 'auto'
+        details.textContent = spec.details
+        const actions = document.createElement('div')
+        actions.className = 'ai-confirm-actions'
+        const mk = (key: string, cls: string): HTMLButtonElement => {
+          const b = document.createElement('button')
+          b.type = 'button'
+          b.className = cls
+          b.dataset.t = key
+          b.textContent = t(key)
+          return b
+        }
+        const approve = mk('confirmApprove', 'ai-confirm-approve')
+        const deny = mk('confirmDeny', 'ai-confirm-deny')
+        actions.append(approve, deny)
+        card.append(title, details, actions)
+        const settle = (ok: boolean): void => {
+          signal?.removeEventListener('abort', onAbort)
+          card.removeEventListener('keydown', onKey)
+          const verdict = document.createElement('span')
+          verdict.className = 'ai-confirm-verdict'
+          verdict.dataset.t = ok ? 'confirmApproved' : 'confirmDeclined'
+          verdict.textContent = t(verdict.dataset.t)
+          actions.replaceChildren(verdict)
+          card.classList.add('decided')
+          resolve(ok)
+        }
+        const onAbort = (): void => settle(false)
+        const onKey = (e: KeyboardEvent): void => {
+          if (e.key === 'Escape') settle(false)
+        }
+        approve.addEventListener('click', () => settle(true))
+        deny.addEventListener('click', () => settle(false))
+        card.addEventListener('keydown', onKey)
+        signal?.addEventListener('abort', onAbort)
+        appendToChat(card)
+        scrollToBottom()
+        // Deny is the default focus, so a stray Enter or Space does not approve.
+        deny.focus()
+      })
     },
     setBusy(busy, stoppable = true) {
       thinkingBusy = busy

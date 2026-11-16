@@ -52,7 +52,11 @@ and the rule to follow when touching either side.
 
 ## Direct tool calls (Developer tools)
 
-An opt-in setting (`developerTools`, saved with the other panel settings, off by default) turns on a `!` palette in the shared chat UI (`shared/chat-ui/tool-palette.ts` for the rules, `chat-ui.ts` for the popup). `!name({json})` runs one tool without the model: `bootstrap.ts` sends it through `skill.executeTool` (the same `callDotNetTool` bridge the model's calls use), so the server-side editing-mode gate applies unchanged and nothing here bypasses it. The client also locks tools outside the current mode, using the same `availableForMode()` sets that filter what the model is offered. The finished call is added to the loop's history (`AgentLoop.recordToolExchange`), so the next model turn sees what was run. No tool or tier list changes are involved.
+An opt-in setting (`developerTools`, saved with the other panel settings, off by default) turns on a `!` palette in the shared chat UI (`shared/chat-ui/tool-palette.ts` for the rules, `chat-ui.ts` for the popup). `!name({json})` runs one tool without the model: `bootstrap.ts` sends it through `callDotNetTool` (the same bridge the model's calls use), so the server-side editing-mode gate applies unchanged and nothing here bypasses it. The client also locks tools outside the current mode, using the same `availableForMode()` sets that filter what the model is offered. The finished call is added to the loop's history (`AgentLoop.recordToolExchange`), so the next model turn sees what was run. No tool or tier list changes are involved.
+
+## Approve before irreversible actions
+
+`AddInConfig.confirmActions` (`bootstrap.ts`) lists calls that need an Approve from the user before they run; only Outlook sets it (sends, meeting responses, every `delete_email`). It is a client-side gate in `executeConfirmed`, around the model's `callDotNetTool` call, so it adds no C# tool or tier-list entry and the server-side editing-mode check still runs after Approve. The first matching `ConfirmRule` wins. The card (`confirmAction` in `chat-ui.ts`) shows the rule's title and, when the rule has a `describe` read call, what the id points at (for example `get_email`) plus the call's own arguments. Deny, Escape, Stop and New chat all resolve to Deny, and the model gets a result telling it not to retry. A call the user typed with `!` never asks. The `confirmIrreversible` panel setting (Safety section, on by default) turns it off.
 
 ## Provenance / data-source enforcement
 

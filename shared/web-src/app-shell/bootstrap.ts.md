@@ -257,7 +257,7 @@ stopped via the stop button) - a queued message should still go out.
 
 ## `onDirectCall` (the "!" palette)
 
-Runs a tool the user typed by hand through `skill.executeTool` (the same bridge call the model's tools use), shows it with the
+Runs a tool the user typed by hand through `callDotNetTool` directly (the same bridge call the model's tools use, but not `executeConfirmed`, because the user wrote the call themselves), shows it with the
 ordinary user bubble and tool-step row, and then records the exchange into the loop's history with
 `AgentLoop.recordToolExchange` (user text, assistant tool call, tool result, a closing assistant marker) so the next model turn
 sees it. Refused while a run or another direct call is in flight (the text stays in the box); a normal send during a direct
@@ -268,3 +268,13 @@ reply, so without the reply a reloaded conversation would lose the call. New cha
 never replies cannot wedge the panel. Tool arguments and results are never redacted; the loop's `redact` option (see
 `redactModelKeys`) removes only the user's configured model API key from what they type. The palette's pill needs each tool's lowest mode, computed by `minModeOf` from the same
 sets `availableForMode()` uses.
+
+## `confirmActions` and `executeConfirmed` (Approve before irreversible actions)
+
+`skill.executeTool` is `executeConfirmed`. When `getSettings().confirmIrreversible` is on and a `ConfirmRule` in
+`config.confirmActions` matches the call (first match wins, `when` narrows by arguments), it asks through `ui.confirmAction`
+before calling the bridge. The card's details are the rule's `describe` read call (failure is ignored; the card then shows only
+the call) followed by the call's own arguments, cut to 700 and 500 characters. The `AbortSignal` the loop passes in is handed to
+the card: `AgentLoop.cancel()` and `reset()` both abort it, so Stop and New chat deny a pending card and nothing runs. A denied
+call returns an error result, `DECLINED_TEXT`, which tells the model not to retry and to ask the user. The setting is read per call,
+so toggling it in settings applies at once. The `!` palette bypasses this on purpose (see `onDirectCall`).

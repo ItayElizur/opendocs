@@ -1,10 +1,37 @@
-import { startAddIn } from '@officeai/app-shell'
+import { startAddIn, type ConfirmRule } from '@officeai/app-shell'
 import { ALL_OUTLOOK_TOOLS } from './tools'
 import { OUTLOOK_TOOL_DISPLAY, STARTERS } from './display'
 import { SYSTEM_PROMPT } from './prompt'
 
 // Outlook add-in entry point: wires this app's tools (tools.ts), UI text (display.ts) and system prompt
 // (prompt.ts) into the shared app shell, which holds everything else.
+
+// Asked before they run (Approve/Deny card; the user can turn this off in settings). The first matching rule wins,
+// so the specific delete_email and send_event rules come before the general ones. Sends and deletes show what the
+// id points at by reading it with get_email / get_event.
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined)
+const describeMessage: ConfirmRule['describe'] = (input) => {
+  const message_id = str(input.message_id)
+  return message_id ? { tool: 'get_email', input: { message_id, ...(str(input.folder) ? { folder: input.folder } : {}) } } : null
+}
+const describeEvent: ConfirmRule['describe'] = (input) => {
+  const event_id = str(input.event_id)
+  return event_id ? { tool: 'get_event', input: { event_id, ...(str(input.store_id) ? { store_id: input.store_id } : {}) } } : null
+}
+const confirmActions: ConfirmRule[] = [
+  { name: 'delete_email', when: (i) => i.permanent === true, danger: true, describe: describeMessage,
+    title: { en: 'Delete this message permanently? This cannot be undone.', he: 'למחוק את ההודעה לצמיתות? אי אפשר לבטל.' } },
+  { name: 'delete_email', describe: describeMessage,
+    title: { en: 'Move this message to Deleted Items?', he: 'להעביר את ההודעה לפריטים שנמחקו?' } },
+  { name: 'send_email', danger: true,
+    title: { en: 'Send this email now? A sent email cannot be taken back.', he: 'לשלוח את ההודעה עכשיו? אי אפשר להחזיר הודעה שנשלחה.' } },
+  { name: 'send_event', when: (i) => i.action === 'cancel', danger: true, describe: describeEvent,
+    title: { en: 'Cancel this event? Attendees may be notified.', he: 'לבטל את האירוע? ייתכן שהמשתתפים יקבלו הודעה.' } },
+  { name: 'send_event', danger: true, describe: describeEvent,
+    title: { en: 'Create or update this event now? Attendees may be notified.', he: 'ליצור או לעדכן את האירוע עכשיו? ייתכן שהמשתתפים יקבלו הודעה.' } },
+  { name: 'respond_meeting', danger: true, describe: describeEvent,
+    title: { en: 'Send this response to the organizer?', he: 'לשלוח את התגובה למארגן?' } },
+]
 
 startAddIn({
   skillId: 'outlook-tools',
@@ -78,4 +105,5 @@ startAddIn({
     },
   },
   autoSendTools: ['send_email', 'send_event'],
+  confirmActions,
 })

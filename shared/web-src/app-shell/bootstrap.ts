@@ -1,4 +1,4 @@
-import { AgentLoop, randomId, type AgentSkill, type ToolExecution } from '@officeai/agent-core'
+import { AgentLoop, randomId, type AgentSkill, type AgentToolCall, type ToolExecution } from '@officeai/agent-core'
 import { streamForProvider, type AiProviderConfig } from '@officeai/ai-provider'
 import { defaultModeFor, mountChatUI, resolveModes, type EditingMode, type ModeOverrides, type SelectionExtent, type ToolDisplayEntry } from '@officeai/chat-ui'
 import {
@@ -17,6 +17,19 @@ import {
   type RawSelectionPayload,
 } from './bridge'
 import { getSettings, makeTransport, setSettings } from './settings'
+
+/** An action the assistant must get an Approve from the user for before it runs; the first matching rule wins. */
+export interface ConfirmRule {
+  name: string
+  /** Narrows the rule to some calls of the tool (e.g. only permanent deletes). Absent means every call. */
+  when?: (input: Record<string, unknown>) => boolean
+  /** Question shown as the card's title. */
+  title: { en: string; he: string }
+  /** The action cannot be undone. */
+  danger?: boolean
+  /** A read-only tool call whose output is shown on the card, so an id is shown as what it points at. */
+  describe?: (input: Record<string, unknown>) => { tool: string; input: Record<string, unknown> } | null
+}
 
 export interface ToolDisplayInfo {
   label: { en: string; he: string }
@@ -321,6 +334,8 @@ export interface AddInConfig {
   defaultMode?: EditingMode
   /** Tool names that send/create something externally with no review step - see ChatUIOptions.autoSendTools. */
   autoSendTools?: string[]
+  /** Actions that ask the user to Approve before they run (see ConfirmRule). Absent means none. */
+  confirmActions?: ConfirmRule[]
 }
 
 // Gives the model ground truth for "today" (relative-date tool args otherwise
@@ -437,7 +452,34 @@ export function startAddIn(config: AddInConfig): void {
           buildContext: () => describeSelectionFn(latestSelectionContext),
         }
       : {}),
-    executeTool: (call) => callDotNetTool(call.name, call.input),
+    executeTool: (call, signal) => executeConfirmed(call, signal),
+  }
+
+  const DECLINED_TEXT = 'The user declined this action, so it was not run. Do not retry it. Ask the user what they would like instead.'
+
+  // Runs a model's tool call, first asking the user when a confirmActions rule matches. A typed "!" call
+  // (runDirectCall) skips this: the user wrote the call themselves.
+  async function executeConfirmed(call: AgentToolCall, signal?: AbortSignal): Promise<ToolExecution> {
+    const rule = getSettings().confirmIrreversible
+      ? config.confirmActions?.find((r) => r.name === call.name && (r.when?.(call.input) ?? true))
+      : undefined
+    if (rule) {
+      const lang = effectiveLang(currentLangPref)
+      const parts: string[] = []
+      const described = rule.describe?.(call.input)
+      if (described) {
+        try {
+          const read = await callDotNetTool(described.tool, described.input)
+          if (!read.isError) parts.push(read.output.slice(0, 700))
+        } catch {
+          // The card still shows the call's own arguments.
+        }
+      }
+      parts.push(`${call.name}(${JSON.stringify(call.input).slice(0, 500)})`)
+      const approved = await ui.confirmAction({ title: rule.title[lang], details: parts.join('\n\n'), danger: rule.danger === true }, signal)
+      if (!approved) return { output: DECLINED_TEXT, isError: true, summary: call.name }
+    }
+    return callDotNetTool(call.name, call.input)
   }
 
   // Theme reconciliation: `currentThemePref` is the persisted 3-way choice;
@@ -484,6 +526,7 @@ export function startAddIn(config: AddInConfig): void {
         lang: s.lang,
         reasoningEffort: s.reasoningEffort,
         developerTools: s.developerTools,
+        confirmIrreversible: s.confirmIrreversible,
       }
     })(),
     // Developer tools: runs `!tool({...})` through the same bridge the model's calls use, so the C# editing-mode gate
@@ -564,6 +607,7 @@ export function startAddIn(config: AddInConfig): void {
         // current value so a quick-dropdown save never wipes it out.
         reasoningEffort: settings.reasoningEffort ?? current.reasoningEffort,
         developerTools: settings.developerTools ?? current.developerTools,
+        confirmIrreversible: settings.confirmIrreversible ?? current.confirmIrreversible,
       })
       postTlsBypass(settings.skipTlsVerify)
       // Folded into setSettings() above and applied immediately, same as theme,
@@ -708,7 +752,7 @@ export function startAddIn(config: AddInConfig): void {
     ui.setBusy(true, false)
     const group = ui.beginToolGroup()
     const step = group.addStep(name, args)
-    void Promise.resolve(skill.executeTool(call))
+    void Promise.resolve(callDotNetTool(call.name, call.input))
       .catch((e: unknown): ToolExecution => ({ output: e instanceof Error ? e.message : String(e), isError: true, summary: name }))
       .then((execution) => {
         if (generation !== directCallGeneration) return
