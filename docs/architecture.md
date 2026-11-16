@@ -21,7 +21,7 @@ the settings dropdown, with a "Test connection" button.
 
 There is **no web-search/image-generation/media-analysis capability** anywhere in the
 repo. This is a deliberate scope decision — the deployment target is air-gapped (see
-`add_image`/`replace_image`'s explicit rejection of remote URLs in the per-app docs) —
+the explicit rejection of remote URLs in `add_image` and in `edit_picture`'s `add`/`replace` in the per-app docs) —
 not an oversight. **`get_attachment` is a partial exception:** Outlook's `get_attachment`
 saves an email attachment to a local file and extracts text from text-family and
 OpenXML (`.docx/.xlsx/.pptx`) types via `OfficeAi.Shared/AttachmentText/` — but never
