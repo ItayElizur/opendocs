@@ -233,9 +233,27 @@ namespace OutlookAiAddIn
             // Folders, SharePoint lists), none of which is what a caller means
             // by a plain folder name.
             Outlook.Folder root = (Outlook.Folder)Ns.DefaultStore.GetRootFolder();
-            Outlook.Folder found = FindFolderByName(root.Folders, name.Trim(), 0);
+            // list_folders prints a nested folder as its full path ("[Gmail]\Trash"), so a path must resolve as well as a bare name.
+            Outlook.Folder found = name.IndexOf('\\') >= 0 ? FindFolderByPath(root, name.Trim()) : FindFolderByName(root.Folders, name.Trim(), 0);
             if (found == null) throw new ArgumentException("Folder not found in your mailbox: " + name + ". Call list_folders to see available names.");
             return found;
+        }
+
+        // Walks "Parent\Child\..." from the mailbox root, matching each segment by name (case-insensitive).
+        internal static Outlook.Folder FindFolderByPath(Outlook.Folder root, string path)
+        {
+            Outlook.Folder cur = root;
+            foreach (string segment in path.Split('\\'))
+            {
+                Outlook.Folder next = null;
+                foreach (Outlook.Folder child in cur.Folders)
+                {
+                    if (string.Equals(child.Name, segment.Trim(), StringComparison.OrdinalIgnoreCase)) { next = child; break; }
+                }
+                if (next == null) return null;
+                cur = next;
+            }
+            return cur;
         }
 
         private static Outlook.Folder FindFolderByName(Outlook.Folders folders, string name, int depth)
