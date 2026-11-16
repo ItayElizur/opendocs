@@ -9,7 +9,9 @@ architecture.
 9 read/query tools plus `propose_operations` and `save`. The read side is
 (`get_workbook_context`, `read_range`, `read_cells`,
 `select_range`, `read_formats`, `read_sheet_features`, `find_cells`, `trace_precedents`,
-`trace_dependents`). There is no `load_guide` tool (deliberately out of scope — not needed at the
+`trace_dependents`). `read_range`, `select_range`, `read_formats`, `trace_precedents` and `trace_dependents` take `sheet` and `address`;
+`read_cells` takes `sheet` and `addresses` (an array); `find_cells` takes `query`, `regex`, `look_in`, `sheetId`, `allSheets`,
+`errors_only` and `max_results`. There is no `load_guide` tool (deliberately out of scope — not needed at the
 current number of operations).
 
 `save` (`ExcelTools.File.cs`) saves the workbook in place, or opens the modal Save As dialog (`Application.Dialogs[xlDialogSaveAs]`, after resetting a pointer the chat pane may have left hidden) when `saveAs` is true (default false — must be true whenever the user wants a copy, a new name, another location or another format) or the workbook has never been saved. A cancelled dialog returns a non-error "cancelled" result with `Mutated: false`. Track Changes mode and up. **NOT VERIFIED AGAINST LIVE EXCEL** — compiles clean in Debug and Release and it builds against the PIA and the earlier GetSaveAsFilename-based version was exercised by hand, but this exact dialog + pointer-reset combination has not been confirmed in a running instance.
