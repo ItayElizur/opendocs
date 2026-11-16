@@ -47,3 +47,13 @@ SendTierTools, so it needs that gate too even though the
 tool NAME sits in DraftTierTools. This is name-based
 gating's one input-aware exception; keep it that way
 rather than generalizing to a per-argument system.
+
+DeleteEmail adds a second rule for permanent:true: the item must
+already be in Deleted Items (or a subfolder of it), otherwise it
+returns a Blocked result and touches nothing. A hard delete is
+therefore always a second call after a recoverable move, so a
+wrong id costs a move, not the message. Checked against a live
+Outlook: IsInFolderTree is true for Deleted Items and for a
+subfolder of it, and false for the Inbox, another subfolder and a
+null folder. The whole DeleteEmail path was not run through the
+add-in.

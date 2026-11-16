@@ -225,7 +225,7 @@ export const ALL_OUTLOOK_TOOLS = [
   },
   {
     name: 'delete_email',
-    description: 'Moves a message to Deleted Items. permanent:true also removes it from there, which is irreversible and requires Full autonomy mode - otherwise omit permanent or set it to false.',
+    description: 'Moves a message (or any other item in a mail folder, such as a meeting invitation) to Deleted Items. permanent:true removes it for good, which is irreversible, requires Full autonomy mode, and works only on an item already in Deleted Items - delete it without permanent first, and ask the user before deleting permanently. Otherwise omit permanent or set it to false.',
     inputSchema: {
       type: 'object',
       properties: { message_id: MESSAGE_ID, permanent: { type: 'boolean' }, folder: FOLDER },
