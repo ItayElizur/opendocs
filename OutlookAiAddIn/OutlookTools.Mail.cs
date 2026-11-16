@@ -242,6 +242,22 @@ namespace OutlookAiAddIn
             };
         }
 
+        // True when folder is `root` or one of its subfolders; false when folder is unknown (a top-level folder's Parent is the store, not a Folder).
+        private static bool IsInFolderTree(Outlook.Folder folder, Outlook.Folder root)
+        {
+            try
+            {
+                object cur = folder;
+                for (int i = 0; i < 32 && cur is Outlook.Folder f; i++)
+                {
+                    if (f.EntryID == root.EntryID) return true;
+                    cur = f.Parent;
+                }
+            }
+            catch { }
+            return false;
+        }
+
         private static ToolResult DeleteEmail(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "message_id");
@@ -259,25 +275,21 @@ namespace OutlookAiAddIn
             Outlook.Folder deleted = sourceFolder != null
                 ? (Outlook.Folder)sourceFolder.Store.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems)
                 : (Outlook.Folder)Ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems);
-            dynamic moved = d.Move(deleted);
             if (permanent)
             {
-                bool hardDeleted = true;
-                try { moved.Delete(); }
-                catch (Exception ex) { DebugLog.WriteException("DeleteEmail permanent", ex); hardDeleted = false; }
-                if (!hardDeleted)
+                // A hard delete is a second step: a wrong id then costs a recoverable move first, not the message.
+                if (!IsInFolderTree(sourceFolder, deleted))
+                    return new ToolResult { Output = "Blocked: \"" + subject + "\" is not in Deleted Items, so it cannot be deleted permanently. Call delete_email without permanent to move it to Deleted Items first. Ask the user before deleting it permanently.", IsError = true, Summary = "delete_email" };
+                try { d.Delete(); }
+                catch (Exception ex)
                 {
-                    string failedNewId = "";
-                    try { failedNewId = moved.EntryID; } catch { }
-                    if (sourceFolder != null && failedNewId.Length > 0)
-                        RecordMove(mbxKey, "delete_email", "message_id", subject, oldId, failedNewId, sourceFolder, deleted);
-                    else
-                        RecordIrreversible(mbxKey, "delete_email of \"" + subject + "\", original folder unknown");
-                    return new ToolResult { Output = "Could not permanently delete \"" + subject + "\" - it was moved to Deleted Items but the hard delete failed, so it is still recoverable there.", IsError = true, Mutated = true, Summary = "delete_email" };
+                    DebugLog.WriteException("DeleteEmail permanent", ex);
+                    return new ToolResult { Output = "Could not permanently delete \"" + subject + "\" - it is still in Deleted Items.", IsError = true, Summary = "delete_email" };
                 }
                 RecordIrreversible(mbxKey, "permanent delete_email of \"" + subject + "\"");
                 return new ToolResult { Output = "Permanently deleted \"" + subject + "\" (removed from Deleted Items; may still be server-recoverable).", Mutated = true, Summary = "delete_email" };
             }
+            dynamic moved = d.Move(deleted);
             string newId = "";
             try { newId = moved.EntryID; } catch { }
             if (sourceFolder != null && newId.Length > 0)
