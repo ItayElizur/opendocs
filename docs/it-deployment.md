@@ -22,14 +22,29 @@ which can be a server on your own network.
 
 ## Before you install
 
-Install these first, on every computer. OpenDocs does not install them:
+OpenDocs needs three Microsoft runtimes. `OpenDocs.msi` does not install them, but **it checks for them and refuses
+to install when one is missing**, with a message naming it (in the install log, `msiexec` exit code 1603). That way
+it never installs add-ins that Office then cannot load. Deploy what is missing first, then OpenDocs:
 
-| Requirement | Why |
+| Prerequisite | Usually already there? | How to deploy it as an MSI |
+|---|---|---|
+| **.NET Framework 4.8** or later | Yes: it is part of Windows 10 version 1903 and later and of Windows 11. | Nothing to deploy on those. Older Windows (for example Windows 10 LTSC 2019, which has 4.7.2) gets it through Windows Update / WSUS. Microsoft publishes no MSI for it. |
+| **Visual Studio 2010 Tools for Office Runtime** (VSTO runtime) | Often, through Office; check with an inventory. | Microsoft's own MSI, taken out of `vstor_redist.exe` and delivered next to `OpenDocs.msi`: `prerequisites\VSTO-Runtime\x64\vstor40_x64.msi` (64-bit Windows; `x86\vstor40_x86.msi` for 32-bit Windows). Keep each `.msi` next to its `.cab`. Install it silently with `msiexec /i vstor40_x64.msi /qn`. |
+| **Microsoft Edge WebView2 Runtime** | Yes on Windows 11; on Windows 10, Microsoft 365 Apps installs it. | Microsoft publishes it only as an .exe (`MicrosoftEdgeWebView2RuntimeInstallerX64.exe /silent /install`). If computers without it remain, it needs a wrapper MSI. |
+
+To check a computer (all three must be present):
+
+| Prerequisite | Registry value OpenDocs checks |
 |---|---|
-| Microsoft Office desktop apps (Word, Excel, PowerPoint, Outlook), 32- or 64-bit | the apps the add-ins run in |
-| .NET Framework 4.8 or later | the add-ins are .NET Framework add-ins |
-| Visual Studio 2010 Tools for Office Runtime (VSTO runtime, `vstor_redist.exe`) | Office loads VSTO add-ins through it |
-| Microsoft Edge WebView2 Runtime (Evergreen or Fixed Version) | the chat panel is a WebView2 page |
+| .NET 4.8+ | `HKLM\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full`, `Release` ≥ 528040 |
+| VSTO runtime | `HKLM\SOFTWARE\Microsoft\VSTO Runtime Setup\v4R`, `Version` (in either the 64-bit or the 32-bit registry view) |
+| WebView2 | `HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`, `pv` present and not `0.0.0.0` |
+
+Microsoft Office desktop apps (Word, Excel, PowerPoint, Outlook), 32- or 64-bit, are needed too, of course.
+
+With Configuration Manager, make the VSTO runtime (and WebView2, if you package it) a dependency of OpenDocs. With
+Group Policy software installation, put them in an earlier GPO or above OpenDocs in the same GPO. If OpenDocs runs
+first anyway, it fails cleanly and installs on the next attempt once the prerequisite is there.
 
 If a computer had OpenDocs installed earlier with the `install.ps1` script, run `uninstall.ps1` from that package
 first (elevated). The MSI does not own the files and registry keys the script created and may leave old files in place.

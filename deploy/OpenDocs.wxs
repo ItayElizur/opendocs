@@ -16,6 +16,31 @@
                   DowngradeErrorMessage="A newer version of OpenDocs is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Prerequisites: refuse to install without them, rather than install add-ins Office then cannot load. Skipped on
+         uninstall and repair ("Installed"). See build-msi.ps1.md. -->
+    <!-- .NET Framework 4.8 = Release 528040 or later. A raw DWORD reads as "#533509"; the "#" string comparison is
+         the usual WiX idiom and holds while Release has six digits. -->
+    <Property Id="NETFX_RELEASE">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" Name="Release" Type="raw" Bitness="always64" />
+    </Property>
+    <!-- VSTO 2010 runtime: registered in either registry view depending on what installed it. -->
+    <Property Id="VSTO_RUNTIME_64">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\VSTO Runtime Setup\v4R" Name="Version" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="VSTO_RUNTIME_32">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\VSTO Runtime Setup\v4R" Name="Version" Type="raw" Bitness="always32" />
+    </Property>
+    <!-- WebView2 runtime, machine-wide: the Edge Update client key in the 32-bit view; "0.0.0.0" means it was removed. -->
+    <Property Id="WEBVIEW2_VERSION">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" Name="pv" Type="raw" Bitness="always32" />
+    </Property>
+    <Launch Condition="Installed OR NETFX_RELEASE &gt;= &quot;#528040&quot;"
+            Message="OpenDocs needs .NET Framework 4.8 or later. Install it (it is part of Windows 10 version 1903 and later), then install OpenDocs again." />
+    <Launch Condition="Installed OR VSTO_RUNTIME_64 OR VSTO_RUNTIME_32"
+            Message="OpenDocs needs the Visual Studio 2010 Tools for Office Runtime. Install vstor40_x64.msi, then install OpenDocs again." />
+    <Launch Condition="Installed OR (WEBVIEW2_VERSION AND WEBVIEW2_VERSION &lt;&gt; &quot;0.0.0.0&quot;)"
+            Message="OpenDocs needs the Microsoft Edge WebView2 Runtime. Install it, then install OpenDocs again." />
+
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="OpenDocs">
         <?foreach App in Word;Excel;PowerPoint;Outlook ?>

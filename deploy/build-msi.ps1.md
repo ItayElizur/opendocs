@@ -42,15 +42,38 @@ dependencies and every policy looks broken.
 
 ## Not handled by the MSI
 
-- The prerequisites (.NET Framework 4.8, VSTO 2010 runtime, WebView2 runtime) are not checked or installed;
-  `install.ps1` only warns about them too. Deploy them first.
+- The prerequisites (.NET Framework 4.8, VSTO 2010 runtime, WebView2 runtime) are not installed: an MSI cannot run
+  another installer while it installs. They are checked instead (`Launch` conditions on registry searches, the
+  same values `install.ps1` looks at), and a missing one stops the install with a message naming it. `Installed OR`
+  keeps uninstall and repair working on a computer that has since lost a prerequisite. The VSTO runtime looks in
+  both registry views because it is registered in either, depending on what installed it (only the 32-bit view on
+  the dev machine). WebView2 is checked machine-wide only: a per-machine install often runs as SYSTEM, whose HKCU
+  says nothing about the user's.
 - Outlook's per-user "do not disable this add-in" list (`Resiliency\DoNotDisableAddinList`) lives in each user's
   HKCU, which a per-machine package does not write, the same as an all-users `install.ps1`.
 - A machine that was installed with `install.ps1` should be cleaned with `uninstall.ps1` first. The MSI does not
   own those files or registry keys, and Windows Installer may keep the old files instead of replacing them.
 
+## The VSTO runtime MSI
+
+Microsoft ships the VSTO runtime only as `vstor_redist.exe`, but inside it is an ordinary Windows Installer package
+that installs on its own (no launch conditions; it finds .NET 4 through its own registry search). It is not in the
+repo. To take it out again with 7-Zip, without running anything:
+
+```
+7z e vstor_redist.exe -oouter "*vstor40_x64.exe" "*vstor40_x86.exe" -r
+7z e outer\vstor40_x64.exe -ox64 vstor40_x64.msi vstor40_x64.cab
+7z e outer\vstor40_x86.exe -ox86 vstor40_x86.msi vstor40_x86.cab
+```
+
+Each `.msi` needs its `.cab` next to it. Both are signed by Microsoft (`Get-AuthenticodeSignature`). The copy
+delivered with OpenDocs 0.2.0 came from `vstor_redist.exe` 10.0.60910 and is version 10.0.60915.
+
 ## Verified
 
-Not yet built on this machine: WiX was not installed when this was written. To verify, install WiX 5
-(`dotnet tool install --global wix --version 5.0.2`), run the script, install the MSI on a test machine, and
-check the four add-ins load and `policy.json` is in place.
+Built with WiX 5.0.2. The MSI holds every file of the package (checked against `deploy\dist` after an
+administrative extract), registers both registry views, and schedules `RemoveExistingProducts` right after
+`InstallInitialize`. Installed on the dev machine (Windows 11, 64-bit Office), Excel loaded the add-in from it.
+The prerequisite checks were tested with throwaway builds whose registry searches point at missing keys: each one
+stops the install at `LaunchConditions` with its own message. Not tested: a computer that really lacks a
+prerequisite, 32-bit Office, and deployment through Intune, Configuration Manager or Group Policy.
