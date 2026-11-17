@@ -66,6 +66,12 @@ foreach ($appName in $Apps) {
     }
 }
 
+$policyPath = Join-Path $InstallRoot 'policy.json'
+if ($App -eq 'All' -and (Test-Path $policyPath)) {
+    Remove-Item $policyPath -Force
+    Write-Host "$removed the editing-mode policy at $policyPath."
+}
+
 if ($RemoveTrustedCert) {
     $Thumbprint = 'D7C0D2DECAE0E7D967DE0A2C1B5DBFF185A932FD'
     $location = if ($AllUsers) { 'LocalMachine' } else { 'CurrentUser' }

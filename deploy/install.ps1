@@ -15,6 +15,10 @@
 #   the configurations tested - the add-ins load without it - so it is off by default; use it only if a policy blocks the add-ins.
 # Run uninstall.ps1 with the same switch to remove it.
 #
+# policy.json (next to this script) is copied to the install folder and lists the editing modes to switch off in each
+# app, e.g. "Outlook": ["fullAutonomy"] under "disabledModes". Edit it before installing, or edit the installed copy (an all-users
+# install puts it in Program Files, where only administrators can change it) and restart Office.
+#
 # No internet access is required or used by this script.
 
 [CmdletBinding(SupportsShouldProcess)]
@@ -195,6 +199,12 @@ if ($TrustCertificate) {
 else {
     Write-Host "Not trusting the signing certificate (the add-ins load without it; pass -TrustCertificate if a policy blocks them)."
 }
+
+$policySrc = Join-Path $PackageDir 'policy.json'
+if (-not (Test-Path $policySrc)) { throw "policy.json not found next to install.ps1 - the package looks incomplete." }
+Write-Host "Installing the editing-mode policy to $InstallRoot\policy.json ..."
+New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
+Copy-Item $policySrc (Join-Path $InstallRoot 'policy.json') -Force
 
 $registryRoots = Get-OfficeRegistryRoots
 

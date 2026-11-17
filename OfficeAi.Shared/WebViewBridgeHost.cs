@@ -99,7 +99,9 @@ namespace OfficeAi.Shared
                 // The API keys live DPAPI-encrypted on disk (SecretStore), never in the page's localStorage; they are handed
                 // to the page here, before any of its scripts run, as window.__opendocsSecrets (provider id -> key).
                 await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
-                    "window.__opendocsSecrets = " + JsonSerializer.Serialize(SecretStore.Load(appDataFolderName)) + ";");
+                    "window.__opendocsSecrets = " + JsonSerializer.Serialize(SecretStore.Load(appDataFolderName)) + ";" +
+                    // This app's editing modes the administrator's policy.json switches off (ModePolicy); the page hides them.
+                    "window.__opendocsDisabledModes = " + JsonSerializer.Serialize(ModePolicy.DisabledFor(appDataFolderName)) + ";");
 
                 // A link in the chat (model output can contain one) must not open a browser window inside the Office
                 // process, and the pane must never navigate away from its own page: links go to the system browser.

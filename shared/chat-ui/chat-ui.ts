@@ -85,6 +85,7 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   sectionDeveloper:     { en: 'Developer tools', he: 'כלי פיתוח' },
   developerToolsLabel:  { en: 'Enable the ! tool palette', he: 'הפעל את לוח הכלים !' },
   developerToolsNote:   { en: 'Type ! at the start of a message to run any tool directly, without the model. The editing mode still limits which tools run.', he: 'הקלד ! בתחילת הודעה כדי להריץ כלי ישירות, בלי המודל. מצב העריכה עדיין מגביל אילו כלים רצים.' },
+  allModesDisabled:     { en: 'Your administrator has turned off every editing mode, so the assistant cannot read or change anything here.', he: 'מנהל המערכת כיבה את כל מצבי העריכה, ולכן העוזר אינו יכול לקרוא או לשנות דבר כאן.' },
   paletteTitle:         { en: 'Direct call', he: 'קריאה ישירה' },
   paletteRun:           { en: 'runs the call without the model', he: 'מריץ את הקריאה בלי המודל' },
   paletteOf:            { en: 'of', he: 'מתוך' },
@@ -232,7 +233,7 @@ export interface ChatUIOptions {
   initialSettings?: InitialSettings
   /** FT-2 Task 5: which "no selection" wording the scope-hint pill shows - defaults to 'doc' (Word). Excel passes 'sheet', PowerPoint 'deck', Outlook 'mailbox'. */
   scopeUnit?: 'doc' | 'sheet' | 'deck' | 'mailbox'
-  /** Restricts the editing-mode menu to this subset, in this order. Defaults to all four modes. Outlook passes ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'] with its own meaning per mode (see modeOverrides). */
+  /** Restricts the editing-mode menu to this subset, in this order. Defaults to all four modes; an empty list hides the mode menu (every mode switched off by policy). Outlook passes ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'] with its own meaning per mode (see modeOverrides). */
   modes?: EditingMode[]
   /** Per-app override of a mode's label/description, falling back to the shared STRINGS
    * entry when a mode has no override (e.g. Outlook relabels commentOnly/trackChanges
@@ -311,7 +312,7 @@ const MODES: EditingMode[] = ['readOnly', 'commentOnly', 'trackChanges', 'fullAu
 // this list. `options.modes` narrows it per app - Outlook drops Comment only /
 // Track changes, which have no meaning for mail. Order follows the passed list.
 export function resolveModes(requested?: EditingMode[]): EditingMode[] {
-  if (!requested || requested.length === 0) return MODES
+  if (!requested) return MODES
   return requested.filter((m) => MODES.indexOf(m) !== -1)
 }
 
@@ -322,7 +323,7 @@ export function resolveModes(requested?: EditingMode[]): EditingMode[] {
 // real trackChanges tier; Outlook: its own commentOnly-as-"Draft only"
 // tier) without hardcoding one mode name for every app.
 export function defaultModeFor(modes: EditingMode[], preferred: EditingMode = 'trackChanges'): EditingMode {
-  return modes.includes(preferred) ? preferred : modes[0]
+  return modes.includes(preferred) ? preferred : (modes[0] ?? 'readOnly') // no modes: the narrowest, as a placeholder
 }
 
 function modeStringKey(mode: EditingMode): string {
@@ -1476,6 +1477,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     })
   }
 
+  modeBtn.hidden = menuModes.length === 0 // every mode switched off by the administrator's policy
   modeBtn.dataset.editingMode = defaultMode // colour the initial mode too; selectMode() updates it afterwards
   modeBtn.addEventListener('click', () => modeMenu.classList.toggle('open'))
 
