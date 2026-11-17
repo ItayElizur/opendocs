@@ -50,6 +50,25 @@ sets) are maintained by hand in two different languages and **will silently drif
 tool is added to one side and not the other — see `CLAUDE.md` for the concrete example
 and the rule to follow when touching either side.
 
+### Modes switched off by the administrator
+
+`policy.json` in the install folder (next to the per-app folders; `deploy/policy.json` is the copy the installer ships)
+lists modes to switch off per app: `{ "disabledModes": { "Outlook": ["fullAutonomy"], "Word": [] } }`. The app keys are
+`Word`, `Excel`, `PowerPoint` and `Outlook` (an app left out has every mode on), and the modes use the wire names
+`readOnly`, `commentOnly`, `trackChanges`, `fullAutonomy` (in Outlook these are Read only / Draft only / Automate
+approvals / Full autonomy). It works on whole modes, not on individual tools. `OfficeAi.Shared/ModePolicy.cs` reads it
+once per Office process and picks the app's list by the add-in's folder name. A file that cannot be read or parsed, or
+that names an unknown app or mode, switches every mode off in every app rather than leaving a mode open by mistake. The
+host passes the app's list to the page as `window.__opendocsDisabledModes`.
+`bootstrap.ts` leaves those modes out of the menu and the settings scope control, and starts in the app's default mode
+if that one is still on, otherwise the first one left. With no mode left, the mode button is hidden, the model is
+offered no tools and the chat says the administrator turned the modes off. The server side is enforced once in
+`PaneHostBase.ExecuteToolUnderPolicy`, ahead of each app's own tier gate. When any mode is disabled, it refuses every
+tool call while the pane is in a disabled mode or has not reported a mode yet (`ModePolicy.Blocks`). A disabled mode
+is never passed on to the app's `SetMode`. Before every call the pane stores its own mode again under its current chat
+id. That id changes on a new document's first save, when the app's `ModeFor` would otherwise fall back to Full
+autonomy, and Outlook's panes share one mode per mailbox. Changes to the policy take effect when Office is restarted.
+
 ## Direct tool calls (Developer tools)
 
 An opt-in setting (`developerTools`, saved with the other panel settings, off by default) turns on a `!` palette in the shared chat UI (`shared/chat-ui/tool-palette.ts` for the rules, `chat-ui.ts` for the popup). `!name({json})` runs one tool without the model: `bootstrap.ts` sends it through `callDotNetTool` (the same bridge the model's calls use), so the server-side editing-mode gate applies unchanged and nothing here bypasses it. The client also locks tools outside the current mode, using the same `availableForMode()` sets that filter what the model is offered. The finished call is added to the loop's history (`AgentLoop.recordToolExchange`), so the next model turn sees what was run. No tool or tier list changes are involved.

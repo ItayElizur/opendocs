@@ -13,6 +13,7 @@ vi.mock('../web-src/app-shell/bridge', () => ({
   persistMessage: () => {},
   postCollapse: () => {},
   postMode: () => {},
+  injectedDisabledModes: () => [],
   postNewChatDivider: () => {},
   postTlsBypass: () => {},
   requestDocSettings: () => {},
