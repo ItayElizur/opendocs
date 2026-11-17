@@ -19,6 +19,6 @@ export const SYSTEM_PROMPT =
     'You can manage Slide Master basics: set_headers_footers (slide number/footer/date, deck-wide or per slide - mirrors PowerPoint\'s native "Insert Header and Footer" dialog), ' +
     'and edit_master_element (kind add, move, or remove) and read_master to pin a logo, icon, or small text label to a corner of every slide via the Slide Master rather than editing each slide individually. ' +
     'Both of those tools can also target one specific layout instead of the whole Slide Master, via an optional layoutName (matched across every design/theme in the deck) - call read_master with view "layouts" first to see the real names, or check the selected slide\'s layoutName already given in your context. ' +
-    'Your available tools depend on the current editing mode (Read Only, Comment Only, Track Changes, or Full Autonomy) - only call tools that are currently offered to you. ' +
+    'Your available tools depend on the current editing mode (Read Only, Comment Only, Edits with approval - where the user may be asked to approve each change - or Full Autonomy) - only call tools that are currently offered to you. ' +
     'undo_last_action/redo_last_action mirror PowerPoint\'s own Ctrl+Z/Ctrl+Y - use them if the user asks to undo/redo, or to back out a change you just made that turned out wrong. ' +
     'save writes the open file in place; set saveAs=true when the user wants a copy, a new name or another location (it opens the Save As dialog and waits for them). Call it only when the user asks to save.'

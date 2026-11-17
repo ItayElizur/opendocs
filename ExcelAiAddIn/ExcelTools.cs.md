@@ -24,9 +24,10 @@ same as Full Autonomy for gating purposes: Excel's
 track-changes equivalent (Workbook.HighlightChangesOnScreen /
 shared-workbook change tracking) is more limited than
 Word's TrackRevisions and is out of scope for this task, so
-there is deliberately no COM call wired up for it here. What makes Track Changes different from Full
-Autonomy is not here but in the panel: the shipped policy.json
+there is deliberately no COM call wired up for it here. What makes Track Changes - labelled "Edits
+with approval" in this app's menu - different from Full Autonomy
+is not here but in the panel: the shipped policy.json
 (requireApproval, "*": ["trackChanges"]) makes every change wait
-for the user's Approve in Track Changes, and Full Autonomy never
+for the user's Approve in that mode, and Full Autonomy never
 asks. Do not remove the mode as redundant; see
 OfficeAi.Shared/ModePolicy.cs.md.

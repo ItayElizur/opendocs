@@ -44,9 +44,10 @@ Read Only and Comment Only modes block all mutating tools (PowerPoint has no
 comment-equivalent tool in this pass - see plan backlog - so Comment Only currently
 behaves identically to Read Only: no mutating tools available). Track Changes is scoped
 to simple allow/block gating for now (same as Excel's Task 16 scoping note) rather than a
-native PowerPoint revision-tracking UI. Full Autonomy allows everything. What makes Track Changes different from Full
-Autonomy is not here but in the panel: the shipped policy.json
+native PowerPoint revision-tracking UI. Full Autonomy allows everything. What makes Track Changes - labelled "Edits
+with approval" in this app's menu - different from Full Autonomy
+is not here but in the panel: the shipped policy.json
 (requireApproval, "*": ["trackChanges"]) makes every change wait
-for the user's Approve in Track Changes, and Full Autonomy never
+for the user's Approve in that mode, and Full Autonomy never
 asks. Do not remove the mode as redundant; see
 OfficeAi.Shared/ModePolicy.cs.md.

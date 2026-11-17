@@ -71,7 +71,7 @@ public class ModePolicyTests
     }
 
     // The copy the installer ships must parse with no mode switched off - a typo there would lock every mode for
-    // everyone - and must hold the default approvals: Excel and PowerPoint ask before every change in Track changes,
+    // everyone - and must hold the default approvals: Excel and PowerPoint ask before every change in trackChanges ("Edits with approval"),
     // Outlook before a delete below Full autonomy, and Full autonomy never asks.
     [Fact]
     public void ShippedPolicy_DisablesNothing_AndHasTheDefaultApprovals()
