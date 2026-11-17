@@ -11,3 +11,4 @@ node_modules/
 deploy/dist/
 deploy/*.zip
 .split-work/
+deploy/msi/

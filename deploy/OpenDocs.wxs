@@ -1,0 +1,66 @@
+<!--
+  OpenDocs machine-wide MSI (WiX Toolset 5). Built by build-msi.ps1, which passes:
+    Version     - ProductVersion, X.Y.Z
+    DistDir     - the package folder package.ps1 produced (one <App>AiAddIn folder per app)
+    PolicyFile  - the policy.json to install next to the per-app folders
+  It does what install.ps1 does for an all-users install: files in Program Files\OpenDocs, and each add-in
+  registered under HKLM in both registry views (64-bit Office reads SOFTWARE, 32-bit Office reads WOW6432Node;
+  the unused one is harmless). See build-msi.ps1.md.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="OpenDocs" Manufacturer="OpenDocs" Version="$(var.Version)"
+           UpgradeCode="A51AEEE1-4241-4A44-8A75-4E09D9C3358F" Scope="perMachine" Compressed="yes">
+    <!-- The old version is removed before the new one is installed, so every file - policy.json included - is
+         replaced by the new package's copy even if someone edited it. Same-version rebuilds upgrade too. -->
+    <MajorUpgrade Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of OpenDocs is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="OpenDocs">
+        <?foreach App in Word;Excel;PowerPoint;Outlook ?>
+        <Directory Id="$(var.App)Dir" Name="$(var.App)AiAddIn" />
+        <?endforeach?>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="OpenDocs" Title="OpenDocs add-ins for Word, Excel, PowerPoint and Outlook">
+      <ComponentGroupRef Id="Policy" />
+      <?foreach App in Word;Excel;PowerPoint;Outlook ?>
+      <ComponentGroupRef Id="$(var.App)" />
+      <?endforeach?>
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="Policy" Directory="INSTALLFOLDER">
+      <Component>
+        <File Source="$(var.PolicyFile)" Name="policy.json" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <?foreach App in Word;Excel;PowerPoint;Outlook ?>
+  <Fragment>
+    <ComponentGroup Id="$(var.App)" Directory="$(var.App)Dir">
+      <Files Include="$(var.DistDir)\$(var.App)AiAddIn\**" />
+      <Component Id="$(var.App)Reg64" Bitness="always64">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Office\$(var.App)\Addins\$(var.App)AiAddIn">
+          <RegistryValue Name="Description" Type="string" Value="$(var.App)AiAddIn" KeyPath="yes" />
+          <RegistryValue Name="FriendlyName" Type="string" Value="$(var.App)AiAddIn" />
+          <RegistryValue Name="LoadBehavior" Type="integer" Value="3" />
+          <RegistryValue Name="Manifest" Type="string" Value="[$(var.App)Dir]$(var.App)AiAddIn.vsto|vstolocal" />
+        </RegistryKey>
+      </Component>
+      <Component Id="$(var.App)Reg32" Bitness="always32">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Office\$(var.App)\Addins\$(var.App)AiAddIn">
+          <RegistryValue Name="Description" Type="string" Value="$(var.App)AiAddIn" KeyPath="yes" />
+          <RegistryValue Name="FriendlyName" Type="string" Value="$(var.App)AiAddIn" />
+          <RegistryValue Name="LoadBehavior" Type="integer" Value="3" />
+          <RegistryValue Name="Manifest" Type="string" Value="[$(var.App)Dir]$(var.App)AiAddIn.vsto|vstolocal" />
+        </RegistryKey>
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+  <?endforeach?>
+</Wix>

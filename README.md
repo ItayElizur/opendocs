@@ -367,6 +367,10 @@ deploy\package.ps1 -App Word
 
 The packaging script builds the Release configuration, signs the manifests, and prepares the distributable package.
 
+### Build an MSI
+
+`deploy\build-msi.ps1` builds the package and then `deploy\msi\OpenDocs-<version>.msi`, a machine-wide Windows Installer package with a `policy.json` of your choice built in (`-PolicyFile`). It checks the policy with the add-ins' own parser first, and needs WiX Toolset 5 (`dotnet tool install --global wix --version 5.0.2`). For IT departments, [`docs/it-deployment.md`](docs/it-deployment.md) explains installing with the MSI, setting the policy, upgrades and removal.
+
 ### Install
 
 `deploy\install.ps1`, run from the resulting package on the target machine, checks for:
@@ -433,6 +437,7 @@ That layer needs to be exercised against a live Office application. The individu
 ## Documentation
 
 * **[`docs/architecture.md`](docs/architecture.md)** — how the COM/WebView2 bridge, shared provider/transport layer, and editing-mode gating work.
+* **[`docs/it-deployment.md`](docs/it-deployment.md)** — for IT: installing with the MSI, the administrator policy (`policy.json`), upgrades and removal.
 * **[`docs/tools/`](docs/tools/)** — detailed reference for the AI tools available in Word, Excel, PowerPoint, and Outlook.
 * **[`CLAUDE.md`](CLAUDE.md)** — guidance for AI coding agents working in this repository.
 
