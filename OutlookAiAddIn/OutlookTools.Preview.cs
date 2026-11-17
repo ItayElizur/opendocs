@@ -43,6 +43,12 @@ namespace OutlookAiAddIn
                         }
                         if (blocked != null) fields["blocked"] = blocked;
                     }
+                    else if (tool == "respond_meeting")
+                    {
+                        string response = (Str(call, "response", null) ?? "").Trim().ToLowerInvariant();
+                        string blocked = RespondMeetingRefusal((object)d, response == "decline");
+                        if (blocked != null) fields["blocked"] = blocked;
+                    }
                 }
             }
             catch (Exception ex)
