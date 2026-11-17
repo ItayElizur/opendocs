@@ -7,6 +7,7 @@ import {
   persistMessage,
   postCollapse,
   postMode,
+  injectedDisabledModes,
   postNewChatDivider,
   postTlsBypass,
   requestDocSettings,
@@ -350,7 +351,10 @@ export function startAddIn(config: AddInConfig): void {
   // the real enforcement is server-side in each app's *Tools.Execute. Must
   // resolve identically to mountChatUI's own `defaultMode` computation below
   // (see `bootstrap.ts.md`).
-  let editingMode: EditingMode = defaultModeFor(resolveModes(config.availableModes), config.defaultMode ?? 'trackChanges')
+  // Modes the administrator's policy.json switches off are left out of the menu; with none left, no tool is offered.
+  const disabledModes = new Set(injectedDisabledModes())
+  const modes = resolveModes(config.availableModes).filter((m) => !disabledModes.has(m))
+  let editingMode: EditingMode = defaultModeFor(modes, config.defaultMode ?? 'trackChanges')
 
   const readOnlySet = new Set(config.readOnlyTools)
   const commentOnlySet = new Set([...config.readOnlyTools, ...(config.commentOnlyExtraTools ?? [])])
@@ -359,6 +363,7 @@ export function startAddIn(config: AddInConfig): void {
   const trackChangesSet = config.trackChangesExtraTools ? new Set([...commentOnlySet, ...config.trackChangesExtraTools]) : null
 
   function availableForMode(): string[] {
+    if (modes.length === 0) return []
     if (editingMode === 'readOnly') return config.tools.filter((t) => readOnlySet.has(t.name)).map((t) => t.name)
     if (editingMode === 'commentOnly') return config.tools.filter((t) => commentOnlySet.has(t.name)).map((t) => t.name)
     if (editingMode === 'trackChanges' && trackChangesSet) return config.tools.filter((t) => trackChangesSet.has(t.name)).map((t) => t.name)
@@ -462,7 +467,7 @@ export function startAddIn(config: AddInConfig): void {
     starters: config.starters,
     tools: toolDisplayList,
     scopeUnit: config.scopeUnit,
-    modes: config.availableModes,
+    modes,
     modeOverrides: config.modeOverrides,
     defaultMode: config.defaultMode,
     autoSendTools: config.autoSendTools,
@@ -534,6 +539,7 @@ export function startAddIn(config: AddInConfig): void {
       }
       beginConversation()
       ui.resetToEmpty()
+      if (modes.length === 0) ui.showError(ui.translate('allModesDisabled'))
     },
     onModeChange: (mode: EditingMode) => {
       editingMode = mode
@@ -634,6 +640,7 @@ export function startAddIn(config: AddInConfig): void {
   // Full Autonomy default and e.g. Word never turned TrackRevisions on in the UI's
   // default Track Changes mode (see `bootstrap.ts.md`).
   postMode(editingMode)
+  if (modes.length === 0) ui.showError(ui.translate('allModesDisabled'))
 
   // Apply the persisted TLS-bypass preference on load too, not just after a
   // future Save - otherwise a user who enabled it last session would silently

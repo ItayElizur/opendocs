@@ -44,6 +44,7 @@ namespace OfficeAi.Shared
         protected PaneHostBase(string appDataFolderName)
         {
             _appDataFolderName = appDataFolderName;
+            _disabledModes = ModePolicy.DisabledFor(appDataFolderName);
             _status = new Label
             {
                 Dock = DockStyle.Top,
@@ -64,7 +65,7 @@ namespace OfficeAi.Shared
             // silently kills the VSTO connection (no exception, just
             // Connect=False forever). Subclasses must resolve it lazily. See
             // PaneHostBase.cs.md.
-            _bridge = new WebViewBridgeHost(this, ExecuteTool, appDataFolderName, UpdateStatus, OnOtherMessage);
+            _bridge = new WebViewBridgeHost(this, ExecuteToolUnderPolicy, appDataFolderName, UpdateStatus, OnOtherMessage);
         }
 
         private void UpdateStatus(string s)
@@ -135,6 +136,26 @@ namespace OfficeAi.Shared
             base.Dispose(disposing);
         }
 
+        // The mode the page last reported; null until its first "set-mode".
+        private EditingMode? _mode;
+
+        // This app's modes switched off by the administrator's policy.json (wire names).
+        private readonly HashSet<string> _disabledModes;
+
+        // Administrator policy (ModePolicy): no tool runs while the pane is in a mode policy.json disables, or before the
+        // page has said which mode it is in. Checked here once for all four apps, ahead of each app's own tier gate.
+        private Task<ToolResult> ExecuteToolUnderPolicy(string name, JsonElement input)
+        {
+            if (ModePolicy.Blocks(_disabledModes, _mode))
+            {
+                return Task.FromResult(new ToolResult { Output = "Blocked: this editing mode is disabled by your administrator.", IsError = true, Summary = name });
+            }
+            // Re-store this pane's mode under the current chat id before every call: the id changes on a new document's
+            // first save (the app would then fall back to Full autonomy), and Outlook panes share one per-mailbox mode.
+            if (_mode != null) SetEditingMode(_mode.Value);
+            return ExecuteTool(name, input);
+        }
+
         // Resolves and executes a tool call against this pane's own document -
         // each subclass closes over its own GetChatId() to thread the
         // per-document key through to e.g. WordTools.Execute(docKey, name, input)
@@ -190,11 +211,13 @@ namespace OfficeAi.Shared
                     string modeStr = root.GetProperty("mode").GetString();
                     switch (modeStr)
                     {
-                        case "readOnly": SetEditingMode(EditingMode.ReadOnly); break;
-                        case "commentOnly": SetEditingMode(EditingMode.CommentOnly); break;
-                        case "trackChanges": SetEditingMode(EditingMode.TrackChanges); break;
-                        case "fullAutonomy": SetEditingMode(EditingMode.FullAutonomy); break;
+                        case "readOnly": _mode = EditingMode.ReadOnly; break;
+                        case "commentOnly": _mode = EditingMode.CommentOnly; break;
+                        case "trackChanges": _mode = EditingMode.TrackChanges; break;
+                        case "fullAutonomy": _mode = EditingMode.FullAutonomy; break;
                     }
+                    // A mode the policy switches off is never handed to the app, so it cannot leak to another pane's calls.
+                    if (_mode != null && !ModePolicy.Blocks(_disabledModes, _mode)) SetEditingMode(_mode.Value);
                     break;
                 case "collapse-pane":
                     RequestPaneWidth?.Invoke(34);

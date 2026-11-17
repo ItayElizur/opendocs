@@ -197,6 +197,12 @@ export function injectedSecrets(): Record<string, string> {
   return injected && typeof injected === 'object' ? (injected as Record<string, string>) : {}
 }
 
+// Editing modes switched off by the administrator's policy.json, injected by the host (OfficeAi.Shared/ModePolicy.cs).
+export function injectedDisabledModes(): string[] {
+  const injected = (globalThis as { __opendocsDisabledModes?: unknown }).__opendocsDisabledModes
+  return Array.isArray(injected) ? injected.filter((m): m is string => typeof m === 'string') : []
+}
+
 // The page lost keyboard focus. The host works out whether the user left the app (alt-tab) and, when they come
 // back, puts the cursor back in the chat box instead of leaving it in the document.
 export function notifyPaneBlur(): void {

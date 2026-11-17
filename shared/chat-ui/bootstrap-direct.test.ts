@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   toolCalls: [] as Array<{ name: string; input: unknown; resolve: (r: unknown) => void }>,
   persisted: [] as Array<{ role: string; text: string }>,
   streams: [] as Array<{ req: any; cb: any }>,
+  disabledModes: [] as string[],
 }))
 
 vi.mock('../web-src/app-shell/bridge', () => ({
@@ -14,6 +15,7 @@ vi.mock('../web-src/app-shell/bridge', () => ({
   persistMessage: (role: string, text: string) => { h.persisted.push({ role, text }) },
   postCollapse: () => {},
   postMode: () => {},
+  injectedDisabledModes: () => h.disabledModes,
   postNewChatDivider: () => {},
   postTlsBypass: () => {},
   requestDocSettings: () => {},
@@ -70,7 +72,7 @@ const finishCall = (output: string) => h.toolCalls.at(-1)!.resolve({ output, isE
 const lastMessages = () => JSON.stringify(h.streams.at(-1)!.req.messages)
 
 describe('direct tool call in the app shell', () => {
-  beforeEach(() => vi.restoreAllMocks())
+  beforeEach(() => { vi.restoreAllMocks(); h.disabledModes = [] })
 
   it('refuses Continue while a direct call runs, and the call still reaches the model afterwards', async () => {
     const { root, send } = boot()
@@ -152,5 +154,31 @@ describe('direct tool call in the app shell', () => {
     await flush()
     expect(h.streams).toHaveLength(1)
     expect(JSON.stringify(h.streams[0]!.req.messages)).not.toContain('queued behind the call')
+  })
+})
+
+describe('editing modes switched off by policy.json', () => {
+  beforeEach(() => { h.disabledModes = [] })
+
+  const menuModes = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>('.ai-mode-menu-item')].map((el) => el.dataset.mode)
+
+  it('leaves a disabled mode out of the menu and still offers the model the tools of the remaining modes', async () => {
+    h.disabledModes = ['fullAutonomy']
+    const { root, send } = boot()
+    expect(menuModes(root)).toEqual(['readOnly', 'commentOnly', 'trackChanges'])
+    send('hello')
+    await flush()
+    expect(h.streams[0]!.req.tools.map((t: { name: string }) => t.name)).toEqual(['read_doc'])
+  })
+
+  it('with every mode disabled, hides the menu, says why and offers no tools', async () => {
+    h.disabledModes = ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy']
+    const { root, send } = boot()
+    expect(menuModes(root)).toEqual([])
+    expect(root.querySelector<HTMLButtonElement>('.ai-mode-btn')!.hidden).toBe(true)
+    expect(root.textContent).toContain('turned off every editing mode')
+    send('hello')
+    await flush()
+    expect(h.streams[0]!.req.tools ?? []).toEqual([])
   })
 })

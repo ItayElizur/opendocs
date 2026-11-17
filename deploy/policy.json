@@ -1,0 +1,14 @@
+{
+  // Editing modes to switch off, per app, for every user of this computer.
+  // Mode names: "readOnly", "commentOnly", "trackChanges", "fullAutonomy".
+  // In Outlook, commentOnly is "Draft only" and trackChanges is "Automate approvals".
+  // Example: "Outlook": ["fullAutonomy"] removes Full autonomy from Outlook only.
+  // A mode or app name the add-in does not recognise, or a file it cannot read, switches every mode off in every app.
+  // Restart Office after changing this file.
+  "disabledModes": {
+    "Word": [],
+    "Excel": [],
+    "PowerPoint": [],
+    "Outlook": []
+  }
+}

@@ -1348,6 +1348,16 @@ describe('"!" direct-call palette', () => {
     expect([...palette.querySelectorAll('.ai-palette-row')].map((r) => (r as HTMLElement).dataset.tool)).toEqual(['edit_table', 'edit_smartart'])
   })
 
+  it('labels each tool with the lowest mode still in the menu, and drops the label when none offers it', () => {
+    const made = setup({ tools: PALETTE_TOOLS, initialSettings: { developerTools: true }, modes: ['commentOnly'] })
+    const textarea = made.root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    textarea.value = '!'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    const pill = (tool: string) => made.root.querySelector(`.ai-palette-row[data-tool="${tool}"] .ai-palette-tier`)?.textContent ?? null
+    expect(pill('get_document_context')).toBe('Comment only')
+    expect(pill('edit_table')).toBeNull()
+  })
+
   it('does not open for a ! that is not the first character', () => {
     const { type, palette } = paletteSetup(true)
     type('wow!')
