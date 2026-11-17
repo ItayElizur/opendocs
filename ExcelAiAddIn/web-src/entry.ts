@@ -24,4 +24,12 @@ startAddIn({
   // than Word's "Whole document" when nothing is selected.
   useSelectionContext: true,
   scopeUnit: 'sheet',
+  // Excel has no tracked changes, so this mode means every tool, each edit waiting for an Approve - the shipped
+  // policy.json asks before every change here ("*": ["trackChanges"]). Full autonomy never asks.
+  modeOverrides: {
+    trackChanges: {
+      label: { en: 'Track changes', he: 'מעקב אחר שינויים' },
+      description: { en: 'Each edit waits for your approval', he: 'כל עריכה ממתינה לאישורך' },
+    },
+  },
 })

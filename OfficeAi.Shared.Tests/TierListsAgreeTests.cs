@@ -88,5 +88,30 @@ namespace OfficeAi.Shared.Tests
             var lower = TsArray(ts, "readOnlyTools:").Union(TsArray(ts, "commentOnlyExtraTools:")).Union(TsArray(ts, "trackChangesExtraTools:"));
             Assert.Empty(CSharpSet(cs, "SendTierTools").Intersect(lower));
         }
+
+        // A tool that sends something must have its own Approve card in confirm.ts, so that if the policy asks before
+        // it, the card shows the item rather than the plain "Allow this action?" card.
+        [Fact]
+        public void Outlook_EverySendingToolHasACardRule()
+        {
+            const string cs = "OutlookAiAddIn/OutlookTools.cs";
+            var withRule = new HashSet<string>(Regex.Matches(Read("OutlookAiAddIn/web-src/confirm.ts"), @"\{ name: '([a-z_]+)'")
+                .Cast<Match>().Select(x => x.Groups[1].Value));
+            var sending = CSharpSet(cs, "SendTierTools").Union(CSharpSet(cs, "ApprovalTierTools"));
+            Assert.Empty(sending.Except(withRule));
+        }
+
+        // Every tool the shipped policy.json names must exist in that app, or the page would fail closed for everyone.
+        [Fact]
+        public void ShippedPolicy_NamesOnlyRealTools()
+        {
+            var policy = ModePolicy.Load(Path.Combine(Repo(), "deploy", "policy.json"));
+            foreach (var app in policy.Approvals)
+            {
+                string tools = Read(app.Key + "AiAddIn/web-src/tools.ts") + Read("shared/web-src/app-shell/sharedTools.ts");
+                foreach (var tool in app.Value.Keys.Where(t => t != "*"))
+                    Assert.True(Regex.IsMatch(tools, @"name: '" + tool + "'"), app.Key + ": policy.json names unknown tool " + tool);
+            }
+        }
     }
 }

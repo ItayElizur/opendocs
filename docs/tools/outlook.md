@@ -51,11 +51,13 @@ shared-calendar path — each because the COM object model either can't do the j
   A fresh session defaults to **Draft only** (`defaultMode: 'commentOnly'`, resolved via
   `chat-ui.ts`'s `defaultModeFor()` — the same helper Word/Excel/PowerPoint use to default
   to their own `trackChanges`).
-- **Approve before they run.** On top of the tier gate, the panel asks for an Approve/Deny on a card before `send_email`,
-  `send_event`, `respond_meeting` and every `delete_email` (a plain delete says it moves to Deleted Items and can be undone;
-  a permanent one is marked as irreversible). The card shows the item's type, subject, sender and date (never the body, and not the tool call), read by `preview_action` (`OutlookTools.Preview.cs`, a read-only lookup that is not a model tool and is in no tier set). It takes the call about to run and returns one JSON object: `blocked` (the refusal the call would get) or `type` (`mail`, `meetingRequest`, `meetingResponse`, `meetingCancellation`, `event`, `task`, `other`), `subject`, `from` (the sender, or the organizer for an event) and `date` (received, or start for an event). A permanent delete that cannot happen (not in Deleted Items, or below Full autonomy) is refused there, before any card is shown.
-  It is a client-side rule list in `entry.ts` (`confirmActions`), so no C# tier set changes. Turn it off with **Ask before
-  irreversible actions and deletes** in the full settings view (Safety). Calls typed with `!` never ask. Not verified
+- **Approve before they run.** On top of the tier gate, the panel can ask for an Approve/Deny on a card before a call.
+  When it asks is the administrator's `policy.json` (`requireApproval`): the shipped default asks before `delete_email` in
+  Draft only and Automate approvals, and Full autonomy never asks. `confirm.ts` holds the card for `send_email`,
+  `send_event`, `respond_meeting` and `delete_email` (a plain delete says it moves to Deleted Items and can be undone;
+  a permanent one is marked as irreversible); any other tool the policy names gets a plain card. The card shows the item's type, subject, sender and date (never the body, and not the tool call), read by `preview_action` (`OutlookTools.Preview.cs`, a read-only lookup that is not a model tool and is in no tier set). It takes the call about to run and returns one JSON object: `blocked` (the refusal the call would get) or `type` (`mail`, `meetingRequest`, `meetingResponse`, `meetingCancellation`, `event`, `task`, `other`), `subject`, `from` (the sender, or the organizer for an event) and `date` (received, or start for an event). A permanent delete that cannot happen (not in Deleted Items, or below Full autonomy) is refused there, before any card is shown.
+  It is enforced by the panel only (`bootstrap.ts`, `executeConfirmed`), so no C# tier set changes. Calls typed with `!`
+  never ask. Not verified
   against a live Outlook with a real model.
 - **Selection context.** The Explorer's `SelectionChange` pushes the selected mail
   item(s) / conversation into per-turn context as a `mail` `SelectionContext` variant

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   toolCalls: [] as Array<{ name: string; input: any; resolve: (r: unknown) => void; reject: (e: unknown) => void }>,
   streams: [] as Array<{ req: any; cb: any }>,
-  confirmIrreversible: true,
+  approvals: {} as Record<string, string[]>,
 }))
 
 vi.mock('../web-src/app-shell/bridge', () => ({
@@ -14,6 +14,7 @@ vi.mock('../web-src/app-shell/bridge', () => ({
   postCollapse: () => {},
   postMode: () => {},
   injectedDisabledModes: () => [],
+  injectedApprovals: () => h.approvals,
   postNewChatDivider: () => {},
   postTlsBypass: () => {},
   requestDocSettings: () => {},
@@ -28,7 +29,6 @@ vi.mock('../web-src/app-shell/settings', () => ({
   getSettings: () => ({
     ai: { provider: 'anthropic', providers: { anthropic: { apiKey: 'k', model: 'm' } } },
     skipTlsVerify: false, theme: 'light', lang: 'en', reasoningEffort: 'default', developerTools: true,
-    confirmIrreversible: h.confirmIrreversible,
   }),
   setSettings: () => {},
   makeTransport: () => ({
@@ -40,6 +40,7 @@ vi.mock('../web-src/app-shell/settings', () => ({
 }))
 
 import { startAddIn, type ConfirmRule } from '../web-src/app-shell/bootstrap'
+import { OUTLOOK_CONFIRM_ACTIONS } from '../../OutlookAiAddIn/web-src/confirm'
 
 const flush = () => new Promise((r) => setTimeout(r, 0))
 const schema = { type: 'object', properties: { message_id: { type: 'string' }, permanent: { type: 'boolean' } } }
@@ -54,11 +55,14 @@ const rules: ConfirmRule[] = [
     title: { en: 'Send now?', he: 'לשלוח עכשיו?' } },
 ]
 
-function boot() {
+// The policy the tests run under unless they pass their own: the panel starts in Track changes.
+const POLICY = { delete_email: ['trackChanges'], send_email: ['trackChanges'] }
+
+function boot(approvals: Record<string, string[]> = POLICY) {
   document.body.innerHTML = '<div id="root"></div>'
   h.toolCalls.length = 0
   h.streams.length = 0
-  h.confirmIrreversible = true
+  h.approvals = approvals
   startAddIn({
     tools: ['get_email', 'delete_email', 'move_email', 'send_email'].map((name) => ({ name, description: name, inputSchema: schema })) as any,
     toolDisplay: { get_email: display('get'), delete_email: display('delete'), move_email: display('move'), send_email: display('send') },
@@ -101,7 +105,7 @@ async function answerPreview(fields: Record<string, string> = PREVIEW) {
   await flush()
 }
 
-describe('Approve/Deny card for confirmActions', () => {
+describe('Approve/Deny card', () => {
   beforeEach(() => vi.restoreAllMocks())
 
   it('shows what the id points at, and runs the tool only after Approve', async () => {
@@ -206,19 +210,47 @@ describe('Approve/Deny card for confirmActions', () => {
     expect(root.querySelector<HTMLElement>('.ai-stop-btn')!.hidden).toBe(true)
   })
 
-  it('does not ask for a tool no rule names', async () => {
+  it('does not ask for a tool the policy does not name', async () => {
     const { root, send } = boot()
     await modelCalls(send, 'move_email', { message_id: 'M1' })
     expect(card(root)).toBeNull()
     expect(bridgeNames()).toEqual(['move_email'])
   })
 
-  it('does not ask when the setting is off', async () => {
-    const { root, send } = boot()
-    h.confirmIrreversible = false
+  it('does not ask in a mode the policy does not list for the tool', async () => {
+    const { root, send } = boot({ delete_email: ['commentOnly', 'fullAutonomy'] })
     await modelCalls(send, 'delete_email', { message_id: 'M1' })
     expect(card(root)).toBeNull()
     expect(bridgeNames()).toEqual(['delete_email'])
+  })
+
+  it('asks with a plain card for a tool with no card rule, which "*" covers', async () => {
+    const { root, send } = boot({ '*': ['trackChanges'] })
+    await modelCalls(send, 'move_email', { message_id: 'M1', folder: 'Archive' })
+    const text = card(root)!.textContent!
+    expect(text).toContain('Allow this action?')
+    for (const shown of ['move', 'message_id', 'M1', 'Archive']) expect(text).toContain(shown)
+    expect(card(root)!.classList.contains('danger')).toBe(false)
+    press(root, 'ai-confirm-approve')
+    await flush()
+    expect(bridgeNames()).toEqual(['move_email'])
+  })
+
+  it('"*" leaves read-only tools alone, and a tool own entry overrides it', async () => {
+    for (const tool of ['get_email', 'move_email']) {
+      const { root, send } = boot({ '*': ['trackChanges'], move_email: [] })
+      await modelCalls(send, tool, { message_id: 'M1' })
+      expect(card(root)).toBeNull()
+      expect(bridgeNames()).toEqual([tool])
+    }
+  })
+
+  it('fails closed on a tool name the app does not have: every change asks, in every mode, and the chat says why', async () => {
+    const { root, send } = boot({ delete_emial: ['commentOnly'] })
+    expect(root.textContent).toContain('delete_emial')
+    await modelCalls(send, 'move_email', { message_id: 'M1' })
+    expect(card(root)!.textContent).toContain('Allow this action?')
+    expect(bridgeNames()).toEqual([])
   })
 
   it('does not ask for a call the user typed with !', async () => {
@@ -227,5 +259,22 @@ describe('Approve/Deny card for confirmActions', () => {
     await flush()
     expect(card(root)).toBeNull()
     expect(bridgeNames()).toEqual(['delete_email'])
+  })
+})
+
+describe("Outlook's card rules (confirm.ts)", () => {
+  const ruleFor = (name: string, input: Record<string, unknown>) =>
+    OUTLOOK_CONFIRM_ACTIONS.find((r) => r.name === name && (r.when?.(input) ?? true))!
+
+  it('marks a permanent delete as dangerous and a plain delete as not', () => {
+    expect(ruleFor('delete_email', { permanent: true }).danger).toBe(true)
+    expect(ruleFor('delete_email', { permanent: true }).title.en).toContain('permanently')
+    expect(ruleFor('delete_email', {}).danger).toBeFalsy()
+    expect(ruleFor('delete_email', { permanent: false }).title.en).toContain('Deleted Items')
+  })
+
+  it('uses the cancel wording only for a cancel', () => {
+    expect(ruleFor('send_event', { action: 'cancel' }).title.en).toContain('Cancel')
+    expect(ruleFor('send_event', { action: 'new' }).title.en).not.toContain('Cancel')
   })
 })

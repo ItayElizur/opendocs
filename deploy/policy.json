@@ -1,14 +1,25 @@
 {
-  // Editing modes to switch off, per app, for every user of this computer.
+  // OpenDocs administrator policy, for every user of this computer. Restart Office after changing this file.
+  // App names: "Word", "Excel", "PowerPoint", "Outlook".
   // Mode names: "readOnly", "commentOnly", "trackChanges", "fullAutonomy".
   // In Outlook, commentOnly is "Draft only" and trackChanges is "Automate approvals".
-  // Example: "Outlook": ["fullAutonomy"] removes Full autonomy from Outlook only.
-  // A mode or app name the add-in does not recognise, or a file it cannot read, switches every mode off in every app.
-  // Restart Office after changing this file.
+  // A name the add-in does not recognise, or a file it cannot read, switches every mode off in every app.
+
+  // Editing modes to switch off. Example: "Outlook": ["fullAutonomy"] removes Full autonomy from Outlook only.
   "disabledModes": {
     "Word": [],
     "Excel": [],
     "PowerPoint": [],
     "Outlook": []
+  },
+
+  // Tools the user must Approve before they run, and in which modes. "*" means every tool that changes something;
+  // a tool's own entry overrides "*" (e.g. "save": [] never asks for save). Calls the user types with ! never ask.
+  // Example: "Outlook": { "send_email": ["fullAutonomy"] } asks before every email sent in Full autonomy.
+  "requireApproval": {
+    "Word": {},
+    "Excel": { "*": ["trackChanges"] },
+    "PowerPoint": { "*": ["trackChanges"] },
+    "Outlook": { "delete_email": ["commentOnly", "trackChanges"] }
   }
 }

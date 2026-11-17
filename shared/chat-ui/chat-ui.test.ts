@@ -1549,12 +1549,9 @@ describe('confirmAction card', () => {
     expect(await handle.confirmAction({ title: 'b', rows: [] }, ctl.signal)).toBe(false)
   })
 
-  it('keeps the Safety checkbox on by default and saves its value', () => {
-    const { root, onSettingsSave } = setup()
-    const box = root.querySelector<HTMLInputElement>('[data-field="confirmIrreversible"]')!
-    expect(box.checked).toBe(true)
-    box.checked = false
-    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
-    expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ confirmIrreversible: false }))
+  it('names the card for screen readers by its question', async () => {
+    const { root, handle } = setup()
+    void handle.confirmAction({ title: 'Delete it?', rows: [] })
+    expect(root.querySelector('.ai-confirm')!.getAttribute('aria-label')).toBe('Delete it?')
   })
 })

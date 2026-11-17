@@ -269,15 +269,24 @@ never replies cannot wedge the panel. Tool arguments and results are never redac
 `redactModelKeys`) removes only the user's configured model API key from what they type. The palette's pill needs each tool's lowest mode, computed by `minModeOf` from the same
 sets `availableForMode()` uses.
 
-## `confirmActions` and `executeConfirmed` (Approve before irreversible actions)
+## `executeConfirmed`, `needsApproval` and `confirmActions` (Approve before a call)
 
-`skill.executeTool` is `executeConfirmed`. When `getSettings().confirmIrreversible` is on and a `ConfirmRule` in
-`config.confirmActions` matches the call (first match wins, `when` narrows by arguments), it asks through `ui.confirmAction`
-before calling the bridge. A rule with `preview` first calls the app's `preview_action` read tool: a `blocked` answer is returned to the
-model as the result and no card is shown; otherwise its type, subject, sender and date become the card's rows (a failed preview is ignored,
-so the card shows only the question). The rule's `fields` add rows from the call's own arguments. The body and the tool call itself
-are never shown. New chat always calls `ui.setBusy(false)`, because `loop.reset()` ends a run without an `onDone` and the stop
-button would otherwise stay up. The `AbortSignal` the loop passes in is handed to
-the card: `AgentLoop.cancel()` and `reset()` both abort it, so Stop and New chat deny a pending card and nothing runs. A denied
-call returns an error result, `DECLINED_TEXT`, which tells the model not to retry and to ask the user. The setting is read per call,
-so toggling it in settings applies at once. The `!` palette bypasses this on purpose (see `onDirectCall`).
+`skill.executeTool` is `executeConfirmed`. The administrator's `policy.json` decides when the user is asked
+(`requireApproval`, injected by the host as `window.__opendocsApprovals`; see `OfficeAi.Shared/ModePolicy.cs.md`).
+`needsApproval` checks the tool's own entry, or `"*"` for any tool that is not read-only, against the current mode. If
+the policy names a tool this app does not have, every non-read-only tool asks in every mode, and `showPolicyNotices`
+says why. There is no user setting for this.
+
+How the card looks comes from `config.confirmActions`. The first `ConfirmRule` that matches wins, and `when` narrows a
+rule by the call's arguments. A rule with `preview` first calls the app's `preview_action` read tool. A `blocked`
+answer is returned to the model as the result, and no card is shown. Otherwise the answer's type, subject, sender and
+date become the card's rows; a failed preview is ignored, so the card shows only the question. The rule's `fields` add
+rows from the call's own arguments. A tool with no rule gets a plain card: "Allow this action?", the tool's display
+name, and up to four simple arguments, each cut to 120 characters. A rule's card never shows the body or the tool call
+itself.
+
+New chat always calls `ui.setBusy(false)`, because `loop.reset()` ends a run without an `onDone` and the stop button
+would otherwise stay up. The `AbortSignal` the loop passes in is handed to the card: `AgentLoop.cancel()` and `reset()`
+both abort it, so Stop and New chat deny a pending card and nothing runs. A denied call returns an error result,
+`DECLINED_TEXT`, which tells the model not to retry and to ask the user. The mode is read per call, so a mode change
+applies at once. The `!` palette bypasses this on purpose (see `onDirectCall`).

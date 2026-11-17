@@ -87,6 +87,9 @@ more confidence than a build-clean compile actually gives you.
   languages (a `satisfies` type for Word/Excel/PowerPoint, the `d()` helper for Outlook).
 - `prompt.ts` — the system prompt.
 
+Outlook also has `confirm.ts`: the rules for how the Approve/Deny card looks for its calls (`OUTLOOK_CONFIRM_ACTIONS`).
+When a card is shown at all is the administrator's `deploy/policy.json` (`requireApproval`), not code.
+
 A new tool needs entries in `tools.ts` and `display.ts` (and the C# side), not in `entry.ts`.
 
 ## Where to update docs after a change

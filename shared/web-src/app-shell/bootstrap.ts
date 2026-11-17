@@ -8,6 +8,7 @@ import {
   postCollapse,
   postMode,
   injectedDisabledModes,
+  injectedApprovals,
   postNewChatDivider,
   postTlsBypass,
   requestDocSettings,
@@ -337,7 +338,7 @@ export interface AddInConfig {
   defaultMode?: EditingMode
   /** Tool names that send/create something externally with no review step - see ChatUIOptions.autoSendTools. */
   autoSendTools?: string[]
-  /** Actions that ask the user to Approve before they run (see ConfirmRule). Absent means none. */
+  /** How the Approve card looks for some calls (see ConfirmRule). Whether a card is shown at all is the policy's call (policy.json requireApproval). */
   confirmActions?: ConfirmRule[]
 }
 
@@ -374,6 +375,20 @@ export function startAddIn(config: AddInConfig): void {
   let editingMode: EditingMode = defaultModeFor(modes, config.defaultMode ?? 'trackChanges')
 
   const readOnlySet = new Set(config.readOnlyTools)
+
+  // Administrator approvals (policy.json requireApproval; see OfficeAi.Shared/ModePolicy.cs.md): tool -> modes that
+  // need an Approve. "*" is every tool that is not read-only, and a tool's own entry overrides it. A tool name this app
+  // does not have fails closed: every non-read-only tool then asks, in every mode.
+  const approvals = injectedApprovals()
+  const knownTools = new Set(config.tools.map((t) => t.name))
+  const unknownApprovalTools = Object.keys(approvals).filter((n) => n !== '*' && !knownTools.has(n))
+  const has = (name: string) => Object.prototype.hasOwnProperty.call(approvals, name)
+  function needsApproval(name: string): boolean {
+    if (readOnlySet.has(name) && !has(name)) return false
+    if (unknownApprovalTools.length > 0) return true
+    const modes = has(name) ? approvals[name] : approvals['*']
+    return Array.isArray(modes) && modes.includes(editingMode)
+  }
   const commentOnlySet = new Set([...config.readOnlyTools, ...(config.commentOnlyExtraTools ?? [])])
   // null (every app but Outlook) = "no opinion" - trackChanges falls through
   // to "everything", unchanged from before this field existed.
@@ -464,16 +479,15 @@ export function startAddIn(config: AddInConfig): void {
 
   const DECLINED_TEXT = 'The user declined this action, so it was not run. Do not retry it. Ask the user what they would like instead.'
 
-  // Runs a model's tool call, first asking the user when a confirmActions rule matches. A typed "!" call
-  // (runDirectCall) skips this: the user wrote the call themselves.
+  // Runs a model's tool call, first asking the user when the policy requires an Approve for this tool in the current
+  // mode (needsApproval). The app's matching confirmActions rule shapes the card; a tool with none gets a plain card
+  // with its name and simple arguments. A typed "!" call (runDirectCall) skips this: the user wrote the call themselves.
   async function executeConfirmed(call: AgentToolCall, signal?: AbortSignal): Promise<ToolExecution> {
-    const rule = getSettings().confirmIrreversible
-      ? config.confirmActions?.find((r) => r.name === call.name && (r.when?.(call.input) ?? true))
-      : undefined
-    if (rule) {
+    if (needsApproval(call.name)) {
+      const rule = config.confirmActions?.find((r) => r.name === call.name && (r.when?.(call.input) ?? true))
       const lang = effectiveLang(currentLangPref)
       const rows: Array<{ label: string; value: string }> = []
-      if (rule.preview) {
+      if (rule?.preview) {
         try {
           const read = await callDotNetTool('preview_action', { tool: call.name, input: call.input })
           if (!read.isError) {
@@ -487,11 +501,31 @@ export function startAddIn(config: AddInConfig): void {
           // No preview: the card shows only the question and the call's own fields.
         }
       }
-      for (const f of rule.fields?.(call.input) ?? []) if (f.value) rows.push({ label: ui.translate(`confirmField_${f.key}`), value: f.value })
-      const approved = await ui.confirmAction({ title: rule.title[lang], rows, danger: rule.danger === true }, signal)
+      if (rule) {
+        for (const f of rule.fields?.(call.input) ?? []) if (f.value) rows.push({ label: ui.translate(`confirmField_${f.key}`), value: f.value })
+      } else {
+        rows.push({ label: ui.translate('confirmField_action'), value: config.toolDisplay[call.name]?.label[lang] ?? call.name })
+        rows.push(...plainArgumentRows(call.input))
+      }
+      const title = rule ? rule.title[lang] : ui.translate('confirmGenericTitle')
+      const approved = await ui.confirmAction({ title, rows, danger: rule?.danger === true }, signal)
       if (!approved) return { output: DECLINED_TEXT, isError: true, summary: call.name }
     }
     return callDotNetTool(call.name, call.input)
+  }
+
+  // The plain card's rows: up to four text, number or true/false arguments, each cut to 120 characters.
+  function plainArgumentRows(input: Record<string, unknown>): Array<{ label: string; value: string }> {
+    return Object.entries(input)
+      .filter(([, v]) => ['string', 'number', 'boolean'].includes(typeof v) && String(v) !== '')
+      .slice(0, 4)
+      .map(([k, v]) => ({ label: k, value: String(v).length > 120 ? String(v).slice(0, 119) + '…' : String(v) }))
+  }
+
+  // Notices about the administrator's policy, shown at startup and again after New chat clears the transcript.
+  function showPolicyNotices(): void {
+    if (modes.length === 0) ui.showError(ui.translate('allModesDisabled'))
+    if (unknownApprovalTools.length > 0) ui.showError(ui.translate('approvalPolicyUnknownTool').replace('{tools}', unknownApprovalTools.join(', ')))
   }
 
   // Theme reconciliation: `currentThemePref` is the persisted 3-way choice;
@@ -538,7 +572,6 @@ export function startAddIn(config: AddInConfig): void {
         lang: s.lang,
         reasoningEffort: s.reasoningEffort,
         developerTools: s.developerTools,
-        confirmIrreversible: s.confirmIrreversible,
       }
     })(),
     // Developer tools: runs `!tool({...})` through the same bridge the model's calls use, so the C# editing-mode gate
@@ -590,7 +623,7 @@ export function startAddIn(config: AddInConfig): void {
       ui.setBusy(false)
       beginConversation()
       ui.resetToEmpty()
-      if (modes.length === 0) ui.showError(ui.translate('allModesDisabled'))
+      showPolicyNotices()
     },
     onModeChange: (mode: EditingMode) => {
       editingMode = mode
@@ -621,7 +654,6 @@ export function startAddIn(config: AddInConfig): void {
         // current value so a quick-dropdown save never wipes it out.
         reasoningEffort: settings.reasoningEffort ?? current.reasoningEffort,
         developerTools: settings.developerTools ?? current.developerTools,
-        confirmIrreversible: settings.confirmIrreversible ?? current.confirmIrreversible,
       })
       postTlsBypass(settings.skipTlsVerify)
       // Folded into setSettings() above and applied immediately, same as theme,
@@ -692,7 +724,7 @@ export function startAddIn(config: AddInConfig): void {
   // Full Autonomy default and e.g. Word never turned TrackRevisions on in the UI's
   // default Track Changes mode (see `bootstrap.ts.md`).
   postMode(editingMode)
-  if (modes.length === 0) ui.showError(ui.translate('allModesDisabled'))
+  showPolicyNotices()
 
   // Apply the persisted TLS-bypass preference on load too, not just after a
   // future Save - otherwise a user who enabled it last session would silently

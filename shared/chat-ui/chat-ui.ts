@@ -85,9 +85,9 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   sectionDeveloper:     { en: 'Developer tools', he: 'כלי פיתוח' },
   developerToolsLabel:  { en: 'Enable the ! tool palette', he: 'הפעל את לוח הכלים !' },
   developerToolsNote:   { en: 'Type ! at the start of a message to run any tool directly, without the model. The editing mode still limits which tools run.', he: 'הקלד ! בתחילת הודעה כדי להריץ כלי ישירות, בלי המודל. מצב העריכה עדיין מגביל אילו כלים רצים.' },
-  sectionSafety:        { en: 'Safety', he: 'בטיחות' },
-  confirmSettingLabel:  { en: 'Ask before irreversible actions and deletes', he: 'שאל לפני פעולות בלתי הפיכות ומחיקות' },
-  confirmSettingNote:   { en: 'The assistant shows what it is about to do and waits for Approve or Deny. Calls you type with ! never ask.', he: 'העוזר מציג מה הוא עומד לעשות וממתין לאישור או לדחייה. קריאות שהקלדת עם ! אינן שואלות.' },
+  confirmGenericTitle:  { en: 'Allow this action?', he: 'לאשר את הפעולה?' },
+  confirmField_action:  { en: 'Action', he: 'פעולה' },
+  approvalPolicyUnknownTool: { en: "Your administrator's policy names a tool this app does not have ({tools}), so every change asks for approval.", he: 'המדיניות של מנהל המערכת מציינת כלי שאינו קיים ביישום זה ({tools}), ולכן כל שינוי דורש אישור.' },
   confirmField_type:    { en: 'Type', he: 'סוג' },
   confirmField_subject: { en: 'Subject', he: 'נושא' },
   confirmField_from:    { en: 'From', he: 'מאת' },
@@ -199,8 +199,6 @@ export interface SettingsSavePayload {
   reasoningEffort?: ReasoningEffort
   /** only present when saved from the full settings view, same gating as docSystemMessage above */
   developerTools?: boolean
-  /** only present when saved from the full settings view, same gating as docSystemMessage above */
-  confirmIrreversible?: boolean
 }
 
 /** One tool's UI-only display info (FT-1 Task 5) - distinct from the tool's
@@ -232,8 +230,6 @@ export interface InitialSettings {
   reasoningEffort?: ReasoningEffort
   /** Seeds the Developer tools checkbox. Defaults to false if omitted. */
   developerTools?: boolean
-  /** Seeds the Safety checkbox. Defaults to true if omitted. */
-  confirmIrreversible?: boolean
 }
 
 export interface ChatUIOptions {
@@ -708,11 +704,6 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <h4 data-t="sectionDocMessage">Document guidelines</h4>
           <textarea class="ai-doc-message" id="docMessageInput" data-t-placeholder="docMessagePlaceholder" maxlength="8192"></textarea>
           <p class="ai-settings-section-note" data-t="docMessageSaveNote">Applies at the start of the next New chat, not the current conversation.</p>
-        </div>
-        <div class="ai-settings-section">
-          <h4 data-t="sectionSafety">Safety</h4>
-          <p class="ai-settings-section-note" data-t="confirmSettingNote">The assistant shows what it is about to do and waits for Approve or Deny. Calls you type with ! never ask.</p>
-          <label class="ai-checkbox-row"><input type="checkbox" data-field="confirmIrreversible" checked /> <span data-t="confirmSettingLabel">Ask before irreversible actions and deletes</span></label>
         </div>
         <div class="ai-settings-section">
           <h4 data-t="sectionDeveloper">Developer tools</h4>
@@ -1191,8 +1182,6 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const developerToolsBox = root.querySelector<HTMLInputElement>('[data-field="developerTools"]')!
   let developerTools = options.initialSettings?.developerTools ?? false
   developerToolsBox.checked = developerTools
-  const confirmBox = root.querySelector<HTMLInputElement>('[data-field="confirmIrreversible"]')!
-  confirmBox.checked = options.initialSettings?.confirmIrreversible ?? true
   let paletteSel = 0
   let paletteDismissed = false
   let paletteShowErrors = false
@@ -1755,7 +1744,6 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       registeredTools: registeredToolNames,
       reasoningEffort: pendingReasoningEffort,
       developerTools: developerToolsBox.checked,
-      confirmIrreversible: confirmBox.checked,
     })
     developerTools = developerToolsBox.checked
     renderPalette()
@@ -1957,6 +1945,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         const card = document.createElement('div')
         card.className = 'ai-confirm' + (spec.danger ? ' danger' : '')
         card.setAttribute('role', 'alertdialog')
+        card.setAttribute('aria-label', spec.title)
         const title = document.createElement('div')
         title.className = 'ai-confirm-title'
         title.textContent = spec.title

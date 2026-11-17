@@ -211,5 +211,5 @@ Escape, or when `signal` aborts (an already-aborted signal resolves false withou
 stray Enter or Space cannot approve. After the answer the buttons are replaced by an Approved/Declined label and the card stays in
 the transcript. `danger` only changes the colours. The card is a title and a list of label/value rows (`spec.rows`, each value `dir="auto"`); the title comes from the caller (the
 app's `ConfirmRule`) and so is not in `STRINGS`, while the row labels (`confirmField_*`), the item types (`confirmType_*`), the buttons,
-the verdicts and the Safety setting's label are. The Safety section sits above Developer tools,
-which stays last. The checkbox is on unless saved off (`confirmIrreversible`).
+and the verdicts are. The card is labelled by its title (`aria-label`) for screen readers. When it is asked for is not
+decided here: the administrator's `policy.json` (`requireApproval`) decides, in `bootstrap.ts`.
