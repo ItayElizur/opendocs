@@ -44,6 +44,7 @@ namespace OfficeAi.Shared
         protected PaneHostBase(string appDataFolderName)
         {
             _appDataFolderName = appDataFolderName;
+            _disabledModes = ModePolicy.DisabledFor(appDataFolderName);
             _status = new Label
             {
                 Dock = DockStyle.Top,
@@ -139,17 +140,19 @@ namespace OfficeAi.Shared
         private EditingMode? _mode;
 
         // This app's modes switched off by the administrator's policy.json (wire names).
-        private HashSet<string> _disabledModes;
+        private readonly HashSet<string> _disabledModes;
 
         // Administrator policy (ModePolicy): no tool runs while the pane is in a mode policy.json disables, or before the
         // page has said which mode it is in. Checked here once for all four apps, ahead of each app's own tier gate.
         private Task<ToolResult> ExecuteToolUnderPolicy(string name, JsonElement input)
         {
-            if (_disabledModes == null) _disabledModes = ModePolicy.DisabledFor(_appDataFolderName);
-            if (_disabledModes.Count > 0 && (_mode == null || _disabledModes.Contains(ModePolicy.WireName(_mode.Value))))
+            if (ModePolicy.Blocks(_disabledModes, _mode))
             {
                 return Task.FromResult(new ToolResult { Output = "Blocked: this editing mode is disabled by your administrator.", IsError = true, Summary = name });
             }
+            // Re-store this pane's mode under the current chat id before every call: the id changes on a new document's
+            // first save (the app would then fall back to Full autonomy), and Outlook panes share one per-mailbox mode.
+            if (_mode != null) SetEditingMode(_mode.Value);
             return ExecuteTool(name, input);
         }
 
@@ -213,7 +216,8 @@ namespace OfficeAi.Shared
                         case "trackChanges": _mode = EditingMode.TrackChanges; break;
                         case "fullAutonomy": _mode = EditingMode.FullAutonomy; break;
                     }
-                    if (_mode != null) SetEditingMode(_mode.Value);
+                    // A mode the policy switches off is never handed to the app, so it cannot leak to another pane's calls.
+                    if (_mode != null && !ModePolicy.Blocks(_disabledModes, _mode)) SetEditingMode(_mode.Value);
                     break;
                 case "collapse-pane":
                     RequestPaneWidth?.Invoke(34);

@@ -64,8 +64,10 @@ host passes the app's list to the page as `window.__opendocsDisabledModes`.
 if that one is still on, otherwise the first one left. With no mode left, the mode button is hidden, the model is
 offered no tools and the chat says the administrator turned the modes off. The server side is enforced once in
 `PaneHostBase.ExecuteToolUnderPolicy`, ahead of each app's own tier gate. When any mode is disabled, it refuses every
-tool call while the pane is in a disabled mode or has not reported a mode yet. Changes take effect when Office is
-restarted.
+tool call while the pane is in a disabled mode or has not reported a mode yet (`ModePolicy.Blocks`). A disabled mode
+is never passed on to the app's `SetMode`. Before every call the pane stores its own mode again under its current chat
+id. That id changes on a new document's first save, when the app's `ModeFor` would otherwise fall back to Full
+autonomy, and Outlook's panes share one mode per mailbox. Changes to the policy take effect when Office is restarted.
 
 ## Direct tool calls (Developer tools)
 

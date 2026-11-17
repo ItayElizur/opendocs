@@ -28,6 +28,13 @@ namespace OfficeAi.Shared
             return Policy.Value.TryGetValue(app, out set) ? set : new HashSet<string>(AllModes); // unknown add-in: fail closed
         }
 
+        /// <summary>True when a tool call must be refused: the policy switches some mode off and the pane is in one of
+        /// them, or has not reported a mode yet.</summary>
+        public static bool Blocks(HashSet<string> disabled, EditingMode? mode)
+        {
+            return disabled.Count > 0 && (mode == null || disabled.Contains(WireName(mode.Value)));
+        }
+
         public static string WireName(EditingMode mode)
         {
             return AllModes[(int)mode];

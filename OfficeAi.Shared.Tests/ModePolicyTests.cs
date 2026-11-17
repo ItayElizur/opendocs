@@ -65,6 +65,18 @@ public class ModePolicyTests
     }
 
     [Fact]
+    public void Blocks_OnlyADisabledOrUnreportedModeWhenThePolicyDisablesSomething()
+    {
+        var none = new System.Collections.Generic.HashSet<string>();
+        var noFull = new System.Collections.Generic.HashSet<string> { "fullAutonomy" };
+        Assert.False(ModePolicy.Blocks(none, null));
+        Assert.False(ModePolicy.Blocks(none, EditingMode.FullAutonomy));
+        Assert.True(ModePolicy.Blocks(noFull, EditingMode.FullAutonomy));
+        Assert.True(ModePolicy.Blocks(noFull, null));
+        Assert.False(ModePolicy.Blocks(noFull, EditingMode.TrackChanges));
+    }
+
+    [Fact]
     public void WireName_MatchesEnumOrder()
     {
         Assert.Equal("readOnly", ModePolicy.WireName(EditingMode.ReadOnly));
