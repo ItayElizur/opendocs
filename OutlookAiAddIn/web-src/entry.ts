@@ -51,11 +51,12 @@ startAddIn({
     'undo_last_action',
     'redo_last_action',
   ],
-  // Tier 3 ("Actions with approval"), on top of tier 2: everything that sends - a meeting response, an email, an
-  // event - so this tier offers every tool, like Excel/PowerPoint's "Edits with approval". The panel asks before
-  // each call as the administrator's policy.json sets. Full autonomy adds no tools; it only never asks.
-  // Must stay in sync with OutlookTools.cs's ApprovalTierTools.
-  trackChangesExtraTools: ['respond_meeting', 'send_email', 'send_event'],
+  // Tier 3 ("Actions with approval"), on top of tier 2: respond_meeting, which notifies the organizer (plus a
+  // permanent delete, gated by its argument in C#). The panel asks before each call as the administrator's
+  // policy.json sets. Must stay in sync with OutlookTools.cs's ApprovalTierTools.
+  trackChangesExtraTools: ['respond_meeting'],
+  // send_email/send_event are deliberately in no list above: that alone confines them to Full autonomy, which shows
+  // every tool and never asks. The reviewed way to send is a draft.
   useSelectionContext: true,
   scopeUnit: 'mailbox',
   availableModes: ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'],
@@ -67,11 +68,11 @@ startAddIn({
     },
     trackChanges: {
       label: { en: 'Actions with approval', he: 'פעולות באישור' },
-      description: { en: "Everything, including sending mail and answering meetings; asks for your approval as your organization's policy sets.", he: 'הכול, כולל שליחת דואר ומענה לפגישות; מבקש את אישורך לפי מדיניות הארגון.' },
+      description: { en: "Everything in Draft only, plus answering meetings and permanent deletes; asks for your approval as your organization's policy sets.", he: 'כל מה שיש בטיוטות בלבד, בתוספת מענה לפגישות ומחיקה לצמיתות; מבקש את אישורך לפי מדיניות הארגון.' },
     },
     fullAutonomy: {
       label: { en: 'Full autonomy', he: 'אוטונומיה מלאה' },
-      description: { en: 'Everything, including sending in your name, with no approval step.', he: 'הכול, כולל שליחה בשמך, ללא שלב אישור.' },
+      description: { en: 'Everything above, plus sending mail and events immediately in your name, with no approval step.', he: 'כל מה שלמעלה, בתוספת שליחת דואר ואירועים מיידית בשמך, ללא שלב אישור.' },
     },
   },
   autoSendTools: ['send_email', 'send_event'],

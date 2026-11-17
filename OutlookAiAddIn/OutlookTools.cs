@@ -45,7 +45,7 @@ namespace OutlookAiAddIn
         // Tier 2 ("Draft only" / CommentOnly): mutates the mailbox or opens a
         // draft, but never leaves it unreviewed. set_event_categories/
         // set_category_color/set_event_availability belong here rather than
-        // ApprovalTierTools - see OutlookTools.cs.md for why. apply_search is
+        // SendTierTools - see OutlookTools.cs.md for why. apply_search is
         // here because it has a real, visible side effect (hijacks the
         // user's Explorer window) despite never mutating data - see
         // OutlookTools.cs.md. Must stay in sync with entry.ts's
@@ -63,14 +63,20 @@ namespace OutlookAiAddIn
             "undo_last_action", "redo_last_action",
         };
 
-        // Tier 3 ("Actions with approval" / TrackChanges): everything that sends - a meeting response (notifies the
-        // organizer), and send_email/send_event, which send or create immediately. Kept out of the draft tier so
-        // "Draft only" honestly means nothing sends. In this mode the panel asks before each call as the
-        // administrator's policy.json sets; Full autonomy adds no tools, only never asks. Must stay in sync with
-        // entry.ts's trackChangesExtraTools.
+        // Tier 3 ("Actions with approval" / TrackChanges): a meeting response, which notifies the organizer (and,
+        // input-aware below, a permanent delete). Kept out of the draft tier so "Draft only" honestly means nothing
+        // sends. In this mode the panel asks before each call as the administrator's policy.json sets. Must stay in
+        // sync with entry.ts's trackChangesExtraTools.
         private static readonly HashSet<string> ApprovalTierTools = new HashSet<string>
         {
-            "respond_meeting", "send_email", "send_event",
+            "respond_meeting",
+        };
+
+        // Tier 4 (Full autonomy only): sends or creates brand-new mail and events immediately, with no review window
+        // and no approval card. The reviewed way to send is a draft (draft_email/draft_event).
+        private static readonly HashSet<string> SendTierTools = new HashSet<string>
+        {
+            "send_email", "send_event",
         };
 
         private static string TierLabel(EditingMode mode)
@@ -102,6 +108,7 @@ namespace OutlookAiAddIn
                 if (!AlwaysAllowedTools.Contains(name))
                 {
                     EditingMode required =
+                        SendTierTools.Contains(name) ? EditingMode.FullAutonomy :
                         ApprovalTierTools.Contains(name) ? EditingMode.TrackChanges :
                         EditingMode.CommentOnly; // DraftTierTools, and anything else not otherwise classified
                     if ((int)mode < (int)required)

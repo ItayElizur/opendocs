@@ -84,21 +84,21 @@ namespace OfficeAi.Shared.Tests
             Same(CSharpSet(cs, "DraftTierTools"), TsArray(ts, "commentOnlyExtraTools:"), "Outlook draft tier");
             Same(CSharpSet(cs, "ApprovalTierTools"), TsArray(ts, "trackChangesExtraTools:"), "Outlook approval tier");
 
-            // Nothing that sends may sit in Read only or Draft only.
-            var lower = TsArray(ts, "readOnlyTools:").Union(TsArray(ts, "commentOnlyExtraTools:"));
-            Assert.Empty(CSharpSet(cs, "ApprovalTierTools").Intersect(lower));
+            // The send tools are advertised only in Full autonomy, so no lower list may mention them.
+            var lower = TsArray(ts, "readOnlyTools:").Union(TsArray(ts, "commentOnlyExtraTools:")).Union(TsArray(ts, "trackChangesExtraTools:"));
+            Assert.Empty(CSharpSet(cs, "SendTierTools").Intersect(lower));
         }
 
-        // A tool that sends something must have its own Approve card in confirm.ts, so that if the policy asks before
-        // it, the card shows the item rather than the plain "Allow this action?" card.
+        // Every tool of the tier that asks (Actions with approval) must have its own Approve card in confirm.ts, so the
+        // card shows the item rather than the plain "Allow this action?" card. (The send tools are Full autonomy only,
+        // which never asks.)
         [Fact]
-        public void Outlook_EverySendingToolHasACardRule()
+        public void Outlook_EveryApprovalTierToolHasACardRule()
         {
             const string cs = "OutlookAiAddIn/OutlookTools.cs";
             var withRule = new HashSet<string>(Regex.Matches(Read("OutlookAiAddIn/web-src/confirm.ts"), @"\{ name: '([a-z_]+)'")
                 .Cast<Match>().Select(x => x.Groups[1].Value));
-            var sending = CSharpSet(cs, "ApprovalTierTools");
-            Assert.Empty(sending.Except(withRule));
+            Assert.Empty(CSharpSet(cs, "ApprovalTierTools").Except(withRule));
         }
 
         // Every tool the shipped policy.json names must exist in that app, or the page would fail closed for everyone.

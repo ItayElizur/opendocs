@@ -298,9 +298,4 @@ describe("Outlook's card rules (confirm.ts)", () => {
     expect(ruleFor('delete_email', {}).danger).toBeFalsy()
     expect(ruleFor('delete_email', { permanent: false }).title.en).toContain('Deleted Items')
   })
-
-  it('uses the cancel wording only for a cancel', () => {
-    expect(ruleFor('send_event', { action: 'cancel' }).title.en).toContain('Cancel')
-    expect(ruleFor('send_event', { action: 'new' }).title.en).not.toContain('Cancel')
-  })
 })

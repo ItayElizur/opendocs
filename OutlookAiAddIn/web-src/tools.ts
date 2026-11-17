@@ -397,7 +397,7 @@ export const ALL_OUTLOOK_TOOLS = [
   {
     name: 'send_email',
     description:
-      'Sends immediately - NO review window, no draft. Available in Actions with approval (the user may be asked to approve it first) and Full autonomy. Same arguments as draft_email (action new/reply/reply_all/forward); `to` is required for new emails and forwards. Prefer draft_email unless the user clearly wants this sent right now, with no chance to review it first.',
+      'Sends immediately - NO review window, no draft. Only available in Full autonomy. Same arguments as draft_email (action new/reply/reply_all/forward); `to` is required for new emails and forwards. Prefer draft_email unless the user clearly wants this sent right now, with no chance to review it first.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -416,7 +416,7 @@ export const ALL_OUTLOOK_TOOLS = [
   {
     name: 'send_event',
     description:
-      'Creates, edits or cancels a calendar event immediately - NO review window. Available in Actions with approval (the user may be asked to approve it first) and Full autonomy. Same arguments as draft_event (action new/edit/cancel); start and end are required for new. A new event with attendees sends the invite right away; an edit that results in a meeting sends the update notice; cancelling a meeting the user organizes sends the cancellation notice, then removes it from the calendar. A plain appointment, or an already-canceled event, is just removed (nothing to notify) - cancel is the only way to dismiss an already-canceled event. Prefer draft_event unless the user clearly wants this done right now, with no chance to review it first. Edit and cancel refuse a meeting the user only attends (not the organizer) - use respond_meeting with response decline for those, or Outlook\'s own "Propose New Time" to suggest a new time. Cancelling a single occurrence can NEVER be undone, since Outlook has no API to restore a deleted occurrence.',
+      'Creates, edits or cancels a calendar event immediately - NO review window. Only available in Full autonomy. Same arguments as draft_event (action new/edit/cancel); start and end are required for new. A new event with attendees sends the invite right away; an edit that results in a meeting sends the update notice; cancelling a meeting the user organizes sends the cancellation notice, then removes it from the calendar. A plain appointment, or an already-canceled event, is just removed (nothing to notify) - cancel is the only way to dismiss an already-canceled event. Prefer draft_event unless the user clearly wants this done right now, with no chance to review it first. Edit and cancel refuse a meeting the user only attends (not the organizer) - use respond_meeting with response decline for those, or Outlook\'s own "Propose New Time" to suggest a new time. Cancelling a single occurrence can NEVER be undone, since Outlook has no API to restore a deleted occurrence.',
     inputSchema: { type: 'object', properties: EVENT_PROPS, required: [] },
   },
 ]
