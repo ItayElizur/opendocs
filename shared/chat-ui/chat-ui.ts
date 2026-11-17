@@ -1183,7 +1183,9 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         const group = tool.minMode === 'readOnly' ? 'paletteRead' : 'paletteWrite'
         if (group !== lastGroup) body += `<div class="ai-palette-group">${escapeHtml(t(group))}</div>`
         lastGroup = group
-        const pill = tool.minMode ? `<span class="ai-palette-tier tier-${tool.minMode}">${escapeHtml(t(modeStringKey(tool.minMode)))}</span>` : ''
+        // The lowest mode still in the menu that offers the tool (modes are cumulative); none left, no pill.
+        const pillMode = tool.minMode ? MODES.slice(MODES.indexOf(tool.minMode)).find((m) => menuModes.includes(m)) : undefined
+        const pill = pillMode ? `<span class="ai-palette-tier tier-${pillMode}">${escapeHtml(t(modeStringKey(pillMode)))}</span>` : ''
         const name = `<mark>${escapeHtml(tool.name.slice(0, query.length))}</mark>${escapeHtml(tool.name.slice(query.length))}`
         body += `<div class="ai-palette-row${i === paletteSel ? ' sel' : ''}${toolIsLocked(tool.name) ? ' locked' : ''}" data-tool="${escapeHtml(tool.name)}">` +
           `<div class="nm" dir="ltr">${name}</div>${pill}<div class="ds">${escapeHtml(toolLabel(tool))} · ${escapeHtml(tool.description[currentLang])}</div></div>`
