@@ -1,4 +1,4 @@
-import { startAddIn, SHARED_TOOLS, SHARED_TOOL_DISPLAY } from '@officeai/app-shell'
+import { injectedApprovals, startAddIn, SHARED_TOOLS, SHARED_TOOL_DISPLAY } from '@officeai/app-shell'
 import { READER_TOOLS, ALL_TOOLS } from './tools'
 import { POWERPOINT_TOOL_DISPLAY, STARTERS } from './display'
 import { SYSTEM_PROMPT } from './prompt'
@@ -20,12 +20,16 @@ startAddIn({
   // "Whole deck" rather than Word's "Whole document" when nothing is selected.
   useSelectionContext: true,
   scopeUnit: 'deck',
-  // PowerPoint has no tracked changes, so this mode means every tool, each edit waiting for an Approve - the shipped
-  // policy.json asks before every change here ("*": ["trackChanges"]). Full autonomy never asks.
-  modeOverrides: {
-    trackChanges: {
-      label: { en: 'Track changes', he: 'מעקב אחר שינויים' },
-      description: { en: 'Each edit waits for your approval', he: 'כל עריכה ממתינה לאישורך' },
-    },
-  },
+  // PowerPoint has no tracked changes, so this mode means every tool. The shipped policy.json asks before every change
+  // here ("*": ["trackChanges"]); the menu says so only while the policy really does.
+  ...(injectedApprovals()['*']?.includes('trackChanges')
+    ? {
+        modeOverrides: {
+          trackChanges: {
+            label: { en: 'Track changes', he: 'מעקב אחר שינויים' },
+            description: { en: 'Each edit waits for your approval', he: 'כל עריכה ממתינה לאישורך' },
+          },
+        },
+      }
+    : {}),
 })
