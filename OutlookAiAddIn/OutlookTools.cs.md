@@ -47,3 +47,18 @@ SendTierTools, so it needs that gate too even though the
 tool NAME sits in DraftTierTools. This is name-based
 gating's one input-aware exception; keep it that way
 rather than generalizing to a per-argument system.
+
+DeleteEmail adds a second rule for permanent:true: the item must
+already be in Deleted Items (or a subfolder of it), otherwise it
+returns a Blocked result and touches nothing. A hard delete is
+therefore always a second call, made after the move result has
+shown the item's subject. This is not a human check: a model that
+picked the wrong item can still pass the new id straight to a
+permanent delete in its next call. Only an approval step in the
+panel stops that. The move gives the item a new EntryID, so the
+permanent call must use the message_id the move returned; the old
+id no longer resolves. Checked against a live
+Outlook: IsInFolderTree is true for Deleted Items and for a
+subfolder of it, and false for the Inbox, another subfolder and a
+null folder. The whole DeleteEmail path was not run through the
+add-in.
