@@ -371,21 +371,22 @@ export function startAddIn(config: AddInConfig): void {
   // (see `bootstrap.ts.md`).
   // Modes the administrator's policy.json switches off are left out of the menu; with none left, no tool is offered.
   const disabledModes = new Set(injectedDisabledModes())
-  const modes = resolveModes(config.availableModes).filter((m) => !disabledModes.has(m))
+  const allModes = resolveModes(config.availableModes)
+  const modes = allModes.filter((m) => !disabledModes.has(m))
   let editingMode: EditingMode = defaultModeFor(modes, config.defaultMode ?? 'trackChanges')
 
   const readOnlySet = new Set(config.readOnlyTools)
 
   // Administrator approvals (policy.json requireApproval; see OfficeAi.Shared/ModePolicy.cs.md): tool -> modes that
-  // need an Approve. "*" is every tool that is not read-only, and a tool's own entry overrides it. A tool name this app
-  // does not have fails closed: every non-read-only tool then asks, in every mode.
+  // need an Approve. "*" is every tool that is not read-only, and a tool's own entry overrides it. Full autonomy never
+  // asks. A tool name this app does not have is ignored: getting the names right is the administrator's job.
   const approvals = injectedApprovals()
   const knownTools = new Set(config.tools.map((t) => t.name))
-  const unknownApprovalTools = Object.keys(approvals).filter((n) => n !== '*' && !knownTools.has(n))
   const has = (name: string) => Object.prototype.hasOwnProperty.call(approvals, name)
   function needsApproval(name: string): boolean {
+    // Full autonomy never asks, and a name this app does not have is never asked about (the call fails in the app).
+    if (editingMode === 'fullAutonomy' || !knownTools.has(name)) return false
     if (readOnlySet.has(name) && !has(name)) return false
-    if (unknownApprovalTools.length > 0) return true
     const modes = has(name) ? approvals[name] : approvals['*']
     return Array.isArray(modes) && modes.includes(editingMode)
   }
@@ -504,8 +505,10 @@ export function startAddIn(config: AddInConfig): void {
       if (rule) {
         for (const f of rule.fields?.(call.input) ?? []) if (f.value) rows.push({ label: ui.translate(`confirmField_${f.key}`), value: f.value })
       } else {
-        rows.push({ label: ui.translate('confirmField_action'), value: config.toolDisplay[call.name]?.label[lang] ?? call.name })
-        rows.push(...plainArgumentRows(call.input))
+        const shown = config.toolDisplay[call.name]
+        rows.push({ label: ui.translate('confirmField_action'), value: shown?.label[lang] ?? call.name })
+        if (shown?.description[lang]) rows.push({ label: ui.translate('confirmField_what'), value: shown.description[lang] })
+        rows.push(...argumentRows(call.input))
       }
       const title = rule ? rule.title[lang] : ui.translate('confirmGenericTitle')
       const approved = await ui.confirmAction({ title, rows, danger: rule?.danger === true }, signal)
@@ -514,18 +517,29 @@ export function startAddIn(config: AddInConfig): void {
     return callDotNetTool(call.name, call.input)
   }
 
-  // The plain card's rows: up to four text, number or true/false arguments, each cut to 120 characters.
-  function plainArgumentRows(input: Record<string, unknown>): Array<{ label: string; value: string }> {
-    return Object.entries(input)
-      .filter(([, v]) => ['string', 'number', 'boolean'].includes(typeof v) && String(v) !== '')
-      .slice(0, 4)
-      .map(([k, v]) => ({ label: k, value: String(v).length > 120 ? String(v).slice(0, 119) + '…' : String(v) }))
+  // The plain card's argument rows: one per argument, and one per item of a list argument (e.g. Excel's
+  // "operations 1: kind: set_cell, address: A1, value: Total"). Each value is cut to 160 characters; after 10 rows a
+  // last row says how many more there are.
+  function argumentRows(input: Record<string, unknown>): Array<{ label: string; value: string }> {
+    const cut = (s: string) => (s.length > 160 ? s.slice(0, 159) + '…' : s)
+    const flat = (v: unknown): string =>
+      v === null || typeof v !== 'object'
+        ? String(v)
+        : Array.isArray(v)
+          ? v.map(flat).join(', ')
+          : Object.entries(v as Record<string, unknown>).map(([k, x]) => `${k}: ${flat(x)}`).join(', ')
+    const rows: Array<{ label: string; value: string }> = []
+    for (const [k, v] of Object.entries(input)) {
+      if (v === undefined || v === '') continue
+      if (Array.isArray(v) && v.some((x) => x !== null && typeof x === 'object')) v.forEach((item, i) => rows.push({ label: `${k} ${i + 1}`, value: cut(flat(item)) }))
+      else rows.push({ label: k, value: cut(flat(v)) })
+    }
+    return rows.length > 10 ? [...rows.slice(0, 9), { label: '…', value: `+${rows.length - 9}` }] : rows
   }
 
   // Notices about the administrator's policy, shown at startup and again after New chat clears the transcript.
   function showPolicyNotices(): void {
     if (modes.length === 0) ui.showError(ui.translate('allModesDisabled'))
-    if (unknownApprovalTools.length > 0) ui.showError(ui.translate('approvalPolicyUnknownTool').replace('{tools}', unknownApprovalTools.join(', ')))
   }
 
   // Theme reconciliation: `currentThemePref` is the persisted 3-way choice;
@@ -550,7 +564,8 @@ export function startAddIn(config: AddInConfig): void {
     starters: config.starters,
     tools: toolDisplayList,
     scopeUnit: config.scopeUnit,
-    modes,
+    modes: allModes,
+    disabledModes: allModes.filter((m) => disabledModes.has(m)),
     modeOverrides: config.modeOverrides,
     defaultMode: config.defaultMode,
     autoSendTools: config.autoSendTools,

@@ -31,7 +31,7 @@ namespace OutlookAiAddIn
 
         // Outlook repurposes two EditingMode slots Word/Excel/PowerPoint use
         // for real editing concepts that have no meaning for mail:
-        // CommentOnly -> "Draft only", TrackChanges -> "Automate approvals".
+        // CommentOnly -> "Draft only", TrackChanges -> "Actions with approval".
         // The ordinal check below relies on the enum's declared order
         // (ReadOnly < CommentOnly < TrackChanges < FullAutonomy) matching
         // this escalation exactly - see OfficeAi.Shared.EditingMode.
@@ -45,7 +45,7 @@ namespace OutlookAiAddIn
         // Tier 2 ("Draft only" / CommentOnly): mutates the mailbox or opens a
         // draft, but never leaves it unreviewed. set_event_categories/
         // set_category_color/set_event_availability belong here rather than
-        // SendTierTools - see OutlookTools.cs.md for why. apply_search is
+        // ApprovalTierTools - see OutlookTools.cs.md for why. apply_search is
         // here because it has a real, visible side effect (hijacks the
         // user's Explorer window) despite never mutating data - see
         // OutlookTools.cs.md. Must stay in sync with entry.ts's
@@ -63,19 +63,14 @@ namespace OutlookAiAddIn
             "undo_last_action", "redo_last_action",
         };
 
-        // Tier 3 ("Automate approvals" / TrackChanges): already calls
-        // resp.Send() to notify the organizer (RespondMeeting) - kept out of
-        // the draft tier so "Draft only" honestly means nothing sends.
+        // Tier 3 ("Actions with approval" / TrackChanges): everything that sends - a meeting response (notifies the
+        // organizer), and send_email/send_event, which send or create immediately. Kept out of the draft tier so
+        // "Draft only" honestly means nothing sends. In this mode the panel asks before each call as the
+        // administrator's policy.json sets; Full autonomy adds no tools, only never asks. Must stay in sync with
+        // entry.ts's trackChangesExtraTools.
         private static readonly HashSet<string> ApprovalTierTools = new HashSet<string>
         {
-            "respond_meeting",
-        };
-
-        // Tier 4 (Full autonomy only): composes and sends/creates brand-new
-        // content with no review step at all.
-        private static readonly HashSet<string> SendTierTools = new HashSet<string>
-        {
-            "send_email", "send_event",
+            "respond_meeting", "send_email", "send_event",
         };
 
         private static string TierLabel(EditingMode mode)
@@ -83,7 +78,7 @@ namespace OutlookAiAddIn
             switch (mode)
             {
                 case EditingMode.FullAutonomy: return "Full autonomy";
-                case EditingMode.TrackChanges: return "Automate approvals";
+                case EditingMode.TrackChanges: return "Actions with approval";
                 case EditingMode.CommentOnly: return "Draft only";
                 default: return "Read only";
             }
@@ -92,8 +87,8 @@ namespace OutlookAiAddIn
         // Null when mode allows a permanent delete; shared by ExecuteAsync and the card's preview so both say the same thing.
         private static string PermanentModeRefusal(EditingMode mode)
         {
-            return (int)mode >= (int)EditingMode.FullAutonomy ? null
-                : "Blocked: permanent delete requires " + TierLabel(EditingMode.FullAutonomy) + " mode or higher (currently " + TierLabel(mode) + "). Omit permanent, or set it to false, to move the message to Deleted Items instead.";
+            return (int)mode >= (int)EditingMode.TrackChanges ? null
+                : "Blocked: permanent delete requires " + TierLabel(EditingMode.TrackChanges) + " mode or higher (currently " + TierLabel(mode) + "). Omit permanent, or set it to false, to move the message to Deleted Items instead.";
         }
 
         public static async Task<ToolResult> ExecuteAsync(string mbxKey, string name, JsonElement input)
@@ -107,7 +102,6 @@ namespace OutlookAiAddIn
                 if (!AlwaysAllowedTools.Contains(name))
                 {
                     EditingMode required =
-                        SendTierTools.Contains(name) ? EditingMode.FullAutonomy :
                         ApprovalTierTools.Contains(name) ? EditingMode.TrackChanges :
                         EditingMode.CommentOnly; // DraftTierTools, and anything else not otherwise classified
                     if ((int)mode < (int)required)
@@ -122,7 +116,7 @@ namespace OutlookAiAddIn
 
                     // delete_email spans two risk classes: permanent:false is
                     // fully reversible (Draft tier, like move_email);
-                    // permanent:true is irreversible (needs the SendTierTools
+                    // permanent:true is irreversible (needs the ApprovalTierTools
                     // gate too, despite the tool NAME sitting in
                     // DraftTierTools). This is name-based gating's one
                     // input-aware exception - see OutlookTools.cs.md.

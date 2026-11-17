@@ -51,15 +51,11 @@ startAddIn({
     'undo_last_action',
     'redo_last_action',
   ],
-  // Tier 3 ("Automate approvals"), on top of tier 2 - respond_meeting
-  // already auto-notifies the organizer via resp.Send(), so they get their
-  // own tier rather than hiding in Draft only or Full autonomy. Must stay
-  // in sync with OutlookTools.cs's ApprovalTierTools.
-  trackChangesExtraTools: ['respond_meeting'],
-  // send_email/send_event
-  // are deliberately in neither list above -
-  // that omission alone confines them to tier 4 (Full autonomy), which shows
-  // every tool.
+  // Tier 3 ("Actions with approval"), on top of tier 2: everything that sends - a meeting response, an email, an
+  // event - so this tier offers every tool, like Excel/PowerPoint's "Edits with approval". The panel asks before
+  // each call as the administrator's policy.json sets. Full autonomy adds no tools; it only never asks.
+  // Must stay in sync with OutlookTools.cs's ApprovalTierTools.
+  trackChangesExtraTools: ['respond_meeting', 'send_email', 'send_event'],
   useSelectionContext: true,
   scopeUnit: 'mailbox',
   availableModes: ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'],
@@ -70,12 +66,12 @@ startAddIn({
       description: { en: 'Drafts, flags, moves, and manages mail/tasks for your review - nothing sends.', he: 'מכין טיוטות, מסמן, מעביר ומנהל דואר/משימות לבדיקתך - שום דבר לא נשלח.' },
     },
     trackChanges: {
-      label: { en: 'Automate approvals', he: 'אוטומציית אישורים' },
-      description: { en: 'Everything in Draft only, plus auto-accepting/declining/tentatively-responding to meeting invites (notifies the organizer).', he: 'כל מה שיש בטיוטות בלבד, בתוספת אישור/דחייה/תגובה זמנית אוטומטיים של הזמנות לפגישה (מודיע למארגן).' },
+      label: { en: 'Actions with approval', he: 'פעולות באישור' },
+      description: { en: "Everything, including sending mail and answering meetings; asks for your approval as your organization's policy sets.", he: 'הכול, כולל שליחת דואר ומענה לפגישות; מבקש את אישורך לפי מדיניות הארגון.' },
     },
     fullAutonomy: {
       label: { en: 'Full autonomy', he: 'אוטונומיה מלאה' },
-      description: { en: 'Everything above, plus sending emails and creating/sending/rescheduling calendar invites in your name.', he: 'כל מה שלמעלה, בתוספת שליחת הודעות ויצירה/שליחה/שינוי מועד של הזמנות יומן בשמך.' },
+      description: { en: 'Everything, including sending in your name, with no approval step.', he: 'הכול, כולל שליחה בשמך, ללא שלב אישור.' },
     },
   },
   autoSendTools: ['send_email', 'send_event'],

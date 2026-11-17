@@ -14,11 +14,11 @@ time - no longer true.
 ## `DraftTierTools` - why set_event_categories/set_category_color/set_event_availability are here
 
 set_event_categories/set_category_color/set_event_availability
-belong here, not in SendTierTools - all three are purely local
+belong here, not in the sending tier (ApprovalTierTools) - all three are purely local
 (appt.Categories/.BusyStatus/.Save(), cats.Add()/.Color), never
 call .Send(), and carry the same risk profile as
 move_email/flag_email_important right next to them. An earlier
-version of this fix put them in SendTierTools to match their old
+version of this fix put them in the sending tier to match their old
 (pre-four-tier) Full-Autonomy-only gate, but that was restoring
 the OLD binary model rather than applying this PR's own tiering
 logic - every other local-only mutation here was deliberately
@@ -43,7 +43,8 @@ fully reversible, same Draft-tier gate as move_email
 above. permanent:true additionally calls .Delete() from
 there, which is irreversible from within Outlook (see
 DeleteEmail's own result text) - the same risk class as
-SendTierTools, so it needs that gate too even though the
+the sending tools (ApprovalTierTools, Actions with approval),
+so it needs that gate too even though the
 tool NAME sits in DraftTierTools. This is name-based
 gating's one input-aware exception; keep it that way
 rather than generalizing to a per-argument system.
@@ -66,7 +67,7 @@ add-in.
 ## `ExecuteAsync` - preview_action is handled before the tier gate
 
 `preview_action` backs the panel's Approve/Deny card (`confirmActions` in `entry.ts`; see `bootstrap.ts.md`). It is read-only,
-is not a model tool, and is in none of `AlwaysAllowedTools`, `DraftTierTools`, `ApprovalTierTools` or `SendTierTools`, so
+is not a model tool, and is in none of `AlwaysAllowedTools`, `DraftTierTools` or `ApprovalTierTools`, so
 `entry.ts` must not list it and `TierListsAgreeTests` does not see it. `ExecuteAsync` answers it before the gate, by name. It
 takes `{ tool, input }` (the call about to run) and returns one JSON object: `blocked` (the exact refusal the call would get)
 or `type`, `subject`, `from` and `date` of the item the call acts on, never the body. The permanent-delete refusals are shared

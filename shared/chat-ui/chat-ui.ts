@@ -87,7 +87,8 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   developerToolsNote:   { en: 'Type ! at the start of a message to run any tool directly, without the model. The editing mode still limits which tools run.', he: 'הקלד ! בתחילת הודעה כדי להריץ כלי ישירות, בלי המודל. מצב העריכה עדיין מגביל אילו כלים רצים.' },
   confirmGenericTitle:  { en: 'Allow this action?', he: 'לאשר את הפעולה?' },
   confirmField_action:  { en: 'Action', he: 'פעולה' },
-  approvalPolicyUnknownTool: { en: "Your administrator's policy names a tool this app does not have ({tools}), so every change asks for approval.", he: 'המדיניות של מנהל המערכת מציינת כלי שאינו קיים ביישום זה ({tools}), ולכן כל שינוי דורש אישור.' },
+  confirmField_what:    { en: 'What it does', he: 'מה זה עושה' },
+  modeDisabledByPolicy: { en: 'Turned off by your administrator', he: 'כובה על ידי מנהל המערכת' },
   confirmField_type:    { en: 'Type', he: 'סוג' },
   confirmField_subject: { en: 'Subject', he: 'נושא' },
   confirmField_from:    { en: 'From', he: 'מאת' },
@@ -257,6 +258,9 @@ export interface ChatUIOptions {
   scopeUnit?: 'doc' | 'sheet' | 'deck' | 'mailbox'
   /** Restricts the editing-mode menu to this subset, in this order. Defaults to all four modes; an empty list hides the mode menu (every mode switched off by policy). Outlook passes ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'] with its own meaning per mode (see modeOverrides). */
   modes?: EditingMode[]
+  /** Modes the administrator's policy switches off: shown grayed out in the menu and settings, not selectable. With
+   * none left selectable, the mode button is hidden. */
+  disabledModes?: EditingMode[]
   /** Per-app override of a mode's label/description, falling back to the shared STRINGS
    * entry when a mode has no override (e.g. Outlook relabels commentOnly/trackChanges
    * for mail - see `chat-ui.ts.md`). */
@@ -344,7 +348,7 @@ const MODES: EditingMode[] = ['readOnly', 'commentOnly', 'trackChanges', 'fullAu
 // this list. `options.modes` narrows it per app - Outlook drops Comment only /
 // Track changes, which have no meaning for mail. Order follows the passed list.
 export function resolveModes(requested?: EditingMode[]): EditingMode[] {
-  if (!requested) return MODES
+  if (!requested || requested.length === 0) return MODES
   return requested.filter((m) => MODES.indexOf(m) !== -1)
 }
 
@@ -362,13 +366,14 @@ function modeStringKey(mode: EditingMode): string {
   return 'mode' + mode.charAt(0).toUpperCase() + mode.slice(1)
 }
 
-function modeMenuItemsHtml(modes: EditingMode[], selected: EditingMode): string {
+function modeMenuItemsHtml(modes: EditingMode[], selected: EditingMode, disabled: Set<EditingMode>): string {
   return modes
     .map((mode) => {
       const key = modeStringKey(mode)
       const sel = mode === selected ? ' selected' : ''
+      const off = disabled.has(mode) ? ' disabled" aria-disabled="true" data-t-title="modeDisabledByPolicy' : ''
       return (
-        `<div class="ai-mode-menu-item${sel}" data-mode="${mode}">` +
+        `<div class="ai-mode-menu-item${sel}${off}" data-mode="${mode}">` +
         `<span data-t="${key}">${STRINGS[key]?.en ?? mode}</span>` +
         `<span class="desc" data-t="${key}Desc">${STRINGS[key + 'Desc']?.en ?? ''}</span></div>`
       )
@@ -624,7 +629,9 @@ function chipDockHtml(options: ChatUIOptions, currentLang: Lang): string {
 
 export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHandle {
   const menuModes = resolveModes(options.modes)
-  const defaultMode: EditingMode = defaultModeFor(menuModes, options.defaultMode ?? 'trackChanges')
+  const disabledModes = new Set(options.disabledModes ?? [])
+  const enabledModes = menuModes.filter((m) => !disabledModes.has(m))
+  const defaultMode: EditingMode = defaultModeFor(enabledModes, options.defaultMode ?? 'trackChanges')
   root.innerHTML = `
     <div class="ai-dock">
       <div class="ai-rail" data-t="panelTitle"></div>
@@ -724,7 +731,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <div class="ai-input-footer">
             <div style="position: relative;">
               <button class="ai-mode-btn"><span class="dot"></span><span id="modeBtnLabel">Full autonomy</span></button>
-              <div class="ai-mode-menu" id="modeMenu">${modeMenuItemsHtml(menuModes, defaultMode)}</div>
+              <div class="ai-mode-menu" id="modeMenu">${modeMenuItemsHtml(menuModes, defaultMode, disabledModes)}</div>
             </div>
             <div class="ai-send-group">
               <button class="ai-stop-btn" data-t-title="stop" hidden>&#9632;</button>
@@ -1216,7 +1223,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         if (group !== lastGroup) body += `<div class="ai-palette-group">${escapeHtml(t(group))}</div>`
         lastGroup = group
         // The lowest mode still in the menu that offers the tool (modes are cumulative); none left, no pill.
-        const pillMode = tool.minMode ? MODES.slice(MODES.indexOf(tool.minMode)).find((m) => menuModes.includes(m)) : undefined
+        const pillMode = tool.minMode ? MODES.slice(MODES.indexOf(tool.minMode)).find((m) => enabledModes.includes(m)) : undefined
         const pill = pillMode ? `<span class="ai-palette-tier tier-${pillMode}">${escapeHtml(t(modeStringKey(pillMode)))}</span>` : ''
         const name = `<mark>${escapeHtml(tool.name.slice(0, query.length))}</mark>${escapeHtml(tool.name.slice(query.length))}`
         body += `<div class="ai-palette-row${i === paletteSel ? ' sel' : ''}${toolIsLocked(tool.name) ? ' locked' : ''}" data-tool="${escapeHtml(tool.name)}">` +
@@ -1511,7 +1518,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     })
   }
 
-  modeBtn.hidden = menuModes.length === 0 // every mode switched off by the administrator's policy
+  modeBtn.hidden = enabledModes.length === 0 // every mode switched off by the administrator's policy
   modeBtn.dataset.editingMode = defaultMode // colour the initial mode too; selectMode() updates it afterwards
   modeBtn.addEventListener('click', () => modeMenu.classList.toggle('open'))
 
@@ -1519,6 +1526,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // control must drive the exact same path, so the two controls cannot
   // diverge - both a menu-item click and a scope-option click call this.
   function selectMode(mode: EditingMode): void {
+    if (disabledModes.has(mode)) return // grayed out by the administrator's policy
     root.querySelectorAll<HTMLElement>('.ai-mode-menu-item').forEach((el) => el.classList.toggle('selected', el.dataset.mode === mode))
     root.querySelectorAll<HTMLElement>('.ai-scope-option').forEach((el) => el.classList.toggle('selected', el.dataset.mode === mode))
     modeBtnLabel.textContent = t('mode' + mode[0]!.toUpperCase() + mode.slice(1))
@@ -1536,7 +1544,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const scopeControl = root.querySelector<HTMLDivElement>('#scopeControl')!
   scopeControl.innerHTML = menuModes.map((mode) => {
     const key = 'mode' + mode[0]!.toUpperCase() + mode.slice(1)
-    return `<div class="ai-scope-option${mode === defaultMode ? ' selected' : ''}" data-mode="${mode}">
+    const off = disabledModes.has(mode) ? ' disabled" aria-disabled="true" data-t-title="modeDisabledByPolicy' : ''
+    return `<div class="ai-scope-option${mode === defaultMode ? ' selected' : ''}${off}" data-mode="${mode}">
       <span data-t="${key}"></span><span class="desc" data-t="${key}Desc"></span>
     </div>`
   }).join('')

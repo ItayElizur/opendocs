@@ -150,7 +150,7 @@ namespace OutlookAiAddIn
         }
 
         // One compose path for draft_email (opens a window, the user reviews and
-        // sends) and send_email (sends immediately, Full autonomy only).
+        // sends) and send_email (sends immediately, Actions with approval or higher).
         // action picks a new email, reply, reply-all or forward. Reply and
         // forward target either an email (message_id) or a calendar meeting
         // (event_id), which goes through the meeting's invitation message -
@@ -445,11 +445,11 @@ namespace OutlookAiAddIn
             return unresolved.Count > 0 ? " Could not resolve: " + string.Join(", ", unresolved) + " - check for typos." : "";
         }
 
-        // Send-and-dispatch, Full-autonomy-only counterparts to the
-        // draft/reply/forward/event tools above. Same bodies, but .Send()/
-        // .Save() instead of .Display(false) - no native window, no review
-        // step. Gated in OutlookTools.cs's ExecuteAsync (SendTierTools),
-        // never reachable below Full Autonomy.
+        // Send-and-dispatch counterparts to the draft/reply/forward/event
+        // tools above. Same bodies, but .Send()/.Save() instead of
+        // .Display(false) - no native window. Gated in OutlookTools.cs's
+        // ExecuteAsync (ApprovalTierTools), never reachable below Actions
+        // with approval, where the panel's Approve card is the review step.
         // Non-meeting appointments only .Save() - Outlook has nobody to send
         // them to. A meeting (attendees present) must .Send() instead:
         // .Save() alone would leave it sitting unset on the organizer's

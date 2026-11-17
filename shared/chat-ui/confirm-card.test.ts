@@ -245,12 +245,38 @@ describe('Approve/Deny card', () => {
     }
   })
 
-  it('fails closed on a tool name the app does not have: every change asks, in every mode, and the chat says why', async () => {
-    const { root, send } = boot({ delete_emial: ['commentOnly'] })
-    expect(root.textContent).toContain('delete_emial')
+  it('ignores a tool name the app does not have: nothing else asks and nothing is shown', async () => {
+    const { root, send } = boot({ delete_emial: ['trackChanges'] })
+    expect(root.querySelector('.ai-msg-error')).toBeNull()
     await modelCalls(send, 'move_email', { message_id: 'M1' })
-    expect(card(root)!.textContent).toContain('Allow this action?')
-    expect(bridgeNames()).toEqual([])
+    expect(card(root)).toBeNull()
+    expect(bridgeNames()).toEqual(['move_email'])
+  })
+
+  it('never asks in Full autonomy, whatever the policy lists', async () => {
+    const { root, send } = boot({ '*': ['trackChanges', 'fullAutonomy'], delete_email: ['fullAutonomy'] })
+    root.querySelector<HTMLElement>('.ai-mode-menu-item[data-mode="fullAutonomy"]')!.click()
+    await modelCalls(send, 'delete_email', { message_id: 'M1' })
+    expect(card(root)).toBeNull()
+    expect(bridgeNames()).toEqual(['delete_email'])
+  })
+
+  it('does not ask about a call to a tool the app does not have', async () => {
+    const { root, send } = boot({ '*': ['trackChanges'] })
+    await modelCalls(send, 'get_sheet_context', {})
+    expect(card(root)).toBeNull()
+    expect(bridgeNames()).toEqual(['get_sheet_context'])
+  })
+
+  it('shows the tool description and one row per item of a list argument on the plain card', async () => {
+    const { root, send } = boot({ '*': ['trackChanges'] })
+    await modelCalls(send, 'move_email', { operations: [{ kind: 'set_cell', address: 'A1', value: 'AI test' }, { kind: 'clear', address: 'B2' }] })
+    const text = card(root)!.textContent!
+    expect(text).toContain('What it does')
+    expect(text).toContain('operations 1')
+    expect(text).toContain('kind: set_cell, address: A1, value: AI test')
+    expect(text).toContain('operations 2')
+    expect(text).toContain('kind: clear, address: B2')
   })
 
   it('does not ask for a call the user typed with !', async () => {

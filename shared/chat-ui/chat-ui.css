@@ -621,6 +621,8 @@
   .ai-mode-menu-item { padding: 9px 12px; font-size: 13px; cursor: pointer; color: var(--color-text-secondary); }
   .ai-mode-menu-item:hover { background: var(--color-bg-subtle); }
   .ai-mode-menu-item.selected { color: var(--color-text-primary); font-weight: 600; }
+  .ai-mode-menu-item.disabled, .ai-scope-option.disabled { opacity: 0.45; cursor: not-allowed; }
+  .ai-mode-menu-item.disabled:hover, .ai-scope-option.disabled:hover { background: transparent; }
   .ai-mode-menu-item .desc { display: block; font-size: 11px; font-weight: 400; color: var(--color-text-tertiary); margin-top: 1px; }
 
   /* Post-hoc fix (2026-08-24, user-reported): margin-inline-start: auto on

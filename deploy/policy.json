@@ -2,7 +2,7 @@
   // OpenDocs administrator policy, for every user of this computer. Restart Office after changing this file.
   // App names: "Word", "Excel", "PowerPoint", "Outlook".
   // Mode names: "readOnly", "commentOnly", "trackChanges", "fullAutonomy".
-  // In Outlook, commentOnly is "Draft only" and trackChanges is "Automate approvals".
+  // In Outlook, commentOnly is "Draft only" and trackChanges is "Actions with approval".
   // In Excel and PowerPoint, trackChanges is "Edits with approval" (they have no tracked changes).
   // A name the add-in does not recognise, or a file it cannot read, switches every mode off in every app.
 
@@ -15,12 +15,12 @@
   },
 
   // Tools the user must Approve before they run, and in which modes. "*" means every tool that changes something;
-  // a tool's own entry overrides "*" (e.g. "save": [] never asks for save). Calls the user types with ! never ask.
-  // Example: "Outlook": { "send_email": ["fullAutonomy"] } asks before every email sent in Full autonomy.
+  // a tool's own entry overrides "*" (e.g. "save": [] never asks for save). Full autonomy never asks, whatever is
+  // listed here. A tool name the app does not have is ignored. Calls the user types with ! never ask.
   "requireApproval": {
     "Word": {},
     "Excel": { "*": ["trackChanges"] },
     "PowerPoint": { "*": ["trackChanges"] },
-    "Outlook": { "delete_email": ["commentOnly", "trackChanges"] }
+    "Outlook": { "*": ["trackChanges"], "delete_email": ["commentOnly", "trackChanges"] }
   }
 }

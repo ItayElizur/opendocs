@@ -34,8 +34,8 @@ shared-calendar path — each because the COM object model either can't do the j
   |---|---|---|
   | `ReadOnly` | **Read only** | The 11 read tools (`readOnlyTools` in `entry.ts`, `AlwaysAllowedTools` in `OutlookTools.cs`). |
   | `CommentOnly` | **Draft only** (the default for a fresh session) | 16 tools that mutate the mailbox or open a draft but never leave anything unreviewed: triage (`mark_email_read` — read or unread via `read`, `flag_email_important`, `move_email`, `delete_email` — non-permanent only, see below), tasks/reminders (`create_task`, `update_task`, `set_reminder`, `set_email_reminder`), event tagging/status (`set_event_categories`, `set_category_color`, `set_event_availability`), `apply_search`, every draft tool (`draft_email`, `draft_event`), and `undo_last_action`/`redo_last_action` (`commentOnlyExtraTools` / `DraftTierTools`). |
-  | `TrackChanges` | **Automate approvals** | `respond_meeting` — it calls `resp.Send()` to notify the organizer, so it gets its own explicit tier rather than hiding in Draft only or Full autonomy (`trackChangesExtraTools` / `ApprovalTierTools`). |
-  | `FullAutonomy` | **Full autonomy** | The two auto-send tools — `send_email`, `send_event` (`SendTierTools`; on the `entry.ts` side, simply absent from every lower tier's list) — plus `delete_email` with `permanent: true`. |
+  | `TrackChanges` | **Actions with approval** | Everything that sends: `respond_meeting` (calls `resp.Send()` to notify the organizer), `send_email` and `send_event` (send or create immediately), plus `delete_email` with `permanent: true` (`trackChangesExtraTools` / `ApprovalTierTools`). The panel asks before each call as `policy.json` sets (the shipped file: every call). |
+  | `FullAutonomy` | **Full autonomy** | No extra tools: the same as Actions with approval, but the panel never asks. |
 
   `entry.ts` passes `availableModes: ['readOnly','commentOnly','trackChanges',
   'fullAutonomy']` and a `modeOverrides` map so the mode menu shows Outlook's own
@@ -45,7 +45,7 @@ shared-calendar path — each because the COM object model either can't do the j
   shared-string change). Gate logic (`OutlookTools.cs`'s `ExecuteAsync`) is an ordinal
   check on the enum's own declared order (`ReadOnly < CommentOnly < TrackChanges <
   FullAutonomy`), name-based except for one narrow input-aware special case:
-  `delete_email` with `permanent: true` is blocked below Full autonomy (the tool name
+  `delete_email` with `permanent: true` is blocked below Actions with approval (the tool name
   itself stays in `DraftTierTools`, since its default non-permanent path is a
   reversible move) and, in every mode, for an item that is not already in Deleted Items.
   A fresh session defaults to **Draft only** (`defaultMode: 'commentOnly'`, resolved via
@@ -53,9 +53,9 @@ shared-calendar path — each because the COM object model either can't do the j
   to their own `trackChanges`).
 - **Approve before they run.** On top of the tier gate, the panel can ask for an Approve/Deny on a card before a call.
   When it asks is the administrator's `policy.json` (`requireApproval`): the shipped default asks before `delete_email` in
-  Draft only and Automate approvals, and Full autonomy never asks. `confirm.ts` holds the card for `send_email`,
+  Draft only and every call in Actions with approval, and Full autonomy never asks. `confirm.ts` holds the card for `send_email`,
   `send_event`, `respond_meeting` and `delete_email` (a plain delete says it moves to Deleted Items and can be undone;
-  a permanent one is marked as irreversible); any other tool the policy names gets a plain card. The card shows the item's type, subject, sender and date (never the body, and not the tool call), read by `preview_action` (`OutlookTools.Preview.cs`, a read-only lookup that is not a model tool and is in no tier set). It takes the call about to run and returns one JSON object: `blocked` (the refusal the call would get) or `type` (`mail`, `meetingRequest`, `meetingResponse`, `meetingCancellation`, `event`, `task`, `other`), `subject`, `from` (the sender, or the organizer for an event) and `date` (received, or start for an event). A permanent delete that cannot happen (not in Deleted Items, or below Full autonomy) is refused there, before any card is shown.
+  a permanent one is marked as irreversible); any other tool the policy names gets a plain card. The card shows the item's type, subject, sender and date (never the body, and not the tool call), read by `preview_action` (`OutlookTools.Preview.cs`, a read-only lookup that is not a model tool and is in no tier set). It takes the call about to run and returns one JSON object: `blocked` (the refusal the call would get) or `type` (`mail`, `meetingRequest`, `meetingResponse`, `meetingCancellation`, `event`, `task`, `other`), `subject`, `from` (the sender, or the organizer for an event) and `date` (received, or start for an event). A permanent delete that cannot happen (not in Deleted Items, or below Actions with approval) is refused there, before any card is shown.
   It is enforced by the panel only (`bootstrap.ts`, `executeConfirmed`), so no C# tier set changes. Calls typed with `!`
   never ask. Not verified
   against a live Outlook with a real model.
@@ -138,7 +138,7 @@ sent. All except `apply_search` set `Mutated = true` and record an undo entry (s
 | `mark_email_read` | `MailItem.UnRead` + `.Save()`; `read` (default `true`) false marks it unread, the same boolean pattern as `flag_email_important`'s `important`. |
 | `flag_email_important` | `Importance = olImportanceHigh/Normal` + `.Save()`. `important` defaults true. |
 | `move_email` | `MailItem.Move(ResolveFolder(destination))`; returns `{message_id: <new EntryID>, old_message_id}`. |
-| `delete_email` | `message_id` may be any item in a mail folder, including a meeting invitation or response. Non-permanent (default) → `Move` to Deleted Items (returns the new id) — Draft only, same risk class as `move_email`. `permanent: true` → `.Delete()` directly on an item that is **already in Deleted Items** (or one of its subfolders), using the id the earlier move returned. Anywhere else it returns a `Blocked:` result that tells the model to delete it without `permanent` first and to ask the user, and touches nothing. If `.Delete()` fails the item stays in Deleted Items and the result is an error. A permanent delete records an undo barrier. **Requires Full autonomy**, via the input-aware check in `ExecuteAsync` described under "Editing modes" above; the tool description says so, so the model doesn't attempt it at a lower tier (no single-call hard delete in the OM — documented as "may still be server-recoverable"). |
+| `delete_email` | `message_id` may be any item in a mail folder, including a meeting invitation or response. Non-permanent (default) → `Move` to Deleted Items (returns the new id) — Draft only, same risk class as `move_email`. `permanent: true` → `.Delete()` directly on an item that is **already in Deleted Items** (or one of its subfolders), using the id the earlier move returned. Anywhere else it returns a `Blocked:` result that tells the model to delete it without `permanent` first and to ask the user, and touches nothing. If `.Delete()` fails the item stays in Deleted Items and the result is an error. A permanent delete records an undo barrier. **Requires Actions with approval or higher**, via the input-aware check in `ExecuteAsync` described under "Editing modes" above; the tool description says so, so the model doesn't attempt it at a lower tier (no single-call hard delete in the OM — documented as "may still be server-recoverable"). |
 | `apply_search` | View-only (`Mutated: false`, no undo entry) — pushes the same `BuildSearchDasl` filter `search_emails` computes into `Explorer.CurrentFolder` + `Explorer.Search("@SQL=" + dasl, olSearchScopeCurrentFolder)`, so the user's own Outlook window shows the results. Draft tier rather than always-allowed even though it never changes data: it visibly takes over the user's real Outlook window, which Read only promises never to do. `_Explorer.Search(string Query, OlSearchScope SearchScope)`'s signature was confirmed via .NET reflection against the referenced PIA; the `@SQL=` DASL string itself has **not yet been exercised against a live Outlook session**. |
 | `set_event_categories` | `AppointmentItem.Categories` (comma-separated tag names, the color shown on the event in the calendar grid) + `.Save()`; empty/omitted `categories` clears all tags. A name outside the master list is auto-added by Outlook on `Save` with an arbitrary color — call `set_category_color` first to control it. Optional `store_id` (shared calendars). |
 | `set_category_color` | `Namespace.Categories[name]` — updates `.Color` if the tag exists, else `Categories.Add(name, color)` creates it. Same master list `list_color_categories` reads. |
@@ -238,7 +238,7 @@ no lookalike fallback and no `.ics` attachment. This does not respond to the inv
 `Reply`/`ReplyAll`/`Forward` create the expected items. Opening the window from the add-in, sending,
 and whether prepending `body` keeps the forwarded invitation intact were not exercised.
 
-## Meeting-response tools (1 — Automate approvals or higher; `Mutated = true`)
+## Meeting-response tools (1 — Actions with approval or higher; `Mutated = true`)
 
 | Tool | Notes |
 |---|---|
@@ -248,7 +248,7 @@ There is no draft counterpart: `Respond()` commits a real calendar change at cal
 version that pre-selects a response would break the draft contract. To write to the organizer
 instead, use `draft_email` with `event_id`.
 
-## Auto-send tools (2 — Full autonomy only; send/create immediately, no review window; `Mutated = true`)
+## Auto-send tools (2 — Actions with approval or higher; send/create immediately, no review window; `Mutated = true`)
 
 `draft_event` and `send_event` take the same arguments; `action` (`new` default, `edit`, `cancel`) picks the
 operation. Each action has a draft tail (changes left unsaved, `Display(false)`, nothing persisted, no undo
@@ -273,9 +273,9 @@ When the invitation email is gone (deleted, archived), `draft_email` / `send_ema
 
 `message_id`/`event_id` with `action` absent or `new` (on `draft_email`/`send_email`, `draft_event`/`send_event`) is rejected with an error asking for the real action, so a forgotten `action` can never create a new email or duplicate event instead of replying or editing.
 
-Gated by `OutlookTools.cs`'s `SendTierTools` set, requiring `EditingMode.FullAutonomy`
-exactly (the ordinal check's top tier) — not reachable from Draft only or Automate
-approvals. The model is told to prefer the draft tools unless the user clearly asked for
+Gated by `OutlookTools.cs`'s `ApprovalTierTools` set, requiring `EditingMode.TrackChanges`
+(Actions with approval) or higher — not reachable from Draft only. In Actions with approval
+the panel asks before each call as `policy.json` sets; Full autonomy never asks. The model is told to prefer the draft tools unless the user clearly asked for
 something to go out immediately.
 
 ## Recurring events

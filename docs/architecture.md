@@ -35,7 +35,7 @@ CommentOnly | TrackChanges | FullAutonomy`), filtered client-side (which tools a
 advertised to the model) *and* re-enforced server-side in each `Tools.Execute()`
 (mutating tools blocked outright in Read Only / Comment Only mode, regardless of what
 the model requests). Outlook repurposes all four tiers with its own meaning (Read only /
-Draft only / Automate approvals / Full autonomy) rather than dropping two — see
+Draft only / Actions with approval / Full autonomy) rather than dropping two — see
 [`docs/tools/outlook.md`](tools/outlook.md) for the mapping.
 
 `save` (Word, Excel, PowerPoint) is defined once in `shared/web-src/app-shell/sharedTools.ts`, which exports it in
@@ -60,8 +60,8 @@ approvals / Full autonomy). It works on whole modes, not on individual tools. `O
 once per Office process and picks the app's list by the add-in's folder name. A file that cannot be read or parsed, or
 that names an unknown app or mode, switches every mode off in every app rather than leaving a mode open by mistake. The
 host passes the app's list to the page as `window.__opendocsDisabledModes`.
-`bootstrap.ts` leaves those modes out of the menu and the settings scope control, and starts in the app's default mode
-if that one is still on, otherwise the first one left. With no mode left, the mode button is hidden, the model is
+`bootstrap.ts` shows those modes grayed out and unselectable in the menu and the settings scope control, and starts in
+the app's default mode if that one is still on, otherwise the first one left. With no mode left, the mode button is hidden, the model is
 offered no tools and the chat says the administrator turned the modes off. The server side is enforced once in
 `PaneHostBase.ExecuteToolUnderPolicy`, ahead of each app's own tier gate. When any mode is disabled, it refuses every
 tool call while the pane is in a disabled mode or has not reported a mode yet (`ModePolicy.Blocks`). A disabled mode
@@ -75,9 +75,9 @@ An opt-in setting (`developerTools`, saved with the other panel settings, off by
 
 ## Approve before a call (requireApproval)
 
-The administrator's `policy.json` decides which of the model's calls need an Approve from the user, per app, tool and mode (`requireApproval`; see `OfficeAi.Shared/ModePolicy.cs.md`). `"*"` stands for every tool that is not read-only, and a tool's own entry overrides it. The shipped defaults: Excel and PowerPoint ask before every change in `trackChanges`, which those two apps label "Edits with approval" (they have no tracked changes, so that mode means every tool, each edit approved), Outlook asks before `delete_email` in Draft only and Automate approvals, Word asks for nothing, and Full autonomy never asks. There is no user setting for it. A tool name the app does not have fails closed: every non-read-only tool asks, in every mode, and the chat says which name is wrong. The check is client-side, in `executeConfirmed` around the model's `callDotNetTool` call. It adds no model tool or tier-list entry, and the server-side editing-mode check still runs after Approve. Because only the page enforces it, WebView2's developer tools are switched off in any app whose policy has a rule.
+The administrator's `policy.json` decides which of the model's calls need an Approve from the user, per app, tool and mode (`requireApproval`; see `OfficeAi.Shared/ModePolicy.cs.md`). `"*"` stands for every tool that is not read-only, and a tool's own entry overrides it. Full autonomy never asks, whatever is listed. The third tier (`trackChanges`) is "every tool, with approvals" in every app but Word: Excel and PowerPoint call it "Edits with approval" (they have no tracked changes) and Outlook "Actions with approval" (it includes `send_email`, `send_event` and `respond_meeting`). The shipped defaults ask before every change in that tier in those three apps, and before `delete_email` in Outlook's Draft only; Word asks for nothing. There is no user setting for it. A tool name the app does not have is ignored. The check is client-side, in `executeConfirmed` around the model's `callDotNetTool` call. It adds no model tool or tier-list entry, and the server-side editing-mode check still runs after Approve. Because only the page enforces it, an installed (Release) pane never enables WebView2's developer tools.
 
-How the card looks comes from `AddInConfig.confirmActions` (Outlook's `web-src/confirm.ts`). The first matching `ConfirmRule` wins. A tool with no rule gets a plain "Allow this action?" card with the tool's display name and up to four simple arguments. The card (`confirmAction` in `chat-ui.ts`) shows the rule's title and labelled rows, never the tool call itself or a message body. A rule with `preview` asks the add-in (`preview_action`, a read-only entry in `OutlookTools.ExecuteAsync` that is in no tier set) for the item's type, subject, sender and date, or for the reason the call would be refused, in which case no card is shown and the model gets that refusal. A rule's `fields` add rows from the call's own arguments (for example the recipient of a new email). Deny, Escape, Stop and New chat all resolve to Deny, and the model gets a result telling it not to retry. A call the user typed with `!` never asks.
+How the card looks comes from `AddInConfig.confirmActions` (Outlook's `web-src/confirm.ts`). The first matching `ConfirmRule` wins. A tool with no rule gets a plain "Allow this action?" card with the tool's display name and description, and its arguments: one row per argument, one per item of a list (such as Excel's operations). The card (`confirmAction` in `chat-ui.ts`) shows the rule's title and labelled rows, never the tool call itself or a message body. A rule with `preview` asks the add-in (`preview_action`, a read-only entry in `OutlookTools.ExecuteAsync` that is in no tier set) for the item's type, subject, sender and date, or for the reason the call would be refused, in which case no card is shown and the model gets that refusal. A rule's `fields` add rows from the call's own arguments (for example the recipient of a new email). Deny, Escape, Stop and New chat all resolve to Deny, and the model gets a result telling it not to retry. A call the user typed with `!` never asks.
 
 ## Provenance / data-source enforcement
 

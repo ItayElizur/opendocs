@@ -84,9 +84,9 @@ namespace OfficeAi.Shared.Tests
             Same(CSharpSet(cs, "DraftTierTools"), TsArray(ts, "commentOnlyExtraTools:"), "Outlook draft tier");
             Same(CSharpSet(cs, "ApprovalTierTools"), TsArray(ts, "trackChangesExtraTools:"), "Outlook approval tier");
 
-            // The send tools are advertised only in Full autonomy, so no lower list may mention them.
-            var lower = TsArray(ts, "readOnlyTools:").Union(TsArray(ts, "commentOnlyExtraTools:")).Union(TsArray(ts, "trackChangesExtraTools:"));
-            Assert.Empty(CSharpSet(cs, "SendTierTools").Intersect(lower));
+            // Nothing that sends may sit in Read only or Draft only.
+            var lower = TsArray(ts, "readOnlyTools:").Union(TsArray(ts, "commentOnlyExtraTools:"));
+            Assert.Empty(CSharpSet(cs, "ApprovalTierTools").Intersect(lower));
         }
 
         // A tool that sends something must have its own Approve card in confirm.ts, so that if the policy asks before
@@ -97,7 +97,7 @@ namespace OfficeAi.Shared.Tests
             const string cs = "OutlookAiAddIn/OutlookTools.cs";
             var withRule = new HashSet<string>(Regex.Matches(Read("OutlookAiAddIn/web-src/confirm.ts"), @"\{ name: '([a-z_]+)'")
                 .Cast<Match>().Select(x => x.Groups[1].Value));
-            var sending = CSharpSet(cs, "SendTierTools").Union(CSharpSet(cs, "ApprovalTierTools"));
+            var sending = CSharpSet(cs, "ApprovalTierTools");
             Assert.Empty(sending.Except(withRule));
         }
 

@@ -53,7 +53,6 @@ public class ModePolicyTests
     [InlineData("{ \"disabledModes\": [\"fullAutonomy\"] }")] // the old all-apps shape
     [InlineData("{ \"requireApproval\": { \"Excel\": { \"*\": [\"trackChanges\", \"fullAutonmy\"] } } }")] // mode typo
     [InlineData("{ \"requireApproval\": { \"Exel\": { \"*\": [\"trackChanges\"] } } }")] // app typo
-    [InlineData("{ \"requireApproval\": { \"Excel\": { \"Write Cells\": [\"trackChanges\"] } } }")] // not a tool name
     [InlineData("{ \"requireApproval\": { \"Excel\": [\"trackChanges\"] } }")]
     [InlineData("[\"fullAutonomy\"]")]
     [InlineData("{ not json")]
@@ -71,8 +70,8 @@ public class ModePolicyTests
     }
 
     // The copy the installer ships must parse with no mode switched off - a typo there would lock every mode for
-    // everyone - and must hold the default approvals: Excel and PowerPoint ask before every change in trackChanges ("Edits with approval"),
-    // Outlook before a delete below Full autonomy, and Full autonomy never asks.
+    // everyone - and must hold the default approvals: Excel, PowerPoint and Outlook ask before every change in their
+    // third tier ("Edits/Actions with approval"), Outlook also before a delete in Draft only, and Full autonomy never asks.
     [Fact]
     public void ShippedPolicy_DisablesNothing_AndHasTheDefaultApprovals()
     {
@@ -85,7 +84,18 @@ public class ModePolicyTests
         Assert.Empty(p.Approvals["Word"]);
         Assert.Equal(new[] { "trackChanges" }, p.Approvals["Excel"]["*"]);
         Assert.Equal(new[] { "trackChanges" }, p.Approvals["PowerPoint"]["*"]);
+        Assert.Equal(new[] { "trackChanges" }, p.Approvals["Outlook"]["*"]);
         Assert.Equal(new[] { "commentOnly", "trackChanges" }, p.Approvals["Outlook"]["delete_email"]);
+    }
+
+    // A tool name is the administrator's to get right: one the app does not have is kept as written (the page ignores
+    // it) and does not switch anything off.
+    [Fact]
+    public void Parse_UnknownToolName_IsKeptAndSwitchesNothingOff()
+    {
+        var p = ModePolicy.Parse("{ \"requireApproval\": { \"Excel\": { \"Write Cells\": [\"trackChanges\"] } } }");
+        Assert.Equal(new[] { "trackChanges" }, p.Approvals["Excel"]["Write Cells"]);
+        foreach (var app in Apps) Assert.Empty(p.Disabled[app]);
     }
 
     [Fact]

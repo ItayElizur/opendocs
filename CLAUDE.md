@@ -45,7 +45,7 @@ same tool names. Both sides already carry an explicit comment saying so
 (`OutlookTools.cs`: "Must stay in sync with entry.ts's commentOnlyExtraTools"; `entry.ts`:
 "Must stay in sync with OutlookTools.cs's DraftTierTools") — keep that comment pattern
 if you touch either list, and update both in the same commit. The same applies to
-`SendTierTools`/`ApprovalTierTools` (C#) against `trackChangesExtraTools` (TS), and to
+`ApprovalTierTools` (C#) against `trackChangesExtraTools` (TS), and to
 each of Word/Excel/PowerPoint's own `readOnlyTools`/`commentOnlyExtraTools` arrays
 against their C# `Tools.Execute()` gating.
 

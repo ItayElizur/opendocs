@@ -1038,7 +1038,7 @@ namespace OutlookAiAddIn
             return "\"" + (appt.Subject ?? "") + "\" is a meeting organized by " +
                    (string.IsNullOrEmpty(appt.Organizer) ? "someone else" : appt.Organizer) +
                    " - you're only an attendee, not the organizer, so this tool has no authority to cancel it. " +
-                   "Use respond_meeting with response \"decline\" (Automate approvals or above), or draft_email with event_id to write to the organizer, instead.";
+                   "Use respond_meeting with response \"decline\" (Actions with approval or above), or draft_email with event_id to write to the organizer, instead.";
         }
 
         // Only used by draft_event (cancel) now - send_event (cancel) treats an

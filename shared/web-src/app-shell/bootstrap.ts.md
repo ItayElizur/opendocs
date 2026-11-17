@@ -83,7 +83,7 @@ respond_meeting on top of its own
 ```
 Restricts the editing-mode menu to this subset, in this order. Defaults to
 all four modes (Word/Excel/PowerPoint). Outlook passes all four too, with
-commentOnly/trackChanges repurposed as "Draft only"/"Automate approvals"
+commentOnly/trackChanges repurposed as "Draft only"/"Actions with approval"
 (see modeOverrides) rather than their Word-ish original meaning.
 ```
 
@@ -273,16 +273,18 @@ sets `availableForMode()` uses.
 
 `skill.executeTool` is `executeConfirmed`. The administrator's `policy.json` decides when the user is asked
 (`requireApproval`, injected by the host as `window.__opendocsApprovals`; see `OfficeAi.Shared/ModePolicy.cs.md`).
-`needsApproval` checks the tool's own entry, or `"*"` for any tool that is not read-only, against the current mode. If
-the policy names a tool this app does not have, every non-read-only tool asks in every mode, and `showPolicyNotices`
-says why. There is no user setting for this.
+`needsApproval` checks the tool's own entry, or `"*"` for any tool that is not read-only, against the current mode.
+Full autonomy never asks, a policy entry for a tool this app does not have is ignored, and a call to a tool name the
+app does not have is never asked about (the app refuses it). There is no user setting for this. Modes the policy
+switches off are passed to the chat UI as `disabledModes`, which shows them grayed out.
 
 How the card looks comes from `config.confirmActions`. The first `ConfirmRule` that matches wins, and `when` narrows a
 rule by the call's arguments. A rule with `preview` first calls the app's `preview_action` read tool. A `blocked`
 answer is returned to the model as the result, and no card is shown. Otherwise the answer's type, subject, sender and
 date become the card's rows; a failed preview is ignored, so the card shows only the question. The rule's `fields` add
-rows from the call's own arguments. A tool with no rule gets a plain card: "Allow this action?", the tool's display
-name, and up to four simple arguments, each cut to 120 characters. A rule's card never shows the body or the tool call
+rows from the call's own arguments. A tool with no rule gets a plain card (`argumentRows`): "Allow this action?", the
+tool's display name and description, then one row per argument and one per item of a list argument (for example
+"operations 1: kind: set_cell, address: A1, value: Total"), each cut to 160 characters, at most ten rows. A rule's card never shows the body or the tool call
 itself.
 
 New chat always calls `ui.setBusy(false)`, because `loop.reset()` ends a run without an `onDone` and the stop button

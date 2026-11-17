@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace OfficeAi.Shared
 {
@@ -10,8 +9,9 @@ namespace OfficeAi.Shared
     // per-app folders - only administrators can change it there), per app:
     //   disabledModes   - editing modes switched off (enforced here, in PaneHostBase, and hidden in the page);
     //   requireApproval - tool -> modes in which the user must Approve the call first ("*" = every tool that is not
-    //                     read-only). Enforced by the page only; see ModePolicy.cs.md.
-    // Any error in the file switches every mode off in every app rather than silently leaving one open.
+    //                     read-only; Full autonomy never asks). Enforced by the page only; see ModePolicy.cs.md.
+    // A wrong app or mode name, or a broken file, switches every mode off in every app rather than silently leaving
+    // one open. Tool names are not checked: a name the app does not have is ignored (the administrator's to get right).
     public static class ModePolicy
     {
         public const string FileName = "policy.json";
@@ -19,7 +19,6 @@ namespace OfficeAi.Shared
         // Wire names, the same strings the page sends in "set-mode".
         private static readonly string[] AllModes = { "readOnly", "commentOnly", "trackChanges", "fullAutonomy" };
         private static readonly string[] Apps = { "Word", "Excel", "PowerPoint", "Outlook" };
-        private static readonly Regex ToolName = new Regex(@"^(\*|[a-z][a-z0-9_]*)$");
 
         public sealed class Rules
         {
@@ -80,7 +79,8 @@ namespace OfficeAi.Shared
 
         /// <summary>{ "disabledModes": { "Outlook": ["fullAutonomy"] }, "requireApproval": { "Excel": { "*": ["trackChanges"] } } }.
         /// App and mode names are case-insensitive; tool names are as the tools are named. An app left out has no rule.
-        /// An unknown app or mode, a malformed tool name, a wrong shape or invalid JSON switches every mode off in every app.</summary>
+        /// An unknown app or mode, a wrong shape or invalid JSON switches every mode off in every app; tool names are
+        /// taken as written and one the app does not have is ignored by the page.</summary>
         public static Rules Parse(string json)
         {
             var result = Empty(false);
@@ -111,7 +111,7 @@ namespace OfficeAi.Shared
                             foreach (var tool in entry.Value.EnumerateObject())
                             {
                                 var modes = new HashSet<string>();
-                                if (!ToolName.IsMatch(tool.Name) || !AddModes(tool.Value, modes)) return Empty(true);
+                                if (!AddModes(tool.Value, modes)) return Empty(true);
                                 result.Approvals[app][tool.Name] = modes;
                             }
                         }
