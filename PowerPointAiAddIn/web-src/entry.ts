@@ -20,4 +20,12 @@ startAddIn({
   // "Whole deck" rather than Word's "Whole document" when nothing is selected.
   useSelectionContext: true,
   scopeUnit: 'deck',
+  // PowerPoint has no tracked changes, so the trackChanges slot is "Edits with approval": every tool, asking before each
+  // call as policy.json sets (the shipped file asks before every change). Full autonomy never asks.
+  modeOverrides: {
+    trackChanges: {
+      label: { en: 'Edits with approval', he: 'עריכה באישור' },
+      description: { en: "Any edit; asks for your approval as your organization's policy sets", he: 'כל עריכה; מבקש את אישורך לפי מדיניות הארגון' },
+    },
+  },
 })

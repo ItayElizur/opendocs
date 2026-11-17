@@ -383,6 +383,26 @@ namespace OutlookAiAddIn
             return "\"" + (appt.Subject ?? "") + "\" has already been canceled - there's nothing to respond to.";
         }
 
+        // The refusal respond_meeting gives for this item, or null when it can go ahead. Shared with preview_action, so
+        // the Approve card is skipped for a call that would be refused anyway. Changes nothing: an invitation that is no
+        // longer on the calendar is put back by an accept or tentative, which only RespondMeeting does, so that case
+        // returns null here and RespondMeeting checks the restored event again.
+        private static string RespondMeetingRefusal(object item, bool decline)
+        {
+            Outlook.AppointmentItem appt = ResolveMeetingAppointment(item);
+            Outlook.MeetingItem invitation = item as Outlook.MeetingItem;
+            if (appt == null)
+            {
+                if (invitation != null && IsMeetingRequest(invitation.MessageClass) && !decline) return null;
+                return invitation != null
+                    ? "This invitation is not on your calendar (probably already declined or deleted) - accept or tentative adds it back."
+                    : "event_id does not resolve to a meeting.";
+            }
+            if (IsCanceledMeeting(appt)) return AlreadyCanceledRespondError(appt);
+            if (!IsReceivedMeeting(appt)) return NotInvitedError(appt);
+            return null;
+        }
+
         // One helper covers accept, tentative and decline (respond_meeting's
         // `response` argument). message is an optional comment attached before
         // sending - UNVERIFIED live whether the organizer actually sees it
@@ -402,23 +422,18 @@ namespace OutlookAiAddIn
             // OutlookTools.Calendar.cs.md for the authorization-scope note.
             string storeId = Str(input, "store_id", null);
             object item = ItemById(id, storeId);
+            bool decline = response == Outlook.OlMeetingResponse.olMeetingDeclined;
+            string refusal = RespondMeetingRefusal(item, decline);
+            if (refusal != null) return new ToolResult { Output = refusal, IsError = true, Summary = toolName };
             Outlook.AppointmentItem appt = ResolveMeetingAppointment(item);
-            Outlook.MeetingItem invitation = item as Outlook.MeetingItem;
-            // An invitation whose event is not on the calendar (declined or deleted earlier): accepting or answering
-            // tentatively puts it back, like the UI does. A decline has nothing to decline.
-            if (appt == null && invitation != null && IsMeetingRequest(invitation.MessageClass) && response != Outlook.OlMeetingResponse.olMeetingDeclined)
-                appt = invitation.GetAssociatedAppointment(true);
             if (appt == null)
-                return new ToolResult
-                {
-                    Output = invitation != null ? "This invitation is not on your calendar (probably already declined or deleted) - accept or tentative adds it back." : "event_id does not resolve to a meeting.",
-                    IsError = true, Summary = toolName,
-                };
-
-            if (IsCanceledMeeting(appt))
-                return new ToolResult { Output = AlreadyCanceledRespondError(appt), IsError = true, Summary = toolName };
-            if (!IsReceivedMeeting(appt))
-                return new ToolResult { Output = NotInvitedError(appt), IsError = true, Summary = toolName };
+            {
+                // An invitation whose event is not on the calendar (declined or deleted earlier): accepting or answering
+                // tentatively puts it back, like the UI does. Then the restored event is checked like any other.
+                appt = ((Outlook.MeetingItem)item).GetAssociatedAppointment(true);
+                refusal = appt == null ? "event_id does not resolve to a meeting." : RespondMeetingRefusal(appt, decline);
+                if (refusal != null) return new ToolResult { Output = refusal, IsError = true, Summary = toolName };
+            }
 
             string message = Str(input, "message", null);
             bool hasComment = !string.IsNullOrWhiteSpace(message);
@@ -1038,7 +1053,7 @@ namespace OutlookAiAddIn
             return "\"" + (appt.Subject ?? "") + "\" is a meeting organized by " +
                    (string.IsNullOrEmpty(appt.Organizer) ? "someone else" : appt.Organizer) +
                    " - you're only an attendee, not the organizer, so this tool has no authority to cancel it. " +
-                   "Use respond_meeting with response \"decline\" (Automate approvals or above), or draft_email with event_id to write to the organizer, instead.";
+                   "Use respond_meeting with response \"decline\" (Actions with approval or above), or draft_email with event_id to write to the organizer, instead.";
         }
 
         // Only used by draft_event (cancel) now - send_event (cancel) treats an

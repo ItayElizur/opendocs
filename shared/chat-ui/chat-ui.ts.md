@@ -203,3 +203,13 @@ current text, and a message like `!important` that cannot be a tool call after E
 current mode are dimmed with a lock and refused on Enter with the reason, never hidden. Colors reuse the mode tokens plus a
 new `--direct` accent pair. The schema check only covers required keys, JSON types and enum values; keys a schema does not
 list are let through.
+
+## The Approve/Deny card (`confirmAction`)
+
+`confirmAction(spec, signal)` appends an `.ai-confirm` card to the chat and resolves a promise: true on Approve, false on Deny,
+Escape, or when `signal` aborts (an already-aborted signal resolves false without drawing the card). Focus starts on Deny so a
+stray Enter or Space cannot approve. After the answer the buttons are replaced by an Approved/Declined label and the card stays in
+the transcript. `danger` only changes the colours. The card is a title and a list of label/value rows (`spec.rows`, each value `dir="auto"`); the title comes from the caller (the
+app's `ConfirmRule`) and so is not in `STRINGS`, while the row labels (`confirmField_*`), the item types (`confirmType_*`), the buttons,
+and the verdicts are. The card is labelled by its title (`aria-label`) for screen readers. When it is asked for is not
+decided here: the administrator's `policy.json` (`requireApproval`) decides, in `bootstrap.ts`.

@@ -16,6 +16,7 @@ vi.mock('../web-src/app-shell/bridge', () => ({
   postCollapse: () => {},
   postMode: () => {},
   injectedDisabledModes: () => h.disabledModes,
+  injectedApprovals: () => ({}),
   postNewChatDivider: () => {},
   postTlsBypass: () => {},
   requestDocSettings: () => {},
@@ -160,21 +161,27 @@ describe('direct tool call in the app shell', () => {
 describe('editing modes switched off by policy.json', () => {
   beforeEach(() => { h.disabledModes = [] })
 
-  const menuModes = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>('.ai-mode-menu-item')].map((el) => el.dataset.mode)
+  const items = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>('.ai-mode-menu-item')]
+  const grayed = (root: HTMLElement) => items(root).filter((el) => el.classList.contains('disabled')).map((el) => el.dataset.mode)
 
-  it('leaves a disabled mode out of the menu and still offers the model the tools of the remaining modes', async () => {
+  it('shows a disabled mode grayed out, cannot select it, and still offers the tools of the current mode', async () => {
     h.disabledModes = ['fullAutonomy']
     const { root, send } = boot()
-    expect(menuModes(root)).toEqual(['readOnly', 'commentOnly', 'trackChanges'])
+    expect(items(root).map((el) => el.dataset.mode)).toEqual(['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'])
+    expect(grayed(root)).toEqual(['fullAutonomy'])
+    const full = items(root).find((el) => el.dataset.mode === 'fullAutonomy')!
+    expect(full.getAttribute('aria-disabled')).toBe('true')
+    full.click()
+    expect(root.querySelector('.ai-mode-btn')!.getAttribute('data-editing-mode')).toBe('trackChanges')
     send('hello')
     await flush()
     expect(h.streams[0]!.req.tools.map((t: { name: string }) => t.name)).toEqual(['read_doc'])
   })
 
-  it('with every mode disabled, hides the menu, says why and offers no tools', async () => {
+  it('with every mode disabled, grays them all, hides the menu, says why and offers no tools', async () => {
     h.disabledModes = ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy']
     const { root, send } = boot()
-    expect(menuModes(root)).toEqual([])
+    expect(grayed(root)).toEqual(['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'])
     expect(root.querySelector<HTMLButtonElement>('.ai-mode-btn')!.hidden).toBe(true)
     expect(root.textContent).toContain('turned off every editing mode')
     send('hello')

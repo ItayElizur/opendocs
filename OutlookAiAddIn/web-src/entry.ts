@@ -1,4 +1,5 @@
 import { startAddIn } from '@officeai/app-shell'
+import { OUTLOOK_CONFIRM_ACTIONS } from './confirm'
 import { ALL_OUTLOOK_TOOLS } from './tools'
 import { OUTLOOK_TOOL_DISPLAY, STARTERS } from './display'
 import { SYSTEM_PROMPT } from './prompt'
@@ -50,15 +51,12 @@ startAddIn({
     'undo_last_action',
     'redo_last_action',
   ],
-  // Tier 3 ("Automate approvals"), on top of tier 2 - respond_meeting
-  // already auto-notifies the organizer via resp.Send(), so they get their
-  // own tier rather than hiding in Draft only or Full autonomy. Must stay
-  // in sync with OutlookTools.cs's ApprovalTierTools.
+  // Tier 3 ("Actions with approval"), on top of tier 2: respond_meeting, which notifies the organizer (plus a
+  // permanent delete, gated by its argument in C#). The panel asks before each call as the administrator's
+  // policy.json sets. Must stay in sync with OutlookTools.cs's ApprovalTierTools.
   trackChangesExtraTools: ['respond_meeting'],
-  // send_email/send_event
-  // are deliberately in neither list above -
-  // that omission alone confines them to tier 4 (Full autonomy), which shows
-  // every tool.
+  // send_email/send_event are deliberately in no list above: that alone confines them to Full autonomy, which shows
+  // every tool and never asks. The reviewed way to send is a draft.
   useSelectionContext: true,
   scopeUnit: 'mailbox',
   availableModes: ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'],
@@ -69,13 +67,14 @@ startAddIn({
       description: { en: 'Drafts, flags, moves, and manages mail/tasks for your review - nothing sends.', he: 'מכין טיוטות, מסמן, מעביר ומנהל דואר/משימות לבדיקתך - שום דבר לא נשלח.' },
     },
     trackChanges: {
-      label: { en: 'Automate approvals', he: 'אוטומציית אישורים' },
-      description: { en: 'Everything in Draft only, plus auto-accepting/declining/tentatively-responding to meeting invites (notifies the organizer).', he: 'כל מה שיש בטיוטות בלבד, בתוספת אישור/דחייה/תגובה זמנית אוטומטיים של הזמנות לפגישה (מודיע למארגן).' },
+      label: { en: 'Actions with approval', he: 'פעולות באישור' },
+      description: { en: "Everything in Draft only, plus answering meetings and permanent deletes; asks for your approval as your organization's policy sets.", he: 'כל מה שיש בטיוטות בלבד, בתוספת מענה לפגישות ומחיקה לצמיתות; מבקש את אישורך לפי מדיניות הארגון.' },
     },
     fullAutonomy: {
       label: { en: 'Full autonomy', he: 'אוטונומיה מלאה' },
-      description: { en: 'Everything above, plus sending emails and creating/sending/rescheduling calendar invites in your name.', he: 'כל מה שלמעלה, בתוספת שליחת הודעות ויצירה/שליחה/שינוי מועד של הזמנות יומן בשמך.' },
+      description: { en: 'Everything above, plus sending mail and events immediately in your name, with no approval step.', he: 'כל מה שלמעלה, בתוספת שליחת דואר ואירועים מיידית בשמך, ללא שלב אישור.' },
     },
   },
   autoSendTools: ['send_email', 'send_event'],
+  confirmActions: OUTLOOK_CONFIRM_ACTIONS,
 })

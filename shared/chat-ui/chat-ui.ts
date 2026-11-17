@@ -85,6 +85,29 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   sectionDeveloper:     { en: 'Developer tools', he: 'כלי פיתוח' },
   developerToolsLabel:  { en: 'Enable the ! tool palette', he: 'הפעל את לוח הכלים !' },
   developerToolsNote:   { en: 'Type ! at the start of a message to run any tool directly, without the model. The editing mode still limits which tools run.', he: 'הקלד ! בתחילת הודעה כדי להריץ כלי ישירות, בלי המודל. מצב העריכה עדיין מגביל אילו כלים רצים.' },
+  confirmGenericTitle:  { en: 'Allow this action?', he: 'לאשר את הפעולה?' },
+  confirmField_action:  { en: 'Action', he: 'פעולה' },
+  confirmField_what:    { en: 'What it does', he: 'מה זה עושה' },
+  modeDisabledByPolicy: { en: 'Turned off by your administrator', he: 'כובה על ידי מנהל המערכת' },
+  confirmField_type:    { en: 'Type', he: 'סוג' },
+  confirmField_subject: { en: 'Subject', he: 'נושא' },
+  confirmField_from:    { en: 'From', he: 'מאת' },
+  confirmField_to:      { en: 'To', he: 'אל' },
+  confirmField_date:    { en: 'Date', he: 'תאריך' },
+  confirmField_start:   { en: 'Starts', he: 'התחלה' },
+  confirmField_end:     { en: 'Ends', he: 'סיום' },
+  confirmField_response: { en: 'Response', he: 'תגובה' },
+  confirmType_mail:     { en: 'Email', he: 'דוא"ל' },
+  confirmType_meetingRequest: { en: 'Meeting invitation', he: 'הזמנה לפגישה' },
+  confirmType_meetingResponse: { en: 'Meeting response', he: 'תגובה לפגישה' },
+  confirmType_meetingCancellation: { en: 'Meeting cancellation', he: 'ביטול פגישה' },
+  confirmType_event:    { en: 'Event', he: 'אירוע' },
+  confirmType_task:     { en: 'Task', he: 'משימה' },
+  confirmType_other:    { en: 'Item', he: 'פריט' },
+  confirmApprove:       { en: 'Approve', he: 'אשר' },
+  confirmDeny:          { en: 'Deny', he: 'דחה' },
+  confirmApproved:      { en: 'Approved', he: 'אושר' },
+  confirmDeclined:      { en: 'Declined', he: 'נדחה' },
   allModesDisabled:     { en: 'Your administrator has turned off every editing mode, so the assistant cannot read or change anything here.', he: 'מנהל המערכת כיבה את כל מצבי העריכה, ולכן העוזר אינו יכול לקרוא או לשנות דבר כאן.' },
   paletteTitle:         { en: 'Direct call', he: 'קריאה ישירה' },
   paletteRun:           { en: 'runs the call without the model', he: 'מריץ את הקריאה בלי המודל' },
@@ -235,6 +258,9 @@ export interface ChatUIOptions {
   scopeUnit?: 'doc' | 'sheet' | 'deck' | 'mailbox'
   /** Restricts the editing-mode menu to this subset, in this order. Defaults to all four modes; an empty list hides the mode menu (every mode switched off by policy). Outlook passes ['readOnly', 'commentOnly', 'trackChanges', 'fullAutonomy'] with its own meaning per mode (see modeOverrides). */
   modes?: EditingMode[]
+  /** Modes the administrator's policy switches off: shown grayed out in the menu and settings, not selectable. With
+   * none left selectable, the mode button is hidden. */
+  disabledModes?: EditingMode[]
   /** Per-app override of a mode's label/description, falling back to the shared STRINGS
    * entry when a mode has no override (e.g. Outlook relabels commentOnly/trackChanges
    * for mail - see `chat-ui.ts.md`). */
@@ -254,6 +280,14 @@ export interface ToolGroupHandle {
   end(): void
 }
 
+export interface ConfirmSpec {
+  title: string
+  /** Labelled facts about the item, one per line; each value is shown in the reading direction of its own text. */
+  rows: Array<{ label: string; value: string }>
+  /** Styled as a warning: the action cannot be undone. */
+  danger?: boolean
+}
+
 export interface ChatUIHandle {
   addUserMessage(text: string): void
   beginAssistantMessage(): void
@@ -264,6 +298,8 @@ export interface ChatUIHandle {
    *  again for the reasoning gap before the next turn. */
   endTurn(): void
   beginToolGroup(): ToolGroupHandle
+  /** Shows an Approve/Deny card in the chat and resolves true only on Approve. Resolves false on Deny, Escape, or when `signal` aborts (Stop, New chat). */
+  confirmAction(spec: ConfirmSpec, signal?: AbortSignal): Promise<boolean>
   /** stoppable=false (a direct tool call) keeps the stop button visible but inert, with a hover note saying why */
   setBusy(busy: boolean, stoppable?: boolean): void
   showError(message: string): void
@@ -312,7 +348,7 @@ const MODES: EditingMode[] = ['readOnly', 'commentOnly', 'trackChanges', 'fullAu
 // this list. `options.modes` narrows it per app - Outlook drops Comment only /
 // Track changes, which have no meaning for mail. Order follows the passed list.
 export function resolveModes(requested?: EditingMode[]): EditingMode[] {
-  if (!requested) return MODES
+  if (!requested || requested.length === 0) return MODES
   return requested.filter((m) => MODES.indexOf(m) !== -1)
 }
 
@@ -330,13 +366,14 @@ function modeStringKey(mode: EditingMode): string {
   return 'mode' + mode.charAt(0).toUpperCase() + mode.slice(1)
 }
 
-function modeMenuItemsHtml(modes: EditingMode[], selected: EditingMode): string {
+function modeMenuItemsHtml(modes: EditingMode[], selected: EditingMode, disabled: Set<EditingMode>): string {
   return modes
     .map((mode) => {
       const key = modeStringKey(mode)
       const sel = mode === selected ? ' selected' : ''
+      const off = disabled.has(mode) ? ' disabled" aria-disabled="true" data-t-title="modeDisabledByPolicy' : ''
       return (
-        `<div class="ai-mode-menu-item${sel}" data-mode="${mode}">` +
+        `<div class="ai-mode-menu-item${sel}${off}" data-mode="${mode}">` +
         `<span data-t="${key}">${STRINGS[key]?.en ?? mode}</span>` +
         `<span class="desc" data-t="${key}Desc">${STRINGS[key + 'Desc']?.en ?? ''}</span></div>`
       )
@@ -592,7 +629,9 @@ function chipDockHtml(options: ChatUIOptions, currentLang: Lang): string {
 
 export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHandle {
   const menuModes = resolveModes(options.modes)
-  const defaultMode: EditingMode = defaultModeFor(menuModes, options.defaultMode ?? 'trackChanges')
+  const disabledModes = new Set(options.disabledModes ?? [])
+  const enabledModes = menuModes.filter((m) => !disabledModes.has(m))
+  const defaultMode: EditingMode = defaultModeFor(enabledModes, options.defaultMode ?? 'trackChanges')
   root.innerHTML = `
     <div class="ai-dock">
       <div class="ai-rail" data-t="panelTitle"></div>
@@ -692,7 +731,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <div class="ai-input-footer">
             <div style="position: relative;">
               <button class="ai-mode-btn"><span class="dot"></span><span id="modeBtnLabel">Full autonomy</span></button>
-              <div class="ai-mode-menu" id="modeMenu">${modeMenuItemsHtml(menuModes, defaultMode)}</div>
+              <div class="ai-mode-menu" id="modeMenu">${modeMenuItemsHtml(menuModes, defaultMode, disabledModes)}</div>
             </div>
             <div class="ai-send-group">
               <button class="ai-stop-btn" data-t-title="stop" hidden>&#9632;</button>
@@ -1184,7 +1223,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
         if (group !== lastGroup) body += `<div class="ai-palette-group">${escapeHtml(t(group))}</div>`
         lastGroup = group
         // The lowest mode still in the menu that offers the tool (modes are cumulative); none left, no pill.
-        const pillMode = tool.minMode ? MODES.slice(MODES.indexOf(tool.minMode)).find((m) => menuModes.includes(m)) : undefined
+        const pillMode = tool.minMode ? MODES.slice(MODES.indexOf(tool.minMode)).find((m) => enabledModes.includes(m)) : undefined
         const pill = pillMode ? `<span class="ai-palette-tier tier-${pillMode}">${escapeHtml(t(modeStringKey(pillMode)))}</span>` : ''
         const name = `<mark>${escapeHtml(tool.name.slice(0, query.length))}</mark>${escapeHtml(tool.name.slice(query.length))}`
         body += `<div class="ai-palette-row${i === paletteSel ? ' sel' : ''}${toolIsLocked(tool.name) ? ' locked' : ''}" data-tool="${escapeHtml(tool.name)}">` +
@@ -1479,7 +1518,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     })
   }
 
-  modeBtn.hidden = menuModes.length === 0 // every mode switched off by the administrator's policy
+  modeBtn.hidden = enabledModes.length === 0 // every mode switched off by the administrator's policy
   modeBtn.dataset.editingMode = defaultMode // colour the initial mode too; selectMode() updates it afterwards
   modeBtn.addEventListener('click', () => modeMenu.classList.toggle('open'))
 
@@ -1487,6 +1526,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // control must drive the exact same path, so the two controls cannot
   // diverge - both a menu-item click and a scope-option click call this.
   function selectMode(mode: EditingMode): void {
+    if (disabledModes.has(mode)) return // grayed out by the administrator's policy
     root.querySelectorAll<HTMLElement>('.ai-mode-menu-item').forEach((el) => el.classList.toggle('selected', el.dataset.mode === mode))
     root.querySelectorAll<HTMLElement>('.ai-scope-option').forEach((el) => el.classList.toggle('selected', el.dataset.mode === mode))
     modeBtnLabel.textContent = t('mode' + mode[0]!.toUpperCase() + mode.slice(1))
@@ -1504,7 +1544,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const scopeControl = root.querySelector<HTMLDivElement>('#scopeControl')!
   scopeControl.innerHTML = menuModes.map((mode) => {
     const key = 'mode' + mode[0]!.toUpperCase() + mode.slice(1)
-    return `<div class="ai-scope-option${mode === defaultMode ? ' selected' : ''}" data-mode="${mode}">
+    const off = disabledModes.has(mode) ? ' disabled" aria-disabled="true" data-t-title="modeDisabledByPolicy' : ''
+    return `<div class="ai-scope-option${mode === defaultMode ? ' selected' : ''}${off}" data-mode="${mode}">
       <span data-t="${key}"></span><span class="desc" data-t="${key}Desc"></span>
     </div>`
   }).join('')
@@ -1906,6 +1947,65 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           groupEl.classList.remove('running')
         },
       }
+    },
+    confirmAction(spec, signal) {
+      return new Promise<boolean>((resolve) => {
+        if (signal?.aborted) return resolve(false)
+        const card = document.createElement('div')
+        card.className = 'ai-confirm' + (spec.danger ? ' danger' : '')
+        card.setAttribute('role', 'alertdialog')
+        card.setAttribute('aria-label', spec.title)
+        const title = document.createElement('div')
+        title.className = 'ai-confirm-title'
+        title.textContent = spec.title
+        const details = document.createElement('dl')
+        details.className = 'ai-confirm-rows'
+        for (const row of spec.rows) {
+          const dt = document.createElement('dt')
+          dt.textContent = row.label
+          const dd = document.createElement('dd')
+          dd.dir = 'auto'
+          dd.textContent = row.value
+          details.append(dt, dd)
+        }
+        const actions = document.createElement('div')
+        actions.className = 'ai-confirm-actions'
+        const mk = (key: string, cls: string): HTMLButtonElement => {
+          const b = document.createElement('button')
+          b.type = 'button'
+          b.className = cls
+          b.dataset.t = key
+          b.textContent = t(key)
+          return b
+        }
+        const approve = mk('confirmApprove', 'ai-confirm-approve')
+        const deny = mk('confirmDeny', 'ai-confirm-deny')
+        actions.append(approve, deny)
+        card.append(title, ...(spec.rows.length ? [details] : []), actions)
+        const settle = (ok: boolean): void => {
+          signal?.removeEventListener('abort', onAbort)
+          card.removeEventListener('keydown', onKey)
+          const verdict = document.createElement('span')
+          verdict.className = 'ai-confirm-verdict'
+          verdict.dataset.t = ok ? 'confirmApproved' : 'confirmDeclined'
+          verdict.textContent = t(verdict.dataset.t)
+          actions.replaceChildren(verdict)
+          card.classList.add('decided')
+          resolve(ok)
+        }
+        const onAbort = (): void => settle(false)
+        const onKey = (e: KeyboardEvent): void => {
+          if (e.key === 'Escape') settle(false)
+        }
+        approve.addEventListener('click', () => settle(true))
+        deny.addEventListener('click', () => settle(false))
+        card.addEventListener('keydown', onKey)
+        signal?.addEventListener('abort', onAbort)
+        appendToChat(card)
+        scrollToBottom()
+        // Deny is the default focus, so a stray Enter or Space does not approve.
+        deny.focus()
+      })
     },
     setBusy(busy, stoppable = true) {
       thinkingBusy = busy

@@ -100,8 +100,17 @@ namespace OfficeAi.Shared
                 // to the page here, before any of its scripts run, as window.__opendocsSecrets (provider id -> key).
                 await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
                     "window.__opendocsSecrets = " + JsonSerializer.Serialize(SecretStore.Load(appDataFolderName)) + ";" +
-                    // This app's editing modes the administrator's policy.json switches off (ModePolicy); the page hides them.
-                    "window.__opendocsDisabledModes = " + JsonSerializer.Serialize(ModePolicy.DisabledFor(appDataFolderName)) + ";");
+                    // This app's rules from the administrator's policy.json (ModePolicy): modes the page hides, and
+                    // tool -> modes that need an Approve before the model's call runs.
+                    "window.__opendocsDisabledModes = " + JsonSerializer.Serialize(ModePolicy.DisabledFor(appDataFolderName)) + ";" +
+                    "window.__opendocsApprovals = " + JsonSerializer.Serialize(ModePolicy.ApprovalsFor(appDataFolderName)) + ";");
+
+                // The Approve card and the mode menu are enforced by the page, so an installed (Release) pane must not be
+                // scriptable from developer tools (F12 / Inspect). A Debug build keeps them for development.
+                // See ModePolicy.cs.md.
+#if !DEBUG
+                _webView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+#endif
 
                 // A link in the chat (model output can contain one) must not open a browser window inside the Office
                 // process, and the pane must never navigate away from its own page: links go to the system browser.

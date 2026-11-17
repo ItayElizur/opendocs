@@ -1,4 +1,4 @@
-import { AgentLoop, randomId, type AgentSkill, type ToolExecution } from '@officeai/agent-core'
+import { AgentLoop, randomId, type AgentSkill, type AgentToolCall, type ToolExecution } from '@officeai/agent-core'
 import { streamForProvider, type AiProviderConfig } from '@officeai/ai-provider'
 import { defaultModeFor, mountChatUI, resolveModes, type EditingMode, type ModeOverrides, type SelectionExtent, type ToolDisplayEntry } from '@officeai/chat-ui'
 import {
@@ -8,6 +8,7 @@ import {
   postCollapse,
   postMode,
   injectedDisabledModes,
+  injectedApprovals,
   postNewChatDivider,
   postTlsBypass,
   requestDocSettings,
@@ -18,6 +19,21 @@ import {
   type RawSelectionPayload,
 } from './bridge'
 import { getSettings, makeTransport, setSettings } from './settings'
+
+/** An action the assistant must get an Approve from the user for before it runs; the first matching rule wins. */
+export interface ConfirmRule {
+  name: string
+  /** Narrows the rule to some calls of the tool (e.g. only permanent deletes). Absent means every call. */
+  when?: (input: Record<string, unknown>) => boolean
+  /** Question shown as the card's title. */
+  title: { en: string; he: string }
+  /** The action cannot be undone. */
+  danger?: boolean
+  /** Ask the app (a preview_action call) about the item behind the call: its type, subject, sender and date, or the reason the call would be refused (then no card is shown). */
+  preview?: boolean
+  /** Extra rows taken from the call's own arguments, for a call with no existing item (a new email, a new event). */
+  fields?: (input: Record<string, unknown>) => Array<{ key: string; value: string }>
+}
 
 export interface ToolDisplayInfo {
   label: { en: string; he: string }
@@ -322,6 +338,8 @@ export interface AddInConfig {
   defaultMode?: EditingMode
   /** Tool names that send/create something externally with no review step - see ChatUIOptions.autoSendTools. */
   autoSendTools?: string[]
+  /** How the Approve card looks for some calls (see ConfirmRule). Whether a card is shown at all is the policy's call (policy.json requireApproval). */
+  confirmActions?: ConfirmRule[]
 }
 
 // Gives the model ground truth for "today" (relative-date tool args otherwise
@@ -353,10 +371,25 @@ export function startAddIn(config: AddInConfig): void {
   // (see `bootstrap.ts.md`).
   // Modes the administrator's policy.json switches off are left out of the menu; with none left, no tool is offered.
   const disabledModes = new Set(injectedDisabledModes())
-  const modes = resolveModes(config.availableModes).filter((m) => !disabledModes.has(m))
+  const allModes = resolveModes(config.availableModes)
+  const modes = allModes.filter((m) => !disabledModes.has(m))
   let editingMode: EditingMode = defaultModeFor(modes, config.defaultMode ?? 'trackChanges')
 
   const readOnlySet = new Set(config.readOnlyTools)
+
+  // Administrator approvals (policy.json requireApproval; see OfficeAi.Shared/ModePolicy.cs.md): tool -> modes that
+  // need an Approve. "*" is every tool that is not read-only, and a tool's own entry overrides it. Full autonomy never
+  // asks. A tool name this app does not have is ignored: getting the names right is the administrator's job.
+  const approvals = injectedApprovals()
+  const knownTools = new Set(config.tools.map((t) => t.name))
+  const has = (name: string) => Object.prototype.hasOwnProperty.call(approvals, name)
+  function needsApproval(name: string): boolean {
+    // Full autonomy never asks, and a name this app does not have is never asked about (the call fails in the app).
+    if (editingMode === 'fullAutonomy' || !knownTools.has(name)) return false
+    if (readOnlySet.has(name) && !has(name)) return false
+    const modes = has(name) ? approvals[name] : approvals['*']
+    return Array.isArray(modes) && modes.includes(editingMode)
+  }
   const commentOnlySet = new Set([...config.readOnlyTools, ...(config.commentOnlyExtraTools ?? [])])
   // null (every app but Outlook) = "no opinion" - trackChanges falls through
   // to "everything", unchanged from before this field existed.
@@ -442,7 +475,71 @@ export function startAddIn(config: AddInConfig): void {
           buildContext: () => describeSelectionFn(latestSelectionContext),
         }
       : {}),
-    executeTool: (call) => callDotNetTool(call.name, call.input),
+    executeTool: (call, signal) => executeConfirmed(call, signal),
+  }
+
+  const DECLINED_TEXT = 'The user declined this action, so it was not run. Do not retry it. Ask the user what they would like instead.'
+
+  // Runs a model's tool call, first asking the user when the policy requires an Approve for this tool in the current
+  // mode (needsApproval). The app's matching confirmActions rule shapes the card; a tool with none gets a plain card
+  // with its name and simple arguments. A typed "!" call (runDirectCall) skips this: the user wrote the call themselves.
+  async function executeConfirmed(call: AgentToolCall, signal?: AbortSignal): Promise<ToolExecution> {
+    if (needsApproval(call.name)) {
+      const rule = config.confirmActions?.find((r) => r.name === call.name && (r.when?.(call.input) ?? true))
+      const lang = effectiveLang(currentLangPref)
+      const rows: Array<{ label: string; value: string }> = []
+      if (rule?.preview) {
+        try {
+          const read = await callDotNetTool('preview_action', { tool: call.name, input: call.input })
+          if (!read.isError) {
+            const p = JSON.parse(read.output) as Record<string, string>
+            // The call would be refused anyway: say so now instead of asking first.
+            if (p.blocked) return { output: p.blocked, isError: true, summary: call.name }
+            if (p.type) rows.push({ label: ui.translate('confirmField_type'), value: ui.translate(`confirmType_${p.type}`) })
+            for (const key of ['subject', 'from', 'date']) if (p[key]) rows.push({ label: ui.translate(`confirmField_${key}`), value: p[key]! })
+          }
+        } catch {
+          // No preview: the card shows only the question and the call's own fields.
+        }
+      }
+      if (rule) {
+        for (const f of rule.fields?.(call.input) ?? []) if (f.value) rows.push({ label: ui.translate(`confirmField_${f.key}`), value: f.value })
+      } else {
+        const shown = config.toolDisplay[call.name]
+        rows.push({ label: ui.translate('confirmField_action'), value: shown?.label[lang] ?? call.name })
+        if (shown?.description[lang]) rows.push({ label: ui.translate('confirmField_what'), value: shown.description[lang] })
+        rows.push(...argumentRows(call.input))
+      }
+      const title = rule ? rule.title[lang] : ui.translate('confirmGenericTitle')
+      const approved = await ui.confirmAction({ title, rows, danger: rule?.danger === true }, signal)
+      if (!approved) return { output: DECLINED_TEXT, isError: true, summary: call.name }
+    }
+    return callDotNetTool(call.name, call.input)
+  }
+
+  // The plain card's argument rows: one per argument, and one per item of a list argument (e.g. Excel's
+  // "operations 1: kind: set_cell, address: A1, value: Total"). Each value is cut to 160 characters; after 10 rows a
+  // last row says how many more there are.
+  function argumentRows(input: Record<string, unknown>): Array<{ label: string; value: string }> {
+    const cut = (s: string) => (s.length > 160 ? s.slice(0, 159) + '…' : s)
+    const flat = (v: unknown): string =>
+      v === null || typeof v !== 'object'
+        ? String(v)
+        : Array.isArray(v)
+          ? v.map(flat).join(', ')
+          : Object.entries(v as Record<string, unknown>).map(([k, x]) => `${k}: ${flat(x)}`).join(', ')
+    const rows: Array<{ label: string; value: string }> = []
+    for (const [k, v] of Object.entries(input)) {
+      if (v === undefined || v === '') continue
+      if (Array.isArray(v) && v.some((x) => x !== null && typeof x === 'object')) v.forEach((item, i) => rows.push({ label: `${k} ${i + 1}`, value: cut(flat(item)) }))
+      else rows.push({ label: k, value: cut(flat(v)) })
+    }
+    return rows.length > 10 ? [...rows.slice(0, 9), { label: '…', value: `+${rows.length - 9}` }] : rows
+  }
+
+  // Notices about the administrator's policy, shown at startup and again after New chat clears the transcript.
+  function showPolicyNotices(): void {
+    if (modes.length === 0) ui.showError(ui.translate('allModesDisabled'))
   }
 
   // Theme reconciliation: `currentThemePref` is the persisted 3-way choice;
@@ -467,7 +564,8 @@ export function startAddIn(config: AddInConfig): void {
     starters: config.starters,
     tools: toolDisplayList,
     scopeUnit: config.scopeUnit,
-    modes,
+    modes: allModes,
+    disabledModes: allModes.filter((m) => disabledModes.has(m)),
     modeOverrides: config.modeOverrides,
     defaultMode: config.defaultMode,
     autoSendTools: config.autoSendTools,
@@ -535,11 +633,12 @@ export function startAddIn(config: AddInConfig): void {
         // The call's late completion must not touch the new conversation (see runDirectCall).
         directCallGeneration++
         directCallRunning = false
-        ui.setBusy(false)
       }
+      // loop.reset() ends a model run without an onDone, so the stop button would stay up.
+      ui.setBusy(false)
       beginConversation()
       ui.resetToEmpty()
-      if (modes.length === 0) ui.showError(ui.translate('allModesDisabled'))
+      showPolicyNotices()
     },
     onModeChange: (mode: EditingMode) => {
       editingMode = mode
@@ -640,7 +739,7 @@ export function startAddIn(config: AddInConfig): void {
   // Full Autonomy default and e.g. Word never turned TrackRevisions on in the UI's
   // default Track Changes mode (see `bootstrap.ts.md`).
   postMode(editingMode)
-  if (modes.length === 0) ui.showError(ui.translate('allModesDisabled'))
+  showPolicyNotices()
 
   // Apply the persisted TLS-bypass preference on load too, not just after a
   // future Save - otherwise a user who enabled it last session would silently
@@ -715,7 +814,7 @@ export function startAddIn(config: AddInConfig): void {
     ui.setBusy(true, false)
     const group = ui.beginToolGroup()
     const step = group.addStep(name, args)
-    void Promise.resolve(skill.executeTool(call))
+    void Promise.resolve(callDotNetTool(call.name, call.input))
       .catch((e: unknown): ToolExecution => ({ output: e instanceof Error ? e.message : String(e), isError: true, summary: name }))
       .then((execution) => {
         if (generation !== directCallGeneration) return

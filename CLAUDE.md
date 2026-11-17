@@ -45,9 +45,11 @@ same tool names. Both sides already carry an explicit comment saying so
 (`OutlookTools.cs`: "Must stay in sync with entry.ts's commentOnlyExtraTools"; `entry.ts`:
 "Must stay in sync with OutlookTools.cs's DraftTierTools") — keep that comment pattern
 if you touch either list, and update both in the same commit. The same applies to
-`SendTierTools`/`ApprovalTierTools` (C#) against `trackChangesExtraTools` (TS), and to
+`ApprovalTierTools` (C#) against `trackChangesExtraTools` (TS; `SendTierTools` must be in no TS list), and to
 each of Word/Excel/PowerPoint's own `readOnlyTools`/`commentOnlyExtraTools` arrays
 against their C# `Tools.Execute()` gating.
+
+Outlook's `preview_action` (the panel's Approve/Deny card lookup) is the one name handled before the tier gate; it is deliberately in no C# set and no `entry.ts` array, so do not add it to either.
 
 `OfficeAi.Shared.Tests/TierListsAgreeTests.cs` now reads the C# sets and the matching TypeScript arrays (`entry.ts`, or `tools.ts` for Excel's and PowerPoint's read-only lists) and fails when they differ
 (Word, Excel and PowerPoint read-only lists; all of Outlook's tiers), so run `dotnet test OfficeAi.Shared.Tests` after touching either side.
@@ -84,6 +86,9 @@ more confidence than a build-clean compile actually gives you.
 - `display.ts` — the user-facing labels and descriptions, `{ en, he }` side by side per tool, and the chat starters. Every entry must have both
   languages (a `satisfies` type for Word/Excel/PowerPoint, the `d()` helper for Outlook).
 - `prompt.ts` — the system prompt.
+
+Outlook also has `confirm.ts`: the rules for how the Approve/Deny card looks for its calls (`OUTLOOK_CONFIRM_ACTIONS`).
+When a card is shown at all is the administrator's `deploy/policy.json` (`requireApproval`), not code.
 
 A new tool needs entries in `tools.ts` and `display.ts` (and the C# side), not in `entry.ts`.
 

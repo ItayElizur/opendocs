@@ -115,7 +115,7 @@ namespace PowerPointAiAddIn
             {
                 case EditingMode.ReadOnly: return "Read Only";
                 case EditingMode.CommentOnly: return "Comment Only";
-                case EditingMode.TrackChanges: return "Track Changes";
+                case EditingMode.TrackChanges: return "Edits with approval";
                 default: return "Full Autonomy";
             }
         }

@@ -492,6 +492,30 @@
   }
   .ai-notice-action:hover { background: var(--color-bg-subtle); }
 
+  /* Approve/Deny card for an action the assistant wants to take; see confirmAction(). */
+  .ai-confirm {
+    border: 1px solid var(--color-border-default); border-radius: var(--radius-30);
+    background: var(--color-bg-page); padding: 10px 12px; margin: 6px 0; font-size: 13px;
+  }
+  .ai-confirm.danger { border-color: var(--color-danger, #c0392b); }
+  .ai-confirm-title { font-weight: 600; margin-bottom: 6px; }
+  .ai-confirm.danger .ai-confirm-title { color: var(--color-danger, #c0392b); }
+  .ai-confirm-rows {
+    display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 0 0 8px; font-size: 12px;
+  }
+  .ai-confirm-rows dt { color: var(--color-text-tertiary); }
+  .ai-confirm-rows dd { margin: 0; word-break: break-word; }
+  .ai-confirm-actions { display: flex; gap: 8px; }
+  .ai-confirm-approve, .ai-confirm-deny {
+    border: 1px solid var(--color-border-default); border-radius: var(--radius-30);
+    background: var(--color-bg-page); color: var(--color-brand-secondary);
+    padding: 3px 14px; font-size: 12px; cursor: pointer;
+  }
+  .ai-confirm-approve:hover, .ai-confirm-deny:hover { background: var(--color-bg-subtle); }
+  .ai-confirm.danger .ai-confirm-approve { color: var(--color-danger, #c0392b); }
+  .ai-confirm-verdict { color: var(--color-text-tertiary); }
+  .ai-confirm.decided { opacity: 0.85; }
+
   .ai-composer { padding: 8px 12px 12px; background: var(--color-bg-page); flex-shrink: 0; position: relative; }
 
   /* "!" direct-call palette (Developer tools): a popup above the message box, in the style of Claude Code's / menu. */
@@ -597,6 +621,8 @@
   .ai-mode-menu-item { padding: 9px 12px; font-size: 13px; cursor: pointer; color: var(--color-text-secondary); }
   .ai-mode-menu-item:hover { background: var(--color-bg-subtle); }
   .ai-mode-menu-item.selected { color: var(--color-text-primary); font-weight: 600; }
+  .ai-mode-menu-item.disabled, .ai-scope-option.disabled { opacity: 0.45; cursor: not-allowed; }
+  .ai-mode-menu-item.disabled:hover, .ai-scope-option.disabled:hover { background: transparent; }
   .ai-mode-menu-item .desc { display: block; font-size: 11px; font-weight: 400; color: var(--color-text-tertiary); margin-top: 1px; }
 
   /* Post-hoc fix (2026-08-24, user-reported): margin-inline-start: auto on

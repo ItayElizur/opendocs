@@ -43,7 +43,8 @@ fully reversible, same Draft-tier gate as move_email
 above. permanent:true additionally calls .Delete() from
 there, which is irreversible from within Outlook (see
 DeleteEmail's own result text) - the same risk class as
-SendTierTools, so it needs that gate too even though the
+a meeting response (ApprovalTierTools, Actions with approval,
+where the panel asks first), so it needs that gate too even though the
 tool NAME sits in DraftTierTools. This is name-based
 gating's one input-aware exception; keep it that way
 rather than generalizing to a per-argument system.
@@ -62,3 +63,14 @@ Outlook: IsInFolderTree is true for Deleted Items and for a
 subfolder of it, and false for the Inbox, another subfolder and a
 null folder. The whole DeleteEmail path was not run through the
 add-in.
+
+## `ExecuteAsync` - preview_action is handled before the tier gate
+
+`preview_action` backs the panel's Approve/Deny card (`confirmActions` in `entry.ts`; see `bootstrap.ts.md`). It is read-only,
+is not a model tool, and is in none of `AlwaysAllowedTools`, `DraftTierTools`, `ApprovalTierTools` or `SendTierTools`, so
+`entry.ts` must not list it and `TierListsAgreeTests` does not see it. `ExecuteAsync` answers it before the gate, by name. It
+takes `{ tool, input }` (the call about to run) and returns one JSON object: `blocked` (the exact refusal the call would get)
+or `type`, `subject`, `from` and `date` of the item the call acts on, never the body. The permanent-delete refusals are shared
+functions (`PermanentModeRefusal`, `PermanentLocationRefusal`), so the preview and the real call cannot say different things.
+An id that does not resolve is reported as `blocked` so the card is skipped. Not run end to end against a live Outlook: only
+the type, sender and date helpers were checked on real items.

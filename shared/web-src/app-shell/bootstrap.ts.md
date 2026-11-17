@@ -83,7 +83,7 @@ respond_meeting on top of its own
 ```
 Restricts the editing-mode menu to this subset, in this order. Defaults to
 all four modes (Word/Excel/PowerPoint). Outlook passes all four too, with
-commentOnly/trackChanges repurposed as "Draft only"/"Automate approvals"
+commentOnly/trackChanges repurposed as "Draft only"/"Actions with approval"
 (see modeOverrides) rather than their Word-ish original meaning.
 ```
 
@@ -257,7 +257,7 @@ stopped via the stop button) - a queued message should still go out.
 
 ## `onDirectCall` (the "!" palette)
 
-Runs a tool the user typed by hand through `skill.executeTool` (the same bridge call the model's tools use), shows it with the
+Runs a tool the user typed by hand through `callDotNetTool` directly (the same bridge call the model's tools use, but not `executeConfirmed`, because the user wrote the call themselves), shows it with the
 ordinary user bubble and tool-step row, and then records the exchange into the loop's history with
 `AgentLoop.recordToolExchange` (user text, assistant tool call, tool result, a closing assistant marker) so the next model turn
 sees it. Refused while a run or another direct call is in flight (the text stays in the box); a normal send during a direct
@@ -268,3 +268,27 @@ reply, so without the reply a reloaded conversation would lose the call. New cha
 never replies cannot wedge the panel. Tool arguments and results are never redacted; the loop's `redact` option (see
 `redactModelKeys`) removes only the user's configured model API key from what they type. The palette's pill needs each tool's lowest mode, computed by `minModeOf` from the same
 sets `availableForMode()` uses.
+
+## `executeConfirmed`, `needsApproval` and `confirmActions` (Approve before a call)
+
+`skill.executeTool` is `executeConfirmed`. The administrator's `policy.json` decides when the user is asked
+(`requireApproval`, injected by the host as `window.__opendocsApprovals`; see `OfficeAi.Shared/ModePolicy.cs.md`).
+`needsApproval` checks the tool's own entry, or `"*"` for any tool that is not read-only, against the current mode.
+Full autonomy never asks, a policy entry for a tool this app does not have is ignored, and a call to a tool name the
+app does not have is never asked about (the app refuses it). There is no user setting for this. Modes the policy
+switches off are passed to the chat UI as `disabledModes`, which shows them grayed out.
+
+How the card looks comes from `config.confirmActions`. The first `ConfirmRule` that matches wins, and `when` narrows a
+rule by the call's arguments. A rule with `preview` first calls the app's `preview_action` read tool. A `blocked`
+answer is returned to the model as the result, and no card is shown. Otherwise the answer's type, subject, sender and
+date become the card's rows; a failed preview is ignored, so the card shows only the question. The rule's `fields` add
+rows from the call's own arguments. A tool with no rule gets a plain card (`argumentRows`): "Allow this action?", the
+tool's display name and description, then one row per argument and one per item of a list argument (for example
+"operations 1: kind: set_cell, address: A1, value: Total"), each cut to 160 characters, at most ten rows. A rule's card never shows the body or the tool call
+itself.
+
+New chat always calls `ui.setBusy(false)`, because `loop.reset()` ends a run without an `onDone` and the stop button
+would otherwise stay up. The `AbortSignal` the loop passes in is handed to the card: `AgentLoop.cancel()` and `reset()`
+both abort it, so Stop and New chat deny a pending card and nothing runs. A denied call returns an error result,
+`DECLINED_TEXT`, which tells the model not to retry and to ask the user. The mode is read per call, so a mode change
+applies at once. The `!` palette bypasses this on purpose (see `onDirectCall`).

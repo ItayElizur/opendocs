@@ -7,7 +7,7 @@ export const SYSTEM_PROMPT =
     'duplicate/hide/move/protect/rename), charts, sparklines, shapes and local images, native Excel Tables, native ' +
     'pivot tables, hyperlinks, cell notes, defined names, AutoFilter, conditional formatting, and data validation. ' +
     'Your available tools depend on the current editing mode (Read Only/Comment Only allow only the read tools; ' +
-    'Track Changes/Full Autonomy allow everything) - only call tools currently offered to you. ' +
+    'Edits with approval/Full Autonomy allow everything; in Edits with approval the user may be asked to approve each change) - only call tools currently offered to you. ' +
     'Use the tools when asked to inspect or modify the spreadsheet. ' +
     "Before reading cell data, call get_workbook_context first - it's cheap and tells you each sheet's actual " +
     'used range, so you can size read_range/read_cells calls to the real data instead of guessing a range that ' +

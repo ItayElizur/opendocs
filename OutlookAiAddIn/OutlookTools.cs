@@ -31,7 +31,7 @@ namespace OutlookAiAddIn
 
         // Outlook repurposes two EditingMode slots Word/Excel/PowerPoint use
         // for real editing concepts that have no meaning for mail:
-        // CommentOnly -> "Draft only", TrackChanges -> "Automate approvals".
+        // CommentOnly -> "Draft only", TrackChanges -> "Actions with approval".
         // The ordinal check below relies on the enum's declared order
         // (ReadOnly < CommentOnly < TrackChanges < FullAutonomy) matching
         // this escalation exactly - see OfficeAi.Shared.EditingMode.
@@ -63,16 +63,17 @@ namespace OutlookAiAddIn
             "undo_last_action", "redo_last_action",
         };
 
-        // Tier 3 ("Automate approvals" / TrackChanges): already calls
-        // resp.Send() to notify the organizer (RespondMeeting) - kept out of
-        // the draft tier so "Draft only" honestly means nothing sends.
+        // Tier 3 ("Actions with approval" / TrackChanges): a meeting response, which notifies the organizer (and,
+        // input-aware below, a permanent delete). Kept out of the draft tier so "Draft only" honestly means nothing
+        // sends. In this mode the panel asks before each call as the administrator's policy.json sets. Must stay in
+        // sync with entry.ts's trackChangesExtraTools.
         private static readonly HashSet<string> ApprovalTierTools = new HashSet<string>
         {
             "respond_meeting",
         };
 
-        // Tier 4 (Full autonomy only): composes and sends/creates brand-new
-        // content with no review step at all.
+        // Tier 4 (Full autonomy only): sends or creates brand-new mail and events immediately, with no review window
+        // and no approval card. The reviewed way to send is a draft (draft_email/draft_event).
         private static readonly HashSet<string> SendTierTools = new HashSet<string>
         {
             "send_email", "send_event",
@@ -83,10 +84,17 @@ namespace OutlookAiAddIn
             switch (mode)
             {
                 case EditingMode.FullAutonomy: return "Full autonomy";
-                case EditingMode.TrackChanges: return "Automate approvals";
+                case EditingMode.TrackChanges: return "Actions with approval";
                 case EditingMode.CommentOnly: return "Draft only";
                 default: return "Read only";
             }
+        }
+
+        // Null when mode allows a permanent delete; shared by ExecuteAsync and the card's preview so both say the same thing.
+        private static string PermanentModeRefusal(EditingMode mode)
+        {
+            return (int)mode >= (int)EditingMode.TrackChanges ? null
+                : "Blocked: permanent delete requires " + TierLabel(EditingMode.TrackChanges) + " mode or higher (currently " + TierLabel(mode) + "). Omit permanent, or set it to false, to move the message to Deleted Items instead.";
         }
 
         public static async Task<ToolResult> ExecuteAsync(string mbxKey, string name, JsonElement input)
@@ -95,6 +103,8 @@ namespace OutlookAiAddIn
             {
                 DebugLog.Write("OutlookTools.Execute " + name);
                 EditingMode mode = ModeFor(mbxKey);
+                // Read-only lookup for the panel's Approve/Deny card; not a model tool, so in none of the tier sets.
+                if (name == "preview_action") return PreviewAction(mbxKey, input);
                 if (!AlwaysAllowedTools.Contains(name))
                 {
                     EditingMode required =
@@ -113,15 +123,16 @@ namespace OutlookAiAddIn
 
                     // delete_email spans two risk classes: permanent:false is
                     // fully reversible (Draft tier, like move_email);
-                    // permanent:true is irreversible (needs the SendTierTools
+                    // permanent:true is irreversible (needs the ApprovalTierTools
                     // gate too, despite the tool NAME sitting in
                     // DraftTierTools). This is name-based gating's one
                     // input-aware exception - see OutlookTools.cs.md.
-                    if (name == "delete_email" && Bool(input, "permanent", false) && (int)mode < (int)EditingMode.FullAutonomy)
+                    string permanentRefusal = name == "delete_email" && Bool(input, "permanent", false) ? PermanentModeRefusal(mode) : null;
+                    if (permanentRefusal != null)
                     {
                         return new ToolResult
                         {
-                            Output = "Blocked: permanent delete requires " + TierLabel(EditingMode.FullAutonomy) + " mode or higher (currently " + TierLabel(mode) + "). Omit permanent, or set it to false, to move the message to Deleted Items instead.",
+                            Output = permanentRefusal,
                             IsError = true,
                             Summary = name,
                         };

@@ -258,6 +258,13 @@ namespace OutlookAiAddIn
             return false;
         }
 
+        // Null when the item is already in Deleted Items; shared by DeleteEmail and the card's preview.
+        private static string PermanentLocationRefusal(string subject, Outlook.Folder sourceFolder, Outlook.Folder deleted)
+        {
+            return IsInFolderTree(sourceFolder, deleted) ? null
+                : "Blocked: \"" + subject + "\" is not in Deleted Items, so it cannot be deleted permanently. Call delete_email without permanent to move it to Deleted Items first, then use the message_id from that result for the permanent delete (the move changes the id). Ask the user before deleting it permanently.";
+        }
+
         private static ToolResult DeleteEmail(string mbxKey, JsonElement input)
         {
             string id = ReqStr(input, "message_id");
@@ -278,8 +285,9 @@ namespace OutlookAiAddIn
             if (permanent)
             {
                 // A hard delete is always a second call, after the move result shows the subject. See OutlookTools.cs.md.
-                if (!IsInFolderTree(sourceFolder, deleted))
-                    return new ToolResult { Output = "Blocked: \"" + subject + "\" is not in Deleted Items, so it cannot be deleted permanently. Call delete_email without permanent to move it to Deleted Items first, then use the message_id from that result for the permanent delete (the move changes the id). Ask the user before deleting it permanently.", IsError = true, Summary = "delete_email" };
+                string refusal = PermanentLocationRefusal(subject, sourceFolder, deleted);
+                if (refusal != null)
+                    return new ToolResult { Output = refusal, IsError = true, Summary = "delete_email" };
                 try { d.Delete(); }
                 catch (Exception ex)
                 {

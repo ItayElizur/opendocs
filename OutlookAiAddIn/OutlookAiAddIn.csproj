@@ -144,6 +144,10 @@
       <SubType>Code</SubType>
       <DependentUpon>OutlookTools.cs</DependentUpon>
     </Compile>
+    <Compile Include="OutlookTools.Preview.cs">
+      <SubType>Code</SubType>
+      <DependentUpon>OutlookTools.cs</DependentUpon>
+    </Compile>
     <Compile Include="OutlookTools.Search.cs">
       <SubType>Code</SubType>
       <DependentUpon>OutlookTools.cs</DependentUpon>

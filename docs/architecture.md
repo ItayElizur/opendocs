@@ -35,7 +35,7 @@ CommentOnly | TrackChanges | FullAutonomy`), filtered client-side (which tools a
 advertised to the model) *and* re-enforced server-side in each `Tools.Execute()`
 (mutating tools blocked outright in Read Only / Comment Only mode, regardless of what
 the model requests). Outlook repurposes all four tiers with its own meaning (Read only /
-Draft only / Automate approvals / Full autonomy) rather than dropping two — see
+Draft only / Actions with approval / Full autonomy) rather than dropping two — see
 [`docs/tools/outlook.md`](tools/outlook.md) for the mapping.
 
 `save` (Word, Excel, PowerPoint) is defined once in `shared/web-src/app-shell/sharedTools.ts`, which exports it in
@@ -60,8 +60,8 @@ approvals / Full autonomy). It works on whole modes, not on individual tools. `O
 once per Office process and picks the app's list by the add-in's folder name. A file that cannot be read or parsed, or
 that names an unknown app or mode, switches every mode off in every app rather than leaving a mode open by mistake. The
 host passes the app's list to the page as `window.__opendocsDisabledModes`.
-`bootstrap.ts` leaves those modes out of the menu and the settings scope control, and starts in the app's default mode
-if that one is still on, otherwise the first one left. With no mode left, the mode button is hidden, the model is
+`bootstrap.ts` shows those modes grayed out and unselectable in the menu and the settings scope control, and starts in
+the app's default mode if that one is still on, otherwise the first one left. With no mode left, the mode button is hidden, the model is
 offered no tools and the chat says the administrator turned the modes off. The server side is enforced once in
 `PaneHostBase.ExecuteToolUnderPolicy`, ahead of each app's own tier gate. When any mode is disabled, it refuses every
 tool call while the pane is in a disabled mode or has not reported a mode yet (`ModePolicy.Blocks`). A disabled mode
@@ -71,7 +71,13 @@ autonomy, and Outlook's panes share one mode per mailbox. Changes to the policy 
 
 ## Direct tool calls (Developer tools)
 
-An opt-in setting (`developerTools`, saved with the other panel settings, off by default) turns on a `!` palette in the shared chat UI (`shared/chat-ui/tool-palette.ts` for the rules, `chat-ui.ts` for the popup). `!name({json})` runs one tool without the model: `bootstrap.ts` sends it through `skill.executeTool` (the same `callDotNetTool` bridge the model's calls use), so the server-side editing-mode gate applies unchanged and nothing here bypasses it. The client also locks tools outside the current mode, using the same `availableForMode()` sets that filter what the model is offered. The finished call is added to the loop's history (`AgentLoop.recordToolExchange`), so the next model turn sees what was run. No tool or tier list changes are involved.
+An opt-in setting (`developerTools`, saved with the other panel settings, off by default) turns on a `!` palette in the shared chat UI (`shared/chat-ui/tool-palette.ts` for the rules, `chat-ui.ts` for the popup). `!name({json})` runs one tool without the model: `bootstrap.ts` sends it through `callDotNetTool` (the same bridge the model's calls use), so the server-side editing-mode gate applies unchanged and nothing here bypasses it. The client also locks tools outside the current mode, using the same `availableForMode()` sets that filter what the model is offered. The finished call is added to the loop's history (`AgentLoop.recordToolExchange`), so the next model turn sees what was run. No tool or tier list changes are involved.
+
+## Approve before a call (requireApproval)
+
+The administrator's `policy.json` decides which of the model's calls need an Approve from the user, per app, tool and mode (`requireApproval`; see `OfficeAi.Shared/ModePolicy.cs.md`). `"*"` stands for every tool that is not read-only, and a tool's own entry overrides it. Full autonomy never asks, whatever is listed. The third tier (`trackChanges`) is the tier with approvals in every app but Word: in Excel and PowerPoint it is every tool, called "Edits with approval" (they have no tracked changes), and in Outlook it is "Actions with approval" (`respond_meeting` and permanent delete on top of Draft only; `send_email` and `send_event` stay in Full autonomy, since a draft is the reviewed way to send). The shipped defaults ask before every change in that tier in those three apps, and before `delete_email` in Outlook's Draft only; Word asks for nothing. There is no user setting for it. A tool name the app does not have is ignored. The check is client-side, in `executeConfirmed` around the model's `callDotNetTool` call. It adds no model tool or tier-list entry, and the server-side editing-mode check still runs after Approve. Because only the page enforces it, an installed (Release) pane never enables WebView2's developer tools.
+
+How the card looks comes from `AddInConfig.confirmActions` (Outlook's `web-src/confirm.ts`). The first matching `ConfirmRule` wins. A tool with no rule gets a plain "Allow this action?" card with the tool's display name and description, and its arguments: one row per argument, one per item of a list (such as Excel's operations). The card (`confirmAction` in `chat-ui.ts`) shows the rule's title and labelled rows, never the tool call itself or a message body. A rule with `preview` asks the add-in (`preview_action`, a read-only entry in `OutlookTools.ExecuteAsync` that is in no tier set) for the item's type, subject, sender and date, or for the reason the call would be refused, in which case no card is shown and the model gets that refusal. A rule's `fields` add rows from the call's own arguments (for example the recipient of a new email). Deny, Escape, Stop and New chat all resolve to Deny, and the model gets a result telling it not to retry. A call the user typed with `!` never asks.
 
 ## Provenance / data-source enforcement
 
