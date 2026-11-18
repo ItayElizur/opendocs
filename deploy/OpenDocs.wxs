@@ -1,0 +1,101 @@
+<!--
+  OpenDocs machine-wide MSI (WiX Toolset 5). Built by build-msi.ps1, which passes:
+    Version     - ProductVersion, X.Y.Z
+    DistDir     - the package folder package.ps1 produced (one <App>AiAddIn folder per app)
+    PolicyFile  - the policy.json to install next to the per-app folders
+  and builds it twice: -arch x64 for 64-bit Windows and -arch x86 for 32-bit Windows ($(sys.BUILDARCH) below).
+  It does what install.ps1 does for an all-users install: files in Program Files\OpenDocs, and each add-in
+  registered under HKLM - in both registry views on 64-bit Windows (64-bit Office reads SOFTWARE, 32-bit Office
+  reads WOW6432Node; the unused one is harmless), in the only view on 32-bit Windows. See build-msi.ps1.md.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="OpenDocs" Manufacturer="OpenDocs" Version="$(var.Version)"
+           UpgradeCode="A51AEEE1-4241-4A44-8A75-4E09D9C3358F" Scope="perMachine" Compressed="yes">
+    <!-- The old version is removed before the new one is installed, so every file - policy.json included - is
+         replaced by the new package's copy even if someone edited it. Same-version rebuilds upgrade too. -->
+    <MajorUpgrade Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of OpenDocs is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Prerequisites: refuse to install without them, rather than install add-ins Office then cannot load. Skipped on
+         uninstall and repair ("Installed"). See build-msi.ps1.md. -->
+    <!-- .NET Framework 4.8 = Release 528040 or later. A raw DWORD reads as "#533509"; the "#" string comparison is
+         the usual WiX idiom and holds while Release has six digits. -->
+    <Property Id="NETFX_RELEASE">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" Name="Release" Type="raw" Bitness="always64" />
+    </Property>
+    <!-- VSTO 2010 runtime: registered in either registry view depending on what installed it. -->
+    <Property Id="VSTO_RUNTIME_64">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\VSTO Runtime Setup\v4R" Name="Version" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="VSTO_RUNTIME_32">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\VSTO Runtime Setup\v4R" Name="Version" Type="raw" Bitness="always32" />
+    </Property>
+    <!-- WebView2 runtime, machine-wide: the Edge Update client key in the 32-bit view; "0.0.0.0" means it was removed. -->
+    <Property Id="WEBVIEW2_VERSION">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" Name="pv" Type="raw" Bitness="always32" />
+    </Property>
+    <Launch Condition="Installed OR NETFX_RELEASE &gt;= &quot;#528040&quot;"
+            Message="OpenDocs needs .NET Framework 4.8 or later. Install it (it is part of Windows 10 version 1903 and later), then install OpenDocs again." />
+    <Launch Condition="Installed OR VSTO_RUNTIME_64 OR VSTO_RUNTIME_32"
+            Message="OpenDocs needs the Visual Studio 2010 Tools for Office Runtime. Install vstor40_$(sys.BUILDARCH).msi, then install OpenDocs again." />
+    <Launch Condition="Installed OR (WEBVIEW2_VERSION AND WEBVIEW2_VERSION &lt;&gt; &quot;0.0.0.0&quot;)"
+            Message="OpenDocs needs the Microsoft Edge WebView2 Runtime. Install it, then install OpenDocs again." />
+
+    <?if $(sys.BUILDARCH) = x86 ?>
+    <!-- On 64-bit Windows this package would register the add-ins only where 32-bit Office looks. -->
+    <Launch Condition="Installed OR NOT VersionNT64"
+            Message="This OpenDocs package is for 32-bit Windows. On 64-bit Windows, install the x64 package instead." />
+    <?endif?>
+
+    <!-- Program Files on both: the 64-bit one on 64-bit Windows, the only one on 32-bit Windows. -->
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="OpenDocs">
+        <?foreach App in Word;Excel;PowerPoint;Outlook ?>
+        <Directory Id="$(var.App)Dir" Name="$(var.App)AiAddIn" />
+        <?endforeach?>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="OpenDocs" Title="OpenDocs add-ins for Word, Excel, PowerPoint and Outlook">
+      <ComponentGroupRef Id="Policy" />
+      <?foreach App in Word;Excel;PowerPoint;Outlook ?>
+      <ComponentGroupRef Id="$(var.App)" />
+      <?endforeach?>
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="Policy" Directory="INSTALLFOLDER">
+      <Component>
+        <File Source="$(var.PolicyFile)" Name="policy.json" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <?foreach App in Word;Excel;PowerPoint;Outlook ?>
+  <Fragment>
+    <ComponentGroup Id="$(var.App)" Directory="$(var.App)Dir">
+      <Files Include="$(var.DistDir)\$(var.App)AiAddIn\**" />
+      <?if $(sys.BUILDARCH) = x64 ?>
+      <Component Id="$(var.App)Reg64" Bitness="always64">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Office\$(var.App)\Addins\$(var.App)AiAddIn">
+          <RegistryValue Name="Description" Type="string" Value="$(var.App)AiAddIn" KeyPath="yes" />
+          <RegistryValue Name="FriendlyName" Type="string" Value="$(var.App)AiAddIn" />
+          <RegistryValue Name="LoadBehavior" Type="integer" Value="3" />
+          <RegistryValue Name="Manifest" Type="string" Value="[$(var.App)Dir]$(var.App)AiAddIn.vsto|vstolocal" />
+        </RegistryKey>
+      </Component>
+      <?endif?>
+      <Component Id="$(var.App)Reg32" Bitness="always32">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Office\$(var.App)\Addins\$(var.App)AiAddIn">
+          <RegistryValue Name="Description" Type="string" Value="$(var.App)AiAddIn" KeyPath="yes" />
+          <RegistryValue Name="FriendlyName" Type="string" Value="$(var.App)AiAddIn" />
+          <RegistryValue Name="LoadBehavior" Type="integer" Value="3" />
+          <RegistryValue Name="Manifest" Type="string" Value="[$(var.App)Dir]$(var.App)AiAddIn.vsto|vstolocal" />
+        </RegistryKey>
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+  <?endforeach?>
+</Wix>
