@@ -1,7 +1,8 @@
 # build-msi.ps1 and OpenDocs.wxs
 
 `build-msi.ps1` runs `package.ps1` (Release build of the four add-ins into `deploy\dist`), checks the policy file,
-and builds `deploy\msi\OpenDocs-<version>.msi` from `OpenDocs.wxs` with WiX Toolset 5 (`wix build`). The MSI does
+and builds two MSIs from `OpenDocs.wxs` with WiX Toolset 5 (`wix build`): `deploy\msi\OpenDocs-<version>-x64.msi` for
+64-bit Windows and `OpenDocs-<version>-x86.msi` for 32-bit Windows. Each MSI does
 what `install.ps1` does for an all-users install, as one Windows Installer package that IT can push with Intune,
 SCCM or Group Policy.
 
@@ -11,13 +12,18 @@ SCCM or Group Policy.
   `deploy\dist`, harvested with WiX's `Files` element, so a new file in the build needs no change here.
 - `C:\Program Files\OpenDocs\policy.json`: the file passed as `-PolicyFile` (default `deploy\policy.json`).
 - `HKLM\SOFTWARE\Microsoft\Office\<App>\Addins\<App>AiAddIn` with `Description`, `FriendlyName`, `LoadBehavior=3`
-  and `Manifest`, written in both registry views. A 64-bit Office reads `SOFTWARE`, a 32-bit Office on 64-bit
-  Windows reads `SOFTWARE\WOW6432Node`. `install.ps1` writes only the view of the installed Office when it can
+  and `Manifest`. The x64 MSI writes both registry views: a 64-bit Office reads `SOFTWARE`, a 32-bit Office on
+  64-bit Windows reads `SOFTWARE\WOW6432Node`. The x86 MSI writes the one view 32-bit Windows has (only 32-bit
+  Office runs there). `install.ps1` writes only the view of the installed Office when it can
   tell; the MSI cannot run that detection without a custom action, and the unused view is harmless.
 - `Manifest` is `<folder>\<App>AiAddIn.vsto|vstolocal`, a plain path, the form Microsoft documents for VSTO add-ins
   deployed by Windows Installer. `install.ps1` writes a `file:///` URL instead; both load.
 
-The package is per-machine and x64 (Program Files, not Program Files (x86)), the same folder `install.ps1` uses.
+Both packages are per-machine and install into Program Files (`ProgramFiles6432Folder`: the 64-bit one, not Program
+Files (x86), on 64-bit Windows), the same folder `install.ps1` uses. The add-ins are AnyCPU and the package carries
+the x86, x64 and arm64 WebView2 loaders, so the two MSIs differ only in folder, registry views and one extra check:
+the x86 MSI refuses to install on 64-bit Windows (`NOT VersionNT64`), where it would register the add-ins only for
+32-bit Office. Both share one `UpgradeCode`; a computer only ever gets one of them.
 
 ## Upgrades replace everything, policy.json included
 
@@ -71,9 +77,13 @@ delivered with OpenDocs 0.2.0 came from `vstor_redist.exe` 10.0.60910 and is ver
 
 ## Verified
 
-Built with WiX 5.0.2. The MSI holds every file of the package (checked against `deploy\dist` after an
+Built with WiX 5.0.2. The x64 MSI holds every file of the package (checked against `deploy\dist` after an
 administrative extract), registers both registry views, and schedules `RemoveExistingProducts` right after
 `InstallInitialize`. Installed on the dev machine (Windows 11, 64-bit Office), Excel loaded the add-in from it.
 The prerequisite checks were tested with throwaway builds whose registry searches point at missing keys: each one
 stops the install at `LaunchConditions` with its own message. Not tested: a computer that really lacks a
 prerequisite, 32-bit Office, and deployment through Intune, Configuration Manager or Group Policy.
+
+The x86 MSI was only built and decompiled (`wix msi decompile`): it installs into `ProgramFilesFolder`, has only the
+32-bit registry components, and carries the `NOT VersionNT64` check. It was never installed - there is no 32-bit
+Windows here to install it on.

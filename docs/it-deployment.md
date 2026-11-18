@@ -5,13 +5,19 @@ covers installing with the MSI, the administrator policy (`policy.json`), upgrad
 
 ## What gets installed
 
-One MSI installs the OpenDocs add-in for **Word, Excel, PowerPoint and Outlook**, for every user of the computer:
+One MSI installs the OpenDocs add-in for **Word, Excel, PowerPoint and Outlook**, for every user of the computer.
+There are two builds of it; deploy the one that matches **Windows** (not Office):
+
+- `OpenDocs-<version>-x64.msi` for 64-bit Windows, with either 32-bit or 64-bit Office;
+- `OpenDocs-<version>-x86.msi` for 32-bit Windows. It refuses to install on 64-bit Windows.
+
+It installs:
 
 | What | Where |
 |---|---|
 | The four add-ins | `C:\Program Files\OpenDocs\WordAiAddIn\`, `ExcelAiAddIn\`, `PowerPointAiAddIn\`, `OutlookAiAddIn\` |
 | The administrator policy | `C:\Program Files\OpenDocs\policy.json` |
-| Office add-in registration | `HKLM\SOFTWARE\Microsoft\Office\<App>\Addins\<App>AiAddIn`, in both the 64-bit and the 32-bit registry view, so it works with either Office |
+| Office add-in registration | `HKLM\SOFTWARE\Microsoft\Office\<App>\Addins\<App>AiAddIn`; on 64-bit Windows in both the 64-bit and the 32-bit registry view, so it works with either Office |
 
 Only administrators can change files under Program Files, so users cannot change the add-in or the policy. Each
 user's own settings (which AI provider and model to use, the API key, theme, language) are created the first time
@@ -29,8 +35,8 @@ it never installs add-ins that Office then cannot load. Deploy what is missing f
 | Prerequisite | Usually already there? | How to deploy it as an MSI |
 |---|---|---|
 | **.NET Framework 4.8** or later | Yes: it is part of Windows 10 version 1903 and later and of Windows 11. | Nothing to deploy on those. Older Windows (for example Windows 10 LTSC 2019, which has 4.7.2) gets it through Windows Update / WSUS. Microsoft publishes no MSI for it. |
-| **Visual Studio 2010 Tools for Office Runtime** (VSTO runtime) | Often, through Office; check with an inventory. | Microsoft's own MSI, taken out of `vstor_redist.exe` and delivered next to `OpenDocs.msi`: `prerequisites\VSTO-Runtime\x64\vstor40_x64.msi` (64-bit Windows; `x86\vstor40_x86.msi` for 32-bit Windows). Keep each `.msi` next to its `.cab`. Install it silently with `msiexec /i vstor40_x64.msi /qn`. |
-| **Microsoft Edge WebView2 Runtime** | Yes on Windows 11; on Windows 10, Microsoft 365 Apps installs it. | Microsoft publishes it only as an .exe (`MicrosoftEdgeWebView2RuntimeInstallerX64.exe /silent /install`). If computers without it remain, it needs a wrapper MSI. |
+| **Visual Studio 2010 Tools for Office Runtime** (VSTO runtime) | Often, through Office; check with an inventory. | Microsoft's own MSI, taken out of `vstor_redist.exe` and delivered next to the OpenDocs MSIs: `prerequisites\VSTO-Runtime\x64\vstor40_x64.msi` (64-bit Windows; `x86\vstor40_x86.msi` for 32-bit Windows). Keep each `.msi` next to its `.cab`. Install it silently with `msiexec /i vstor40_x64.msi /qn` (or `vstor40_x86.msi`). |
+| **Microsoft Edge WebView2 Runtime** | Yes on Windows 11; on Windows 10, Microsoft 365 Apps installs it. | Microsoft publishes it only as an .exe (`MicrosoftEdgeWebView2RuntimeInstallerX64.exe /silent /install`, or the X86 one on 32-bit Windows). If computers without it remain, it needs a wrapper MSI. |
 
 To check a computer (all three must be present):
 
@@ -55,7 +61,7 @@ Close Word, Excel, PowerPoint and Outlook on the target computer first: Office k
 it runs. Then, from an elevated prompt:
 
 ```
-msiexec /i OpenDocs-<version>.msi /qn /l*v C:\Windows\Temp\OpenDocs-install.log
+msiexec /i OpenDocs-<version>-x64.msi /qn /l*v C:\Windows\Temp\OpenDocs-install.log
 ```
 
 - `/qn` installs silently. Leave it out to see the installer's progress window.
@@ -75,7 +81,7 @@ upgrade: keep your policy in the MSI (see below) or deploy it again after every 
 ## Uninstall
 
 ```
-msiexec /x OpenDocs-<version>.msi /qn
+msiexec /x OpenDocs-<version>-x64.msi /qn
 ```
 
 Or remove **OpenDocs** in Settings → Apps. This removes the add-ins, their registration and `policy.json`. Each
@@ -191,7 +197,7 @@ cd deploy
 ```
 
 - The version comes from the newest `vX.Y.Z` git tag, or pass `-Version X.Y.Z`.
-- The MSI is written to `deploy\msi\OpenDocs-<version>.msi`.
+- The MSIs are written to `deploy\msi\OpenDocs-<version>-x64.msi` and `OpenDocs-<version>-x86.msi`.
 - The script prints, per app, which modes are off and what asks for approval, so you can check the policy before
   you deploy it.
 
