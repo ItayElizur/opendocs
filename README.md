@@ -334,7 +334,14 @@ For example:
     -v:minimal
 ```
 
-Each add-in's TypeScript entry point is bundled with esbuild **before** MSBuild runs:
+Each add-in's TypeScript entry point is bundled with esbuild **before** MSBuild runs. The shared code's npm dependencies (the Vercel AI SDK) live in `shared/`, so install them once, along with each add-in's own:
+
+```powershell
+cd shared; npm ci; cd ..
+cd WordAiAddIn; npm ci; cd ..
+```
+
+Then bundle:
 
 ```powershell
 cd WordAiAddIn

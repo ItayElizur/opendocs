@@ -38,6 +38,10 @@ if (-not $cert) {
 Export-Certificate -Cert $cert -FilePath $certPath | Out-Null
 Write-Host "Exported signing certificate (public key only) to $certPath"
 
+if (-not (Test-Path (Join-Path $RepoRoot "shared\node_modules\ai"))) {
+    throw "shared\node_modules\ai not found - run 'npm ci' in $(Join-Path $RepoRoot 'shared') first."
+}
+
 foreach ($appName in $Apps) {
     $projName = "${appName}AiAddIn"
     $csproj = Join-Path $RepoRoot "$projName\$projName.csproj"
