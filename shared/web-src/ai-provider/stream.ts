@@ -1,6 +1,5 @@
 import type { AgentMessage, AgentToolCall, AgentToolDef } from '@officeai/agent-core'
 import { randomId } from '@officeai/agent-core'
-import { aiFetch } from './fetch'
 import { httpBodyDetail } from './http-error'
 import type { AiProviderConfig, AiProviderId, ReasoningEffort } from './types'
 import { createStreamWatchdog, type StreamWatchdog } from './watchdog'
@@ -294,7 +293,7 @@ async function anthropicTurn(
   }
   let response: Response
   try {
-    response = await aiFetch(`${baseUrl.replace(/\/$/, '')}/v1/messages`, {
+    response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/messages`, {
       method: 'POST',
       signal: wd.signal,
       headers: {
@@ -534,7 +533,7 @@ async function geminiTurn(
     cb.onActivity?.()
   }
   const url = `${baseUrl.replace(/\/$/, '')}/models/${config.model}:streamGenerateContent?alt=sse`
-  const response = await aiFetch(url, {
+  const response = await fetch(url, {
     method: 'POST',
     signal: wd.signal,
     headers: {
@@ -785,7 +784,7 @@ async function openAiCompatibleTurn(
     wd.touch()
     cb.onActivity?.()
   }
-  const response = await aiFetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     signal: wd.signal,
     headers: {
