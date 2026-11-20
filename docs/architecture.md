@@ -17,7 +17,13 @@ default of 8. Provider/model/key selection, the settings screen, and the transpo
 once in `shared/web-src/app-shell/` (`getSettings` / `makeTransport` / `onSettingsSave`,
 persisted in WebView `localStorage`, except the API keys, which the host keeps DPAPI-encrypted: see `settings.ts.md`), shared by all four add-ins including Outlook —
 `makeTransport` routes via `streamForProvider` to whichever provider the user picks in
-the settings dropdown, with a "Test connection" button.
+the settings dropdown, with a "Test connection" button. `streamForProvider`
+(`ai-provider/stream.ts`) streams one model turn through the Vercel AI SDK (`ai`,
+`@ai-sdk/anthropic`, `@ai-sdk/google`, and `@ai-sdk/openai-compatible` for
+openai/deepseek/custom, pinned in `shared/package.json`), with no SDK retries and no SDK
+tool execution: `AgentLoop` still runs the tools, the turn cap, compaction and cancel.
+`shared/chat-ui/transport-contract.test.ts` pins what the transport reports and sends for
+every provider; run it after an SDK upgrade.
 
 There is **no web-search/image-generation/media-analysis capability** anywhere in the
 repo. This is a deliberate scope decision — the deployment target is air-gapped (see

@@ -266,6 +266,7 @@ const CASES: CaseTable = {
       expected: [{ error: NOTICE }],
     },
   },
+  // Since the SDK swap a non-credits JSON reply to a streaming request is an error, not a rendered turn.
   '200 with a complete JSON message instead of SSE': {
     anthropic: {
       reply: json({
@@ -275,11 +276,11 @@ const CASES: CaseTable = {
         content: [{ type: 'text', text: 'Hi there' }, { type: 'tool_use', id: 'toolu_1', name: 'insert_text', input: GOOD }],
         stop_reason: 'tool_use',
       }),
-      expected: [{ delta: 'Hi there' }, call('toolu_1', GOOD), { stop: 'tool_use' }, 'done'],
+      expected: [{ error: expect.stringMatching(/^Claude returned a JSON reply instead of a stream: [[{]/) }],
     },
     gemini: {
       reply: json([{ candidates: [{ content: { role: 'model', parts: [{ text: 'Hi there' }, gemCall(GOOD)] }, finishReason: 'STOP' }] }]),
-      expected: [{ delta: 'Hi there' }, call(GENERATED_ID, GOOD), 'done'],
+      expected: [{ error: expect.stringMatching(/^Gemini returned a JSON reply instead of a stream: [[{]/) }],
     },
     openai: {
       reply: json({
@@ -293,7 +294,7 @@ const CASES: CaseTable = {
           },
         ],
       }),
-      expected: [{ delta: 'Hi there' }, call('call_1', GOOD), 'done'],
+      expected: [{ error: expect.stringMatching(/^The model returned a JSON reply instead of a stream: [[{]/) }],
     },
   },
   '200 with no events': {
@@ -386,6 +387,23 @@ const camel = (value: unknown): unknown =>
       ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()), camel(v)]))
       : value
 
+/** Gemini reads a tool's schema from `parameters` or `parametersJsonSchema`. */
+const geminiTools = (tools: any[] | undefined) =>
+  tools?.map((t) => ({
+    ...t,
+    functionDeclarations: t.functionDeclarations?.map(({ parametersJsonSchema, ...d }: any) => ({ ...d, parameters: d.parameters ?? parametersJsonSchema })),
+  }))
+/** A Gemini functionResponse.response is a free-form object; a success may carry its text as `result` or `content`. */
+const geminiResponses = (contents: any[]) =>
+  contents.map((c) => ({
+    ...c,
+    parts: c.parts.map((part: any) => {
+      const r = part.functionResponse?.response
+      if (!r || 'error' in r) return part
+      return { functionResponse: { ...part.functionResponse, response: { result: r.result ?? r.content } } }
+    }),
+  }))
+
 const ENDPOINT: Record<AiProviderId, { url: string; headers: Record<string, string> }> = {
   anthropic: {
     url: 'https://api.anthropic.com/v1/messages',
@@ -402,8 +420,14 @@ const ENDPOINT: Record<AiProviderId, { url: string; headers: Record<string, stri
 
 /** The request fields each protocol needs, in the shape the provider reads them. */
 const ESSENTIALS: Record<Protocol, (body: any) => unknown> = {
-  anthropic: (b) => ({ model: b.model, stream: b.stream, system: blocks(b.system), tools: b.tools, messages: b.messages }),
-  gemini: (b) => camel({ systemInstruction: b.systemInstruction, tools: b.tools, contents: b.contents }),
+  anthropic: (b) => ({
+    model: b.model,
+    stream: b.stream,
+    system: blocks(b.system),
+    tools: b.tools,
+    messages: b.messages.map((m: any) => ({ ...m, content: blocks(m.content) })),
+  }),
+  gemini: (b) => camel({ systemInstruction: b.systemInstruction, tools: geminiTools(b.tools), contents: b.contents }),
   openai: (b) => ({ model: b.model, stream: b.stream, tools: b.tools, messages: b.messages }),
 }
 
@@ -413,7 +437,7 @@ const BASIC_ESSENTIALS: Record<AiProviderId, unknown> = {
     stream: true,
     system: [{ type: 'text', text: 'sys' }],
     tools: [{ name: 'insert_text', description: 'Insert text', input_schema: TOOL.inputSchema }],
-    messages: [{ role: 'user', content: 'go' }],
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'go' }] }],
   },
   gemini: {
     systemInstruction: { parts: [{ text: 'sys' }] },
@@ -448,17 +472,17 @@ describe('transport contract: request', () => {
     expect(sent).toHaveLength(0)
   })
 
-  // [provider, effort, output cap, reasoning fields]; the cap stays 8192 whatever the effort
+  // [provider, effort, output cap, reasoning fields]; Anthropic's thinking budget comes on top of the 8192 reply cap
   const anthropicThinking = (budget_tokens: number) => ({ thinking: { type: 'enabled', budget_tokens } })
   const geminiThinking = (thinkingBudget: number) => ({ thinkingConfig: { thinkingBudget } })
   const kwargs = (on: boolean) => ({ chat_template_kwargs: { enable_thinking: on, preserve_thinking: on } })
   const EFFORT_ROWS: Array<[AiProviderId, ReasoningEffort, number, Record<string, unknown>]> = [
     ['anthropic', 'default', 8192, {}],
     ['anthropic', 'off', 8192, {}],
-    ['anthropic', 'low', 8192, anthropicThinking(1024)],
-    ['anthropic', 'medium', 8192, anthropicThinking(3072)],
-    ['anthropic', 'high', 8192, anthropicThinking(5120)],
-    ['anthropic', 'xhigh', 8192, anthropicThinking(7168)],
+    ['anthropic', 'low', 8192 + 1024, anthropicThinking(1024)],
+    ['anthropic', 'medium', 8192 + 3072, anthropicThinking(3072)],
+    ['anthropic', 'high', 8192 + 5120, anthropicThinking(5120)],
+    ['anthropic', 'xhigh', 8192 + 7168, anthropicThinking(7168)],
     ['gemini', 'default', 8192, {}],
     ['gemini', 'off', 8192, geminiThinking(0)],
     ['gemini', 'low', 8192, geminiThinking(1024)],
@@ -549,7 +573,7 @@ describe('transport contract: request', () => {
       ],
     },
     gemini: {
-      pick: (b) => camel(b.contents) as unknown[],
+      pick: (b) => geminiResponses(camel(b.contents) as any[]),
       expected: [
         { role: 'user', parts: [{ text: 'Add a title' }, { inlineData: { mimeType: 'image/png', data: 'iVBORw0KGgo=' } }] },
         {
