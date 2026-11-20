@@ -1,4 +1,4 @@
-import { AgentLoop, randomId, type AgentSkill, type AgentToolCall, type ToolExecution } from '@officeai/agent-core'
+import { AgentLoop, randomId, type Toolset, type AgentToolCall, type ToolExecution } from '@officeai/agent-core'
 import { streamForProvider, type AiProviderConfig } from '@officeai/ai-provider'
 import { defaultModeFor, mountChatUI, resolveModes, type EditingMode, type ModeOverrides, type SelectionExtent, type ToolDisplayEntry } from '@officeai/chat-ui'
 import {
@@ -309,11 +309,10 @@ function toSelectionScopeUpdate(raw: RawSelectionPayload): { hasSelection: boole
 
 export interface AddInConfig {
   /** every tool this app implements */
-  tools: AgentSkill['tools']
+  tools: Toolset['tools']
   /** FT-1 Task 5: localized settings-screen label/description, keyed by tool name. */
   toolDisplay: Record<string, ToolDisplayInfo>
   systemPrompt: string
-  skillId: string
   starters: Array<{ en: string; he: string }>
   /** tool names available in Read only mode */
   readOnlyTools: string[]
@@ -409,7 +408,7 @@ export function startAddIn(config: AddInConfig): void {
   // switch that would make it stale or, worse, too permissive.
   let registeredTools: Set<string> | null = null
 
-  function activeTools(): AgentSkill['tools'] {
+  function activeTools(): Toolset['tools'] {
     const available = new Set(availableForMode())
     // Intersect with `available` even when an override is present - Task 4
     // Step 3: this is what keeps an out-of-scope tool from ever reaching the
@@ -454,14 +453,13 @@ export function startAddIn(config: AddInConfig): void {
     activeDocMessage = savedDocMessage
   }
 
-  const skill: AgentSkill = {
-    id: config.skillId,
+  const toolset: Toolset = {
     systemPrompt: config.systemPrompt,
     // Live getter (not a fixed array): AgentLoop.startTurn() reads
-    // this.options.skill.tools fresh every turn (see
+    // this.options.toolset.tools fresh every turn (see
     // shared/web-src/agent-core/loop.ts), so this recomputes the tool list
     // per-turn from the current editingMode without needing to rebuild the
-    // whole skill object or touch agent-core.
+    // whole toolset object or touch agent-core.
     get tools() {
       return activeTools()
     },
@@ -844,7 +842,7 @@ export function startAddIn(config: AddInConfig): void {
 
   const loop = new AgentLoop({
     transport: makeTransport(),
-    skill,
+    toolset,
     redact: redactModelKeys,
     // Called every turn. The date line (todayContextLine()) is computed
     // fresh each call, on purpose - see its own comment. activeDocMessage

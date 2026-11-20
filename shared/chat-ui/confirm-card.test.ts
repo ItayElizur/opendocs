@@ -67,7 +67,6 @@ function boot(approvals: Record<string, string[]> = POLICY) {
     tools: ['get_email', 'delete_email', 'move_email', 'send_email'].map((name) => ({ name, description: name, inputSchema: schema })) as any,
     toolDisplay: { get_email: display('get'), delete_email: display('delete'), move_email: display('move'), send_email: display('send') },
     systemPrompt: 'sys',
-    skillId: 'test',
     starters: [],
     readOnlyTools: ['get_email'],
     confirmActions: rules,

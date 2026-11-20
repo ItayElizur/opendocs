@@ -1,4 +1,4 @@
-import type { AgentSkill } from './skill'
+import type { Toolset } from './toolset'
 import type {
   AgentImage,
   AgentMessage,
@@ -53,7 +53,7 @@ export interface CompactionOptions {
 
 export interface AgentLoopOptions<TSnapshot = unknown> {
   transport: AgentTransport
-  skill: AgentSkill
+  toolset: Toolset
   events?: AgentLoopEvents<TSnapshot>
   /** hard cap on model round-trips per run (default 8) */
   maxTurns?: number
@@ -63,7 +63,7 @@ export interface AgentLoopOptions<TSnapshot = unknown> {
   compaction?: CompactionOptions | false
   /** capture rollback state; invoked right before tools run (see snapshotBefore) */
   captureSnapshot?(): TSnapshot
-  /** wrap instruction + skill context into the user message text */
+  /** wrap instruction + toolset context into the user message text */
   formatUserMessage?(instruction: string, context: string): string
   /** redacts the user's own model API key from outgoing user text (see `loop.ts.md`) */
   redact?(text: string): string
@@ -257,7 +257,7 @@ export class AgentLoop<TSnapshot = unknown> {
     this.mutationSeen = false
     this.inputParseFails = 0
     this.abortController = new AbortController()
-    const context = this.options.skill.buildContext?.() ?? ''
+    const context = this.options.toolset.buildContext?.() ?? ''
     const format =
       this.options.formatUserMessage ??
       ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
@@ -483,9 +483,9 @@ export class AgentLoop<TSnapshot = unknown> {
     let settled = false
     this.handle = this.options.transport.stream(
       {
-        system: this.options.skill.systemPrompt + (this.options.systemSuffix?.() ?? ''),
+        system: this.options.toolset.systemPrompt + (this.options.systemSuffix?.() ?? ''),
         messages: [...this.history],
-        tools: this.finalizing ? [] : this.options.skill.tools,
+        tools: this.finalizing ? [] : this.options.toolset.tools,
       },
       {
         onDelta: (text) => {
@@ -518,7 +518,7 @@ export class AgentLoop<TSnapshot = unknown> {
   }
 
   private async finishTurn(): Promise<void> {
-    const { events, skill, captureSnapshot } = this.options
+    const { events, toolset, captureSnapshot } = this.options
     const toolCalls = this.toolCalls
 
     // final turn: no tools requested, the user stopped the run, or the
@@ -579,7 +579,7 @@ export class AgentLoop<TSnapshot = unknown> {
       const snapshot = !this.mutationSeen ? captureSnapshot?.() : undefined
       let execution: ToolExecution
       try {
-        execution = await skill.executeTool(call, this.abortController?.signal)
+        execution = await toolset.executeTool(call, this.abortController?.signal)
       } catch (e) {
         execution = {
           output: e instanceof Error ? e.message : String(e),

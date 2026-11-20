@@ -8,7 +8,6 @@ import { SYSTEM_PROMPT } from './prompt'
 // settings, transport, chat-UI mount and AgentLoop event plumbing.
 
 startAddIn({
-  skillId: 'word-tools',
   tools: [...ALL_WORD_TOOLS, ...SHARED_TOOLS],
   toolDisplay: { ...WORD_TOOL_DISPLAY, ...SHARED_TOOL_DISPLAY },
   systemPrompt: SYSTEM_PROMPT,

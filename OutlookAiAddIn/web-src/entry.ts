@@ -8,7 +8,6 @@ import { SYSTEM_PROMPT } from './prompt'
 // (prompt.ts) into the shared app shell, which holds everything else.
 
 startAddIn({
-  skillId: 'outlook-tools',
   tools: ALL_OUTLOOK_TOOLS,
   toolDisplay: OUTLOOK_TOOL_DISPLAY,
   systemPrompt: SYSTEM_PROMPT,
