@@ -1555,3 +1555,77 @@ describe('confirmAction card', () => {
     expect(root.querySelector('.ai-confirm')!.getAttribute('aria-label')).toBe('Delete it?')
   })
 })
+
+describe('"/" skill list', () => {
+  const SKILLS = [
+    { name: 'weekly-report', description: 'Writes the weekly report', argumentHint: '[week]' },
+    { name: 'web-summary', description: 'Summarizes pasted text', argumentHint: '' },
+    { name: 'brand', description: 'Applies the house style', argumentHint: '' },
+  ]
+
+  function skillSetup(skills = SKILLS) {
+    const made = setup({ skills, initialSettings: { developerTools: false } })
+    const textarea = made.root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
+    const type = (text: string) => {
+      textarea.value = text
+      textarea.setSelectionRange(text.length, text.length)
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const press = (key: string) => textarea.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    const palette = made.root.querySelector<HTMLDivElement>('#palette')!
+    const rows = () => [...palette.querySelectorAll<HTMLElement>('.ai-palette-row')].map((r) => r.dataset.skill)
+    return { ...made, textarea, type, press, palette, rows }
+  }
+
+  it('opens on a leading / without Developer tools, and filters by prefix', () => {
+    const { type, palette, rows } = skillSetup()
+    type('/')
+    expect(palette.hidden).toBe(false)
+    expect(rows()).toEqual(['weekly-report', 'web-summary', 'brand'])
+    expect(palette.textContent).toContain('[week]')
+    type('/we')
+    expect(rows()).toEqual(['weekly-report', 'web-summary'])
+    type('/zzz')
+    expect(palette.textContent).toContain('No skill matches')
+  })
+
+  it('Tab or Enter completes the selected skill, and the arrows move the selection', () => {
+    const { type, press, textarea, palette, onSend } = skillSetup()
+    type('/we')
+    press('ArrowDown')
+    press('Tab')
+    expect(textarea.value).toBe('/web-summary ')
+    expect(palette.hidden).toBe(true)
+    type('/wee')
+    press('Enter')
+    expect(textarea.value).toBe('/weekly-report ')
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('Enter on a fully typed name sends it, and arguments are sent as typed', () => {
+    const { type, press, onSend } = skillSetup()
+    type('/brand')
+    press('Enter')
+    expect(onSend).toHaveBeenLastCalledWith('/brand')
+    type('/weekly-report week 12')
+    press('Enter')
+    expect(onSend).toHaveBeenLastCalledWith('/weekly-report week 12')
+  })
+
+  it('clicking a row completes it', () => {
+    const { type, palette, textarea } = skillSetup()
+    type('/')
+    palette.querySelector<HTMLElement>('[data-skill="brand"]')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(textarea.value).toBe('/brand ')
+  })
+
+  it('Escape closes it, and without skills / is plain text', () => {
+    const { type, press, palette } = skillSetup()
+    type('/')
+    press('Escape')
+    expect(palette.hidden).toBe(true)
+    const none = skillSetup([])
+    none.type('/')
+    expect(none.palette.hidden).toBe(true)
+  })
+})

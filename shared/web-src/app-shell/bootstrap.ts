@@ -579,6 +579,7 @@ export function startAddIn(config: AddInConfig): void {
   const ui = mountChatUI(root, {
     starters: config.starters,
     tools: toolDisplayList,
+    skills: skills.filter((s) => s.userInvocable).map(({ name, description, argumentHint }) => ({ name, description, argumentHint })),
     scopeUnit: config.scopeUnit,
     modes: allModes,
     disabledModes: allModes.filter((m) => disabledModes.has(m)),

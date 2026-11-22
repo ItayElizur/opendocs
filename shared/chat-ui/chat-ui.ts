@@ -1,6 +1,6 @@
 import './chat-ui.css'
 import { AI_PROVIDERS, type AiProviderId, type ReasoningEffort } from '@officeai/ai-provider'
-import { closestName, filterTools, paletteState, parseDirectCall, scanArgs, schemaParams, suggestTool, validateArgs, type PaletteState } from './tool-palette'
+import { closestName, filterSkills, filterTools, paletteState, parseDirectCall, scanArgs, schemaParams, skillMenuQuery, suggestTool, validateArgs, type PaletteSkill, type PaletteState } from './tool-palette'
 
 export type EditingMode = 'readOnly' | 'commentOnly' | 'trackChanges' | 'fullAutonomy'
 
@@ -126,6 +126,9 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   paletteBlocked:       { en: 'Not available in the current mode', he: 'לא זמין במצב הנוכחי' },
   paletteBlockedHint:   { en: 'Change the edit mode first. The add-in refuses this tool otherwise.', he: 'שנה קודם את מצב העריכה. אחרת התוסף ידחה את הכלי.' },
   paletteBadArgs:       { en: 'Arguments do not match the signature', he: 'הארגומנטים לא תואמים לחתימה' },
+  skillPaletteTitle:    { en: 'Skills', he: 'מיומנויות' },
+  skillNoMatch:         { en: 'No skill matches', he: 'אין מיומנות תואמת' },
+  skillNoMatchHint:     { en: 'Type / alone to list every skill.', he: 'הקלד / לבד כדי לראות את כל המיומנויות.' },
   paletteBusy:          { en: 'Wait for the current run to finish before a direct call.', he: 'המתן לסיום ההרצה הנוכחית לפני קריאה ישירה.' },
   sectionDocMessage:    { en: 'Document guidelines', he: 'הנחיות למסמך' },
   scopeNote:            { en: 'Applies immediately and resets tool registration below.', he: 'חל מיידית ומאפס את רישום הכלים למטה.' },
@@ -248,6 +251,8 @@ export interface ChatUIOptions {
   onCollapseChange: (collapsed: boolean) => void
   /** Every tool this app implements, for the full settings view's tool list (FT-1). Omit to leave the section empty. */
   tools?: ToolDisplayEntry[]
+  /** The skills the user may call with "/name", for the "/" list. Picking one only fills the box; onSend gets the text. */
+  skills?: PaletteSkill[]
   /** Fires immediately when a tool is toggled on/off in the settings view - registration takes effect right away, not gated behind Save. */
   onToolRegistrationChange?: (registered: string[]) => void
   // Pre-fills the settings form on mount (e.g. from the host app's own
@@ -1186,6 +1191,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // ---- "!" direct-call palette (Developer tools) ----
   // Pure rules live in tool-palette.ts; this is the popup and the keyboard.
   const paletteEl = root.querySelector<HTMLDivElement>('#palette')!
+  const allSkills = options.skills ?? []
   const developerToolsBox = root.querySelector<HTMLInputElement>('[data-field="developerTools"]')!
   let developerTools = options.initialSettings?.developerTools ?? false
   developerToolsBox.checked = developerTools
@@ -1197,12 +1203,16 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     return !availableToolNames.includes(name)
   }
 
+  // The "/" skill list needs no Developer tools: it only fills the box, and the message is sent as usual.
   function paletteNow(): PaletteState {
-    return developerTools && !paletteDismissed ? paletteState(textarea.value) : { kind: 'off' }
+    if (paletteDismissed) return { kind: 'off' }
+    const skillQuery = allSkills.length > 0 ? skillMenuQuery(textarea.value) : null
+    if (skillQuery !== null) return { kind: 'skills', query: skillQuery }
+    return developerTools ? paletteState(textarea.value) : { kind: 'off' }
   }
 
-  function paletteHeader(right: string): string {
-    return `<div class="ai-palette-head"><b>${escapeHtml(t('paletteTitle'))}</b><span>${escapeHtml(right)}</span></div>`
+  function paletteHeader(right: string, title = t('paletteTitle')): string {
+    return `<div class="ai-palette-head"><b>${escapeHtml(title)}</b><span>${escapeHtml(right)}</span></div>`
   }
 
   function paletteWarning(kind: 'warn' | 'error', title: string, body: string, suggestion?: string): string {
@@ -1232,6 +1242,21 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     }
     const foot = `<div class="ai-palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> ${escapeHtml(t('paletteNavigate'))}</span><span><kbd>Tab</kbd> ${escapeHtml(t('paletteComplete'))}</span><span><kbd>Esc</kbd> ${escapeHtml(t('paletteClose'))}</span></div>`
     return paletteHeader(`${list.length} ${t('paletteOf')} ${allTools.length}`) + `<div class="ai-palette-list">${body}</div>` + foot
+  }
+
+  function skillMenuHtml(query: string): string {
+    const list = filterSkills(allSkills, query)
+    paletteSel = list.length === 0 ? 0 : Math.min(paletteSel, list.length - 1)
+    const body = list.length === 0
+      ? paletteWarning('warn', escapeHtml(t('skillNoMatch')), escapeHtml(t('skillNoMatchHint')))
+      : list.map((skill, i) => {
+          const name = `/<mark>${escapeHtml(skill.name.slice(0, query.length))}</mark>${escapeHtml(skill.name.slice(query.length))}`
+          const hint = skill.argumentHint ? ` <span class="hint">${escapeHtml(skill.argumentHint)}</span>` : ''
+          return `<div class="ai-palette-row${i === paletteSel ? ' sel' : ''}" data-skill="${escapeHtml(skill.name)}">` +
+            `<div class="nm" dir="ltr">${name}${hint}</div><div class="ds">${escapeHtml(skill.description)}</div></div>`
+        }).join('')
+    const foot = `<div class="ai-palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> ${escapeHtml(t('paletteNavigate'))}</span><span><kbd>Tab</kbd> ${escapeHtml(t('paletteComplete'))}</span><span><kbd>Esc</kbd> ${escapeHtml(t('paletteClose'))}</span></div>`
+    return paletteHeader(`${list.length} ${t('paletteOf')} ${allSkills.length}`, t('skillPaletteTitle')) + `<div class="ai-palette-list">${body}</div>` + foot
   }
 
   // What is wrong with the typed call, if anything - shared by the popup (to show it) and by Enter (to refuse).
@@ -1285,6 +1310,10 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       paletteEl.innerHTML = paletteMenuHtml(st.query)
       return
     }
+    if (st.kind === 'skills') {
+      paletteEl.innerHTML = skillMenuHtml(st.query)
+      return
+    }
     const problem = directProblem(st)
     paletteEl.innerHTML = problem ? paletteHeader(st.name) + problem : paletteSignatureHtml(st)
   }
@@ -1294,6 +1323,15 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     textarea.setSelectionRange(textarea.value.length - 2, textarea.value.length - 2)
     paletteSel = 0
     paletteShowErrors = false
+    updateTextareaDir()
+    renderPalette()
+    textarea.focus()
+  }
+
+  function completeSkill(name: string): void {
+    textarea.value = `/${name} `
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    paletteSel = 0
     updateTextareaDir()
     renderPalette()
     textarea.focus()
@@ -1324,7 +1362,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     const row = (e.target as HTMLElement).closest<HTMLElement>('.ai-palette-row')
     if (!row) return
     e.preventDefault() // keep the caret in the message box
-    completePaletteTool(row.dataset.tool!)
+    if (row.dataset.skill) completeSkill(row.dataset.skill)
+    else completePaletteTool(row.dataset.tool!)
   })
 
   function doSend(): void {
@@ -1416,6 +1455,23 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   sendBtn.addEventListener('click', doSend)
   textarea.addEventListener('keydown', (e) => {
     const palette = paletteNow()
+    if (palette.kind === 'skills') {
+      const list = filterSkills(allSkills, palette.query)
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && list.length > 0) {
+        e.preventDefault()
+        paletteSel = (paletteSel + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length
+        renderPalette()
+        paletteEl.querySelector('.ai-palette-row.sel')?.scrollIntoView?.({ block: 'nearest' })
+        return
+      }
+      // Enter on a fully typed name sends it, as in Claude Code; otherwise Tab and Enter complete the selected row.
+      const exact = e.key === 'Enter' && list[paletteSel]?.name === palette.query
+      if (!exact && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) {
+        e.preventDefault()
+        if (list.length > 0) completeSkill(list[paletteSel]!.name)
+        return
+      }
+    }
     if (palette.kind === 'menu') {
       const list = filterTools(allTools, palette.query)
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && list.length > 0) {

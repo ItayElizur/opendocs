@@ -23,9 +23,16 @@ export interface SchemaParam {
   description?: string
 }
 
+export interface PaletteSkill {
+  name: string
+  description: string
+  argumentHint: string
+}
+
 export type PaletteState =
   | { kind: 'off' }
   | { kind: 'menu'; query: string }
+  | { kind: 'skills'; query: string }
   | { kind: 'signature'; name: string; argsText: string }
 
 /** The palette is for a message that starts with "!", so "wow!" never opens it. */
@@ -36,6 +43,17 @@ export function paletteState(text: string): PaletteState {
   const name = text.slice(1, open).trim()
   if (!/^[A-Za-z_]\w*$/.test(name)) return { kind: 'off' }
   return { kind: 'signature', name, argsText: text.slice(open + 1) }
+}
+
+/** The "/" skill list is for a message that is only "/" and part of a skill name; null otherwise. */
+export function skillMenuQuery(text: string): string | null {
+  const m = /^\/(\S*)$/.exec(text)
+  return m ? m[1]! : null
+}
+
+export function filterSkills(skills: readonly PaletteSkill[], query: string): PaletteSkill[] {
+  const q = query.toLowerCase()
+  return skills.filter((s) => s.name.startsWith(q))
 }
 
 /** Prefix match on the tool name; read tools first, otherwise in the app's own order. */
