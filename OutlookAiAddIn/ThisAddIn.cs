@@ -9,6 +9,9 @@ namespace OutlookAiAddIn
 {
     public partial class ThisAddIn
     {
+        // Before VSTO creates the add-in, so its own DLLs load even where Office ignores the .dll.config.
+        static ThisAddIn() { DependencyResolver.Register(); }
+
         private sealed class PaneEntry
         {
             public Outlook.Explorer Explorer;
