@@ -11,6 +11,10 @@ SCCM or Group Policy.
 - `C:\Program Files\OpenDocs\<App>AiAddIn\` for Word, Excel, PowerPoint and Outlook: the whole build output from
   `deploy\dist`, harvested with WiX's `Files` element, so a new file in the build needs no change here.
 - `C:\Program Files\OpenDocs\policy.json`: the file passed as `-PolicyFile` (default `deploy\policy.json`).
+- `C:\Program Files\OpenDocs\skills\`: the folder passed as `-SkillsDir` (default `deploy\skills`, which holds only
+  its README), harvested with `Files` like the add-ins. Before building, the script reads each `<App>` folder with
+  `SkillCatalog.Load`, the add-ins' own reader, and stops when a folder with a `SKILL.md` would be skipped, for the same
+  reason as the policy check below. Skills are replaced on upgrade like every other file.
 - `HKLM\SOFTWARE\Microsoft\Office\<App>\Addins\<App>AiAddIn` with `Description`, `FriendlyName`, `LoadBehavior=3`
   and `Manifest`. The x64 MSI writes both registry views: a 64-bit Office reads `SOFTWARE`, a 32-bit Office on
   64-bit Windows reads `SOFTWARE\WOW6432Node`. The x86 MSI writes the one view 32-bit Windows has (only 32-bit

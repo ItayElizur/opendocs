@@ -71,6 +71,11 @@ if ($App -eq 'All' -and (Test-Path $policyPath)) {
     Remove-Item $policyPath -Force
     Write-Host "$removed the editing-mode policy at $policyPath."
 }
+$skillsPath = Join-Path $InstallRoot 'skills'
+if ($App -eq 'All' -and (Test-Path $skillsPath)) {
+    Remove-Item $skillsPath -Recurse -Force
+    Write-Host "$removed the installed skills at $skillsPath."
+}
 
 if ($RemoveTrustedCert) {
     $Thumbprint = 'D7C0D2DECAE0E7D967DE0A2C1B5DBFF185A932FD'

@@ -3,6 +3,7 @@
     Version     - ProductVersion, X.Y.Z
     DistDir     - the package folder package.ps1 produced (one <App>AiAddIn folder per app)
     PolicyFile  - the policy.json to install next to the per-app folders
+    SkillsDir   - the skills folder (one <App> folder of skills per app) to install next to them
   and builds it twice: -arch x64 for 64-bit Windows and -arch x86 for 32-bit Windows ($(sys.BUILDARCH) below).
   It does what install.ps1 does for an all-users install: files in Program Files\OpenDocs, and each add-in
   registered under HKLM - in both registry views on 64-bit Windows (64-bit Office reads SOFTWARE, 32-bit Office
@@ -54,11 +55,13 @@
         <?foreach App in Word;Excel;PowerPoint;Outlook ?>
         <Directory Id="$(var.App)Dir" Name="$(var.App)AiAddIn" />
         <?endforeach?>
+        <Directory Id="SKILLSDIR" Name="skills" />
       </Directory>
     </StandardDirectory>
 
     <Feature Id="OpenDocs" Title="OpenDocs add-ins for Word, Excel, PowerPoint and Outlook">
       <ComponentGroupRef Id="Policy" />
+      <ComponentGroupRef Id="Skills" />
       <?foreach App in Word;Excel;PowerPoint;Outlook ?>
       <ComponentGroupRef Id="$(var.App)" />
       <?endforeach?>
@@ -70,6 +73,12 @@
       <Component>
         <File Source="$(var.PolicyFile)" Name="policy.json" />
       </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="Skills" Directory="SKILLSDIR">
+      <Files Include="$(var.SkillsDir)\**" />
     </ComponentGroup>
   </Fragment>
 

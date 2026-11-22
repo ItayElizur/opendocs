@@ -82,6 +82,7 @@ foreach ($appName in $Apps) {
 Copy-Item "$PSScriptRoot\install.ps1" $OutDir -Force
 Copy-Item "$PSScriptRoot\uninstall.ps1" $OutDir -Force
 Copy-Item "$PSScriptRoot\policy.json" $OutDir -Force
+Copy-Item "$PSScriptRoot\skills" (Join-Path $OutDir 'skills') -Recurse -Force
 
 Write-Host ""
 Write-Host "Package ready at: $OutDir"

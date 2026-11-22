@@ -427,6 +427,15 @@ cd shared/chat-ui
 npx vitest run
 ```
 
+### Skills
+
+Each app can have skills: folders in the Agent Skills format that Claude Code uses (a `SKILL.md` with a name, a
+description and instructions, plus any references, templates or images). Type `/` at the start of the message box
+to list them, pick one with the arrow keys and Tab, add any arguments, and press Enter. The chat shows what you
+typed; the assistant gets the skill's instructions. The assistant can also load a skill by itself when your request
+matches its description. IT installs skills for everyone (see [`docs/it-deployment.md`](docs/it-deployment.md));
+your own go in `%LOCALAPPDATA%\<App>AiAddIn\Skills\<name>\SKILL.md` and appear after Office restarts.
+
 ### Running a tool without the model
 
 The assistant can ask you to Approve or Deny a call before it runs. Your administrator's `policy.json` decides when: by default Excel and PowerPoint ask before every edit in Edits with approval, Outlook asks before every action in Actions with approval and before deleting a message in Draft only, and Full autonomy never asks. The card shows what is about to happen (for Outlook, the message's subject, sender and date).
