@@ -904,6 +904,13 @@ describe('mountChatUI', () => {
     expect(outOfScope().open).toBe(false)
   })
 
+  it('the out of scope group stays, with (0), when every tool is available', () => {
+    const { root, handle } = setup()
+    handle.setToolScope(['get_document_context', 'apply_commands'], ['get_document_context', 'apply_commands'])
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(root.querySelector('[data-group="outOfScope"] summary')!.textContent).toBe('Out of scope (0)')
+  })
+
   it('Save fires onSettingsSave once with docSystemMessage and registeredTools; field input alone does not fire it', () => {
     const { root, handle, onSettingsSave } = setup()
     handle.setToolScope(['get_document_context', 'apply_commands'], ['get_document_context', 'apply_commands'])

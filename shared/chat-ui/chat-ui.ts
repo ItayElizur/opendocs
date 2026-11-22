@@ -1605,9 +1605,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     if (available.length > 0) {
       groups.push(group('available', 'toolsAvailable', '', available.map((tl) => row(tl, true)).join('')))
     }
-    if (outOfScope.length > 0) {
-      groups.push(group('outOfScope', 'toolsOutOfScope', `(${outOfScope.length})`, outOfScope.map((tl) => row(tl, false)).join('')))
-    }
+    groups.push(group('outOfScope', 'toolsOutOfScope', `(${outOfScope.length})`, outOfScope.map((tl) => row(tl, false)).join('')))
     toolsListEl.innerHTML = groups.join('')
     toolsListEl.querySelectorAll<HTMLDetailsElement>('.ai-tools-group').forEach((el) => {
       el.addEventListener('toggle', () => { toolGroupOpen[el.dataset.group as keyof typeof toolGroupOpen] = el.open })
