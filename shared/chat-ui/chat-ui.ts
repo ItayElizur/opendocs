@@ -136,6 +136,8 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   toolsAvailable:       { en: 'Available', he: 'זמינים' },
   toolsOutOfScope:      { en: 'Out of scope', he: 'מחוץ להיקף' },
   discardChangesConfirm:{ en: 'Discard unsaved changes?', he: 'לבטל שינויים שלא נשמרו?' },
+  discardKeep:          { en: 'Keep editing', he: 'המשך לערוך' },
+  discardYes:           { en: 'Discard', he: 'בטל שינויים' },
   lastToolRefused:      { en: 'At least one tool must stay registered.', he: 'לפחות כלי אחד חייב להישאר רשום.' },
   // FT-2 Task 5: per-app "no selection" wording and the selection pill's
   // small localized vocabulary (Excel's extent words, PowerPoint's counts).
@@ -656,40 +658,17 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <div class="ai-field ai-field-checkbox">
             <label><input type="checkbox" data-field="skipTlsVerify" /> <span data-t="settingsSkipTls">Skip TLS certificate verification (insecure - testing only)</span></label>
           </div>
-          <div class="ai-field">
-            <label data-t="settingsLanguage">Language</label>
-            <div class="ai-lang-toggle" id="langToggle">
-              <button data-lang="en">English</button>
-              <button data-lang="he">עברית</button>
-              <button class="active" data-lang="default" data-t="langDefault">Default</button>
-            </div>
-            <p class="ai-settings-section-note" data-t="langDefaultNote">Default follows Office's own display language, checked once when the panel opens.</p>
-          </div>
+          <button class="ai-more-settings-btn" id="moreSettingsBtn" type="button" data-t="moreSettings">More settings</button>
           <div class="ai-settings-test-result" id="settingsTestResult"></div>
           <div class="ai-settings-actions">
             <button class="ai-btn-secondary" data-t="testConnection" type="button">Test connection</button>
             <button class="ai-btn-primary" data-t="save">Save</button>
           </div>
-          <button class="ai-more-settings-btn" id="moreSettingsBtn" type="button" data-t="moreSettings">More settings</button>
         </div>
       </div>
       <div class="ai-chat"></div>
       <div class="ai-chip-dock" id="chipDock" hidden></div>
       <div class="ai-settings-view" id="settingsView">
-        <div class="ai-settings-section">
-          <h4 data-t="sectionTheme">Theme</h4>
-          <p class="ai-settings-section-note" data-t="themeNote">Default follows Office's own theme setting, checked once when the panel opens.</p>
-          <div class="ai-lang-toggle" id="themeToggle">
-            <button data-theme-choice="light" data-t="themeLight">Light</button>
-            <button data-theme-choice="dark" data-t="themeDark">Dark</button>
-            <button class="active" data-theme-choice="default" data-t="themeDefault">Default</button>
-          </div>
-        </div>
-        <div class="ai-settings-section">
-          <h4 data-t="sectionScope">Edit scope</h4>
-          <p class="ai-settings-section-note" data-t="scopeNote">Applies immediately and resets tool registration below.</p>
-          <div class="ai-scope-control" id="scopeControl"></div>
-        </div>
         <div class="ai-settings-section" id="connectionSlot"></div>
         <div class="ai-settings-section">
           <h4 data-t="sectionReasoning">Reasoning effort</h4>
@@ -704,6 +683,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           </div>
         </div>
         <div class="ai-settings-section">
+          <h4 data-t="sectionScope">Edit scope</h4>
+          <p class="ai-settings-section-note" data-t="scopeNote">Applies immediately and resets tool registration below.</p>
+          <div class="ai-scope-control" id="scopeControl"></div>
+        </div>
+        <div class="ai-settings-section">
           <h4><span data-t="sectionTools">Tools</span> <span class="ai-tools-count" id="toolsCount"></span></h4>
           <div class="ai-tools-list" id="toolsList"></div>
         </div>
@@ -713,11 +697,36 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <p class="ai-settings-section-note" data-t="docMessageSaveNote">Applies at the start of the next New chat, not the current conversation.</p>
         </div>
         <div class="ai-settings-section">
+          <h4 data-t="settingsLanguage">Language</h4>
+          <p class="ai-settings-section-note" data-t="langDefaultNote">Default follows Office's own display language, checked once when the panel opens.</p>
+          <div class="ai-lang-toggle" id="langToggle">
+            <button data-lang="en">English</button>
+            <button data-lang="he">עברית</button>
+            <button class="active" data-lang="default" data-t="langDefault">Default</button>
+          </div>
+        </div>
+        <div class="ai-settings-section">
+          <h4 data-t="sectionTheme">Theme</h4>
+          <p class="ai-settings-section-note" data-t="themeNote">Default follows Office's own theme setting, checked once when the panel opens.</p>
+          <div class="ai-lang-toggle" id="themeToggle">
+            <button data-theme-choice="light" data-t="themeLight">Light</button>
+            <button data-theme-choice="dark" data-t="themeDark">Dark</button>
+            <button class="active" data-theme-choice="default" data-t="themeDefault">Default</button>
+          </div>
+        </div>
+        <div class="ai-settings-section">
           <h4 data-t="sectionDeveloper">Developer tools</h4>
           <p class="ai-settings-section-note" data-t="developerToolsNote">Type ! at the start of a message to run any tool directly, without the model. The editing mode still limits which tools run.</p>
           <label class="ai-checkbox-row"><input type="checkbox" data-field="developerTools" /> <span data-t="developerToolsLabel" data-bang>Enable the ! tool palette</span></label>
         </div>
         <div class="ai-settings-view-actions">
+          <div class="ai-discard-bar" id="discardBar" role="alert" hidden>
+            <span data-t="discardChangesConfirm">Discard unsaved changes?</span>
+            <div class="ai-discard-buttons">
+              <button class="ai-btn-secondary ai-discard-yes" id="discardYes" data-t="discardYes" type="button">Discard</button>
+              <button class="ai-btn-primary" id="discardKeep" data-t="discardKeep" type="button">Keep editing</button>
+            </div>
+          </div>
           <button class="ai-btn-secondary" id="settingsViewBack" data-t="backToChat" type="button">Back to conversation</button>
           <div class="ai-settings-saved-note" id="settingsSavedNote" data-t="savedNote">Saved</div>
           <button class="ai-btn-primary" id="settingsViewSave" data-t="save">Save</button>
@@ -1037,27 +1046,10 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   applyStrings()
 
   let assistantBubble: HTMLDivElement | null = null
-  let pendingLang: LangPref = 'default'
-  if (options.initialSettings?.lang) {
-    pendingLang = options.initialSettings.lang
-    root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((b) => {
-      b.classList.toggle('active', b.dataset.lang === pendingLang)
-    })
-  }
-  let pendingTheme: 'light' | 'dark' | 'default' = 'default'
-  if (options.initialSettings?.theme) {
-    pendingTheme = options.initialSettings.theme
-    root.querySelectorAll<HTMLButtonElement>('#themeToggle button').forEach((b) => {
-      b.classList.toggle('active', b.dataset.themeChoice === pendingTheme)
-    })
-  }
-  let pendingReasoningEffort: ReasoningEffort = 'default'
-  if (options.initialSettings?.reasoningEffort) {
-    pendingReasoningEffort = options.initialSettings.reasoningEffort
-    root.querySelectorAll<HTMLButtonElement>('#reasoningToggle button').forEach((b) => {
-      b.classList.toggle('active', b.dataset.reasoningChoice === pendingReasoningEffort)
-    })
-  }
+  let pendingLang: LangPref = options.initialSettings?.lang || 'default'
+  let pendingTheme: 'light' | 'dark' | 'default' = options.initialSettings?.theme || 'default'
+  let pendingReasoningEffort: ReasoningEffort = options.initialSettings?.reasoningEffort || 'default'
+  showChoices()
   // Save-gated, exactly like the language toggle above: a click only updates
   // the pending value and its own .active class - no visual effect, no
   // callback, until the settings view's Save button is clicked (below).
@@ -1065,6 +1057,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     btn.addEventListener('click', () => {
       pendingTheme = btn.dataset.themeChoice as 'light' | 'dark' | 'default'
       root.querySelectorAll('#themeToggle button').forEach((b) => b.classList.toggle('active', b === btn))
+      markDirty()
     })
   })
 
@@ -1072,6 +1065,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     btn.addEventListener('click', () => {
       pendingReasoningEffort = btn.dataset.reasoningChoice as ReasoningEffort
       root.querySelectorAll('#reasoningToggle button').forEach((b) => b.classList.toggle('active', b === btn))
+      markDirty()
     })
   })
 
@@ -1462,6 +1456,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     btn.addEventListener('click', () => {
       pendingLang = btn.dataset.lang as LangPref
       root.querySelectorAll('#langToggle button').forEach((b) => b.classList.toggle('active', b === btn))
+      markDirty()
     })
   })
   root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.addEventListener('click', () => {
@@ -1550,7 +1545,10 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     </div>`
   }).join('')
   root.querySelectorAll<HTMLElement>('.ai-scope-option').forEach((el) => {
-    el.addEventListener('click', () => selectMode(el.dataset.mode as EditingMode))
+    el.addEventListener('click', () => {
+      selectMode(el.dataset.mode as EditingMode)
+      markDirty() // applied at once, but Discard still puts the old scope back
+    })
   })
 
   // ---- FT-1 Task 4: tool registry model. Authoritative "which tools exist
@@ -1564,6 +1562,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const allTools = options.tools ?? []
   let availableToolNames: string[] = []
   let registeredToolNames: string[] = []
+  // Both groups start closed; a re-render (mode change, language switch) keeps what the user opened.
+  const toolGroupOpen = { available: false, outOfScope: false }
 
   function toolLabel(entry: { name: string; label: Record<Lang, string> }): string {
     return entry.label[currentLang] ?? entry.name
@@ -1592,17 +1592,29 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       </div>`
     }
 
+    function group(key: keyof typeof toolGroupOpen, titleKey: string, count: string, rows: string): string {
+      return `<details class="ai-tools-group" data-group="${key}"${toolGroupOpen[key] ? ' open' : ''}>
+        <summary class="ai-tools-group-label"><span data-t="${titleKey}"></span> <span class="ai-tools-count">${count}</span></summary>
+        ${rows}
+      </details>`
+    }
+
     const groups: string[] = []
     if (available.length > 0) {
-      groups.push(`<div class="ai-tools-group-label" data-t="toolsAvailable"></div>`)
-      groups.push(available.map((tl) => row(tl, true)).join(''))
+      groups.push(group('available', 'toolsAvailable', '', available.map((tl) => row(tl, true)).join('')))
     }
-    if (outOfScope.length > 0) {
-      groups.push(`<div class="ai-tools-group-label" data-t="toolsOutOfScope"></div>`)
-      groups.push(outOfScope.map((tl) => row(tl, false)).join(''))
-    }
+    groups.push(group('outOfScope', 'toolsOutOfScope', `(${outOfScope.length})`, outOfScope.map((tl) => row(tl, false)).join('')))
     toolsListEl.innerHTML = groups.join('')
-    toolsCountEl.textContent = `(${registeredSet.size} / ${available.length})`
+    toolsListEl.querySelectorAll<HTMLDetailsElement>('.ai-tools-group').forEach((el) => {
+      el.addEventListener('toggle', () => { toolGroupOpen[el.dataset.group as keyof typeof toolGroupOpen] = el.open })
+    })
+    const showCounts = (registered: ReadonlySet<string>): void => {
+      const active = available.filter((tl) => registered.has(tl.name)).length
+      toolsCountEl.textContent = `(${active} / ${allTools.length})`
+      const availableCount = toolsListEl.querySelector('[data-group="available"] .ai-tools-count')
+      if (availableCount) availableCount.textContent = `(${active} / ${available.length})`
+    }
+    showCounts(registeredSet)
     applyStrings()
 
     toolsListEl.querySelectorAll<HTMLInputElement>('.ai-tool-toggle').forEach((cb) => {
@@ -1621,7 +1633,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           next.delete(name)
         }
         registeredToolNames = Array.from(next)
-        toolsCountEl.textContent = `(${next.size} / ${available.length})`
+        showCounts(next)
         markDirty()
         options.onToolRegistrationChange?.(registeredToolNames)
       })
@@ -1641,6 +1653,47 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
 
   let inSettingsView = false
   let dirty = false
+  // What the full view showed when it opened or was last saved; Discard puts all of it back. The edit scope
+  // and the tool checkboxes apply live, so they are put back by selecting the old scope and reporting the old
+  // tool list again.
+  type SettingsField = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+  let savedChoices = { lang: pendingLang, theme: pendingTheme, reasoning: pendingReasoningEffort }
+  let savedProvider = ''
+  let savedFields = new Map<SettingsField, { value: string; checked: boolean }>()
+  let savedTools: string[] = []
+  let savedMode = ''
+  function rememberSettingsView(): void {
+    savedChoices = { lang: pendingLang, theme: pendingTheme, reasoning: pendingReasoningEffort }
+    savedProvider = providerSelect.value
+    const fields = settingsView.querySelectorAll<SettingsField>('input:not(.ai-tool-toggle), textarea, select')
+    savedFields = new Map(Array.from(fields, (el) => [el, { value: el.value, checked: el instanceof HTMLInputElement && el.checked }]))
+    savedTools = registeredToolNames
+    savedMode = modeBtn.dataset.editingMode ?? ''
+  }
+  function restoreSettingsView(): void {
+    pendingLang = savedChoices.lang
+    pendingTheme = savedChoices.theme
+    pendingReasoningEffort = savedChoices.reasoning
+    showChoices()
+    // The provider first: switching it rebuilds the model list and refills the boxes, which the saved values then overwrite.
+    if (providerSelect.value !== savedProvider) applyProviderUI(savedProvider)
+    savedFields.forEach((saved, el) => {
+      el.value = saved.value
+      if (el instanceof HTMLInputElement) el.checked = saved.checked
+    })
+    // The scope before the tools: changing it makes the host reset the tool list, which the saved one then replaces.
+    if (savedMode && modeBtn.dataset.editingMode !== savedMode) selectMode(savedMode as EditingMode)
+    if (registeredToolNames !== savedTools) {
+      registeredToolNames = savedTools
+      renderToolsList()
+      options.onToolRegistrationChange?.(registeredToolNames)
+    }
+  }
+  function showChoices(): void {
+    root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((b) => b.classList.toggle('active', b.dataset.lang === pendingLang))
+    root.querySelectorAll<HTMLButtonElement>('#themeToggle button').forEach((b) => b.classList.toggle('active', b.dataset.themeChoice === pendingTheme))
+    root.querySelectorAll<HTMLButtonElement>('#reasoningToggle button').forEach((b) => b.classList.toggle('active', b.dataset.reasoningChoice === pendingReasoningEffort))
+  }
   function markDirty(): void { dirty = true }
   settingsView.addEventListener('input', markDirty)
   settingsView.addEventListener('change', markDirty)
@@ -1651,6 +1704,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     panelInnerSaveBtn.hidden = true // the view has its own consolidated Save below
     settingsPanel.classList.add('inline')
     connectionSlot.appendChild(settingsPanel)
+    rememberSettingsView()
     inSettingsView = true
     dockEl.querySelector('.ai-panel')!.classList.add('settings-open')
     settingsBtn.innerHTML = CHAT_ICON
@@ -1679,12 +1733,22 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // The header gear button does double duty (Task 1 Step 4): opens/closes
   // the quick dropdown in chat view, is "back to conversation" in settings
   // view - one handler, not two rebound listeners.
-  function leaveSettingsView(): void {
-    // Task 9 Step 3: unsaved-changes guard, shown inline rather than a
-    // blocking native dialog.
-    if (dirty && !window.confirm(t('discardChangesConfirm'))) return
+  // Task 9 Step 3: the unsaved-changes guard is a bar inside the view; a native confirm() is wider than the pane.
+  const discardBar = root.querySelector<HTMLDivElement>('#discardBar')!
+  const discardKeepBtn = root.querySelector<HTMLButtonElement>('#discardKeep')!
+  function discardAndClose(): void {
+    discardBar.hidden = true
+    restoreSettingsView()
     closeSettingsView()
   }
+  function leaveSettingsView(): void {
+    if (!dirty) return discardAndClose()
+    discardBar.hidden = false
+    discardBar.scrollIntoView?.({ block: 'nearest' })
+    discardKeepBtn.focus()
+  }
+  discardKeepBtn.addEventListener('click', () => { discardBar.hidden = true })
+  root.querySelector<HTMLButtonElement>('#discardYes')!.addEventListener('click', discardAndClose)
   settingsBtn.addEventListener('click', () => {
     if (inSettingsView) {
       leaveSettingsView()
@@ -1756,7 +1820,9 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     })
     developerTools = developerToolsBox.checked
     renderPalette()
+    rememberSettingsView()
     dirty = false
+    discardBar.hidden = true
     settingsSavedNote.classList.add('visible')
     window.setTimeout(() => settingsSavedNote.classList.remove('visible'), 2000)
   })
@@ -2105,11 +2171,13 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     setToolScope(available, registered) {
       availableToolNames = available
       registeredToolNames = registered
+      if (!inSettingsView) savedTools = registered
       renderToolsList()
       renderPalette()
     },
     setDocSystemMessage(message) {
       docMessageInput.value = message
+      if (savedFields.has(docMessageInput)) savedFields.set(docMessageInput, { value: message, checked: false })
     },
     openSettings() {
       openSettingsView()
