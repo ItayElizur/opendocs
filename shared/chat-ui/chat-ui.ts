@@ -1564,6 +1564,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const allTools = options.tools ?? []
   let availableToolNames: string[] = []
   let registeredToolNames: string[] = []
+  // Both groups start closed; a re-render (mode change, language switch) keeps what the user opened.
+  const toolGroupOpen = { available: false, outOfScope: false }
 
   function toolLabel(entry: { name: string; label: Record<Lang, string> }): string {
     return entry.label[currentLang] ?? entry.name
@@ -1592,17 +1594,31 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       </div>`
     }
 
+    function group(key: keyof typeof toolGroupOpen, titleKey: string, count: string, rows: string): string {
+      return `<details class="ai-tools-group" data-group="${key}"${toolGroupOpen[key] ? ' open' : ''}>
+        <summary class="ai-tools-group-label"><span data-t="${titleKey}"></span> <span class="ai-tools-count">${count}</span></summary>
+        ${rows}
+      </details>`
+    }
+
     const groups: string[] = []
     if (available.length > 0) {
-      groups.push(`<div class="ai-tools-group-label" data-t="toolsAvailable"></div>`)
-      groups.push(available.map((tl) => row(tl, true)).join(''))
+      groups.push(group('available', 'toolsAvailable', '', available.map((tl) => row(tl, true)).join('')))
     }
     if (outOfScope.length > 0) {
-      groups.push(`<div class="ai-tools-group-label" data-t="toolsOutOfScope"></div>`)
-      groups.push(outOfScope.map((tl) => row(tl, false)).join(''))
+      groups.push(group('outOfScope', 'toolsOutOfScope', `(${outOfScope.length})`, outOfScope.map((tl) => row(tl, false)).join('')))
     }
     toolsListEl.innerHTML = groups.join('')
-    toolsCountEl.textContent = `(${registeredSet.size} / ${available.length})`
+    toolsListEl.querySelectorAll<HTMLDetailsElement>('.ai-tools-group').forEach((el) => {
+      el.addEventListener('toggle', () => { toolGroupOpen[el.dataset.group as keyof typeof toolGroupOpen] = el.open })
+    })
+    const showCounts = (registered: ReadonlySet<string>): void => {
+      const active = available.filter((tl) => registered.has(tl.name)).length
+      toolsCountEl.textContent = `(${active} / ${allTools.length})`
+      const availableCount = toolsListEl.querySelector('[data-group="available"] .ai-tools-count')
+      if (availableCount) availableCount.textContent = `(${active} / ${available.length})`
+    }
+    showCounts(registeredSet)
     applyStrings()
 
     toolsListEl.querySelectorAll<HTMLInputElement>('.ai-tool-toggle').forEach((cb) => {
@@ -1621,7 +1637,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           next.delete(name)
         }
         registeredToolNames = Array.from(next)
-        toolsCountEl.textContent = `(${next.size} / ${available.length})`
+        showCounts(next)
         markDirty()
         options.onToolRegistrationChange?.(registeredToolNames)
       })

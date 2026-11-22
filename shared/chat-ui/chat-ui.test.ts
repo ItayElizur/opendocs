@@ -878,6 +878,32 @@ describe('mountChatUI', () => {
     expect(onToolRegistrationChange).not.toHaveBeenCalled()
   })
 
+  it('tool groups start closed, show their counts, and stay open across a re-render', () => {
+    const { root, handle } = setup({ tools: [...TEST_TOOLS, { name: 'delete_page', label: { en: 'Delete', he: 'מחק' }, description: { en: '', he: '' } }] })
+    handle.setToolScope(['get_document_context', 'apply_commands'], ['get_document_context', 'apply_commands'])
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    const available = (): HTMLDetailsElement => root.querySelector<HTMLDetailsElement>('[data-group="available"]')!
+    const outOfScope = (): HTMLDetailsElement => root.querySelector<HTMLDetailsElement>('[data-group="outOfScope"]')!
+
+    expect(available().open).toBe(false)
+    expect(outOfScope().open).toBe(false)
+    expect(root.querySelector('#toolsCount')!.textContent).toBe('(2 / 3)')
+    expect(available().querySelector('summary')!.textContent).toBe('Available (2 / 2)')
+    expect(outOfScope().querySelector('summary')!.textContent).toBe('Out of scope (1)')
+
+    const toggle = root.querySelector<HTMLInputElement>('.ai-tool-row[data-tool="apply_commands"] .ai-tool-toggle')!
+    toggle.checked = false
+    toggle.dispatchEvent(new Event('change'))
+    expect(root.querySelector('#toolsCount')!.textContent).toBe('(1 / 3)')
+    expect(available().querySelector('summary')!.textContent).toBe('Available (1 / 2)')
+
+    available().open = true
+    available().dispatchEvent(new Event('toggle'))
+    handle.setToolScope(['get_document_context', 'apply_commands'], ['get_document_context'])
+    expect(available().open).toBe(true)
+    expect(outOfScope().open).toBe(false)
+  })
+
   it('Save fires onSettingsSave once with docSystemMessage and registeredTools; field input alone does not fire it', () => {
     const { root, handle, onSettingsSave } = setup()
     handle.setToolScope(['get_document_context', 'apply_commands'], ['get_document_context', 'apply_commands'])

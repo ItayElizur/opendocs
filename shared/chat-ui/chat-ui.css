@@ -249,7 +249,9 @@
 
   .ai-tools-list { display: flex; flex-direction: column; gap: 2px; }
   .ai-tools-group-label { font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); margin: 10px 0 2px; text-transform: uppercase; letter-spacing: 0.03em; }
-  .ai-tools-group-label:first-child { margin-top: 0; }
+  .ai-tools-group:first-child > .ai-tools-group-label { margin-top: 0; }
+  .ai-tools-group > summary { cursor: pointer; user-select: none; }
+  .ai-tools-group > summary .ai-tools-count { text-transform: none; }
   .ai-tool-row { padding: 6px 0; border-bottom: 1px solid var(--color-border-default); }
   .ai-tool-row:last-child { border-bottom: none; }
   .ai-tool-row label { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
