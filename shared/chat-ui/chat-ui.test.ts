@@ -904,6 +904,12 @@ describe('mountChatUI', () => {
     expect(outOfScope().open).toBe(false)
   })
 
+  it('language is chosen in the full settings view, not in quick settings', () => {
+    const { root } = setup()
+    expect(root.querySelector('#settingsView #langToggle')).not.toBeNull()
+    expect(root.querySelectorAll('#langToggle').length).toBe(1)
+  })
+
   it('the out of scope group stays, with (0), when every tool is available', () => {
     const { root, handle } = setup()
     handle.setToolScope(['get_document_context', 'apply_commands'], ['get_document_context', 'apply_commands'])

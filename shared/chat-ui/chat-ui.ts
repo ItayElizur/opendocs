@@ -656,15 +656,6 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <div class="ai-field ai-field-checkbox">
             <label><input type="checkbox" data-field="skipTlsVerify" /> <span data-t="settingsSkipTls">Skip TLS certificate verification (insecure - testing only)</span></label>
           </div>
-          <div class="ai-field">
-            <label data-t="settingsLanguage">Language</label>
-            <div class="ai-lang-toggle" id="langToggle">
-              <button data-lang="en">English</button>
-              <button data-lang="he">עברית</button>
-              <button class="active" data-lang="default" data-t="langDefault">Default</button>
-            </div>
-            <p class="ai-settings-section-note" data-t="langDefaultNote">Default follows Office's own display language, checked once when the panel opens.</p>
-          </div>
           <button class="ai-more-settings-btn" id="moreSettingsBtn" type="button" data-t="moreSettings">More settings</button>
           <div class="ai-settings-test-result" id="settingsTestResult"></div>
           <div class="ai-settings-actions">
@@ -683,6 +674,15 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
             <button data-theme-choice="light" data-t="themeLight">Light</button>
             <button data-theme-choice="dark" data-t="themeDark">Dark</button>
             <button class="active" data-theme-choice="default" data-t="themeDefault">Default</button>
+          </div>
+        </div>
+        <div class="ai-settings-section">
+          <h4 data-t="settingsLanguage">Language</h4>
+          <p class="ai-settings-section-note" data-t="langDefaultNote">Default follows Office's own display language, checked once when the panel opens.</p>
+          <div class="ai-lang-toggle" id="langToggle">
+            <button data-lang="en">English</button>
+            <button data-lang="he">עברית</button>
+            <button class="active" data-lang="default" data-t="langDefault">Default</button>
           </div>
         </div>
         <div class="ai-settings-section">
