@@ -287,6 +287,8 @@
     box-shadow: 0 4px 16px rgb(0 0 0 / 14%); font-size: 13px;
   }
   .ai-discard-bar span { flex: 1 1 auto; }
+  /* The two answers wrap as one unit, never apart. */
+  .ai-discard-buttons { display: flex; gap: 8px; margin-inline-start: auto; }
   .ai-discard-bar[hidden] { display: none; } /* same specificity pitfall as .ai-more-settings-btn[hidden] */
 
   /* ---- empty state ---- */
