@@ -103,7 +103,9 @@ namespace OfficeAi.Shared
                     // This app's rules from the administrator's policy.json (ModePolicy): modes the page hides, and
                     // tool -> modes that need an Approve before the model's call runs.
                     "window.__opendocsDisabledModes = " + JsonSerializer.Serialize(ModePolicy.DisabledFor(appDataFolderName)) + ";" +
-                    "window.__opendocsApprovals = " + JsonSerializer.Serialize(ModePolicy.ApprovalsFor(appDataFolderName)) + ";");
+                    "window.__opendocsApprovals = " + JsonSerializer.Serialize(ModePolicy.ApprovalsFor(appDataFolderName)) + ";" +
+                    // This app's skills (SkillCatalog), read once per Office process.
+                    "window.__opendocsSkills = " + SkillCatalog.ToPageJson(SkillCatalog.For(appDataFolderName)) + ";");
 
                 // The Approve card and the mode menu are enforced by the page, so an installed (Release) pane must not be
                 // scriptable from developer tools (F12 / Inspect). A Debug build keeps them for development.
