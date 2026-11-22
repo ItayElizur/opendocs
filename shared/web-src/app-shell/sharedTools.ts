@@ -34,3 +34,44 @@ const SAVE_TOOL_DISPLAY = {
 export const SHARED_TOOLS = [SAVE_TOOL]
 
 export const SHARED_TOOL_DISPLAY = { save: SAVE_TOOL_DISPLAY }
+
+// The skill tools (skills.ts, OfficeAi.Shared/SkillCatalog.cs). bootstrap.ts adds them itself, only when the app has
+// skills, and counts them read-only in every mode; they are in no app's entry.ts or tier list.
+export const SKILL_TOOLS = [
+  {
+    name: 'load_skill',
+    description:
+      "Loads a skill's instructions by name. Skills are listed in the system prompt. Call it when the request matches a " +
+      "skill's description, before doing the task, then follow the instructions it returns. Do not load a skill that is already loaded in this conversation.",
+    inputSchema: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'The skill name, exactly as listed.' } },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'read_skill_file',
+    description:
+      "Reads one of a skill's other files (references, templates), listed when the skill loads. Text files are returned as text. " +
+      "For a binary file (such as an image) it returns the file's full path, to pass to a tool that takes a file path.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        skill: { type: 'string', description: 'The skill name.' },
+        path: { type: 'string', description: "The file's path inside the skill, as listed, e.g. references/style.md." },
+      },
+      required: ['skill', 'path'],
+    },
+  },
+]
+
+export const SKILL_TOOL_DISPLAY = {
+  load_skill: {
+    label: { en: 'Load skill', he: 'טעינת מיומנות' },
+    description: { en: "Reads a skill's instructions.", he: 'קורא את ההוראות של מיומנות.' },
+  },
+  read_skill_file: {
+    label: { en: 'Read skill file', he: 'קריאת קובץ של מיומנות' },
+    description: { en: 'Reads a reference or template file that belongs to a skill.', he: 'קורא קובץ עזר או תבנית ששייכים למיומנות.' },
+  },
+}

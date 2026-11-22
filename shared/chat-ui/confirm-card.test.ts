@@ -15,6 +15,7 @@ vi.mock('../web-src/app-shell/bridge', () => ({
   postMode: () => {},
   injectedDisabledModes: () => [],
   injectedApprovals: () => h.approvals,
+  injectedSkills: () => [],
   postNewChatDivider: () => {},
   postTlsBypass: () => {},
   requestDocSettings: () => {},

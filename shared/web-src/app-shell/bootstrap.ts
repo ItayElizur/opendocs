@@ -1,4 +1,4 @@
-import { AgentLoop, randomId, type Toolset, type AgentToolCall, type ToolExecution } from '@officeai/agent-core'
+import { AgentLoop, randomId, type Toolset, type AgentMessage, type AgentToolCall, type ToolExecution } from '@officeai/agent-core'
 import { streamForProvider, type AiProviderConfig } from '@officeai/ai-provider'
 import { defaultModeFor, mountChatUI, resolveModes, type EditingMode, type ModeOverrides, type SelectionExtent, type ToolDisplayEntry } from '@officeai/chat-ui'
 import {
@@ -9,6 +9,7 @@ import {
   postMode,
   injectedDisabledModes,
   injectedApprovals,
+  injectedSkills,
   postNewChatDivider,
   postTlsBypass,
   requestDocSettings,
@@ -19,6 +20,8 @@ import {
   type RawSelectionPayload,
 } from './bridge'
 import { getSettings, makeTransport, setSettings } from './settings'
+import { SKILL_TOOLS, SKILL_TOOL_DISPLAY } from './sharedTools'
+import { catalogPrompt, loadSkill, LOAD_SKILL, toModelText } from './skills'
 
 /** An action the assistant must get an Approve from the user for before it runs; the first matching rule wins. */
 export interface ConfirmRule {
@@ -374,13 +377,21 @@ export function startAddIn(config: AddInConfig): void {
   const modes = allModes.filter((m) => !disabledModes.has(m))
   let editingMode: EditingMode = defaultModeFor(modes, config.defaultMode ?? 'trackChanges')
 
-  const readOnlySet = new Set(config.readOnlyTools)
+  // This app's skills (SkillCatalog.cs). With none, the tools and the prompt are exactly what the app configured. The
+  // two skill tools only read, so this page counts them read-only in every mode and no app's tier list names them.
+  const skills = injectedSkills()
+  const skillTools = skills.length > 0 ? SKILL_TOOLS : []
+  const tools = [...config.tools, ...skillTools]
+  const toolDisplay: Record<string, ToolDisplayInfo> = { ...config.toolDisplay, ...(skills.length > 0 ? SKILL_TOOL_DISPLAY : {}) }
+  const readOnlyTools = [...config.readOnlyTools, ...skillTools.map((t) => t.name)]
+
+  const readOnlySet = new Set(readOnlyTools)
 
   // Administrator approvals (policy.json requireApproval; see OfficeAi.Shared/ModePolicy.cs.md): tool -> modes that
   // need an Approve. "*" is every tool that is not read-only, and a tool's own entry overrides it. Full autonomy never
   // asks. A tool name this app does not have is ignored: getting the names right is the administrator's job.
   const approvals = injectedApprovals()
-  const knownTools = new Set(config.tools.map((t) => t.name))
+  const knownTools = new Set(tools.map((t) => t.name))
   const has = (name: string) => Object.prototype.hasOwnProperty.call(approvals, name)
   function needsApproval(name: string): boolean {
     // Full autonomy never asks, and a name this app does not have is never asked about (the call fails in the app).
@@ -389,17 +400,17 @@ export function startAddIn(config: AddInConfig): void {
     const modes = has(name) ? approvals[name] : approvals['*']
     return Array.isArray(modes) && modes.includes(editingMode)
   }
-  const commentOnlySet = new Set([...config.readOnlyTools, ...(config.commentOnlyExtraTools ?? [])])
+  const commentOnlySet = new Set([...readOnlyTools, ...(config.commentOnlyExtraTools ?? [])])
   // null (every app but Outlook) = "no opinion" - trackChanges falls through
   // to "everything", unchanged from before this field existed.
   const trackChangesSet = config.trackChangesExtraTools ? new Set([...commentOnlySet, ...config.trackChangesExtraTools]) : null
 
   function availableForMode(): string[] {
     if (modes.length === 0) return []
-    if (editingMode === 'readOnly') return config.tools.filter((t) => readOnlySet.has(t.name)).map((t) => t.name)
-    if (editingMode === 'commentOnly') return config.tools.filter((t) => commentOnlySet.has(t.name)).map((t) => t.name)
-    if (editingMode === 'trackChanges' && trackChangesSet) return config.tools.filter((t) => trackChangesSet.has(t.name)).map((t) => t.name)
-    return config.tools.map((t) => t.name)
+    if (editingMode === 'readOnly') return tools.filter((t) => readOnlySet.has(t.name)).map((t) => t.name)
+    if (editingMode === 'commentOnly') return tools.filter((t) => commentOnlySet.has(t.name)).map((t) => t.name)
+    if (editingMode === 'trackChanges' && trackChangesSet) return tools.filter((t) => trackChangesSet.has(t.name)).map((t) => t.name)
+    return tools.map((t) => t.name)
   }
 
   // FT-1 Task 4: `null` means "no override - use the scope's full default set".
@@ -413,7 +424,7 @@ export function startAddIn(config: AddInConfig): void {
     // Intersect with `available` even when an override is present - Task 4
     // Step 3: this is what keeps an out-of-scope tool from ever reaching the
     // model even if the override set is stale or was tampered with.
-    return config.tools.filter((t) => available.has(t.name) && (registeredTools === null || registeredTools.has(t.name)))
+    return tools.filter((t) => available.has(t.name) && (registeredTools === null || registeredTools.has(t.name)))
   }
 
   // The lowest editing mode that offers a tool, for the "!" palette's pill. Same sets availableForMode() filters by.
@@ -427,8 +438,8 @@ export function startAddIn(config: AddInConfig): void {
   // toolDisplay map, so entry.ts only needs to supply {label, description}
   // per tool name - one shared place decides the fallback-on-drift behavior
   // (Task 5 Step 4) instead of every app reimplementing it.
-  const toolDisplayList: ToolDisplayEntry[] = config.tools.map((t) => {
-    const entry = config.toolDisplay[t.name]
+  const toolDisplayList: ToolDisplayEntry[] = tools.map((t) => {
+    const entry = toolDisplay[t.name]
     if (!entry) {
       // eslint-disable-next-line no-console
       console.warn(`[app-shell] tool "${t.name}" has no toolDisplay entry - falling back to its raw schema name`)
@@ -482,6 +493,7 @@ export function startAddIn(config: AddInConfig): void {
   // mode (needsApproval). The app's matching confirmActions rule shapes the card; a tool with none gets a plain card
   // with its name and simple arguments. A typed "!" call (runDirectCall) skips this: the user wrote the call themselves.
   async function executeConfirmed(call: AgentToolCall, signal?: AbortSignal): Promise<ToolExecution> {
+    if (call.name === LOAD_SKILL) return runTool(call)
     if (needsApproval(call.name)) {
       const rule = config.confirmActions?.find((r) => r.name === call.name && (r.when?.(call.input) ?? true))
       const lang = effectiveLang(currentLangPref)
@@ -503,7 +515,7 @@ export function startAddIn(config: AddInConfig): void {
       if (rule) {
         for (const f of rule.fields?.(call.input) ?? []) if (f.value) rows.push({ label: ui.translate(`confirmField_${f.key}`), value: f.value })
       } else {
-        const shown = config.toolDisplay[call.name]
+        const shown = toolDisplay[call.name]
         rows.push({ label: ui.translate('confirmField_action'), value: shown?.label[lang] ?? call.name })
         if (shown?.description[lang]) rows.push({ label: ui.translate('confirmField_what'), value: shown.description[lang] })
         rows.push(...argumentRows(call.input))
@@ -512,6 +524,12 @@ export function startAddIn(config: AddInConfig): void {
       const approved = await ui.confirmAction({ title, rows, danger: rule?.danger === true }, signal)
       if (!approved) return { output: DECLINED_TEXT, isError: true, summary: call.name }
     }
+    return runTool(call)
+  }
+
+  // load_skill is answered from the catalog this page already holds; every other tool runs in the app.
+  function runTool(call: { name: string; input: Record<string, unknown> }): Promise<ToolExecution> {
+    if (call.name === LOAD_SKILL) return Promise.resolve({ ...loadSkill(skills, call.input.name), summary: LOAD_SKILL })
     return callDotNetTool(call.name, call.input)
   }
 
@@ -620,7 +638,8 @@ export function startAddIn(config: AddInConfig): void {
       ui.beginAssistantMessage()
       ui.setBusy(true)
       persistMessage('user', text)
-      loop.run(text)
+      // A typed "/skill args" is saved and shown as typed; only the model gets the skill's text (see skills.ts).
+      loop.run(toModelText(text, skills, loop.messages))
     },
     onNewChat: () => {
       postNewChatDivider()
@@ -812,7 +831,7 @@ export function startAddIn(config: AddInConfig): void {
     ui.setBusy(true, false)
     const group = ui.beginToolGroup()
     const step = group.addStep(name, args)
-    void Promise.resolve(callDotNetTool(call.name, call.input))
+    void Promise.resolve(runTool(call))
       .catch((e: unknown): ToolExecution => ({ output: e instanceof Error ? e.message : String(e), isError: true, summary: name }))
       .then((execution) => {
         if (generation !== directCallGeneration) return
@@ -837,7 +856,7 @@ export function startAddIn(config: AddInConfig): void {
     pendingQueuedText = null
     ui.beginAssistantMessage()
     ui.setBusy(true)
-    loop.run(queued)
+    loop.run(toModelText(queued, skills, loop.messages))
   }
 
   const loop = new AgentLoop({
@@ -849,7 +868,7 @@ export function startAddIn(config: AddInConfig): void {
     // only changes at conversation-start boundaries - see beginConversation()
     // above - and is labeled explicitly as user-supplied so the model treats
     // it as standing instructions from the user, not as system policy.
-    systemSuffix: () => '\n\n' + todayContextLine() + (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
+    systemSuffix: () => '\n\n' + todayContextLine() + (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : '') + catalogPrompt(skills),
     events: {
       onText: (text) => {
         textStreamedSinceGroup = true
@@ -919,7 +938,10 @@ export function startAddIn(config: AddInConfig): void {
   initBridge({
     onHistoryLoaded: (messages) => {
       ui.showHistoric(messages)
-      loop.restore(messages.map((m) => ({ role: m.role, text: m.text })))
+      // Saved "/skill" lines are expanded again, in order, so the model sees what it saw before the reload.
+      const restored: Array<{ role: 'user' | 'assistant'; text: string }> = []
+      for (const m of messages) restored.push({ role: m.role, text: m.role === 'user' ? toModelText(m.text, skills, restored as AgentMessage[]) : m.text })
+      loop.restore(restored)
     },
     onSelectionChanged: (raw) => {
       latestSelectionContext = toSelectionContext(raw)
