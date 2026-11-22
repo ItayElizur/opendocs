@@ -17,6 +17,7 @@ It installs:
 |---|---|
 | The four add-ins | `C:\Program Files\OpenDocs\WordAiAddIn\`, `ExcelAiAddIn\`, `PowerPointAiAddIn\`, `OutlookAiAddIn\` |
 | The administrator policy | `C:\Program Files\OpenDocs\policy.json` |
+| Skills for every user (optional) | `C:\Program Files\OpenDocs\skills\<App>\<skill>\` |
 | Office add-in registration | `HKLM\SOFTWARE\Microsoft\Office\<App>\Addins\<App>AiAddIn`; on 64-bit Windows in both the 64-bit and the 32-bit registry view, so it works with either Office |
 
 Only administrators can change files under Program Files, so users cannot change the add-in or the policy. Each
@@ -86,6 +87,25 @@ msiexec /x OpenDocs-<version>-x64.msi /qn
 
 Or remove **OpenDocs** in Settings → Apps. This removes the add-ins, their registration and `policy.json`. Each
 user's own settings and chat history stay in their profile.
+
+## Skills
+
+A skill is a set of written instructions for one kind of task, such as "write the weekly report the way we do it",
+with any reference files or images it needs. Users start one by typing `/` in the panel and picking it, and the
+assistant loads one by itself when a request matches its description. Skills use the Agent Skills format (the one
+Claude Code uses); `deploy\skills\README.md` shows the layout and the `SKILL.md` header.
+
+- **Skills for everyone:** put them in a folder with one subfolder per app (`Word`, `Excel`, `PowerPoint`,
+  `Outlook`) and build the MSI with `-SkillsDir` (see below). They are installed under Program Files, where users
+  cannot change them, and every upgrade replaces them with the package's copy.
+- **A user's own skills:** `%LOCALAPPDATA%\<App>AiAddIn\Skills\` (for example `WordAiAddIn\Skills\`). A skill IT
+  installed wins over a user's skill of the same name.
+- Office reads skills when an app starts: restart it after adding or changing one.
+- **What a skill can do:** only what the user's editing mode, the policy and the Approve card already allow. A skill
+  adds no tools and no permissions, but its text does steer the assistant, so a user's own skill is as trusted as
+  what that user types. The assistant can read a skill's own files and nothing else through it. If the assistant
+  must never act on instructions without a person checking each step, switch Full autonomy off with
+  `disabledModes` (in Outlook, Full autonomy is what sends mail).
 
 ## The policy: what the assistant may do
 
@@ -193,13 +213,16 @@ add-ins' signing certificate:
 ```
 dotnet tool install --global wix --version 5.0.2
 cd deploy
-.\build-msi.ps1 -PolicyFile C:\it\policy.json
+.\build-msi.ps1 -PolicyFile C:\it\policy.json -SkillsDir C:\it\skills
 ```
 
 - The version comes from the newest `vX.Y.Z` git tag, or pass `-Version X.Y.Z`.
 - The MSIs are written to `deploy\msi\OpenDocs-<version>-x64.msi` and `OpenDocs-<version>-x86.msi`.
 - The script prints, per app, which modes are off and what asks for approval, so you can check the policy before
   you deploy it.
+- Without `-SkillsDir` the MSI installs no skills (`deploy\skills` holds only its README). The script lists each
+  app's skills and stops if a folder has a `SKILL.md` the add-in would skip (a bad name, no description, or the
+  same name twice).
 
 ## Security notes
 

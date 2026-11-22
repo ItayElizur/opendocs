@@ -46,7 +46,7 @@ namespace OfficeAi.Shared
             return Policy.Value.Approvals.TryGetValue(AppOf(addIn), out map) ? map : new Dictionary<string, HashSet<string>>();
         }
 
-        private static string AppOf(string addIn)
+        internal static string AppOf(string addIn)
         {
             return addIn.EndsWith("AiAddIn", StringComparison.Ordinal) ? addIn.Substring(0, addIn.Length - "AiAddIn".Length) : addIn;
         }

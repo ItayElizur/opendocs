@@ -555,6 +555,7 @@
   .ai-dock[dir='rtl'] .ai-palette-row.sel { box-shadow: inset -2px 0 0 var(--direct); }
   .ai-palette-row .nm { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 12.5px; unicode-bidi: isolate; }
   .ai-palette-row .nm mark { background: none; color: var(--direct); font-weight: 700; }
+  .ai-palette-row .nm .hint { color: var(--color-text-tertiary); }
   .ai-palette-row .ds { grid-column: 1; font-size: 11.5px; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ai-palette-tier { grid-row: 1 / span 2; grid-column: 2; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
   .tier-readOnly { color: var(--mode-readonly); } .tier-commentOnly { color: var(--mode-comment); } .tier-trackChanges { color: var(--mode-track); } .tier-fullAutonomy { color: var(--mode-auto); }

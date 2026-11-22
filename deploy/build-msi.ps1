@@ -6,6 +6,7 @@
 #   .\build-msi.ps1                                   # version from the latest vX.Y.Z git tag, shipped policy.json
 #   .\build-msi.ps1 -Version 0.3.0                    # explicit version
 #   .\build-msi.ps1 -PolicyFile C:\it\policy.json     # build in your own policy
+#   .\build-msi.ps1 -SkillsDir C:\it\skills           # build in your own skills (skills\<App>\<name>\SKILL.md)
 #   .\build-msi.ps1 -SkipPackage                      # reuse deploy\dist from an earlier package.ps1 run
 #
 # Output: deploy\msi\OpenDocs-<version>-x64.msi (64-bit Windows) and OpenDocs-<version>-x86.msi (32-bit Windows). See build-msi.ps1.md for how the MSI is put together.
@@ -13,6 +14,7 @@
 param(
     [string]$Version,
     [string]$PolicyFile = "$PSScriptRoot\policy.json",
+    [string]$SkillsDir = "$PSScriptRoot\skills",
     [switch]$SkipPackage,
     [string]$OutDir = "$PSScriptRoot\msi"
 )
@@ -35,6 +37,7 @@ if (-not $Version) {
 if ($Version -notmatch '^\d{1,3}\.\d{1,3}\.\d{1,5}$') { throw "Version must be X.Y.Z (MSI limits: X and Y up to 255, Z up to 65535), got '$Version'." }
 
 $PolicyFile = (Resolve-Path $PolicyFile).Path
+$SkillsDir = (Resolve-Path $SkillsDir).Path
 
 if (-not $SkipPackage) {
     & "$PSScriptRoot\package.ps1" -OutDir $DistDir
@@ -56,12 +59,25 @@ $resolve = [ResolveEventHandler] {
 [AppDomain]::CurrentDomain.add_AssemblyResolve($resolve)
 Add-Type -Path "$libDir\OfficeAi.Shared.dll"
 $rules = [OfficeAi.Shared.ModePolicy]::Load($PolicyFile)
+# Skills, read with the add-ins' own SkillCatalog: a folder with a SKILL.md the add-in would skip stops the build.
+$skillLines = foreach ($app in $Apps) {
+    $appDir = Join-Path $SkillsDir $app
+    $folders = @(if (Test-Path $appDir) { Get-ChildItem $appDir -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'SKILL.md') } })
+    $loaded = @([OfficeAi.Shared.SkillCatalog]::Load($appDir, (Join-Path $SkillsDir '__none__')) | ForEach-Object { $_.Name })
+    if ($loaded.Count -ne $folders.Count) {
+        [AppDomain]::CurrentDomain.remove_AssemblyResolve($resolve)
+        throw "$appDir has a skill the add-in would skip (bad name, missing description, or a duplicate). Loaded: $($loaded -join ', '). Folders: $(($folders | ForEach-Object { $_.Name }) -join ', ')."
+    }
+    "  {0,-10} skills: {1}" -f $app, $(if ($loaded) { $loaded -join ', ' } else { '-' })
+}
 # Left registered, the handler is called again while PowerShell shuts down and the process dies (StackOverflowException).
 [AppDomain]::CurrentDomain.remove_AssemblyResolve($resolve)
 $allOff = @($Apps | Where-Object { $rules.Disabled[$_].Count -eq 4 })
 if ($allOff.Count -eq $Apps.Count) {
     throw "$PolicyFile switches every editing mode off in every app - a misspelled app or mode name, or invalid JSON (comments and trailing commas are fine). Fix it and run again."
 }
+Write-Host "Skills $SkillsDir :"
+$skillLines | ForEach-Object { Write-Host $_ }
 Write-Host "Policy $PolicyFile :"
 foreach ($app in $Apps) {
     $off = @($rules.Disabled[$app]) -join ', '
@@ -74,7 +90,7 @@ Write-Host ""
 foreach ($arch in 'x64', 'x86') {
     $msi = Join-Path $OutDir "OpenDocs-$Version-$arch.msi"
     & $wixExe build "$PSScriptRoot\OpenDocs.wxs" -arch $arch -o $msi `
-        -d "Version=$Version" -d "DistDir=$DistDir" -d "PolicyFile=$PolicyFile"
+        -d "Version=$Version" -d "DistDir=$DistDir" -d "PolicyFile=$PolicyFile" -d "SkillsDir=$SkillsDir"
     if ($LASTEXITCODE -ne 0) { throw "wix build -arch $arch failed (exit code $LASTEXITCODE)." }
     Write-Host "MSI ready: $msi"
 }

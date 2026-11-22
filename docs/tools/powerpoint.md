@@ -113,3 +113,13 @@ Shapes are addressed by **positional index** (`slideIndex`, `shapeIndex` into
 a stable id — indices shift whenever shapes are added/removed/reordered/grouped, Several tools' descriptions explicitly tell the
 model to re-read the slide after a structural change, but there's no protection against
 acting on a stale index otherwise.
+
+## Skill tools (shared by every app)
+
+Offered only when this app has at least one skill, in every editing mode (both only read). See
+`docs/architecture.md`, "Skills".
+
+| Tool | Notes |
+|---|---|
+| `load_skill` | Returns a skill's instructions, starting with `Base directory for this skill: <dir>` and ending with the skill's file list. Answered by the panel from the catalog the host injected; refuses a skill marked `disable-model-invocation`. Never reaches the add-in. |
+| `read_skill_file` | Returns one file from that list as text (at most 256 KB), or, for a binary file, its full path for a tool that takes a file path. Answered once for every app in `PaneHostBase`; only files found when the skill folder was scanned, never through a link (`OfficeAi.Shared/SkillCatalog.cs.md`). **NOT VERIFIED AGAINST LIVE OFFICE**: unit-tested and built clean in Debug and Release, never called from a running pane. |

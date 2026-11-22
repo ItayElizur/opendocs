@@ -51,6 +51,8 @@ against their C# `Tools.Execute()` gating.
 
 Outlook's `preview_action` (the panel's Approve/Deny card lookup) is the one name handled before the tier gate; it is deliberately in no C# set and no `entry.ts` array, so do not add it to either.
 
+The two skill tools, `load_skill` and `read_skill_file`, are the same kind of exception: they only read, `bootstrap.ts` adds them (when the app has skills) and counts them read-only in every mode, and `PaneHostBase` answers `read_skill_file` before the app's own gate. Do not add them to any C# set or `entry.ts` array either.
+
 `OfficeAi.Shared.Tests/TierListsAgreeTests.cs` now reads the C# sets and the matching TypeScript arrays (`entry.ts`, or `tools.ts` for Excel's and PowerPoint's read-only lists) and fails when they differ
 (Word, Excel and PowerPoint read-only lists; all of Outlook's tiers), so run `dotnet test OfficeAi.Shared.Tests` after touching either side.
 

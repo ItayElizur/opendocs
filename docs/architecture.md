@@ -79,6 +79,32 @@ autonomy, and Outlook's panes share one mode per mailbox. Changes to the policy 
 
 An opt-in setting (`developerTools`, saved with the other panel settings, off by default) turns on a `!` palette in the shared chat UI (`shared/chat-ui/tool-palette.ts` for the rules, `chat-ui.ts` for the popup). `!name({json})` runs one tool without the model: `bootstrap.ts` sends it through `callDotNetTool` (the same bridge the model's calls use), so the server-side editing-mode gate applies unchanged and nothing here bypasses it. The client also locks tools outside the current mode, using the same `availableForMode()` sets that filter what the model is offered. The finished call is added to the loop's history (`AgentLoop.recordToolExchange`), so the next model turn sees what was run. No tool or tier list changes are involved.
 
+## Skills
+
+A skill is a folder in the Agent Skills format that Claude Code uses: a `SKILL.md` (frontmatter `name`,
+`description`, optional `argument-hint`, `disable-model-invocation`, `user-invocable`, then markdown instructions),
+plus any references, templates or images next to it. Each app has its own skills, in two folders: the machine's
+`InstallRoot\skills\<App>\` (installed by IT, next to `policy.json`) and the user's
+`%LOCALAPPDATA%\<App>AiAddIn\Skills\`. A machine skill wins over a user skill of the same name.
+
+- **Reading.** `OfficeAi.Shared/SkillCatalog.cs` reads both folders once per Office process and the host hands the
+  catalog to the page as `window.__opendocsSkills`, before its scripts run (see `SkillCatalog.cs.md`).
+- **The model.** `shared/web-src/app-shell/skills.ts` builds every piece of skill text. The system prompt lists the
+  skills the model may load (`catalogPrompt`). Two tools exist only when the app has at least one skill:
+  `load_skill {name}`, answered by the page from the catalog, and `read_skill_file {skill, path}`, answered by
+  `PaneHostBase.ExecuteToolUnderPolicy` after the policy check. `read_skill_file` reads only files from the skill's
+  scanned list, never through a link. Both only read, so `bootstrap.ts` counts them read-only in every mode and
+  neither is in any app's C# tier set or `entry.ts` list (like `preview_action`; `TierListsAgreeTests` is unaffected).
+- **The user.** A message that starts with `/` opens the skill list (the `!` palette's popup, keyboard and styling,
+  without Developer tools). `/name args` is shown and saved as typed; the model gets
+  `Base directory for this skill: <dir>`, the instructions and the skill's file list, then the arguments (or the
+  arguments in place of `$ARGUMENTS`). If the conversation history still holds the skill's full text, the model gets a
+  short re-invocation note with the new arguments instead. That check reads the live history, so a skill that
+  compaction or trimming cut is sent in full again. A restored chat expands its saved `/name` lines again, in order.
+- **Trust.** A skill's text steers the model but grants nothing: every call it leads to still goes through the
+  editing mode, the C# tier gate, `disabledModes` and the Approve card. `allowed-tools` and other frontmatter keys
+  are ignored.
+
 ## Approve before a call (requireApproval)
 
 The administrator's `policy.json` decides which of the model's calls need an Approve from the user, per app, tool and mode (`requireApproval`; see `OfficeAi.Shared/ModePolicy.cs.md`). `"*"` stands for every tool that is not read-only, and a tool's own entry overrides it. Full autonomy never asks, whatever is listed. The third tier (`trackChanges`) is the tier with approvals in every app but Word: in Excel and PowerPoint it is every tool, called "Edits with approval" (they have no tracked changes), and in Outlook it is "Actions with approval" (`respond_meeting` and permanent delete on top of Draft only; `send_email` and `send_event` stay in Full autonomy, since a draft is the reviewed way to send). The shipped defaults ask before every change in that tier in those three apps, and before `delete_email` in Outlook's Draft only; Word asks for nothing. There is no user setting for it. A tool name the app does not have is ignored. The check is client-side, in `executeConfirmed` around the model's `callDotNetTool` call. It adds no model tool or tier-list entry, and the server-side editing-mode check still runs after Approve. Because only the page enforces it, an installed (Release) pane never enables WebView2's developer tools.

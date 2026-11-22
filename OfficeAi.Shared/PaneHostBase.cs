@@ -153,6 +153,8 @@ namespace OfficeAi.Shared
             // Re-store this pane's mode under the current chat id before every call: the id changes on a new document's
             // first save (the app would then fall back to Full autonomy), and Outlook panes share one per-mailbox mode.
             if (_mode != null) SetEditingMode(_mode.Value);
+            // Read-only and the same in every app, so it is answered here and is in no app's tier set (see SkillCatalog).
+            if (name == SkillCatalog.ReadToolName) return Task.FromResult(SkillCatalog.ReadSkillFile(SkillCatalog.For(_appDataFolderName), input));
             return ExecuteTool(name, input);
         }
 

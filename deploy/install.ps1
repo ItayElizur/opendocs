@@ -206,6 +206,15 @@ Write-Host "Installing the editing-mode policy to $InstallRoot\policy.json ..."
 New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
 Copy-Item $policySrc (Join-Path $InstallRoot 'policy.json') -Force
 
+# Skills for every user of this install (skills\<App>\<name>\SKILL.md); the package's copy replaces the installed one.
+$skillsSrc = Join-Path $PackageDir 'skills'
+$skillsDest = Join-Path $InstallRoot 'skills'
+if (Test-Path $skillsSrc) {
+    Write-Host "Installing skills to $skillsDest ..."
+    if (Test-Path $skillsDest) { Remove-Item $skillsDest -Recurse -Force }
+    Copy-Item $skillsSrc $skillsDest -Recurse -Force
+}
+
 $registryRoots = Get-OfficeRegistryRoots
 
 foreach ($appName in $Apps) {

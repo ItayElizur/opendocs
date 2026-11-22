@@ -1,5 +1,6 @@
 import type { ToolExecution } from '@officeai/agent-core'
 import { randomId } from '@officeai/agent-core'
+import type { Skill } from './skills'
 
 // WebView2 <-> .NET WebMessage bridge (chrome.webview.postMessage <->
 // CoreWebView2.PostWebMessageAsJson). This is the ONLY file in the app-shell
@@ -207,6 +208,17 @@ export function injectedDisabledModes(): string[] {
 export function injectedApprovals(): Record<string, string[]> {
   const injected = (globalThis as { __opendocsApprovals?: unknown }).__opendocsApprovals
   return injected && typeof injected === 'object' && !Array.isArray(injected) ? (injected as Record<string, string[]>) : {}
+}
+
+// This app's skills (OfficeAi.Shared/SkillCatalog.cs), injected by the host; entries of the wrong shape are dropped.
+export function injectedSkills(): Skill[] {
+  const injected = (globalThis as { __opendocsSkills?: unknown }).__opendocsSkills
+  if (!Array.isArray(injected)) return []
+  return injected.filter((x): x is Skill => {
+    const s = (x ?? {}) as Record<string, unknown>
+    return ['name', 'description', 'argumentHint', 'dir', 'body'].every((k) => typeof s[k] === 'string') &&
+      Array.isArray(s.files) && typeof s.modelInvocable === 'boolean' && typeof s.userInvocable === 'boolean'
+  })
 }
 
 // The page lost keyboard focus. The host works out whether the user left the app (alt-tab) and, when they come
