@@ -667,29 +667,6 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       <div class="ai-chat"></div>
       <div class="ai-chip-dock" id="chipDock" hidden></div>
       <div class="ai-settings-view" id="settingsView">
-        <div class="ai-settings-section">
-          <h4 data-t="sectionTheme">Theme</h4>
-          <p class="ai-settings-section-note" data-t="themeNote">Default follows Office's own theme setting, checked once when the panel opens.</p>
-          <div class="ai-lang-toggle" id="themeToggle">
-            <button data-theme-choice="light" data-t="themeLight">Light</button>
-            <button data-theme-choice="dark" data-t="themeDark">Dark</button>
-            <button class="active" data-theme-choice="default" data-t="themeDefault">Default</button>
-          </div>
-        </div>
-        <div class="ai-settings-section">
-          <h4 data-t="settingsLanguage">Language</h4>
-          <p class="ai-settings-section-note" data-t="langDefaultNote">Default follows Office's own display language, checked once when the panel opens.</p>
-          <div class="ai-lang-toggle" id="langToggle">
-            <button data-lang="en">English</button>
-            <button data-lang="he">עברית</button>
-            <button class="active" data-lang="default" data-t="langDefault">Default</button>
-          </div>
-        </div>
-        <div class="ai-settings-section">
-          <h4 data-t="sectionScope">Edit scope</h4>
-          <p class="ai-settings-section-note" data-t="scopeNote">Applies immediately and resets tool registration below.</p>
-          <div class="ai-scope-control" id="scopeControl"></div>
-        </div>
         <div class="ai-settings-section" id="connectionSlot"></div>
         <div class="ai-settings-section">
           <h4 data-t="sectionReasoning">Reasoning effort</h4>
@@ -704,6 +681,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           </div>
         </div>
         <div class="ai-settings-section">
+          <h4 data-t="sectionScope">Edit scope</h4>
+          <p class="ai-settings-section-note" data-t="scopeNote">Applies immediately and resets tool registration below.</p>
+          <div class="ai-scope-control" id="scopeControl"></div>
+        </div>
+        <div class="ai-settings-section">
           <h4><span data-t="sectionTools">Tools</span> <span class="ai-tools-count" id="toolsCount"></span></h4>
           <div class="ai-tools-list" id="toolsList"></div>
         </div>
@@ -711,6 +693,24 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <h4 data-t="sectionDocMessage">Document guidelines</h4>
           <textarea class="ai-doc-message" id="docMessageInput" data-t-placeholder="docMessagePlaceholder" maxlength="8192"></textarea>
           <p class="ai-settings-section-note" data-t="docMessageSaveNote">Applies at the start of the next New chat, not the current conversation.</p>
+        </div>
+        <div class="ai-settings-section">
+          <h4 data-t="settingsLanguage">Language</h4>
+          <p class="ai-settings-section-note" data-t="langDefaultNote">Default follows Office's own display language, checked once when the panel opens.</p>
+          <div class="ai-lang-toggle" id="langToggle">
+            <button data-lang="en">English</button>
+            <button data-lang="he">עברית</button>
+            <button class="active" data-lang="default" data-t="langDefault">Default</button>
+          </div>
+        </div>
+        <div class="ai-settings-section">
+          <h4 data-t="sectionTheme">Theme</h4>
+          <p class="ai-settings-section-note" data-t="themeNote">Default follows Office's own theme setting, checked once when the panel opens.</p>
+          <div class="ai-lang-toggle" id="themeToggle">
+            <button data-theme-choice="light" data-t="themeLight">Light</button>
+            <button data-theme-choice="dark" data-t="themeDark">Dark</button>
+            <button class="active" data-theme-choice="default" data-t="themeDefault">Default</button>
+          </div>
         </div>
         <div class="ai-settings-section">
           <h4 data-t="sectionDeveloper">Developer tools</h4>
