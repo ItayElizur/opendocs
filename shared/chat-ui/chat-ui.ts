@@ -1545,7 +1545,10 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     </div>`
   }).join('')
   root.querySelectorAll<HTMLElement>('.ai-scope-option').forEach((el) => {
-    el.addEventListener('click', () => selectMode(el.dataset.mode as EditingMode))
+    el.addEventListener('click', () => {
+      selectMode(el.dataset.mode as EditingMode)
+      markDirty() // applied at once, but Discard still puts the old scope back
+    })
   })
 
   // ---- FT-1 Task 4: tool registry model. Authoritative "which tools exist
@@ -1650,19 +1653,22 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
 
   let inSettingsView = false
   let dirty = false
-  // What the full view showed when it opened or was last saved; Discard puts all of it back. The tool
-  // checkboxes apply live, so they are put back by reporting the old list again.
+  // What the full view showed when it opened or was last saved; Discard puts all of it back. The edit scope
+  // and the tool checkboxes apply live, so they are put back by selecting the old scope and reporting the old
+  // tool list again.
   type SettingsField = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
   let savedChoices = { lang: pendingLang, theme: pendingTheme, reasoning: pendingReasoningEffort }
   let savedProvider = ''
   let savedFields = new Map<SettingsField, { value: string; checked: boolean }>()
   let savedTools: string[] = []
+  let savedMode = ''
   function rememberSettingsView(): void {
     savedChoices = { lang: pendingLang, theme: pendingTheme, reasoning: pendingReasoningEffort }
     savedProvider = providerSelect.value
     const fields = settingsView.querySelectorAll<SettingsField>('input:not(.ai-tool-toggle), textarea, select')
     savedFields = new Map(Array.from(fields, (el) => [el, { value: el.value, checked: el instanceof HTMLInputElement && el.checked }]))
     savedTools = registeredToolNames
+    savedMode = modeBtn.dataset.editingMode ?? ''
   }
   function restoreSettingsView(): void {
     pendingLang = savedChoices.lang
@@ -1675,6 +1681,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       el.value = saved.value
       if (el instanceof HTMLInputElement) el.checked = saved.checked
     })
+    // The scope before the tools: changing it makes the host reset the tool list, which the saved one then replaces.
+    if (savedMode && modeBtn.dataset.editingMode !== savedMode) selectMode(savedMode as EditingMode)
     if (registeredToolNames !== savedTools) {
       registeredToolNames = savedTools
       renderToolsList()
@@ -2163,7 +2171,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     setToolScope(available, registered) {
       availableToolNames = available
       registeredToolNames = registered
-      savedTools = registered
+      if (!inSettingsView) savedTools = registered
       renderToolsList()
       renderPalette()
     },

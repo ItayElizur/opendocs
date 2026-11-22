@@ -969,6 +969,31 @@ describe('mountChatUI', () => {
     expect(field('#docMessageInput').value).toBe('Keep me.')
   })
 
+  it('a scope change asks before leaving, and Discard puts back the scope and the tool picks it reset', () => {
+    // Like bootstrap.ts: a mode change resets the tool list to everything that mode allows.
+    let ui: ReturnType<typeof mountChatUI> | null = null
+    const onModeChange = vi.fn((mode: string) => {
+      const tools = mode === 'readOnly' ? ['get_document_context'] : ['get_document_context', 'apply_commands']
+      ui!.setToolScope(tools, tools)
+    })
+    const { root, handle, onToolRegistrationChange } = setup({ onModeChange })
+    ui = handle
+    const selected = (): string => root.querySelector<HTMLElement>('.ai-scope-option.selected')!.dataset.mode!
+    handle.setToolScope(['get_document_context', 'apply_commands'], ['apply_commands'])
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    const before = selected()
+
+    root.querySelector<HTMLElement>('.ai-scope-option[data-mode="readOnly"]')!.click()
+    expect(selected()).toBe('readOnly')
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    expect(root.querySelector<HTMLElement>('#discardBar')!.hidden).toBe(false)
+    root.querySelector<HTMLButtonElement>('#discardYes')!.click()
+
+    expect(selected()).toBe(before)
+    expect(onModeChange).toHaveBeenLastCalledWith(before)
+    expect(onToolRegistrationChange).toHaveBeenLastCalledWith(['apply_commands'])
+  })
+
   it('language is chosen in the full settings view, not in quick settings', () => {
     const { root } = setup()
     expect(root.querySelector('#settingsView #langToggle')).not.toBeNull()
