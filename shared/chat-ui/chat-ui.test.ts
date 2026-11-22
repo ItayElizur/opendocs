@@ -969,6 +969,33 @@ describe('mountChatUI', () => {
     expect(field('#docMessageInput').value).toBe('Keep me.')
   })
 
+  it('Discard after a provider switch puts back the provider and its typed URL, key and model', () => {
+    const { root } = setup()
+    const field = (sel: string): HTMLInputElement => root.querySelector<HTMLInputElement>(sel)!
+    const type = (sel: string, value: string): void => { field(sel).value = value; field(sel).dispatchEvent(new Event('input', { bubbles: true })) }
+    const provider = root.querySelector<HTMLSelectElement>('.ai-settings-provider')!
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    provider.value = 'custom'
+    provider.dispatchEvent(new Event('change', { bubbles: true }))
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+    type('[data-field="baseUrl"]', 'https://llm.example/v1')
+    type('[data-field="apiKey"]', 'sk-custom')
+    type('[data-field="model"]', 'my-model')
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+
+    provider.value = 'anthropic'
+    provider.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(root.querySelector<HTMLElement>('.ai-field-baseurl')!.hidden).toBe(true)
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    root.querySelector<HTMLButtonElement>('#discardYes')!.click()
+
+    expect(provider.value).toBe('custom')
+    expect(root.querySelector<HTMLElement>('.ai-field-baseurl')!.hidden).toBe(false)
+    expect(field('[data-field="baseUrl"]').value).toBe('https://llm.example/v1')
+    expect(field('[data-field="apiKey"]').value).toBe('sk-custom')
+    expect(field('[data-field="model"]').value).toBe('my-model')
+  })
+
   it('a scope change asks before leaving, and Discard puts back the scope and the tool picks it reset', () => {
     // Like bootstrap.ts: a mode change resets the tool list to everything that mode allows.
     let ui: ReturnType<typeof mountChatUI> | null = null
