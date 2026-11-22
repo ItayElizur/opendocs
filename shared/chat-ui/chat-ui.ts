@@ -665,12 +665,12 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
             </div>
             <p class="ai-settings-section-note" data-t="langDefaultNote">Default follows Office's own display language, checked once when the panel opens.</p>
           </div>
+          <button class="ai-more-settings-btn" id="moreSettingsBtn" type="button" data-t="moreSettings">More settings</button>
           <div class="ai-settings-test-result" id="settingsTestResult"></div>
           <div class="ai-settings-actions">
             <button class="ai-btn-secondary" data-t="testConnection" type="button">Test connection</button>
             <button class="ai-btn-primary" data-t="save">Save</button>
           </div>
-          <button class="ai-more-settings-btn" id="moreSettingsBtn" type="button" data-t="moreSettings">More settings</button>
         </div>
       </div>
       <div class="ai-chat"></div>
