@@ -939,6 +939,36 @@ describe('mountChatUI', () => {
     confirm.mockRestore()
   })
 
+  it('Discard also puts back typed boxes, checkboxes and tool picks; Save makes the new values the ones kept', () => {
+    const { root, handle, onToolRegistrationChange } = setup()
+    handle.setToolScope(['get_document_context', 'apply_commands'], ['get_document_context', 'apply_commands'])
+    const field = (sel: string): HTMLInputElement => root.querySelector<HTMLInputElement>(sel)!
+    const type = (sel: string, value: string): void => { field(sel).value = value; field(sel).dispatchEvent(new Event('input', { bubbles: true })) }
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    const keyBefore = field('[data-field="apiKey"]').value
+
+    type('[data-field="apiKey"]', 'sk-typed-then-discarded')
+    type('#docMessageInput', 'Discard me.')
+    field('[data-field="developerTools"]').click()
+    const tool = field('.ai-tool-row[data-tool="apply_commands"] .ai-tool-toggle')
+    tool.checked = false
+    tool.dispatchEvent(new Event('change', { bubbles: true }))
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    root.querySelector<HTMLButtonElement>('#discardYes')!.click()
+
+    expect(field('[data-field="apiKey"]').value).toBe(keyBefore)
+    expect(field('#docMessageInput').value).toBe('')
+    expect(field('[data-field="developerTools"]').checked).toBe(false)
+    expect(onToolRegistrationChange).toHaveBeenLastCalledWith(['get_document_context', 'apply_commands'])
+
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(field('.ai-tool-row[data-tool="apply_commands"] .ai-tool-toggle').checked).toBe(true)
+    type('#docMessageInput', 'Keep me.')
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    expect(field('#docMessageInput').value).toBe('Keep me.')
+  })
+
   it('language is chosen in the full settings view, not in quick settings', () => {
     const { root } = setup()
     expect(root.querySelector('#settingsView #langToggle')).not.toBeNull()

@@ -1046,27 +1046,10 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   applyStrings()
 
   let assistantBubble: HTMLDivElement | null = null
-  let pendingLang: LangPref = 'default'
-  if (options.initialSettings?.lang) {
-    pendingLang = options.initialSettings.lang
-    root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((b) => {
-      b.classList.toggle('active', b.dataset.lang === pendingLang)
-    })
-  }
-  let pendingTheme: 'light' | 'dark' | 'default' = 'default'
-  if (options.initialSettings?.theme) {
-    pendingTheme = options.initialSettings.theme
-    root.querySelectorAll<HTMLButtonElement>('#themeToggle button').forEach((b) => {
-      b.classList.toggle('active', b.dataset.themeChoice === pendingTheme)
-    })
-  }
-  let pendingReasoningEffort: ReasoningEffort = 'default'
-  if (options.initialSettings?.reasoningEffort) {
-    pendingReasoningEffort = options.initialSettings.reasoningEffort
-    root.querySelectorAll<HTMLButtonElement>('#reasoningToggle button').forEach((b) => {
-      b.classList.toggle('active', b.dataset.reasoningChoice === pendingReasoningEffort)
-    })
-  }
+  let pendingLang: LangPref = options.initialSettings?.lang || 'default'
+  let pendingTheme: 'light' | 'dark' | 'default' = options.initialSettings?.theme || 'default'
+  let pendingReasoningEffort: ReasoningEffort = options.initialSettings?.reasoningEffort || 'default'
+  showChoices()
   // Save-gated, exactly like the language toggle above: a click only updates
   // the pending value and its own .active class - no visual effect, no
   // callback, until the settings view's Save button is clicked (below).
@@ -1667,8 +1650,37 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
 
   let inSettingsView = false
   let dirty = false
-  // The language, theme and reasoning choices last saved; leaving the view without Save puts these back.
+  // What the full view showed when it opened or was last saved; Discard puts all of it back. The tool
+  // checkboxes apply live, so they are put back by reporting the old list again.
+  type SettingsField = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
   let savedChoices = { lang: pendingLang, theme: pendingTheme, reasoning: pendingReasoningEffort }
+  let savedProvider = ''
+  let savedFields = new Map<SettingsField, { value: string; checked: boolean }>()
+  let savedTools: string[] = []
+  function rememberSettingsView(): void {
+    savedChoices = { lang: pendingLang, theme: pendingTheme, reasoning: pendingReasoningEffort }
+    savedProvider = providerSelect.value
+    const fields = settingsView.querySelectorAll<SettingsField>('input:not(.ai-tool-toggle), textarea, select')
+    savedFields = new Map(Array.from(fields, (el) => [el, { value: el.value, checked: el instanceof HTMLInputElement && el.checked }]))
+    savedTools = registeredToolNames
+  }
+  function restoreSettingsView(): void {
+    pendingLang = savedChoices.lang
+    pendingTheme = savedChoices.theme
+    pendingReasoningEffort = savedChoices.reasoning
+    showChoices()
+    // The provider first: switching it rebuilds the model list and refills the boxes, which the saved values then overwrite.
+    if (providerSelect.value !== savedProvider) applyProviderUI(savedProvider)
+    savedFields.forEach((saved, el) => {
+      el.value = saved.value
+      if (el instanceof HTMLInputElement) el.checked = saved.checked
+    })
+    if (registeredToolNames !== savedTools) {
+      registeredToolNames = savedTools
+      renderToolsList()
+      options.onToolRegistrationChange?.(registeredToolNames)
+    }
+  }
   function showChoices(): void {
     root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((b) => b.classList.toggle('active', b.dataset.lang === pendingLang))
     root.querySelectorAll<HTMLButtonElement>('#themeToggle button').forEach((b) => b.classList.toggle('active', b.dataset.themeChoice === pendingTheme))
@@ -1684,6 +1696,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     panelInnerSaveBtn.hidden = true // the view has its own consolidated Save below
     settingsPanel.classList.add('inline')
     connectionSlot.appendChild(settingsPanel)
+    rememberSettingsView()
     inSettingsView = true
     dockEl.querySelector('.ai-panel')!.classList.add('settings-open')
     settingsBtn.innerHTML = CHAT_ICON
@@ -1717,10 +1730,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   const discardKeepBtn = root.querySelector<HTMLButtonElement>('#discardKeep')!
   function discardAndClose(): void {
     discardBar.hidden = true
-    pendingLang = savedChoices.lang
-    pendingTheme = savedChoices.theme
-    pendingReasoningEffort = savedChoices.reasoning
-    showChoices()
+    restoreSettingsView()
     closeSettingsView()
   }
   function leaveSettingsView(): void {
@@ -1802,7 +1812,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     })
     developerTools = developerToolsBox.checked
     renderPalette()
-    savedChoices = { lang: pendingLang, theme: pendingTheme, reasoning: pendingReasoningEffort }
+    rememberSettingsView()
     dirty = false
     discardBar.hidden = true
     settingsSavedNote.classList.add('visible')
@@ -2153,11 +2163,13 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     setToolScope(available, registered) {
       availableToolNames = available
       registeredToolNames = registered
+      savedTools = registered
       renderToolsList()
       renderPalette()
     },
     setDocSystemMessage(message) {
       docMessageInput.value = message
+      if (savedFields.has(docMessageInput)) savedFields.set(docMessageInput, { value: message, checked: false })
     },
     openSettings() {
       openSettingsView()
