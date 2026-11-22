@@ -275,15 +275,18 @@
   }
   .ai-doc-message:focus { outline: none; border-color: var(--docs-brand-ring); }
 
-  .ai-settings-view-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 8px; }
+  .ai-settings-view-actions { position: relative; display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 8px; }
   #settingsViewBack { margin-inline-end: auto; }
   .ai-settings-saved-note { font-size: 12px; color: var(--docs-ok-ink); opacity: 0; transition: opacity 150ms; }
   .ai-settings-saved-note.visible { opacity: 1; }
+  /* Floats over the Back/Save row (growing upward if it wraps) so asking moves nothing on the page. */
   .ai-discard-bar {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 10px;
-    border: 1px solid var(--docs-brand-ring); border-radius: var(--radius-8); background: var(--docs-brand-ghost-weak); font-size: 13px;
+    position: absolute; inset-inline: 0; bottom: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px;
+    border: 1px solid var(--docs-brand-ring); border-radius: var(--radius-8); background: var(--color-bg-page);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 14%); font-size: 13px;
   }
-  .ai-discard-bar span { flex: 1 1 100%; }
+  .ai-discard-bar span { flex: 1 1 auto; }
   .ai-discard-bar[hidden] { display: none; } /* same specificity pitfall as .ai-more-settings-btn[hidden] */
 
   /* ---- empty state ---- */

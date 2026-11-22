@@ -719,12 +719,12 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <p class="ai-settings-section-note" data-t="developerToolsNote">Type ! at the start of a message to run any tool directly, without the model. The editing mode still limits which tools run.</p>
           <label class="ai-checkbox-row"><input type="checkbox" data-field="developerTools" /> <span data-t="developerToolsLabel" data-bang>Enable the ! tool palette</span></label>
         </div>
-        <div class="ai-discard-bar" id="discardBar" role="alert" hidden>
-          <span data-t="discardChangesConfirm">Discard unsaved changes?</span>
-          <button class="ai-btn-secondary" id="discardKeep" data-t="discardKeep" type="button">Keep editing</button>
-          <button class="ai-btn-primary" id="discardYes" data-t="discardYes" type="button">Discard</button>
-        </div>
         <div class="ai-settings-view-actions">
+          <div class="ai-discard-bar" id="discardBar" role="alert" hidden>
+            <span data-t="discardChangesConfirm">Discard unsaved changes?</span>
+            <button class="ai-btn-secondary" id="discardKeep" data-t="discardKeep" type="button">Keep editing</button>
+            <button class="ai-btn-primary" id="discardYes" data-t="discardYes" type="button">Discard</button>
+          </div>
           <button class="ai-btn-secondary" id="settingsViewBack" data-t="backToChat" type="button">Back to conversation</button>
           <div class="ai-settings-saved-note" id="settingsSavedNote" data-t="savedNote">Saved</div>
           <button class="ai-btn-primary" id="settingsViewSave" data-t="save">Save</button>
