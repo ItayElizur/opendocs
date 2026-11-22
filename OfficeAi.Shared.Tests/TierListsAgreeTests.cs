@@ -11,7 +11,7 @@ namespace OfficeAi.Shared.Tests
     // the model is shown). CLAUDE.md warns they drift silently; these tests read both source files and compare.
     public class TierListsAgreeTests
     {
-        private static string Repo()
+        internal static string Repo()
         {
             string dir = AppContext.BaseDirectory;
             while (dir != null && !File.Exists(Path.Combine(dir, "CLAUDE.md"))) dir = Path.GetDirectoryName(dir);

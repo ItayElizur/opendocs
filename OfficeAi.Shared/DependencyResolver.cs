@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Threading;
 
 namespace OfficeAi.Shared
 {
@@ -11,12 +10,9 @@ namespace OfficeAi.Shared
     // that file. See DependencyResolver.cs.md.
     public static class DependencyResolver
     {
-        private static int _registered;
-
-        // Call first, from the add-in's static constructor. Safe to call more than once.
+        // Call first, from the add-in's static constructor, which .NET runs once per add-in.
         public static void Register()
         {
-            if (Interlocked.Exchange(ref _registered, 1) == 1) return;
             string dir = AppDomain.CurrentDomain.BaseDirectory;
             AppDomain.CurrentDomain.AssemblyResolve += (sender, e) => Resolve(dir, e.Name);
         }
