@@ -723,8 +723,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <div class="ai-discard-bar" id="discardBar" role="alert" hidden>
             <span data-t="discardChangesConfirm">Discard unsaved changes?</span>
             <div class="ai-discard-buttons">
-              <button class="ai-btn-secondary" id="discardKeep" data-t="discardKeep" type="button">Keep editing</button>
-              <button class="ai-btn-primary" id="discardYes" data-t="discardYes" type="button">Discard</button>
+              <button class="ai-btn-secondary ai-discard-yes" id="discardYes" data-t="discardYes" type="button">Discard</button>
+              <button class="ai-btn-primary" id="discardKeep" data-t="discardKeep" type="button">Keep editing</button>
             </div>
           </div>
           <button class="ai-btn-secondary" id="settingsViewBack" data-t="backToChat" type="button">Back to conversation</button>

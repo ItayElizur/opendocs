@@ -289,6 +289,8 @@
   .ai-discard-bar span { flex: 1 1 auto; }
   /* The two answers wrap as one unit, never apart. */
   .ai-discard-buttons { display: flex; gap: 8px; margin-inline-start: auto; }
+  /* Keep editing is the main button, over where Save sits, so a habitual click keeps the changes; Discard is quiet red. */
+  .ai-discard-yes { color: var(--color-danger, #c0392b); }
   .ai-discard-bar[hidden] { display: none; } /* same specificity pitfall as .ai-more-settings-btn[hidden] */
 
   /* ---- empty state ---- */
