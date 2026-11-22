@@ -279,6 +279,12 @@
   #settingsViewBack { margin-inline-end: auto; }
   .ai-settings-saved-note { font-size: 12px; color: var(--docs-ok-ink); opacity: 0; transition: opacity 150ms; }
   .ai-settings-saved-note.visible { opacity: 1; }
+  .ai-discard-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 10px;
+    border: 1px solid var(--docs-brand-ring); border-radius: var(--radius-8); background: var(--docs-brand-ghost-weak); font-size: 13px;
+  }
+  .ai-discard-bar span { flex: 1 1 100%; }
+  .ai-discard-bar[hidden] { display: none; } /* same specificity pitfall as .ai-more-settings-btn[hidden] */
 
   /* ---- empty state ---- */
   .ai-chat-empty {

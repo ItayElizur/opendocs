@@ -906,16 +906,29 @@ describe('mountChatUI', () => {
 
   it('language, theme and reasoning picked without Save are put back on leaving, and a later Save does not apply them', () => {
     const { root, onSettingsSave } = setup()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const confirm = vi.spyOn(window, 'confirm')
     const active = (group: string): string => root.querySelector<HTMLButtonElement>(`#${group} button.active`)!.textContent!
+    const bar = (): HTMLElement => root.querySelector<HTMLElement>('#discardBar')!
+    const view = (): HTMLElement => root.querySelector<HTMLElement>('.ai-panel')!
     root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
     root.querySelector<HTMLButtonElement>('[data-lang="he"]')!.click()
     root.querySelector<HTMLButtonElement>('[data-theme-choice="dark"]')!.click()
     root.querySelector<HTMLButtonElement>('[data-reasoning-choice="high"]')!.click()
 
+    // Back asks in the pane itself, not with the browser's confirm() box.
     root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
-    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(confirm).not.toHaveBeenCalled()
+    expect(bar().hidden).toBe(false)
+    expect(view().classList.contains('settings-open')).toBe(true)
+    root.querySelector<HTMLButtonElement>('#discardKeep')!.click()
+    expect(bar().hidden).toBe(true)
+    expect(active('themeToggle')).toBe('Dark')
+
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    root.querySelector<HTMLButtonElement>('#discardYes')!.click()
+    expect(view().classList.contains('settings-open')).toBe(false)
     root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(bar().hidden).toBe(true)
     expect(active('langToggle')).toBe('Default')
     expect(active('themeToggle')).toBe('Default')
     expect(active('reasoningToggle')).toBe('Default')

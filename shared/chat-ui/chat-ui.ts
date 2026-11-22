@@ -136,6 +136,8 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   toolsAvailable:       { en: 'Available', he: 'זמינים' },
   toolsOutOfScope:      { en: 'Out of scope', he: 'מחוץ להיקף' },
   discardChangesConfirm:{ en: 'Discard unsaved changes?', he: 'לבטל שינויים שלא נשמרו?' },
+  discardKeep:          { en: 'Keep editing', he: 'המשך לערוך' },
+  discardYes:           { en: 'Discard', he: 'בטל שינויים' },
   lastToolRefused:      { en: 'At least one tool must stay registered.', he: 'לפחות כלי אחד חייב להישאר רשום.' },
   // FT-2 Task 5: per-app "no selection" wording and the selection pill's
   // small localized vocabulary (Excel's extent words, PowerPoint's counts).
@@ -716,6 +718,11 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
           <h4 data-t="sectionDeveloper">Developer tools</h4>
           <p class="ai-settings-section-note" data-t="developerToolsNote">Type ! at the start of a message to run any tool directly, without the model. The editing mode still limits which tools run.</p>
           <label class="ai-checkbox-row"><input type="checkbox" data-field="developerTools" /> <span data-t="developerToolsLabel" data-bang>Enable the ! tool palette</span></label>
+        </div>
+        <div class="ai-discard-bar" id="discardBar" role="alert" hidden>
+          <span data-t="discardChangesConfirm">Discard unsaved changes?</span>
+          <button class="ai-btn-secondary" id="discardKeep" data-t="discardKeep" type="button">Keep editing</button>
+          <button class="ai-btn-primary" id="discardYes" data-t="discardYes" type="button">Discard</button>
         </div>
         <div class="ai-settings-view-actions">
           <button class="ai-btn-secondary" id="settingsViewBack" data-t="backToChat" type="button">Back to conversation</button>
@@ -1703,16 +1710,25 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
   // The header gear button does double duty (Task 1 Step 4): opens/closes
   // the quick dropdown in chat view, is "back to conversation" in settings
   // view - one handler, not two rebound listeners.
-  function leaveSettingsView(): void {
-    // Task 9 Step 3: unsaved-changes guard, shown inline rather than a
-    // blocking native dialog.
-    if (dirty && !window.confirm(t('discardChangesConfirm'))) return
+  // Task 9 Step 3: the unsaved-changes guard is a bar inside the view; a native confirm() is wider than the pane.
+  const discardBar = root.querySelector<HTMLDivElement>('#discardBar')!
+  const discardKeepBtn = root.querySelector<HTMLButtonElement>('#discardKeep')!
+  function discardAndClose(): void {
+    discardBar.hidden = true
     pendingLang = savedChoices.lang
     pendingTheme = savedChoices.theme
     pendingReasoningEffort = savedChoices.reasoning
     showChoices()
     closeSettingsView()
   }
+  function leaveSettingsView(): void {
+    if (!dirty) return discardAndClose()
+    discardBar.hidden = false
+    discardBar.scrollIntoView?.({ block: 'nearest' })
+    discardKeepBtn.focus()
+  }
+  discardKeepBtn.addEventListener('click', () => { discardBar.hidden = true })
+  root.querySelector<HTMLButtonElement>('#discardYes')!.addEventListener('click', discardAndClose)
   settingsBtn.addEventListener('click', () => {
     if (inSettingsView) {
       leaveSettingsView()
@@ -1786,6 +1802,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     renderPalette()
     savedChoices = { lang: pendingLang, theme: pendingTheme, reasoning: pendingReasoningEffort }
     dirty = false
+    discardBar.hidden = true
     settingsSavedNote.classList.add('visible')
     window.setTimeout(() => settingsSavedNote.classList.remove('visible'), 2000)
   })
