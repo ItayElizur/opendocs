@@ -878,6 +878,162 @@ describe('mountChatUI', () => {
     expect(onToolRegistrationChange).not.toHaveBeenCalled()
   })
 
+  it('tool groups start closed, show their counts, and stay open across a re-render', () => {
+    const { root, handle } = setup({ tools: [...TEST_TOOLS, { name: 'delete_page', label: { en: 'Delete', he: 'מחק' }, description: { en: '', he: '' } }] })
+    handle.setToolScope(['get_document_context', 'apply_commands'], ['get_document_context', 'apply_commands'])
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    const available = (): HTMLDetailsElement => root.querySelector<HTMLDetailsElement>('[data-group="available"]')!
+    const outOfScope = (): HTMLDetailsElement => root.querySelector<HTMLDetailsElement>('[data-group="outOfScope"]')!
+
+    expect(available().open).toBe(false)
+    expect(outOfScope().open).toBe(false)
+    expect(root.querySelector('#toolsCount')!.textContent).toBe('(2 / 3)')
+    expect(available().querySelector('summary')!.textContent).toBe('Available (2 / 2)')
+    expect(outOfScope().querySelector('summary')!.textContent).toBe('Out of scope (1)')
+
+    const toggle = root.querySelector<HTMLInputElement>('.ai-tool-row[data-tool="apply_commands"] .ai-tool-toggle')!
+    toggle.checked = false
+    toggle.dispatchEvent(new Event('change'))
+    expect(root.querySelector('#toolsCount')!.textContent).toBe('(1 / 3)')
+    expect(available().querySelector('summary')!.textContent).toBe('Available (1 / 2)')
+
+    available().open = true
+    available().dispatchEvent(new Event('toggle'))
+    handle.setToolScope(['get_document_context', 'apply_commands'], ['get_document_context'])
+    expect(available().open).toBe(true)
+    expect(outOfScope().open).toBe(false)
+  })
+
+  it('language, theme and reasoning picked without Save are put back on leaving, and a later Save does not apply them', () => {
+    const { root, onSettingsSave } = setup()
+    const confirm = vi.spyOn(window, 'confirm')
+    const active = (group: string): string => root.querySelector<HTMLButtonElement>(`#${group} button.active`)!.textContent!
+    const bar = (): HTMLElement => root.querySelector<HTMLElement>('#discardBar')!
+    const view = (): HTMLElement => root.querySelector<HTMLElement>('.ai-panel')!
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    root.querySelector<HTMLButtonElement>('[data-lang="he"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-theme-choice="dark"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-reasoning-choice="high"]')!.click()
+
+    // Back asks in the pane itself, not with the browser's confirm() box.
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(bar().hidden).toBe(false)
+    expect(view().classList.contains('settings-open')).toBe(true)
+    root.querySelector<HTMLButtonElement>('#discardKeep')!.click()
+    expect(bar().hidden).toBe(true)
+    expect(active('themeToggle')).toBe('Dark')
+
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    root.querySelector<HTMLButtonElement>('#discardYes')!.click()
+    expect(view().classList.contains('settings-open')).toBe(false)
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(bar().hidden).toBe(true)
+    expect(active('langToggle')).toBe('Default')
+    expect(active('themeToggle')).toBe('Default')
+    expect(active('reasoningToggle')).toBe('Default')
+
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    root.querySelector<HTMLButtonElement>('.ai-settings-panel .ai-btn-primary')!.click()
+    expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ lang: 'default', theme: 'default' }))
+    confirm.mockRestore()
+  })
+
+  it('Discard also puts back typed boxes, checkboxes and tool picks; Save makes the new values the ones kept', () => {
+    const { root, handle, onToolRegistrationChange } = setup()
+    handle.setToolScope(['get_document_context', 'apply_commands'], ['get_document_context', 'apply_commands'])
+    const field = (sel: string): HTMLInputElement => root.querySelector<HTMLInputElement>(sel)!
+    const type = (sel: string, value: string): void => { field(sel).value = value; field(sel).dispatchEvent(new Event('input', { bubbles: true })) }
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    const keyBefore = field('[data-field="apiKey"]').value
+
+    type('[data-field="apiKey"]', 'sk-typed-then-discarded')
+    type('#docMessageInput', 'Discard me.')
+    field('[data-field="developerTools"]').click()
+    const tool = field('.ai-tool-row[data-tool="apply_commands"] .ai-tool-toggle')
+    tool.checked = false
+    tool.dispatchEvent(new Event('change', { bubbles: true }))
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    root.querySelector<HTMLButtonElement>('#discardYes')!.click()
+
+    expect(field('[data-field="apiKey"]').value).toBe(keyBefore)
+    expect(field('#docMessageInput').value).toBe('')
+    expect(field('[data-field="developerTools"]').checked).toBe(false)
+    expect(onToolRegistrationChange).toHaveBeenLastCalledWith(['get_document_context', 'apply_commands'])
+
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(field('.ai-tool-row[data-tool="apply_commands"] .ai-tool-toggle').checked).toBe(true)
+    type('#docMessageInput', 'Keep me.')
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    expect(field('#docMessageInput').value).toBe('Keep me.')
+  })
+
+  it('Discard after a provider switch puts back the provider and its typed URL, key and model', () => {
+    const { root } = setup()
+    const field = (sel: string): HTMLInputElement => root.querySelector<HTMLInputElement>(sel)!
+    const type = (sel: string, value: string): void => { field(sel).value = value; field(sel).dispatchEvent(new Event('input', { bubbles: true })) }
+    const provider = root.querySelector<HTMLSelectElement>('.ai-settings-provider')!
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    provider.value = 'custom'
+    provider.dispatchEvent(new Event('change', { bubbles: true }))
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+    type('[data-field="baseUrl"]', 'https://llm.example/v1')
+    type('[data-field="apiKey"]', 'sk-custom')
+    type('[data-field="model"]', 'my-model')
+    root.querySelector<HTMLButtonElement>('#settingsViewSave')!.click()
+
+    provider.value = 'anthropic'
+    provider.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(root.querySelector<HTMLElement>('.ai-field-baseurl')!.hidden).toBe(true)
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    root.querySelector<HTMLButtonElement>('#discardYes')!.click()
+
+    expect(provider.value).toBe('custom')
+    expect(root.querySelector<HTMLElement>('.ai-field-baseurl')!.hidden).toBe(false)
+    expect(field('[data-field="baseUrl"]').value).toBe('https://llm.example/v1')
+    expect(field('[data-field="apiKey"]').value).toBe('sk-custom')
+    expect(field('[data-field="model"]').value).toBe('my-model')
+  })
+
+  it('a scope change asks before leaving, and Discard puts back the scope and the tool picks it reset', () => {
+    // Like bootstrap.ts: a mode change resets the tool list to everything that mode allows.
+    let ui: ReturnType<typeof mountChatUI> | null = null
+    const onModeChange = vi.fn((mode: string) => {
+      const tools = mode === 'readOnly' ? ['get_document_context'] : ['get_document_context', 'apply_commands']
+      ui!.setToolScope(tools, tools)
+    })
+    const { root, handle, onToolRegistrationChange } = setup({ onModeChange })
+    ui = handle
+    const selected = (): string => root.querySelector<HTMLElement>('.ai-scope-option.selected')!.dataset.mode!
+    handle.setToolScope(['get_document_context', 'apply_commands'], ['apply_commands'])
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    const before = selected()
+
+    root.querySelector<HTMLElement>('.ai-scope-option[data-mode="readOnly"]')!.click()
+    expect(selected()).toBe('readOnly')
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    expect(root.querySelector<HTMLElement>('#discardBar')!.hidden).toBe(false)
+    root.querySelector<HTMLButtonElement>('#discardYes')!.click()
+
+    expect(selected()).toBe(before)
+    expect(onModeChange).toHaveBeenLastCalledWith(before)
+    expect(onToolRegistrationChange).toHaveBeenLastCalledWith(['apply_commands'])
+  })
+
+  it('language is chosen in the full settings view, not in quick settings', () => {
+    const { root } = setup()
+    expect(root.querySelector('#settingsView #langToggle')).not.toBeNull()
+    expect(root.querySelectorAll('#langToggle').length).toBe(1)
+  })
+
+  it('the out of scope group stays, with (0), when every tool is available', () => {
+    const { root, handle } = setup()
+    handle.setToolScope(['get_document_context', 'apply_commands'], ['get_document_context', 'apply_commands'])
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(root.querySelector('[data-group="outOfScope"] summary')!.textContent).toBe('Out of scope (0)')
+  })
+
   it('Save fires onSettingsSave once with docSystemMessage and registeredTools; field input alone does not fire it', () => {
     const { root, handle, onSettingsSave } = setup()
     handle.setToolScope(['get_document_context', 'apply_commands'], ['get_document_context', 'apply_commands'])

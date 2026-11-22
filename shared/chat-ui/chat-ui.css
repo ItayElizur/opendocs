@@ -158,6 +158,11 @@
     display: none; z-index: 20; padding: 14px;
   }
   .ai-settings-panel.open { display: block; }
+  /* The panel sits inside the header, which is pinned ltr, so it takes the language's direction back here.
+     The URL, key and model boxes stay ltr: they hold Latin text in either language. The key's whole box is ltr,
+     so its eye button and the room kept for it stay on the same side. */
+  [dir='rtl'] .ai-settings-panel { direction: rtl; }
+  .ai-settings-panel input[type="text"], .ai-settings-panel .ai-secret { direction: ltr; }
   .ai-settings-panel h4 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--color-text-tertiary); }
   .ai-field { margin-bottom: 12px; }
   .ai-field label { display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px; }
@@ -249,7 +254,9 @@
 
   .ai-tools-list { display: flex; flex-direction: column; gap: 2px; }
   .ai-tools-group-label { font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); margin: 10px 0 2px; text-transform: uppercase; letter-spacing: 0.03em; }
-  .ai-tools-group-label:first-child { margin-top: 0; }
+  .ai-tools-group:first-child > .ai-tools-group-label { margin-top: 0; }
+  .ai-tools-group > summary { cursor: pointer; user-select: none; }
+  .ai-tools-group > summary .ai-tools-count { text-transform: none; }
   .ai-tool-row { padding: 6px 0; border-bottom: 1px solid var(--color-border-default); }
   .ai-tool-row:last-child { border-bottom: none; }
   .ai-tool-row label { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
@@ -268,10 +275,23 @@
   }
   .ai-doc-message:focus { outline: none; border-color: var(--docs-brand-ring); }
 
-  .ai-settings-view-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 8px; }
+  .ai-settings-view-actions { position: relative; display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 8px; }
   #settingsViewBack { margin-inline-end: auto; }
   .ai-settings-saved-note { font-size: 12px; color: var(--docs-ok-ink); opacity: 0; transition: opacity 150ms; }
   .ai-settings-saved-note.visible { opacity: 1; }
+  /* Floats over the Back/Save row (growing upward if it wraps) so asking moves nothing on the page. */
+  .ai-discard-bar {
+    position: absolute; inset-inline: 0; bottom: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px;
+    border: 1px solid var(--docs-brand-ring); border-radius: var(--radius-8); background: var(--color-bg-page);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 14%); font-size: 13px;
+  }
+  .ai-discard-bar span { flex: 1 1 auto; }
+  /* The two answers wrap as one unit, never apart. */
+  .ai-discard-buttons { display: flex; gap: 8px; margin-inline-start: auto; }
+  /* Keep editing is the main button, over where Save sits, so a habitual click keeps the changes; Discard is quiet red. */
+  .ai-discard-yes { color: var(--color-danger, #c0392b); }
+  .ai-discard-bar[hidden] { display: none; } /* same specificity pitfall as .ai-more-settings-btn[hidden] */
 
   /* ---- empty state ---- */
   .ai-chat-empty {
