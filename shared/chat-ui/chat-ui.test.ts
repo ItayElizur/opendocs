@@ -904,6 +904,28 @@ describe('mountChatUI', () => {
     expect(outOfScope().open).toBe(false)
   })
 
+  it('language, theme and reasoning picked without Save are put back on leaving, and a later Save does not apply them', () => {
+    const { root, onSettingsSave } = setup()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const active = (group: string): string => root.querySelector<HTMLButtonElement>(`#${group} button.active`)!.textContent!
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    root.querySelector<HTMLButtonElement>('[data-lang="he"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-theme-choice="dark"]')!.click()
+    root.querySelector<HTMLButtonElement>('[data-reasoning-choice="high"]')!.click()
+
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    expect(confirm).toHaveBeenCalledTimes(1)
+    root.querySelector<HTMLButtonElement>('#moreSettingsBtn')!.click()
+    expect(active('langToggle')).toBe('Default')
+    expect(active('themeToggle')).toBe('Default')
+    expect(active('reasoningToggle')).toBe('Default')
+
+    root.querySelector<HTMLButtonElement>('#settingsViewBack')!.click()
+    root.querySelector<HTMLButtonElement>('.ai-settings-panel .ai-btn-primary')!.click()
+    expect(onSettingsSave).toHaveBeenCalledWith(expect.objectContaining({ lang: 'default', theme: 'default' }))
+    confirm.mockRestore()
+  })
+
   it('language is chosen in the full settings view, not in quick settings', () => {
     const { root } = setup()
     expect(root.querySelector('#settingsView #langToggle')).not.toBeNull()

@@ -159,9 +159,10 @@
   }
   .ai-settings-panel.open { display: block; }
   /* The panel sits inside the header, which is pinned ltr, so it takes the language's direction back here.
-     The URL, key and model boxes stay ltr: they hold Latin text in either language. */
+     The URL, key and model boxes stay ltr: they hold Latin text in either language. The key's whole box is ltr,
+     so its eye button and the room kept for it stay on the same side. */
   [dir='rtl'] .ai-settings-panel { direction: rtl; }
-  .ai-settings-panel input[type="text"], .ai-settings-panel input[type="password"] { direction: ltr; }
+  .ai-settings-panel input[type="text"], .ai-settings-panel .ai-secret { direction: ltr; }
   .ai-settings-panel h4 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--color-text-tertiary); }
   .ai-field { margin-bottom: 12px; }
   .ai-field label { display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px; }

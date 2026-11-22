@@ -1065,6 +1065,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     btn.addEventListener('click', () => {
       pendingTheme = btn.dataset.themeChoice as 'light' | 'dark' | 'default'
       root.querySelectorAll('#themeToggle button').forEach((b) => b.classList.toggle('active', b === btn))
+      markDirty()
     })
   })
 
@@ -1072,6 +1073,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     btn.addEventListener('click', () => {
       pendingReasoningEffort = btn.dataset.reasoningChoice as ReasoningEffort
       root.querySelectorAll('#reasoningToggle button').forEach((b) => b.classList.toggle('active', b === btn))
+      markDirty()
     })
   })
 
@@ -1462,6 +1464,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     btn.addEventListener('click', () => {
       pendingLang = btn.dataset.lang as LangPref
       root.querySelectorAll('#langToggle button').forEach((b) => b.classList.toggle('active', b === btn))
+      markDirty()
     })
   })
   root.querySelector<HTMLButtonElement>('.ai-btn-primary')!.addEventListener('click', () => {
@@ -1655,6 +1658,13 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
 
   let inSettingsView = false
   let dirty = false
+  // The language, theme and reasoning choices last saved; leaving the view without Save puts these back.
+  let savedChoices = { lang: pendingLang, theme: pendingTheme, reasoning: pendingReasoningEffort }
+  function showChoices(): void {
+    root.querySelectorAll<HTMLButtonElement>('#langToggle button').forEach((b) => b.classList.toggle('active', b.dataset.lang === pendingLang))
+    root.querySelectorAll<HTMLButtonElement>('#themeToggle button').forEach((b) => b.classList.toggle('active', b.dataset.themeChoice === pendingTheme))
+    root.querySelectorAll<HTMLButtonElement>('#reasoningToggle button').forEach((b) => b.classList.toggle('active', b.dataset.reasoningChoice === pendingReasoningEffort))
+  }
   function markDirty(): void { dirty = true }
   settingsView.addEventListener('input', markDirty)
   settingsView.addEventListener('change', markDirty)
@@ -1697,6 +1707,10 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     // Task 9 Step 3: unsaved-changes guard, shown inline rather than a
     // blocking native dialog.
     if (dirty && !window.confirm(t('discardChangesConfirm'))) return
+    pendingLang = savedChoices.lang
+    pendingTheme = savedChoices.theme
+    pendingReasoningEffort = savedChoices.reasoning
+    showChoices()
     closeSettingsView()
   }
   settingsBtn.addEventListener('click', () => {
@@ -1770,6 +1784,7 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
     })
     developerTools = developerToolsBox.checked
     renderPalette()
+    savedChoices = { lang: pendingLang, theme: pendingTheme, reasoning: pendingReasoningEffort }
     dirty = false
     settingsSavedNote.classList.add('visible')
     window.setTimeout(() => settingsSavedNote.classList.remove('visible'), 2000)
