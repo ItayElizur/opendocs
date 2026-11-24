@@ -294,7 +294,7 @@ namespace OutlookAiAddIn
 
             var sb = new StringBuilder();
             if (unresolved.Count > 0) sb.AppendLine("Could not resolve: " + string.Join(", ", unresolved));
-            sb.AppendLine("Checked " + freeBusy.Count + " people, " + FormatHour(startHour) + "-" + FormatHour(endHour) + ", " + duration + " min slots:");
+            sb.AppendLine("Checked " + freeBusy.Count + " people, " + WorkWeekPrompt.Hour(startHour) + "-" + WorkWeekPrompt.Hour(endHour) + HoursSource(input, workWeek.HasValue) + ", " + duration + " min slots:");
             foreach (FreeSlot s in slots)
             {
                 sb.Append("- " + Iso(s.Start) + " to " + s.End.ToString("HH:mm", CultureInfo.InvariantCulture) +
@@ -304,6 +304,16 @@ namespace OutlookAiAddIn
             }
             sb.AppendLine("\nPass a slot's start/end to draft_event to send the invite.");
             return new ToolResult { Output = sb.ToString(), Summary = "find_meeting_slots" };
+        }
+
+        // Hours the model did not pass come from the mailbox, which usually keeps Outlook's untouched default: say so,
+        // so the model checks them with the user before offering these times as the user's.
+        private static string HoursSource(JsonElement input, bool fromMailbox)
+        {
+            if (input.TryGetProperty("start_hour", out _) && input.TryGetProperty("end_hour", out _)) return "";
+            return fromMailbox
+                ? " (hours from the mailbox's work hours, which are often not set by the user: confirm them with the user)"
+                : " (default hours: the mailbox's could not be read; confirm them with the user)";
         }
 
         // Default range for an arbitrary work-days set: walk forward from
@@ -336,16 +346,6 @@ namespace OutlookAiAddIn
                     days.Add(d);
             }
             return days;
-        }
-
-        // start_hour/end_hour can be fractional (a mailbox's real EWS working
-        // hours, e.g. 8.5 for 08:30) even though the tool's own arguments are
-        // whole-hour integers - "00" formatting a fractional double would
-        // silently round instead of showing the actual minutes.
-        private static string FormatHour(double hour)
-        {
-            TimeSpan t = TimeSpan.FromHours(hour);
-            return t.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
         }
 
         // Used by RespondMeeting and the event reply/forward path: resolves event_id's

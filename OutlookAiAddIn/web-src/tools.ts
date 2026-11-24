@@ -157,7 +157,7 @@ export const ALL_OUTLOOK_TOOLS = [
   {
     name: 'find_meeting_slots',
     description:
-      "Finds open meeting times for you plus one or more attendees, using their Outlook free/busy. Ranked by how many people are free (so a best partial match still comes back if nobody is free for the whole group). Defaults to your mailbox's own configured work week/hours (read from Exchange; falls back to Sun-Thu 09:00-18:00 if that can't be read). Feed a returned slot to draft_event.",
+      "Finds open meeting times for you plus one or more attendees, using their Outlook free/busy. Ranked by how many people are free (so a best partial match still comes back if nobody is free for the whole group). Uses your mailbox's work days (read from Exchange; Sun-Thu if that can't be read). Work hours are different: the mailbox's are often left at Outlook's default, so unless the user already gave hours, ask them to confirm their hours first and pass start_hour/end_hour. Feed a returned slot to draft_event.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -165,8 +165,8 @@ export const ALL_OUTLOOK_TOOLS = [
         duration_minutes: { type: 'number' },
         start_date: { type: 'string', description: 'Range start (YYYY-MM-DD). Defaults to the work-week rule above.' },
         end_date: { type: 'string', description: 'Range end (YYYY-MM-DD).' },
-        start_hour: { type: 'number', description: "Earliest hour to consider. Defaults to your mailbox's configured work-day start (or 9 if that can't be read)." },
-        end_hour: { type: 'number', description: "Latest hour, exclusive. Defaults to your mailbox's configured work-day end (or 18 if that can't be read)." },
+        start_hour: { type: 'number', description: "Earliest hour to consider, as confirmed with the user. Without it, the mailbox's work-day start (often not set by the user), or 9 if that can't be read." },
+        end_hour: { type: 'number', description: "Latest hour, exclusive, as confirmed with the user. Without it, the mailbox's work-day end (often not set by the user), or 18 if that can't be read." },
         limit: { type: 'number', description: 'Max slots to return (default 5).' },
       },
       required: ['attendees', 'duration_minutes'],

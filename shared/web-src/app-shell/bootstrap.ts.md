@@ -102,6 +102,14 @@ spans midnight (or a laptop that sleeps overnight) correct instead of
 stuck on its start-of-chat date.
 ```
 
+## `promptContext`
+
+The host can add its own text to the system prompt, after the date line. The page asks once at startup
+(`requestPromptContext()`, message `load-prompt-context`), and `PaneHostBase.GetPromptContextAsync` answers with
+`prompt-context`: an empty string by default. Outlook's `TaskPaneHost` overrides it with the mailbox's work week
+(`OfficeAi.Shared/WorkWeekPrompt.cs`), which takes an Exchange round trip, so the reply can land after the first
+turn. Every turn from then on carries it, since `systemSuffix()` reads the variable each turn.
+
 ## `startAddIn`
 
 ```
