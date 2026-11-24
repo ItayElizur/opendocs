@@ -1,46 +1,116 @@
 <!--
-  OpenDocs machine-wide MSI (WiX Toolset 5). Built by build-msi.ps1, which passes:
+  OpenDocs MSI (WiX Toolset 5). Built by build-msi.ps1, which passes:
     Version     - ProductVersion, X.Y.Z
     DistDir     - the package folder package.ps1 produced (one <App>AiAddIn folder per app)
     PolicyFile  - the policy.json to install next to the per-app folders
   and builds it twice: -arch x64 for 64-bit Windows and -arch x86 for 32-bit Windows ($(sys.BUILDARCH) below).
-  It does what install.ps1 does for an all-users install: files in Program Files\OpenDocs, and each add-in
-  registered under HKLM - in both registry views on 64-bit Windows (64-bit Office reads SOFTWARE, 32-bit Office
-  reads WOW6432Node; the unused one is harmless), in the only view on 32-bit Windows. See build-msi.ps1.md.
+
+  One package, two scopes, picked by how it is started (see build-msi.ps1.md):
+    elevated (msiexec from an administrator prompt, or a deployment tool) - for all users: Program Files\OpenDocs,
+      add-ins registered under HKLM, in both registry views on 64-bit Windows (64-bit Office reads SOFTWARE, 32-bit
+      Office reads WOW6432Node; the unused one is harmless), in the only view on 32-bit Windows;
+    not elevated (double-click) - for the current user only: %LOCALAPPDATA%\Programs\OpenDocs, registered under HKCU.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="OpenDocs" Manufacturer="OpenDocs" Version="$(var.Version)"
-           UpgradeCode="A51AEEE1-4241-4A44-8A75-4E09D9C3358F" Scope="perMachine" Compressed="yes">
+           UpgradeCode="A51AEEE1-4241-4A44-8A75-4E09D9C3358F" Scope="perUserOrMachine" Compressed="yes">
     <!-- The old version is removed before the new one is installed, so every file - policy.json included - is
-         replaced by the new package's copy even if someone edited it. Same-version rebuilds upgrade too. -->
+         replaced by the new package's copy even if someone edited it. Same-version rebuilds upgrade too. Windows only
+         finds an older version installed in the same scope; the checks below stop the cases that would leave two. -->
     <MajorUpgrade Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="A newer version of OpenDocs is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- Prerequisites: refuse to install without them, rather than install add-ins Office then cannot load. Skipped on
-         uninstall and repair ("Installed"). See build-msi.ps1.md. -->
+    <!-- Scope. Scope="perUserOrMachine" defaults to per-user (ALLUSERS=2, MSIINSTALLPERUSER=1). Started elevated, a
+         first install switches to all users. MSIUSEREALADMINDETECTION makes AdminUser mean "really elevated" rather
+         than "in the Administrators group". Repair and uninstall keep the scope the product was installed with. -->
+    <Property Id="MSIUSEREALADMINDETECTION" Value="1" />
+    <SetProperty Id="ALLUSERS" Value="1" Condition="AdminUser AND NOT Installed" Before="FindRelatedProducts" Sequence="both" />
+    <!-- Windows Installer picks the per-user folders before ALLUSERS can change, so an all-users install points the
+         folder at the real Program Files itself (as WiX's own install-scope dialog does). -->
+    <?if $(sys.BUILDARCH) = x64 ?>
+    <SetDirectory Id="INSTALLFOLDER" Value="[%ProgramW6432]\OpenDocs" Condition="ALLUSERS=1" Sequence="both" />
+    <?else?>
+    <SetDirectory Id="INSTALLFOLDER" Value="[%ProgramFiles]\OpenDocs" Condition="ALLUSERS=1" Sequence="both" />
+    <?endif?>
+
+    <!-- Prerequisites: refuse to install without them, rather than install add-ins Office then cannot load. One
+         message lists everything missing. Skipped on uninstall and repair ("Installed"). See build-msi.ps1.md. -->
     <!-- .NET Framework 4.8 = Release 528040 or later. A raw DWORD reads as "#533509"; the "#" string comparison is
-         the usual WiX idiom and holds while Release has six digits. -->
+         the usual WiX idiom and holds while Release has six digits. Always machine-wide. -->
     <Property Id="NETFX_RELEASE">
       <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" Name="Release" Type="raw" Bitness="always64" />
     </Property>
-    <!-- VSTO 2010 runtime: registered in either registry view depending on what installed it. -->
+    <!-- VSTO 2010 runtime: always machine-wide, in either registry view depending on what installed it. -->
     <Property Id="VSTO_RUNTIME_64">
       <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\VSTO Runtime Setup\v4R" Name="Version" Type="raw" Bitness="always64" />
     </Property>
     <Property Id="VSTO_RUNTIME_32">
       <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\VSTO Runtime Setup\v4R" Name="Version" Type="raw" Bitness="always32" />
     </Property>
-    <!-- WebView2 runtime, machine-wide: the Edge Update client key in the 32-bit view; "0.0.0.0" means it was removed. -->
-    <Property Id="WEBVIEW2_VERSION">
+    <!-- WebView2 runtime: Edge Update's client key, for all users (HKLM, 32-bit view) or for one user (HKCU) when its
+         installer ran without admin; "0.0.0.0" means it was removed. An all-users install needs the all-users runtime:
+         one installed for a single user does not reach anyone else. -->
+    <Property Id="WEBVIEW2_MACHINE">
       <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" Name="pv" Type="raw" Bitness="always32" />
     </Property>
-    <Launch Condition="Installed OR NETFX_RELEASE &gt;= &quot;#528040&quot;"
-            Message="OpenDocs needs .NET Framework 4.8 or later. Install it (it is part of Windows 10 version 1903 and later), then install OpenDocs again." />
-    <Launch Condition="Installed OR VSTO_RUNTIME_64 OR VSTO_RUNTIME_32"
-            Message="OpenDocs needs the Visual Studio 2010 Tools for Office Runtime. Install vstor40_$(sys.BUILDARCH).msi, then install OpenDocs again." />
-    <Launch Condition="Installed OR (WEBVIEW2_VERSION AND WEBVIEW2_VERSION &lt;&gt; &quot;0.0.0.0&quot;)"
-            Message="OpenDocs needs the Microsoft Edge WebView2 Runtime. Install it, then install OpenDocs again." />
+    <Property Id="WEBVIEW2_USER">
+      <RegistrySearch Root="HKCU" Key="Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" Name="pv" Type="raw" />
+    </Property>
+
+    <SetProperty Id="MISSING_NETFX" After="AppSearch" Sequence="both"
+                 Condition="NOT Installed AND NOT (NETFX_RELEASE &gt;= &quot;#528040&quot;)"
+                 Value="&#13;&#10;- .NET Framework 4.8 or later (part of Windows 10 version 1903 and later)" />
+    <SetProperty Id="MISSING_VSTO" After="AppSearch" Sequence="both"
+                 Condition="NOT Installed AND NOT (VSTO_RUNTIME_64 OR VSTO_RUNTIME_32)"
+                 Value="&#13;&#10;- Visual Studio 2010 Tools for Office Runtime (vstor40_$(sys.BUILDARCH).msi)" />
+    <SetProperty Id="MISSING_WEBVIEW2" Action="SetMissingWebView2Machine" After="AppSearch" Sequence="both"
+                 Condition="NOT Installed AND ALLUSERS=1 AND NOT (WEBVIEW2_MACHINE AND WEBVIEW2_MACHINE &lt;&gt; &quot;0.0.0.0&quot;) AND NOT (WEBVIEW2_USER AND WEBVIEW2_USER &lt;&gt; &quot;0.0.0.0&quot;)"
+                 Value="&#13;&#10;- Microsoft Edge WebView2 Runtime, installed for all users (run its installer as administrator)" />
+    <SetProperty Id="MISSING_WEBVIEW2" Action="SetMissingWebView2MachineOnlyUser" After="AppSearch" Sequence="both"
+                 Condition="NOT Installed AND ALLUSERS=1 AND NOT (WEBVIEW2_MACHINE AND WEBVIEW2_MACHINE &lt;&gt; &quot;0.0.0.0&quot;) AND (WEBVIEW2_USER AND WEBVIEW2_USER &lt;&gt; &quot;0.0.0.0&quot;)"
+                 Value="&#13;&#10;- Microsoft Edge WebView2 Runtime for all users: it is installed only for your account now. Run its installer as administrator to install it for everyone." />
+    <SetProperty Id="MISSING_WEBVIEW2" Action="SetMissingWebView2User" After="AppSearch" Sequence="both"
+                 Condition="NOT Installed AND NOT ALLUSERS=1 AND NOT (WEBVIEW2_MACHINE AND WEBVIEW2_MACHINE &lt;&gt; &quot;0.0.0.0&quot;) AND NOT (WEBVIEW2_USER AND WEBVIEW2_USER &lt;&gt; &quot;0.0.0.0&quot;)"
+                 Value="&#13;&#10;- Microsoft Edge WebView2 Runtime" />
+    <Launch Condition="Installed OR NOT ALLUSERS=1 OR NOT (MISSING_NETFX OR MISSING_VSTO OR MISSING_WEBVIEW2)"
+            Message="OpenDocs cannot be installed for all users of this computer yet. Install these first, then run this installer again:[MISSING_NETFX][MISSING_VSTO][MISSING_WEBVIEW2]" />
+    <Launch Condition="Installed OR ALLUSERS=1 OR NOT (MISSING_NETFX OR MISSING_VSTO OR MISSING_WEBVIEW2)"
+            Message="OpenDocs cannot be installed for you yet. Install these first, then run this installer again:[MISSING_NETFX][MISSING_VSTO][MISSING_WEBVIEW2]" />
+
+    <!-- Other OpenDocs installs this one would not replace. Windows only upgrades an MSI install of the same scope
+         (WIX_UPGRADE_DETECTED); an install.ps1 install, or an MSI install of the other scope, would stay. Found by
+         each app's add-in registration: HKCU for one user, HKLM (either view) for all users. -->
+    <!-- Search properties must be uppercase; registry key names are not case-sensitive. -->
+    <?foreach APP in WORD;EXCEL;POWERPOINT;OUTLOOK ?>
+    <Property Id="ADDIN_HKCU_$(var.APP)">
+      <RegistrySearch Root="HKCU" Key="Software\Microsoft\Office\$(var.APP)\Addins\$(var.APP)AiAddIn" Name="Manifest" Type="raw" />
+    </Property>
+    <Property Id="ADDIN_HKLM64_$(var.APP)">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\Office\$(var.APP)\Addins\$(var.APP)AiAddIn" Name="Manifest" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="ADDIN_HKLM32_$(var.APP)">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\Microsoft\Office\$(var.APP)\Addins\$(var.APP)AiAddIn" Name="Manifest" Type="raw" Bitness="always32" />
+    </Property>
+    <?endforeach?>
+    <SetProperty Id="EXISTING_USER_INSTALL" Value="1" After="AppSearch" Sequence="both"
+                 Condition="ADDIN_HKCU_WORD OR ADDIN_HKCU_EXCEL OR ADDIN_HKCU_POWERPOINT OR ADDIN_HKCU_OUTLOOK" />
+    <SetProperty Id="EXISTING_MACHINE_INSTALL" Value="1" After="AppSearch" Sequence="both"
+                 Condition="ADDIN_HKLM64_WORD OR ADDIN_HKLM64_EXCEL OR ADDIN_HKLM64_POWERPOINT OR ADDIN_HKLM64_OUTLOOK OR ADDIN_HKLM32_WORD OR ADDIN_HKLM32_EXCEL OR ADDIN_HKLM32_POWERPOINT OR ADDIN_HKLM32_OUTLOOK" />
+    <!-- Office prefers a user's own registration (HKCU) to the computer's (HKLM): with one in place, that user would
+         keep running the old copy. It also keeps the two scopes from existing at once (see below). -->
+    <Launch Condition="Installed OR NOT ALLUSERS=1 OR NOT EXISTING_USER_INSTALL"
+            Message="OpenDocs is already installed for your account only, and Office would keep using that copy for you instead of this one. Remove it first (Settings, Apps, OpenDocs; uninstall.ps1 -CurrentUser for an install.ps1 install; or Clean in Visual Studio for a development build), then run this installer again." />
+    <!-- An install.ps1 install in the same place: this package would not replace its files reliably, so it must go first. -->
+    <Launch Condition="Installed OR NOT ALLUSERS=1 OR WIX_UPGRADE_DETECTED OR NOT EXISTING_MACHINE_INSTALL"
+            Message="OpenDocs is already installed for all users by install.ps1. Remove it first with uninstall.ps1 (as administrator), then run this installer again." />
+    <!-- Never both scopes at once: the two installs share this package's component IDs, so Windows counts each as a
+         client of the other's components, and removing one later leaves its registrations behind (tested). The
+         all-users copy already serves this user. -->
+    <Launch Condition="Installed OR ALLUSERS=1 OR NOT EXISTING_MACHINE_INSTALL"
+            Message="OpenDocs is already installed for all users of this computer, and Office uses that copy for you too. To update it, run this installer as administrator. To install your own copy instead, the all-users one has to be removed first." />
+    <Launch Condition="Installed OR ALLUSERS=1 OR WIX_UPGRADE_DETECTED OR NOT EXISTING_USER_INSTALL"
+            Message="OpenDocs is already set up for your account outside this installer, by install.ps1 or a Visual Studio build. Remove it first (uninstall.ps1 -CurrentUser, or Clean in Visual Studio), then run this installer again." />
 
     <?if $(sys.BUILDARCH) = x86 ?>
     <!-- On 64-bit Windows this package would register the add-ins only where 32-bit Office looks. -->
@@ -48,7 +118,8 @@
             Message="This OpenDocs package is for 32-bit Windows. On 64-bit Windows, install the x64 package instead." />
     <?endif?>
 
-    <!-- Program Files on both: the 64-bit one on 64-bit Windows, the only one on 32-bit Windows. -->
+    <!-- Program Files on both for all users (redirected to %LOCALAPPDATA%\Programs for one user); the 64-bit one on
+         64-bit Windows, the only one on 32-bit Windows. -->
     <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLFOLDER" Name="OpenDocs">
         <?foreach App in Word;Excel;PowerPoint;Outlook ?>
@@ -73,13 +144,15 @@
     </ComponentGroup>
   </Fragment>
 
+  <!-- HKMU is HKLM for an all-users install and HKCU for a per-user one. HKCU\Software is not split into 32- and
+       64-bit views, so on 64-bit Windows the two components write the same per-user key; Office reads it either way. -->
   <?foreach App in Word;Excel;PowerPoint;Outlook ?>
   <Fragment>
     <ComponentGroup Id="$(var.App)" Directory="$(var.App)Dir">
       <Files Include="$(var.DistDir)\$(var.App)AiAddIn\**" />
       <?if $(sys.BUILDARCH) = x64 ?>
       <Component Id="$(var.App)Reg64" Bitness="always64">
-        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Office\$(var.App)\Addins\$(var.App)AiAddIn">
+        <RegistryKey Root="HKMU" Key="SOFTWARE\Microsoft\Office\$(var.App)\Addins\$(var.App)AiAddIn">
           <RegistryValue Name="Description" Type="string" Value="$(var.App)AiAddIn" KeyPath="yes" />
           <RegistryValue Name="FriendlyName" Type="string" Value="$(var.App)AiAddIn" />
           <RegistryValue Name="LoadBehavior" Type="integer" Value="3" />
@@ -88,7 +161,7 @@
       </Component>
       <?endif?>
       <Component Id="$(var.App)Reg32" Bitness="always32">
-        <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Office\$(var.App)\Addins\$(var.App)AiAddIn">
+        <RegistryKey Root="HKMU" Key="SOFTWARE\Microsoft\Office\$(var.App)\Addins\$(var.App)AiAddIn">
           <RegistryValue Name="Description" Type="string" Value="$(var.App)AiAddIn" KeyPath="yes" />
           <RegistryValue Name="FriendlyName" Type="string" Value="$(var.App)AiAddIn" />
           <RegistryValue Name="LoadBehavior" Type="integer" Value="3" />

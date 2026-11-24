@@ -5,7 +5,12 @@ covers installing with the MSI, the administrator policy (`policy.json`), upgrad
 
 ## What gets installed
 
-One MSI installs the OpenDocs add-in for **Word, Excel, PowerPoint and Outlook**, for every user of the computer.
+One MSI installs the OpenDocs add-in for **Word, Excel, PowerPoint and Outlook**. How it is started decides for whom:
+
+- **Elevated** (from an administrator prompt, or by Intune, Configuration Manager or Group Policy, which run it as
+  SYSTEM): for **every user** of the computer. This is the install to deploy.
+- **Not elevated** (a user double-clicks it): for **that user only**, without admin rights.
+
 There are two builds of it; deploy the one that matches **Windows** (not Office):
 
 - `OpenDocs-<version>-x64.msi` for 64-bit Windows, with either 32-bit or 64-bit Office;
@@ -13,13 +18,14 @@ There are two builds of it; deploy the one that matches **Windows** (not Office)
 
 It installs:
 
-| What | Where |
-|---|---|
-| The four add-ins | `C:\Program Files\OpenDocs\WordAiAddIn\`, `ExcelAiAddIn\`, `PowerPointAiAddIn\`, `OutlookAiAddIn\` |
-| The administrator policy | `C:\Program Files\OpenDocs\policy.json` |
-| Office add-in registration | `HKLM\SOFTWARE\Microsoft\Office\<App>\Addins\<App>AiAddIn`; on 64-bit Windows in both the 64-bit and the 32-bit registry view, so it works with either Office |
+| What | For every user | For one user |
+|---|---|---|
+| The four add-ins | `C:\Program Files\OpenDocs\WordAiAddIn\`, `ExcelAiAddIn\`, `PowerPointAiAddIn\`, `OutlookAiAddIn\` | the same folders under `%LOCALAPPDATA%\Programs\OpenDocs\` |
+| The administrator policy | `C:\Program Files\OpenDocs\policy.json` | `%LOCALAPPDATA%\Programs\OpenDocs\policy.json` |
+| Office add-in registration | `HKLM\SOFTWARE\Microsoft\Office\<App>\Addins\<App>AiAddIn`; on 64-bit Windows in both the 64-bit and the 32-bit registry view, so it works with either Office | `HKCU\Software\Microsoft\Office\<App>\Addins\<App>AiAddIn` |
 
-Only administrators can change files under Program Files, so users cannot change the add-in or the policy. Each
+In an install for every user, only administrators can change files under Program Files, so users cannot change the
+add-in or the policy. In an install for one user, that user can change both (see "Security notes"). Each
 user's own settings (which AI provider and model to use, the API key, theme, language) are created the first time
 they open the panel, in their own profile. API keys are stored encrypted for that Windows user.
 
@@ -29,8 +35,10 @@ which can be a server on your own network.
 ## Before you install
 
 OpenDocs needs three Microsoft runtimes. `OpenDocs.msi` does not install them, but **it checks for them and refuses
-to install when one is missing**, with a message naming it (in the install log, `msiexec` exit code 1603). That way
-it never installs add-ins that Office then cannot load. Deploy what is missing first, then OpenDocs:
+to install when any is missing**, with one message listing everything missing (in the install log, `msiexec` exit
+code 1603). That way it never installs add-ins that Office then cannot load. An install for every user needs the
+WebView2 runtime installed for every user too: one installed for a single user (its installer run without admin)
+does not reach anyone else, and the message says when that is the case. Deploy what is missing first, then OpenDocs:
 
 | Prerequisite | Usually already there? | How to deploy it as an MSI |
 |---|---|---|
@@ -44,7 +52,7 @@ To check a computer (all three must be present):
 |---|---|
 | .NET 4.8+ | `HKLM\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full`, `Release` ≥ 528040 |
 | VSTO runtime | `HKLM\SOFTWARE\Microsoft\VSTO Runtime Setup\v4R`, `Version` (in either the 64-bit or the 32-bit registry view) |
-| WebView2 | `HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`, `pv` present and not `0.0.0.0` |
+| WebView2 | `HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`, `pv` present and not `0.0.0.0`. For an install for one user, the same key under `HKCU\Software\Microsoft\EdgeUpdate\Clients\` also counts. |
 
 Microsoft Office desktop apps (Word, Excel, PowerPoint, Outlook), 32- or 64-bit, are needed too, of course.
 
@@ -53,12 +61,13 @@ Group Policy software installation, put them in an earlier GPO or above OpenDocs
 first anyway, it fails cleanly and installs on the next attempt once the prerequisite is there.
 
 If a computer had OpenDocs installed earlier with the `install.ps1` script, run `uninstall.ps1` from that package
-first (elevated). The MSI does not own the files and registry keys the script created and may leave old files in place.
+first (elevated; `-CurrentUser` for a per-user one). The MSI does not own the files and registry keys the script
+created and might leave old files in place, so it refuses to install until they are gone and says so.
 
 ## Install
 
 Close Word, Excel, PowerPoint and Outlook on the target computer first: Office keeps the add-in files locked while
-it runs. Then, from an elevated prompt:
+it runs. Then, for every user, from an elevated prompt:
 
 ```
 msiexec /i OpenDocs-<version>-x64.msi /qn /l*v C:\Windows\Temp\OpenDocs-install.log
@@ -68,15 +77,34 @@ msiexec /i OpenDocs-<version>-x64.msi /qn /l*v C:\Windows\Temp\OpenDocs-install.
 - With Intune (Win32 app or line-of-business app), Configuration Manager or Group Policy software installation,
   deploy the MSI as a per-machine (device) install. It needs no command-line properties.
 - Users get the add-ins the next time they start each Office app.
+- Without admin rights, a user can install it for themselves by double-clicking the MSI (or
+  `msiexec /i OpenDocs-<version>-x64.msi` from a normal prompt). Double-clicking never installs for every user:
+  Windows does not offer "Run as administrator" for an MSI, so use the elevated `msiexec` line above.
 
 To check one computer: start Excel, open the OpenDocs panel, and open the editing-mode menu next to the message box.
 It should show the four modes, with any your policy switched off grayed out.
 
 ## Upgrade
 
-Install the newer MSI the same way. It removes the old version first and then installs the new one, so **every file
-is replaced, including `policy.json`**. If someone edited the installed `policy.json` by hand, that edit is lost on
-upgrade: keep your policy in the MSI (see below) or deploy it again after every upgrade.
+Install the newer MSI the same way as the old one: elevated for an install for every user, not elevated for a
+per-user one. It removes the old version first and then installs the new one, so **every file is replaced,
+including `policy.json`**. If someone edited the installed `policy.json` by hand, that edit is lost on upgrade: keep
+your policy in the MSI (see below) or deploy it again after every upgrade.
+
+Windows only upgrades an install of the same kind, so the MSI refuses the cases that would leave two copies, and
+says what to remove first:
+
+| Installed now | Newer MSI elevated (every user) | Newer MSI not elevated (one user) |
+|---|---|---|
+| MSI, every user | Upgrades it | Refused: the existing copy already serves this user; run the new one elevated |
+| MSI, one user | Refused: remove the user's copy first (Settings → Apps) | Upgrades it |
+| `install.ps1`, every user | Refused: run `uninstall.ps1` first | Refused: the existing copy already serves this user |
+| `install.ps1 -CurrentUser` | Refused: run `uninstall.ps1 -CurrentUser` first | Refused: run `uninstall.ps1 -CurrentUser` first |
+
+Two copies at once would break: Office uses a user's own registration over the computer's, so that user would keep
+the old copy, and the two installs share Windows Installer components, so removing one later leaves the other's
+registrations behind. The checks only see the account that runs the installer: another user's own copy on the same
+computer is not found, and keeps running for that user until they remove it.
 
 ## Uninstall
 
@@ -85,7 +113,8 @@ msiexec /x OpenDocs-<version>-x64.msi /qn
 ```
 
 Or remove **OpenDocs** in Settings → Apps. This removes the add-ins, their registration and `policy.json`. Each
-user's own settings and chat history stay in their profile.
+user's own settings and chat history stay in their profile. Removing an install for every user needs an
+administrator; a user can remove their own per-user copy without one.
 
 ## The policy: what the assistant may do
 
@@ -211,6 +240,11 @@ cd deploy
   the user wrote the call themselves. The editing mode still limits them.
 - **Data and the network:** OpenDocs has no server of its own and no built-in internet features. It sends document
   content only to the AI provider the user configured.
+- **Per-user installs are not under your control.** A user who installs OpenDocs for themselves can edit that copy's
+  `policy.json` (it is in their own folder), so the policy is enforced only by an install for every user. While one
+  is on the computer, the MSI refuses a per-user install. To stop per-user MSI installs altogether, set the Windows
+  Installer policy `DisableUserInstalls` (Computer Configuration → Administrative Templates → Windows Components →
+  Windows Installer → "Prohibit User Installs").
 
 ## Troubleshooting
 
