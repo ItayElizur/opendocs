@@ -141,6 +141,10 @@ own ProductCode):
   with error 1730, as for any per-machine product; an elevated removal left nothing behind.
 - **Refused, each with its own message:** an elevated install while a per-user copy exists; a per-user install
   while an all-users copy exists; a per-user install over a Visual Studio build's HKCU registrations.
+- **A rollback:** a 0.3.0 build run elevated over the installed 0.3.1 showed only WiX's "A newer version of OpenDocs
+  is already installed." A newer version installed sets `WIX_DOWNGRADE_DETECTED`, not `WIX_UPGRADE_DETECTED`, so
+  without `OR WIX_DOWNGRADE_DETECTED` the `install.ps1` check would fail too, and which of the two messages Windows
+  shows is not defined.
 - **The prerequisite message,** with throwaway builds whose VSTO and WebView2 searches point at missing keys: per-user
   and all-users each listed the missing items, one per line. With a WebView2 key added only under HKCU, the
   all-users message said it is installed only for this account.

@@ -101,15 +101,16 @@
          keep running the old copy. It also keeps the two scopes from existing at once (see below). -->
     <Launch Condition="Installed OR NOT ALLUSERS=1 OR NOT EXISTING_USER_INSTALL"
             Message="OpenDocs is already installed for your account only, and Office would keep using that copy for you instead of this one. Remove it first (Settings, Apps, OpenDocs; uninstall.ps1 -CurrentUser for an install.ps1 install; or Clean in Visual Studio for a development build), then run this installer again." />
-    <!-- An install.ps1 install in the same place: this package would not replace its files reliably, so it must go first. -->
-    <Launch Condition="Installed OR NOT ALLUSERS=1 OR WIX_UPGRADE_DETECTED OR NOT EXISTING_MACHINE_INSTALL"
+    <!-- An install.ps1 install in the same place: this package would not replace its files reliably, so it must go first.
+         A newer MSI version installed (a rollback) is not one: WIX_DOWNGRADE_DETECTED leaves only WiX's own message. -->
+    <Launch Condition="Installed OR NOT ALLUSERS=1 OR WIX_UPGRADE_DETECTED OR WIX_DOWNGRADE_DETECTED OR NOT EXISTING_MACHINE_INSTALL"
             Message="OpenDocs is already installed for all users by install.ps1. Remove it first with uninstall.ps1 (as administrator), then run this installer again." />
     <!-- Never both scopes at once: the two installs share this package's component IDs, so Windows counts each as a
          client of the other's components, and removing one later leaves its registrations behind (tested). The
          all-users copy already serves this user. -->
     <Launch Condition="Installed OR ALLUSERS=1 OR NOT EXISTING_MACHINE_INSTALL"
             Message="OpenDocs is already installed for all users of this computer, and Office uses that copy for you too. To update it, run this installer as administrator. To install your own copy instead, the all-users one has to be removed first." />
-    <Launch Condition="Installed OR ALLUSERS=1 OR WIX_UPGRADE_DETECTED OR NOT EXISTING_USER_INSTALL"
+    <Launch Condition="Installed OR ALLUSERS=1 OR WIX_UPGRADE_DETECTED OR WIX_DOWNGRADE_DETECTED OR NOT EXISTING_USER_INSTALL"
             Message="OpenDocs is already set up for your account outside this installer, by install.ps1 or a Visual Studio build. Remove it first (uninstall.ps1 -CurrentUser, or Clean in Visual Studio), then run this installer again." />
 
     <?if $(sys.BUILDARCH) = x86 ?>

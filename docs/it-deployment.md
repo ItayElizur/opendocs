@@ -106,6 +106,10 @@ the old copy, and the two installs share Windows Installer components, so removi
 registrations behind. The checks only see the account that runs the installer: another user's own copy on the same
 computer is not found, and keeps running for that user until they remove it.
 
+**Rolling back to an older version:** Windows Installer never installs an older version over a newer one, so the
+older MSI stops with "A newer version of OpenDocs is already installed." Uninstall the installed version first (see
+below), then install the older MSI. Its own `policy.json` is installed with it.
+
 ## Uninstall
 
 ```
