@@ -369,7 +369,7 @@ The packaging script builds the Release configuration, signs the manifests, and 
 
 ### Build an MSI
 
-`deploy\build-msi.ps1` builds the package and then `deploy\msi\OpenDocs-<version>-x64.msi` (and `-x86.msi` for 32-bit Windows), a machine-wide Windows Installer package with a `policy.json` of your choice built in (`-PolicyFile`). It checks the policy with the add-ins' own parser first, and needs WiX Toolset 5 (`dotnet tool install --global wix --version 5.0.2`). For IT departments, [`docs/it-deployment.md`](docs/it-deployment.md) explains installing with the MSI, setting the policy, upgrades and removal.
+`deploy\build-msi.ps1` builds the package and then `deploy\msi\OpenDocs-<version>-x64.msi` (and `-x86.msi` for 32-bit Windows), a Windows Installer package with a `policy.json` of your choice built in (`-PolicyFile`). Run elevated, it installs for all users; run without admin (double-click), for the current user only. It checks the policy with the add-ins' own parser first, and needs WiX Toolset 5 (`dotnet tool install --global wix --version 5.0.2`). For IT departments, [`docs/it-deployment.md`](docs/it-deployment.md) explains installing with the MSI, setting the policy, upgrades and removal.
 
 ### Install
 
