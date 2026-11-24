@@ -1,5 +1,5 @@
-# Run this ON THIS DEV MACHINE. Builds the OpenDocs MSIs: a machine-wide installer for all four add-ins, with a
-# policy.json of your choice built in. Needs everything package.ps1 needs, plus WiX Toolset 5:
+# Run this ON THIS DEV MACHINE. Builds the OpenDocs MSIs: an installer for all four add-ins, with a policy.json of your
+# choice built in. Run elevated it installs for all users; run without admin, for the current user only. Needs everything package.ps1 needs, plus WiX Toolset 5:
 #   dotnet tool install --global wix --version 5.0.2
 #
 # Usage:
@@ -79,5 +79,6 @@ foreach ($arch in 'x64', 'x86') {
     Write-Host "MSI ready: $msi"
 }
 Write-Host "x64 is for 64-bit Windows (32- or 64-bit Office), x86 for 32-bit Windows."
-Write-Host "Install silently (elevated):  msiexec /i OpenDocs-$Version-x64.msi /qn /l*v install.log"
+Write-Host "For all users (elevated prompt):  msiexec /i OpenDocs-$Version-x64.msi /qn /l*v install.log"
+Write-Host "For the current user only:         double-click it, or the same line from a normal prompt"
 Write-Host "See docs/it-deployment.md for rollout, policy and uninstall."
