@@ -55,7 +55,6 @@ function boot() {
     tools: [{ name: 'read_doc', description: 'reads', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } }] as any,
     toolDisplay: { read_doc: { label: { en: 'Read', he: 'Read' }, description: { en: 'reads', he: 'reads' } } },
     systemPrompt: 'sys',
-    skillId: 'test',
     starters: [],
     readOnlyTools: ['read_doc'],
   })
@@ -137,7 +136,7 @@ describe('direct tool call in the app shell', () => {
       { role: 'user', text: '!read_doc({})' },
       { role: 'assistant', text: 'read_doc: DIRECT-RESULT' },
     ])
-    const loop = new AgentLoop({ transport: { stream: () => ({ cancel() {} }) } as any, skill: { tools: [], executeTool: async () => ({ output: '', isError: false, summary: '' }) } as any })
+    const loop = new AgentLoop({ transport: { stream: () => ({ cancel() {} }) } as any, toolset: { tools: [], executeTool: async () => ({ output: '', isError: false, summary: '' }) } as any })
     loop.restore(h.persisted as any)
     expect(JSON.stringify(loop.messages)).toContain('!read_doc')
   })

@@ -8,7 +8,6 @@ import { SYSTEM_PROMPT } from './prompt'
 // settings, transport, chat-UI mount and AgentLoop event plumbing.
 
 startAddIn({
-  skillId: 'excel-tools',
   tools: [...ALL_TOOLS, ...SHARED_TOOLS],
   toolDisplay: { ...EXCEL_TOOL_DISPLAY, ...SHARED_TOOL_DISPLAY },
   systemPrompt: SYSTEM_PROMPT,

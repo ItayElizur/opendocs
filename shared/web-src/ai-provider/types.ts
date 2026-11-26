@@ -1,5 +1,3 @@
-import type { AgentMessage, AgentToolCall, AgentToolDef } from '@officeai/agent-core'
-
 export type AiProviderId = 'anthropic' | 'gemini' | 'deepseek' | 'openai' | 'custom'
 
 /** 'default' sends no reasoning-related parameter; 'off' actively asks the
@@ -34,39 +32,4 @@ export interface LegacyAiSettings {
   baseUrl?: string
   apiKey?: string
   model?: string
-}
-
-export interface AiChatRequest {
-  settings: AiSettings
-  system: string
-  user: string
-}
-
-export interface AiChatResponse {
-  ok: boolean
-  content?: string
-  error?: string
-}
-
-export interface AiStreamRequest {
-  requestId: string
-  settings: AiSettings
-  system: string
-  messages: AgentMessage[]
-  tools?: AgentToolDef[]
-  maxTokens?: number
-}
-
-export interface AiStreamChunk {
-  requestId: string
-  /** 'ping' = wire-level keepalive so the renderer can tell a live stream from a dead one */
-  type: 'delta' | 'tool-call' | 'done' | 'error' | 'ping'
-  text?: string
-  /** complete parsed tool call (emitted once its arguments finish streaming) */
-  toolCall?: AgentToolCall
-  error?: string
-  /** machine-readable error cause ('timeout', exhausted 'credits', 'network' connectivity failure); lets the renderer localize the message */
-  errorCode?: 'timeout' | 'credits' | 'network'
-  /** normalized stop reason carried on 'done' ('max_tokens' = output cut off by the token limit) */
-  stopReason?: string
 }

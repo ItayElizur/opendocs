@@ -8,7 +8,6 @@ import { SYSTEM_PROMPT } from './prompt'
 // settings, transport, chat-UI mount and AgentLoop event plumbing.
 
 startAddIn({
-  skillId: 'powerpoint-tools',
   tools: [...ALL_TOOLS, ...SHARED_TOOLS],
   toolDisplay: { ...POWERPOINT_TOOL_DISPLAY, ...SHARED_TOOL_DISPLAY },
   systemPrompt: SYSTEM_PROMPT,

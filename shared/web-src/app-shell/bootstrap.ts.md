@@ -271,7 +271,7 @@ sets `availableForMode()` uses.
 
 ## `executeConfirmed`, `needsApproval` and `confirmActions` (Approve before a call)
 
-`skill.executeTool` is `executeConfirmed`. The administrator's `policy.json` decides when the user is asked
+`toolset.executeTool` is `executeConfirmed`. The administrator's `policy.json` decides when the user is asked
 (`requireApproval`, injected by the host as `window.__opendocsApprovals`; see `OfficeAi.Shared/ModePolicy.cs.md`).
 `needsApproval` checks the tool's own entry, or `"*"` for any tool that is not read-only, against the current mode.
 Full autonomy never asks, a policy entry for a tool this app does not have is ignored, and a call to a tool name the

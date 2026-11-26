@@ -13,8 +13,6 @@ export const AI_CONNECT_TIMEOUT_MS = 60_000
  * so only genuinely dead connections should trip this.
  */
 export const AI_IDLE_TIMEOUT_MS = 180_000
-/** Non-streaming chat waits for the full generation before headers arrive */
-export const AI_CHAT_RESPONSE_TIMEOUT_MS = 180_000
 
 export class AiTimeoutError extends Error {
   constructor(ms: number) {
