@@ -3,6 +3,7 @@
   // App names: "Word", "Excel", "PowerPoint", "Outlook".
   // Mode names: "readOnly", "commentOnly", "trackChanges", "fullAutonomy".
   // In Outlook, commentOnly is "Draft only" and trackChanges is "Actions with approval".
+  // In an Outlook draft or meeting window, readOnly and commentOnly ("Edit this draft") are its only modes.
   // In Excel and PowerPoint, trackChanges is "Edits with approval" (they have no tracked changes).
   // A name the add-in does not recognise, or a file it cannot read, switches every mode off in every app.
 

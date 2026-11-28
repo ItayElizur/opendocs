@@ -24,13 +24,13 @@ shared-calendar path — each because the COM object model either can't do the j
   `item-` + a hash of the store and EntryID, so a draft reopened from Drafts resumes
   its chat. A new item has no EntryID until its first save, so it starts on a
   provisional `new-` id and `ChatStore.Migrate` moves it at the first save
-  (`ItemChatId`). Each item chat has its own editing mode and its own undo track,
-  moved with it at that first save and dropped when the window closes. The item (subject, recipients, times, attendees, location, the start of the
-  body) is sent as the pane's selection context and refreshed on `PropertyChange`. The
-  pane cannot change its item yet; it offers the main window's tools.
-  **NOT VERIFIED AGAINST LIVE OUTLOOK** — builds clean; whether `CustomTaskPanes.Add`
-  docks in an Inspector, and whether `TabAppointment` is also the meeting editor's
-  tab, were never run in Outlook.
+  (`ItemChatId`). Each item chat has its own editing mode, moved with it at that first
+  save and dropped when the window closes. The item (subject, recipients, times,
+  attendees, location, the start of the body) is sent as the pane's selection context
+  and refreshed on `PropertyChange`. The pane has its own tools and two modes; see
+  "Item window tools" below. The pane itself (docking in an Inspector, the meeting
+  editor's `TabAppointment`, the item context, separate chats surviving save and
+  reopen) was run live by the operator on 2026-11-28.
 - **Per-mailbox chat.** `GetChatId()` returns `mbx-` + `SHA256(primary SMTP)[:16]` —
   one rolling conversation per mailbox. No file path, so none of Word/Excel/
   PowerPoint's provisional-id / `ChatStore.Migrate` / `DocSettingsStore` save
@@ -124,6 +124,46 @@ shared-calendar path — each because the COM object model either can't do the j
   `ToolExecutor` delegate is `Task<ToolResult>`-returning
   (`WebViewBridgeHost.OnWebMessageReceived` is `async`); every other tool in all four
   add-ins is still synchronous, wrapped in `Task.FromResult`.
+
+## Item window tools (a draft, or an appointment or meeting)
+
+An item window's pane (`ItemPaneHost`) offers only its item's tools and the 11 read
+tools, in two modes. `ItemPaneHost.ExecuteTool` is the C# gate: `ItemReadTools` and
+`ItemEditTools` must match `entry.ts`'s `itemReadOnlyTools` and `itemEditExtraTools`
+(`TierListsAgreeTests.Outlook_ItemWindowTiers`), and every other name is refused as
+"done from the main Outlook window". So moving, deleting, flagging, tasks, reminders,
+color tags, `draft_email`, `draft_event`, `respond_meeting`, undo/redo and both send
+tools stay in the main window; nothing in an item window sends. The page knows it is
+an item window from `window.__opendocsPaneKind` (`"mail"` or `"appointment"`), which
+`WebViewBridgeHost` injects from `PaneHostBase`'s `paneKind` constructor argument.
+
+| `EditingMode` | Label | Tools |
+|---|---|---|
+| `ReadOnly` | **Read only** | The 11 read tools, `get_current_item`, `read_main_chat`. The model suggests changes. |
+| `CommentOnly` | **Edit this draft** / **Edit this meeting** (the default) | Also `edit_current_body`, `set_current_fields`. Every change stays in the open window until the user presses Send or Send Update. |
+
+The tools act only on the item the pane holds (`OutlookTools.Draft.cs`); none takes an
+item id. `policy.json` applies as in the main window: `disabledModes` can switch either
+mode off, and `requireApproval` can ask before an edit (`"Outlook": {"edit_current_body":
+["commentOnly"]}`); the shipped file asks for nothing here.
+
+| Tool | Notes |
+|---|---|
+| `get_current_item` | Every field: an email's subject, importance and recipients (kind per recipient); an appointment's subject, start, end, all-day, location, recurrence (read from `GetRecurrencePattern` only on a series), reminder, show-as, categories, and attendees with kind (`required`/`optional`/`resource`/`organizer`) and `MeetingResponseStatus`. The body is the window's Word document (`Inspector.WordEditor`), read once as `Range.Text` and cleaned by `TextAnchors.Clean(raw, keepBreaks: true)`, capped at 30,000 characters; `Item.Body` if the editor is not Word. |
+| `edit_current_body` | `find` + `replace_with` replaces one passage (`match: N` picks among several, after an error lists them with `TextAnchors.Snippet`); `insert` + `at` (`start`, `end`, `cursor` = `Document.Windows[1].Selection.Start`) adds text. Edits through the Word document, never `HTMLBody`, so formatting, signature, quoted thread and Ctrl+Z survive: one `Range.Text` write per call. The passage is found in the whole body's text read fresh at call time, so text the user typed elsewhere since does not matter, and text they changed is reported as not found. Positions come from `TextAnchors.DocumentPositions` (an end-of-cell `\r\a` is one position); the call refuses if the mapped end differs from `Content.End`, and re-reads the target range to confirm it holds the passage before writing. Logs its duration (`edit_current_body took N ms`). |
+| `set_current_fields` | Never touches the body. Email: `subject`, `importance`, recipients. Appointment or meeting: `subject`, `start`/`end` (start alone keeps the duration), `all_day`, `location`, `recurrence` (`ReadRecurrence` + `ApplyRecurrence`, shared with `draft_event`; same schema), `remove_recurrence` (`ClearRecurrencePattern`), `reminder_minutes` (-1 = off), `show_as` (`TryParseBusyStatus`), `categories`, attendees. Time, subject and location go through `draft_event`'s `ApplyEventFields`, so a series moves via its `RecurrencePattern`. Recipients: `add_recipients` (kind → names or addresses) and `remove_recipients`, planned by `OfficeAi.Shared.RecipientEdits` (unit-tested): adding someone already on the item under another kind moves them, the organizer is never touched. Each added name goes through `Recipient.Resolve()`; one that does not resolve to exactly one address is removed again and reported, never guessed, and the model is pointed at `search_contacts`. Attendee changes end in `SyncMeetingStatus` (shared with `draft_event` edit). Refuses a meeting the user only attends, or a canceled one. Nothing is saved or sent. Teams links and attachments are not offered. |
+| `read_main_chat` | The main window's chat for this mailbox (`TaskPaneHost.MailboxChatId`), since its last New chat: the last 20 messages, each cut to 2,000 characters (`OfficeAi.Shared.MainChatDigest`, unit-tested). Read-only; the item chat never writes to it. The model calls it only when the user refers to that chat. |
+| `find_meeting_slots` | The read tool, with `attendees` optional: in a meeting's window it defaults to the meeting's required and optional attendees (`OutlookTools.CurrentAttendees`). |
+
+**NOT VERIFIED AGAINST LIVE OUTLOOK** — the four item tools build clean in Release
+against the Outlook and Word PIAs (so `Inspector.WordEditor`, `Document.Windows[1].Selection`,
+`Range.TextRetrievalMode`, `Recipient.Delete`, `ClearRecurrencePattern` and
+`MeetingResponseStatus` exist with these signatures), and the pure planning, digest and
+position code is unit-tested, but none of them has run in a real compose or meeting
+window: whether one `Range.Text` write is one Ctrl+Z step, whether the position map
+holds on a long HTML reply thread, how right-to-left text behaves after an edit, how
+`Recipient.Resolve()` treats an ambiguous name on an Exchange profile, and the 1-second
+budget for a 50-message thread are all open.
 
 ## Read tools (11 — always allowed, never gated)
 

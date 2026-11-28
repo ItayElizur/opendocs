@@ -684,6 +684,23 @@ namespace OutlookAiAddIn
             return count;
         }
 
+        // Shared by draft_event (edit) and set_current_fields, which never send: an item with attendees is a meeting,
+        // and one whose attendees were all removed goes back to a plain appointment (same revert as EditEvent, minus
+        // its send-first ordering). Returns the attendee count.
+        private static int SyncMeetingStatus(Outlook.AppointmentItem appt)
+        {
+            int attendees = CountAttendeeRecipients(appt);
+            if (attendees == 0)
+            {
+                if (appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olNonMeeting;
+            }
+            else if (appt.MeetingStatus != Outlook.OlMeetingStatus.olMeeting)
+            {
+                appt.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
+            }
+            return attendees;
+        }
+
         // Shared by draft_event/send_event (edit)'s result text: describes
         // which of the seven optional fields were actually touched, so the
         // caller sees a precise summary instead of a generic "updated".
@@ -1016,19 +1033,7 @@ namespace OutlookAiAddIn
             {
                 int recipientsBefore = CountAttendeeRecipients(appt);
                 ReplaceAttendees(appt, requiredAttendees, optionalAttendees, unresolvedAttendees);
-                int recipientsAfter = CountAttendeeRecipients(appt);
-                // Same revert-to-non-meeting fix as EditEvent: if clearing
-                // attendees brought the real attendee count to zero, don't
-                // leave the item permanently marked as a meeting. No .Send()
-                // ordering concern here - draft tools never send.
-                if (recipientsAfter == 0)
-                {
-                    if (appt.MeetingStatus == Outlook.OlMeetingStatus.olMeeting) appt.MeetingStatus = Outlook.OlMeetingStatus.olNonMeeting;
-                }
-                else if (appt.MeetingStatus != Outlook.OlMeetingStatus.olMeeting)
-                {
-                    appt.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
-                }
+                int recipientsAfter = SyncMeetingStatus(appt);
                 // Same no-op guard as EditEvent: an already-empty attendee
                 // list touched with e.g. required_attendees="" changes nothing.
                 attendeesChanged = !(recipientsBefore == 0 && recipientsAfter == 0);

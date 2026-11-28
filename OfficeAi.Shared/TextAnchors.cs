@@ -19,7 +19,9 @@ namespace OfficeAi.Shared
 
     public static class TextAnchors
     {
-        public static CleanText Clean(string raw)
+        // keepBreaks: paragraph marks, line breaks and cell ends (\r, \v) become "\n" instead of being dropped, so a whole
+        // body can be searched across paragraphs.
+        public static CleanText Clean(string raw, bool keepBreaks = false)
         {
             raw = raw ?? "";
             var sb = new StringBuilder(raw.Length);
@@ -33,6 +35,7 @@ namespace OfficeAi.Shared
                 if (c == '\u0014') { if (fields.Count > 0) { fields.Pop(); fields.Push(true); } continue; }
                 if (c == '\u0015') { if (fields.Count > 0) fields.Pop(); continue; }
                 if (fields.Contains(false)) continue;
+                if (keepBreaks && (c == '\r' || c == '\v')) { sb.Append('\n'); map.Add(i); continue; }
                 if (c < ' ' && c != '\t') continue;
                 sb.Append(c == ' ' ? ' ' : c);
                 map.Add(i);
@@ -47,6 +50,21 @@ namespace OfficeAi.Shared
         {
             raw = raw ?? "";
             return raw.Length == span || (raw.EndsWith("\r\a", StringComparison.Ordinal) && raw.Length == span + 1);
+        }
+
+        // The document position of each character of a whole story's Range.Text: one per character, except that an
+        // end-of-cell or end-of-row mark reads "\r\a" but is one position, so both of its characters get the same one.
+        public static int[] DocumentPositions(string raw)
+        {
+            raw = raw ?? "";
+            var pos = new int[raw.Length];
+            int shift = 0;
+            for (int i = 0; i < raw.Length; i++)
+            {
+                if (raw[i] == '\a' && i > 0 && raw[i - 1] == '\r') shift++;
+                pos[i] = i - shift;
+            }
+            return pos;
         }
 
         // Start indices (into text) of non-overlapping, case-insensitive matches, at most max of them.

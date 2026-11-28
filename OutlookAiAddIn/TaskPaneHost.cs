@@ -29,9 +29,13 @@ namespace OutlookAiAddIn
             // Per-mailbox: one rolling chat keyed by the primary SMTP address.
             // No file-path / provisional-id / Migrate lifecycle - a mailbox has
             // a stable identity from the first call, so the id is final once set.
-            if (_chatId != null) return _chatId;
-            _chatId = "mbx-" + ChatStore.ChatIdForKey(PrimarySmtpAddress() ?? "");
-            return _chatId;
+            return _chatId ?? (_chatId = MailboxChatId());
+        }
+
+        // The main window's chat id, also read by an item window's read_main_chat.
+        internal static string MailboxChatId()
+        {
+            return "mbx-" + ChatStore.ChatIdForKey(PrimarySmtpAddress() ?? "");
         }
 
         protected override void SetEditingMode(EditingMode mode)

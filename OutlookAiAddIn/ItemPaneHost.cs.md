@@ -19,15 +19,32 @@ first ribbon press in that window and disposes it on `Inspector.Close`.
   is moved or sent).
 - **Who the user is, and the work week.** The same lines in the prompt as the main window's pane
   (`TaskPaneHost.MailboxPromptContextAsync`).
-- **Editing mode and undo history.** Both per chat, like the main
-  window's (`OutlookTools.SetMode`, `HistoryFor`). `undo_last_action`
-  undoes what the model in this chat did: each chat's model knows only its
-  own actions, and an item window's changes belong to that item, while the
-  main window's undo is about mailbox actions (moves, flags, deletes).
-  `OutlookTools.MoveChat` carries both to the saved id at the first save,
-  so an AutoSave mid-conversation does not empty the undo list, and
-  `OutlookTools.ForgetChat` drops them when the window closes, because
-  undo entries hold references to items.
+- **Editing mode.** Per chat, like the main window's (`OutlookTools.SetMode`).
+  `OutlookTools.MoveChat` carries it to the saved id at the first save, and
+  `OutlookTools.ForgetChat` drops it when the window closes.
+
+## The gate
+
+`ExecuteTool` is the second copy of `entry.ts`'s item-window lists
+(`itemReadOnlyTools`, `itemEditExtraTools`), checked against them by
+`TierListsAgreeTests`. The item tools (`get_current_item`, `edit_current_body`,
+`set_current_fields`, `read_main_chat`) run here against this pane's item,
+through `OutlookTools.Draft.cs`. The other read tools pass on to
+`OutlookTools.ExecuteAsync`; `find_meeting_slots` gets the meeting's attendees
+when it is called without any. Every other name is refused as "done from the
+main Outlook window": moving, deleting, flagging, drafting other mail,
+answering meetings, undo of mailbox actions and every send stay there, so a
+draft's chat, whose body holds the incoming email's text, cannot act on the
+mailbox.
+
+The edit tools need the CommentOnly slot ("Edit this draft" or "Edit this
+meeting"). The pane keeps the mode the page last set in `_mode`; `PaneHostBase`
+runs no tool before the page's first `set-mode`, so its `ReadOnly` start value
+is never what decides a call.
+
+The pane passes its kind (`"mail"` or `"appointment"`) to `PaneHostBase`, and
+the page reads it as `window.__opendocsPaneKind` to offer the two item-window
+modes and tools.
 
 ## The item as selection context
 

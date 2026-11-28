@@ -41,7 +41,9 @@ namespace OfficeAi.Shared
 
         public event Action<int> RequestPaneWidth;
 
-        protected PaneHostBase(string appDataFolderName)
+        // paneKind: null for an app's main pane; Outlook's item window passes "mail" or "appointment", which the page
+        // reads as window.__opendocsPaneKind to offer that window's own modes and tools.
+        protected PaneHostBase(string appDataFolderName, string paneKind = null)
         {
             _appDataFolderName = appDataFolderName;
             _disabledModes = ModePolicy.DisabledFor(appDataFolderName);
@@ -65,7 +67,7 @@ namespace OfficeAi.Shared
             // silently kills the VSTO connection (no exception, just
             // Connect=False forever). Subclasses must resolve it lazily. See
             // PaneHostBase.cs.md.
-            _bridge = new WebViewBridgeHost(this, ExecuteToolUnderPolicy, appDataFolderName, UpdateStatus, OnOtherMessage);
+            _bridge = new WebViewBridgeHost(this, ExecuteToolUnderPolicy, appDataFolderName, UpdateStatus, OnOtherMessage, paneKind);
         }
 
         private void UpdateStatus(string s)

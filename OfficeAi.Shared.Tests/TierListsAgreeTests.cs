@@ -89,6 +89,21 @@ namespace OfficeAi.Shared.Tests
             Assert.Empty(CSharpSet(cs, "SendTierTools").Intersect(lower));
         }
 
+        // The item window (a draft, or an appointment or meeting) has its own two lists, gated in ItemPaneHost.cs.
+        [Fact]
+        public void Outlook_ItemWindowTiers()
+        {
+            const string cs = "OutlookAiAddIn/ItemPaneHost.cs";
+            const string ts = "OutlookAiAddIn/web-src/entry.ts";
+            Same(CSharpSet(cs, "ItemReadTools"), TsArray(ts, "const itemReadOnlyTools ="), "Outlook item window read-only tools");
+            Same(CSharpSet(cs, "ItemEditTools"), TsArray(ts, "const itemEditExtraTools ="), "Outlook item window edit tools");
+
+            // Only reads pass on to the mailbox tools: an item window's lists hold no main-window action.
+            const string main = "OutlookAiAddIn/OutlookTools.cs";
+            var actions = CSharpSet(main, "DraftTierTools").Union(CSharpSet(main, "ApprovalTierTools")).Union(CSharpSet(main, "SendTierTools"));
+            Assert.Empty(actions.Intersect(CSharpSet(cs, "ItemReadTools").Union(CSharpSet(cs, "ItemEditTools"))));
+        }
+
         // Every tool of the tier that asks (Actions with approval) must have its own Approve card in confirm.ts, so the
         // card shows the item rather than the plain "Allow this action?" card. (The send tools are Full autonomy only,
         // which never asks.)

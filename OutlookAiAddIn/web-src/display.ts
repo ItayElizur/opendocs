@@ -31,6 +31,10 @@ export const OUTLOOK_TOOL_DISPLAY: Record<string, ReturnType<typeof d>> = {
   draft_event: d('Draft event', 'טיוטת אירוע', 'Opens a pre-filled new event, or an existing event with edits or a cancellation, to review.', 'פותח אירוע חדש, או אירוע קיים עם עריכות או ביטול, לבדיקה.'),
   send_email: d('Send email (auto-send)', 'שליחת הודעה (שליחה אוטומטית)', 'Sends a new email, reply or forward immediately, no review window.', 'שולח הודעה חדשה, תשובה או העברה מיידית, ללא חלון בדיקה.'),
   send_event: d('Send event (auto-send)', 'שליחת אירוע (שליחה אוטומטית)', 'Creates, edits or cancels an event immediately, no review window.', 'יוצר, עורך או מבטל אירוע מיידית, ללא חלון בדיקה.'),
+  get_current_item: d('Read this item', 'קריאת הפריט', 'Reads the email or meeting open in this window, with its body and every field.', 'קורא את ההודעה או הפגישה הפתוחה בחלון הזה, כולל הגוף וכל השדות.'),
+  edit_current_body: d('Edit the body', 'עריכת הגוף', "Changes the text of this window's email or meeting in place; Ctrl+Z undoes it.", 'משנה את הטקסט של ההודעה או הפגישה בחלון הזה במקום; Ctrl+Z מבטל.'),
+  set_current_fields: d('Change fields', 'שינוי שדות', 'Changes recipients, subject, times, location and other fields in this window. Nothing is sent.', 'משנה נמענים, נושא, זמנים, מיקום ושדות נוספים בחלון הזה. שום דבר לא נשלח.'),
+  read_main_chat: d('Read the main chat', "קריאת הצ'אט הראשי", "Reads what you discussed in the main Outlook window's chat.", "קורא את מה שנדון בצ'אט של חלון Outlook הראשי."),
 }
 
 export const STARTERS = [
@@ -38,3 +42,15 @@ export const STARTERS = [
   { en: 'Draft a reply to the selected email', he: 'נסח תשובה להודעה שנבחרה' },
   { en: "What's on my calendar this week?", he: 'מה יש ביומן שלי השבוע?' },
 ]
+
+// The chat starters in an item window (entry.ts picks by the window's kind).
+export const ITEM_STARTERS = {
+  mail: [
+    { en: 'Make this shorter and more formal', he: 'קצר את זה ונסח באופן רשמי יותר' },
+    { en: 'Check the draft for mistakes', he: 'בדוק את הטיוטה לטעויות' },
+  ],
+  appointment: [
+    { en: 'Find a time that works for everyone', he: 'מצא זמן שמתאים לכולם' },
+    { en: 'Write an agenda for this meeting', he: 'כתוב סדר יום לפגישה הזו' },
+  ],
+}

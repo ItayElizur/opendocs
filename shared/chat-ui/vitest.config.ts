@@ -12,6 +12,7 @@ export default defineConfig({
       { find: '@officeai/ai-provider', replacement: fileURLToPath(new URL('../web-src/ai-provider/index.ts', import.meta.url)) },
       { find: '@officeai/agent-core', replacement: fileURLToPath(new URL('../web-src/agent-core/index.ts', import.meta.url)) },
       { find: '@officeai/chat-ui', replacement: fileURLToPath(new URL('./chat-ui.ts', import.meta.url)) },
+      { find: '@officeai/app-shell', replacement: fileURLToPath(new URL('../web-src/app-shell/index.ts', import.meta.url)) },
     ],
   },
 })
