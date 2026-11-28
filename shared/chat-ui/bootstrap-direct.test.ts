@@ -23,6 +23,7 @@ vi.mock('../web-src/app-shell/bridge', () => ({
   requestDocSettings: () => {},
   requestHistory: () => {},
   requestOfficeLanguage: () => {},
+  requestPromptContext: () => {},
   requestOfficeTheme: () => {},
   saveDocSettings: () => {},
 }))
@@ -210,6 +211,21 @@ describe('editing modes switched off by policy.json', () => {
     send('hello')
     await flush()
     expect(h.streams[0]!.req.tools.map((t: { name: string }) => t.name)).toEqual(['read_doc'])
+  })
+
+  it('adds the host prompt context (Outlook: the work week) to the system prompt once it arrives', async () => {
+    const { send } = boot()
+    send('first')
+    await flush()
+    expect(h.streams[0]!.req.system).not.toContain('Work days')
+    h.streams[0]!.cb.onDelta('ok')
+    h.streams[0]!.cb.onDone()
+    await flush()
+
+    h.bridge.onPromptContextLoaded("Work days from the user's mailbox: Sunday, Monday.")
+    send('second')
+    await flush()
+    expect(h.streams.at(-1)!.req.system).toContain("Work days from the user's mailbox: Sunday, Monday.")
   })
 
   it('with every mode disabled, grays them all, hides the menu, says why and offers no tools', async () => {

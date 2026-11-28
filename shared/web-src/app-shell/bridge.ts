@@ -137,6 +137,9 @@ export interface BridgeHandlers {
    * in response to requestOfficeLanguage() (see `bridge.ts.md`); only "he"/"en" are
    * supported, any other Office UI language resolves to "en" server-side. */
   onOfficeLanguageLoaded(language: 'en' | 'he'): void
+  /** Extra system-prompt text from the host (Outlook: the mailbox's work week), sent once in response to
+   * requestPromptContext(), when its lookup finishes; '' when the app has none. */
+  onPromptContextLoaded(text: string): void
 }
 
 const pendingToolCalls = new Map<string, (result: ToolExecution) => void>()
@@ -179,6 +182,10 @@ export function initBridge(handlers: BridgeHandlers): void {
       const language = (data as unknown as { language: string }).language
       handlers.onOfficeLanguageLoaded(language === 'he' ? 'he' : 'en')
     }
+    if (data.kind === 'prompt-context') {
+      const text = (data as unknown as { text: unknown }).text
+      handlers.onPromptContextLoaded(typeof text === 'string' ? text : '')
+    }
   })
 }
 
@@ -196,6 +203,10 @@ export function requestOfficeTheme(): void {
 
 export function requestOfficeLanguage(): void {
   chrome.webview.postMessage({ kind: 'load-language' })
+}
+
+export function requestPromptContext(): void {
+  chrome.webview.postMessage({ kind: 'load-prompt-context' })
 }
 
 export function saveDocSettings(systemMessage: string): void {

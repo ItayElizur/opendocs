@@ -48,10 +48,25 @@ Best-effort: the real work week/hours come from EWS's
 GetUserAvailability (see OutlookEws.GetWorkingHoursAsync's own
 comment for why - no COM equivalent exists). On-prem Exchange only,
 same as search_contacts; any failure (no Exchange account, EWS
-unreachable, etc.) returns null so the caller (find_meeting_slots)
-can fall back to a COM-only default, rather than failing the tool -
-unlike search_contacts, where EWS isn't optional, here it's an
-enhancement over an already-working default.
+unreachable, etc.) falls through to `LocalWorkWeek` below, and only
+if that also finds nothing does it return null, so the callers (the
+prompt and find_meeting_slots) fall back to "ask the user" or a
+COM-only default rather than failing - unlike search_contacts, where
+EWS isn't optional, here it's an enhancement over an already-working
+default.
+
+## `LocalWorkWeek`
+
+Outlook's File > Options > Calendar > Work time settings, read from
+`HKCU\Software\Microsoft\Office\16.0\Outlook\Options\Calendar`:
+`WorkDay` (a day bitmask, decoded by WorkWeekPrompt.DaysFromOutlookMask),
+`CalDefStart` and `CalDefEnd` (minutes after midnight). A profile with
+only Gmail/IMAP/POP accounts has no Exchange mailbox, so this is its
+only source; on a live test machine a Sun-Thu work week set in Outlook
+showed up there as `WorkDay = 248`. Missing values (never changed
+from Outlook's defaults) or an impossible range return null. It is
+not cached like the EWS result: a registry read is cheap, and the user
+may change the settings while Outlook runs.
 
 ## `ResolveEwsUrlAsync`
 
