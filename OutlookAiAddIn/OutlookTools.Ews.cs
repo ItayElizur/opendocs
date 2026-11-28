@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.Win32;
 using OfficeAi.Shared;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
@@ -106,12 +107,34 @@ namespace OutlookAiAddIn
                     // fields' own comment above.
                     _cachedWorkWeek = result;
                     _workWeekResolved = true;
+                    return result;
                 }
-                return result;
             }
             catch (Exception ex)
             {
                 DebugLog.WriteException("ResolveWorkWeekAsync", ex);
+            }
+            return LocalWorkWeek();
+        }
+
+        // Outlook's own Calendar options, kept in the registry: the only source for a profile with no Exchange account
+        // (Gmail, IMAP, POP), and a fallback when EWS is unreachable. Read each time, not cached: it is cheap and the
+        // user may change it. See OutlookTools.Ews.cs.md.
+        private static OutlookEws.WorkWeekInfo? LocalWorkWeek()
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Office\16.0\Outlook\Options\Calendar"))
+                {
+                    if (!(key?.GetValue("WorkDay") is int mask && key.GetValue("CalDefStart") is int start && key.GetValue("CalDefEnd") is int end)) return null;
+                    List<DayOfWeek> days = WorkWeekPrompt.DaysFromOutlookMask(mask);
+                    if (days.Count == 0 || start < 0 || end <= start || end > 24 * 60) return null;
+                    return new OutlookEws.WorkWeekInfo { Days = new HashSet<DayOfWeek>(days), StartHour = start / 60.0, EndHour = end / 60.0 };
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException("LocalWorkWeek", ex);
                 return null;
             }
         }

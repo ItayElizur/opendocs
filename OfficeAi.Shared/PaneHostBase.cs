@@ -187,6 +187,24 @@ namespace OfficeAi.Shared
         // language, and PaneHostBase.cs.md for the exact property path.
         protected abstract int GetOfficeUiLanguageId();
 
+        // Extra text for the model's system prompt, asked for once when the page starts. Outlook adds the mailbox's
+        // work week; the other apps add nothing.
+        protected virtual Task<string> GetPromptContextAsync() => Task.FromResult<string>(null);
+
+        // async void, so nothing may escape: an exception here would take down the Office process. The pane can close
+        // while Outlook waits on Exchange, so the post sits inside the try as well.
+        private async void SendPromptContext()
+        {
+            try
+            {
+                string text = null;
+                try { text = await GetPromptContextAsync(); }
+                catch (Exception ex) { DebugLog.WriteException("GetPromptContextAsync", ex); }
+                PostMessage(new { kind = "prompt-context", text = text ?? "" });
+            }
+            catch (Exception ex) { DebugLog.WriteException("SendPromptContext", ex); }
+        }
+
         private void OnOtherMessage(string kind, JsonElement root)
         {
             switch (kind)
@@ -259,6 +277,10 @@ namespace OfficeAi.Shared
                 // display language instead of its theme.
                 case "load-language":
                     PostMessage(new { kind = "office-language", language = OfficeLanguage.ResolveUiLanguage(GetOfficeUiLanguageId()) });
+                    break;
+                // Answered when the lookup finishes (Outlook asks Exchange); the page uses it from then on.
+                case "load-prompt-context":
+                    SendPromptContext();
                     break;
             }
         }

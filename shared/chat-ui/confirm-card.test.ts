@@ -20,6 +20,7 @@ vi.mock('../web-src/app-shell/bridge', () => ({
   requestDocSettings: () => {},
   requestHistory: () => {},
   requestOfficeLanguage: () => {},
+  requestPromptContext: () => {},
   requestOfficeTheme: () => {},
   saveDocSettings: () => {},
 }))

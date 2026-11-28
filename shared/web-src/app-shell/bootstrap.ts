@@ -15,6 +15,7 @@ import {
   requestHistory,
   requestOfficeLanguage,
   requestOfficeTheme,
+  requestPromptContext,
   saveDocSettings,
   type RawSelectionPayload,
 } from './bridge'
@@ -450,6 +451,8 @@ export function startAddIn(config: AddInConfig): void {
   // (see `bootstrap.ts.md`).
   let savedDocMessage = ''
   let activeDocMessage = ''
+  // Host-supplied system-prompt text (Outlook: the work week); see onPromptContextLoaded.
+  let promptContext = ''
   function beginConversation(): void {
     activeDocMessage = savedDocMessage
   }
@@ -851,7 +854,7 @@ export function startAddIn(config: AddInConfig): void {
     // only changes at conversation-start boundaries - see beginConversation()
     // above - and is labeled explicitly as user-supplied so the model treats
     // it as standing instructions from the user, not as system policy.
-    systemSuffix: () => '\n\n' + todayContextLine() + (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
+    systemSuffix: () => '\n\n' + todayContextLine() + (promptContext ? '\n\n' + promptContext : '') + (activeDocMessage ? '\n\nDocument guidelines from the user:\n' + activeDocMessage : ''),
     events: {
       onText: (text) => {
         textStreamedSinceGroup = true
@@ -950,6 +953,11 @@ export function startAddIn(config: AddInConfig): void {
       lastKnownOfficeLanguage = officeLanguage
       if (currentLangPref === 'default') ui.setLang(officeLanguage)
     },
+    // Arrives when the host's lookup finishes (Outlook asks Exchange), possibly after the first turn; every later
+    // turn's system prompt carries it.
+    onPromptContextLoaded: (text) => {
+      promptContext = text
+    },
   })
 
   // Task 4: push the initial (scope-default, no override) tool registration
@@ -960,4 +968,5 @@ export function startAddIn(config: AddInConfig): void {
   requestDocSettings()
   requestOfficeTheme()
   requestOfficeLanguage()
+  requestPromptContext()
 }
