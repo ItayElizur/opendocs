@@ -353,7 +353,7 @@ function toSelectionScopeUpdate(raw: RawSelectionPayload): { hasSelection: boole
     return { hasSelection: true, extent: { kind: 'range', address: raw.address ?? '', rows: raw.rows ?? 0, cols: raw.cols ?? 0 } }
   }
   if (raw.app === 'outlook' && raw.itemKind) {
-    return { hasSelection: true, extent: { kind: 'mailSelection', count: 1, subject: raw.subject ?? '' } }
+    return { hasSelection: true, extent: { kind: 'outlookItem', itemKind: raw.itemKind, subject: raw.subject ?? '' } }
   }
   if (raw.app === 'outlook') {
     const count = (raw.entryIds ?? []).length
