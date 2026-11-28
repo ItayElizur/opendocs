@@ -8,7 +8,7 @@ using Outlook = Microsoft.Office.Interop.Outlook;
 namespace OutlookAiAddIn
 {
     // The chat pane inside one item window: a mail draft, or an appointment or meeting. Its chat belongs to that item
-    // (ItemChatId), its editing mode is its own, and undo history is the mailbox's. See ItemPaneHost.cs.md.
+    // (ItemChatId), with its own editing mode and its own undo track. See ItemPaneHost.cs.md.
     public class ItemPaneHost : PaneHostBase
     {
         private const string AppDataFolder = "OutlookAiAddIn";
@@ -31,7 +31,7 @@ namespace OutlookAiAddIn
 
         protected override Task<ToolResult> ExecuteTool(string name, JsonElement input)
         {
-            return OutlookTools.ExecuteAsync(GetChatId(), TaskPaneHost.MailboxKey(), name, input);
+            return OutlookTools.ExecuteAsync(GetChatId(), name, input);
         }
 
         // A new item has no EntryID until its first save (Outlook's AutoSave does one after a few minutes), so the chat
@@ -52,6 +52,7 @@ namespace OutlookAiAddIn
             {
                 ChatStore.Migrate(AppDataFolder, migrateFrom, id);
                 DocSettingsStore.Migrate(AppDataFolder, migrateFrom, id);
+                OutlookTools.MoveChat(migrateFrom, id);
             }
             return _chatId = id;
         }
@@ -146,6 +147,7 @@ namespace OutlookAiAddIn
                 try { if (_item is Outlook.ItemEvents_10_Event events) events.PropertyChange -= _onPropertyChange; }
                 catch { }
                 _item = null;
+                if (_chatId != null) OutlookTools.ForgetChat(_chatId);
             }
             base.Dispose(disposing);
         }

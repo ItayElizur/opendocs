@@ -12,11 +12,30 @@ namespace OutlookAiAddIn
     // Dispatcher + shared helpers live here; per-area handlers in the partials.
     public static partial class OutlookTools
     {
-        private static readonly Dictionary<string, EditingMode> ModeByMailbox = new Dictionary<string, EditingMode>();
+        // Keyed by chat id, like undo history (HistoryByChat): the main window's chat is the mailbox's, and each item
+        // window's chat (ItemPaneHost) has its own mode and its own undo track.
+        private static readonly Dictionary<string, EditingMode> ModeByChat = new Dictionary<string, EditingMode>();
+
+        // An item window's chat moves from its provisional id to its saved one at the item's first save; its mode and
+        // undo history move with it, so an AutoSave mid-conversation does not empty the undo list.
+        public static void MoveChat(string fromChatId, string toChatId)
+        {
+            EditingMode mode;
+            if (ModeByChat.TryGetValue(fromChatId, out mode)) { ModeByChat.Remove(fromChatId); ModeByChat[toChatId] = mode; }
+            ActionHistory<UndoEntry> history;
+            if (HistoryByChat.TryGetValue(fromChatId, out history)) { HistoryByChat.Remove(fromChatId); HistoryByChat[toChatId] = history; }
+        }
+
+        // An item window closed. Its undo entries hold references to items, so they go with the window.
+        public static void ForgetChat(string chatId)
+        {
+            ModeByChat.Remove(chatId);
+            HistoryByChat.Remove(chatId);
+        }
 
         public static void SetMode(string mbxKey, EditingMode mode)
         {
-            ModeByMailbox[mbxKey] = mode;
+            ModeByChat[mbxKey] = mode;
         }
 
         // Falls back to CommentOnly ("Draft only"), matching the client's own
@@ -26,7 +45,7 @@ namespace OutlookAiAddIn
         private static EditingMode ModeFor(string mbxKey)
         {
             EditingMode m;
-            return ModeByMailbox.TryGetValue(mbxKey, out m) ? m : EditingMode.CommentOnly;
+            return ModeByChat.TryGetValue(mbxKey, out m) ? m : EditingMode.CommentOnly;
         }
 
         // Outlook repurposes two EditingMode slots Word/Excel/PowerPoint use

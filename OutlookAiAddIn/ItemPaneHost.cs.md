@@ -17,9 +17,15 @@ first ribbon press in that window and disposes it on `Inspector.Close`.
   every few minutes, so the move usually happens while the window is open.
   The saved id is then kept even if the EntryID changes later (the item
   is moved or sent).
-- **Editing mode.** Per chat, like every pane (`OutlookTools.SetMode`).
-- **Undo history.** The mailbox's (`TaskPaneHost.MailboxKey()`), so an
-  action the model takes from here can be undone from the main window.
+- **Editing mode and undo history.** Both per chat, like the main
+  window's (`OutlookTools.SetMode`, `HistoryFor`). `undo_last_action`
+  undoes what the model in this chat did: each chat's model knows only its
+  own actions, and an item window's changes belong to that item, while the
+  main window's undo is about mailbox actions (moves, flags, deletes).
+  `OutlookTools.MoveChat` carries both to the saved id at the first save,
+  so an AutoSave mid-conversation does not empty the undo list, and
+  `OutlookTools.ForgetChat` drops them when the window closes, because
+  undo entries hold references to items.
 
 ## The item as selection context
 

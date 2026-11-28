@@ -9,6 +9,8 @@ namespace OutlookAiAddIn
 {
     public partial class TaskPaneHost : PaneHostBase
     {
+        private string _chatId;
+
         // Same "never dereference COM in the constructor" rule the other hosts
         // document: do NOT touch Application.Session here - it hits the same
         // VSTO-connect timing hazard. PrimarySmtpAddress() runs lazily on the
@@ -24,17 +26,12 @@ namespace OutlookAiAddIn
 
         protected override string GetChatId()
         {
-            return MailboxKey();
-        }
-
-        private static string _mailboxKey;
-
-        // Per-mailbox: one rolling chat keyed by the primary SMTP address, and the key undo history is kept under (also
-        // by the item windows' panes, see ItemPaneHost). No file-path / provisional-id / Migrate lifecycle - a mailbox
-        // has a stable identity from the first call, so the key is final once set.
-        internal static string MailboxKey()
-        {
-            return _mailboxKey ?? (_mailboxKey = "mbx-" + ChatStore.ChatIdForKey(PrimarySmtpAddress() ?? ""));
+            // Per-mailbox: one rolling chat keyed by the primary SMTP address.
+            // No file-path / provisional-id / Migrate lifecycle - a mailbox has
+            // a stable identity from the first call, so the id is final once set.
+            if (_chatId != null) return _chatId;
+            _chatId = "mbx-" + ChatStore.ChatIdForKey(PrimarySmtpAddress() ?? "");
+            return _chatId;
         }
 
         protected override void SetEditingMode(EditingMode mode)
@@ -47,9 +44,9 @@ namespace OutlookAiAddIn
             return Globals.ThisAddIn.GetOfficeUiLanguageId();
         }
 
-        private static string _smtp;
+        private string _smtp;
 
-        private static string PrimarySmtpAddress()
+        private string PrimarySmtpAddress()
         {
             if (_smtp != null) return _smtp;
             try

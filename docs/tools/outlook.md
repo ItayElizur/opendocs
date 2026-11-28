@@ -24,8 +24,8 @@ shared-calendar path — each because the COM object model either can't do the j
   `item-` + a hash of the store and EntryID, so a draft reopened from Drafts resumes
   its chat. A new item has no EntryID until its first save, so it starts on a
   provisional `new-` id and `ChatStore.Migrate` moves it at the first save
-  (`ItemChatId`). Each item chat has its own editing mode; undo history stays per
-  mailbox. The item (subject, recipients, times, attendees, location, the start of the
+  (`ItemChatId`). Each item chat has its own editing mode and its own undo track,
+  moved with it at that first save and dropped when the window closes. The item (subject, recipients, times, attendees, location, the start of the
   body) is sent as the pane's selection context and refreshed on `PropertyChange`. The
   pane cannot change its item yet; it offers the main window's tools.
   **NOT VERIFIED AGAINST LIVE OUTLOOK** — builds clean; whether `CustomTaskPanes.Add`
@@ -177,7 +177,7 @@ to put an object-model change onto that slot.
 | `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Refuses if the item was changed since the assistant's action (by the user or anything else) rather than overwrite it, and never touches the user's own manual changes. A failed or refused entry is dropped, never retried. Stops at a barrier (below) instead of reaching past it. |
 | `redo_last_action` | Re-applies the most recently undone action, with the same "changed since" check. The redo list is cleared by any new recorded action or barrier. |
 
-How it works: an in-memory stack per mailbox chat (keyed like `ModeByMailbox`, capped at
+How it works: an in-memory stack per chat (the mailbox chat, or one item window's chat; keyed like `ModeByChat`, capped at
 50 entries, lost on restart). Each mutating handler records one entry after its change
 succeeds:
 
