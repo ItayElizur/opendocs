@@ -44,19 +44,48 @@ namespace OutlookAiAddIn
             return Globals.ThisAddIn.GetOfficeUiLanguageId();
         }
 
-        // The mailbox's work week for the model's prompt (the same Exchange lookup find_meeting_slots uses, cached once
-        // it succeeds). A failed lookup tells the model to ask rather than assume.
-        protected override async Task<string> GetPromptContextAsync()
+        protected override Task<string> GetPromptContextAsync()
         {
-            OutlookEws.WorkWeekInfo? week = await OutlookTools.ResolveWorkWeekAsync();
-            return week.HasValue
-                ? WorkWeekPrompt.Describe(week.Value.Days, week.Value.StartHour, week.Value.EndHour)
-                : WorkWeekPrompt.Unknown();
+            return MailboxPromptContextAsync();
         }
 
-        private string _smtp;
+        // What the model's prompt says about this mailbox: who the user is, then the work week (the same Exchange
+        // lookup find_meeting_slots uses, cached once it succeeds; a failed lookup tells the model to ask rather than
+        // assume).
+        internal static async Task<string> MailboxPromptContextAsync()
+        {
+            string identity = UserIdentity();
+            OutlookEws.WorkWeekInfo? week = await OutlookTools.ResolveWorkWeekAsync();
+            string workWeek = week.HasValue
+                ? WorkWeekPrompt.Describe(week.Value.Days, week.Value.StartHour, week.Value.EndHour)
+                : WorkWeekPrompt.Unknown();
+            return identity == null ? workWeek : identity + "\n\n" + workWeek;
+        }
 
-        private string PrimarySmtpAddress()
+        // The user's display name and every account's address, primary first, so the model knows its own user's
+        // address without reading a message sent to them.
+        private static string UserIdentity()
+        {
+            try
+            {
+                Outlook.NameSpace ns = Globals.ThisAddIn.Application.Session;
+                var addresses = new List<string> { PrimarySmtpAddress() };
+                foreach (Outlook.Account account in ns.Accounts)
+                {
+                    try { addresses.Add(account.SmtpAddress); } catch { }
+                }
+                return UserIdentityPrompt.Describe(ns.CurrentUser?.Name, addresses);
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException("UserIdentity", ex);
+                return null;
+            }
+        }
+
+        private static string _smtp;
+
+        private static string PrimarySmtpAddress()
         {
             if (_smtp != null) return _smtp;
             try
