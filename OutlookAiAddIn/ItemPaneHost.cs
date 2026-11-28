@@ -67,13 +67,10 @@ namespace OutlookAiAddIn
             return Globals.ThisAddIn.GetOfficeUiLanguageId();
         }
 
-        // The mailbox's work week, as the main window's pane gives it (TaskPaneHost.GetPromptContextAsync).
-        protected override async Task<string> GetPromptContextAsync()
+        // Who the user is and the mailbox's work week, as the main window's pane gives them.
+        protected override Task<string> GetPromptContextAsync()
         {
-            OutlookEws.WorkWeekInfo? week = await OutlookTools.ResolveWorkWeekAsync();
-            return week.HasValue
-                ? WorkWeekPrompt.Describe(week.Value.Days, week.Value.StartHour, week.Value.EndHour)
-                : WorkWeekPrompt.Unknown();
+            return TaskPaneHost.MailboxPromptContextAsync();
         }
 
         protected override void OnPageStarted()
