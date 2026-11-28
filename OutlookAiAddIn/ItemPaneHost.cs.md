@@ -17,6 +17,8 @@ first ribbon press in that window and disposes it on `Inspector.Close`.
   every few minutes, so the move usually happens while the window is open.
   The saved id is then kept even if the EntryID changes later (the item
   is moved or sent).
+- **Work week.** The same line in the prompt as the main window's pane
+  (`GetPromptContextAsync`, from `OutlookTools.ResolveWorkWeekAsync`).
 - **Editing mode and undo history.** Both per chat, like the main
   window's (`OutlookTools.SetMode`, `HistoryFor`). `undo_last_action`
   undoes what the model in this chat did: each chat's model knows only its
