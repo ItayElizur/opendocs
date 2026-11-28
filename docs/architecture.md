@@ -67,7 +67,7 @@ offered no tools and the chat says the administrator turned the modes off. The s
 tool call while the pane is in a disabled mode or has not reported a mode yet (`ModePolicy.Blocks`). A disabled mode
 is never passed on to the app's `SetMode`. Before every call the pane stores its own mode again under its current chat
 id. That id changes on a new document's first save, when the app's `ModeFor` would otherwise fall back to Full
-autonomy, and Outlook's panes share one mode per mailbox. Changes to the policy take effect when Office is restarted.
+autonomy, and Outlook's panes on the same chat share one mode. Changes to the policy take effect when Office is restarted.
 
 ## Direct tool calls (Developer tools)
 

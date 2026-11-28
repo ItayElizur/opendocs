@@ -11,7 +11,7 @@ namespace OutlookAiAddIn
         // Backs the panel's Approve/Deny card (preview_action in OutlookTools.cs). Given the call about to run, returns one JSON
         // object: "blocked" (the exact refusal the call would get, so the panel can skip the card) or the item's type, subject,
         // sender and date. Never the body, and never changes anything.
-        private static ToolResult PreviewAction(string mbxKey, JsonElement input)
+        private static ToolResult PreviewAction(EditingMode mode, JsonElement input)
         {
             string tool = Str(input, "tool", null);
             JsonElement call = input.ValueKind == JsonValueKind.Object && input.TryGetProperty("input", out JsonElement inner) ? inner : default(JsonElement);
@@ -31,7 +31,7 @@ namespace OutlookAiAddIn
 
                     if (isDelete && Bool(call, "permanent", false))
                     {
-                        string blocked = PermanentModeRefusal(ModeFor(mbxKey));
+                        string blocked = PermanentModeRefusal(mode);
                         if (blocked == null)
                         {
                             Outlook.Folder source = null;

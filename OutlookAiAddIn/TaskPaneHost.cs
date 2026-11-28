@@ -21,7 +21,9 @@ namespace OutlookAiAddIn
 
         protected override Task<ToolResult> ExecuteTool(string name, JsonElement input)
         {
-            return OutlookTools.ExecuteAsync(GetChatId(), name, input);
+            // The main window's chat is the mailbox's chat, so its chat id is also the mailbox key.
+            string chatId = GetChatId();
+            return OutlookTools.ExecuteAsync(chatId, chatId, name, input);
         }
 
         protected override string GetChatId()

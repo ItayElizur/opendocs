@@ -12,21 +12,22 @@ namespace OutlookAiAddIn
     // Dispatcher + shared helpers live here; per-area handlers in the partials.
     public static partial class OutlookTools
     {
-        private static readonly Dictionary<string, EditingMode> ModeByMailbox = new Dictionary<string, EditingMode>();
+        // Keyed by chat, not mailbox: each chat pane has its own mode. Undo history stays per mailbox (HistoryFor).
+        private static readonly Dictionary<string, EditingMode> ModeByChat = new Dictionary<string, EditingMode>();
 
-        public static void SetMode(string mbxKey, EditingMode mode)
+        public static void SetMode(string chatId, EditingMode mode)
         {
-            ModeByMailbox[mbxKey] = mode;
+            ModeByChat[chatId] = mode;
         }
 
         // Falls back to CommentOnly ("Draft only"), matching the client's own
         // default, for the brief window before its first explicit "set-mode"
         // message arrives. See OutlookTools.cs.md for why the old
         // FullAutonomy fallback is no longer safe.
-        private static EditingMode ModeFor(string mbxKey)
+        private static EditingMode ModeFor(string chatId)
         {
             EditingMode m;
-            return ModeByMailbox.TryGetValue(mbxKey, out m) ? m : EditingMode.CommentOnly;
+            return ModeByChat.TryGetValue(chatId, out m) ? m : EditingMode.CommentOnly;
         }
 
         // Outlook repurposes two EditingMode slots Word/Excel/PowerPoint use
@@ -97,14 +98,16 @@ namespace OutlookAiAddIn
                 : "Blocked: permanent delete requires " + TierLabel(EditingMode.TrackChanges) + " mode or higher (currently " + TierLabel(mode) + "). Omit permanent, or set it to false, to move the message to Deleted Items instead.";
         }
 
-        public static async Task<ToolResult> ExecuteAsync(string mbxKey, string name, JsonElement input)
+        // chatId picks the editing mode; mbxKey keys everything per mailbox (undo history). The main window's pane
+        // passes the same string for both.
+        public static async Task<ToolResult> ExecuteAsync(string chatId, string mbxKey, string name, JsonElement input)
         {
             try
             {
                 DebugLog.Write("OutlookTools.Execute " + name);
-                EditingMode mode = ModeFor(mbxKey);
+                EditingMode mode = ModeFor(chatId);
                 // Read-only lookup for the panel's Approve/Deny card; not a model tool, so in none of the tier sets.
-                if (name == "preview_action") return PreviewAction(mbxKey, input);
+                if (name == "preview_action") return PreviewAction(mode, input);
                 if (!AlwaysAllowedTools.Contains(name))
                 {
                     EditingMode required =

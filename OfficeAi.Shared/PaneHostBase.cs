@@ -151,7 +151,7 @@ namespace OfficeAi.Shared
                 return Task.FromResult(new ToolResult { Output = "Blocked: this editing mode is disabled by your administrator.", IsError = true, Summary = name });
             }
             // Re-store this pane's mode under the current chat id before every call: the id changes on a new document's
-            // first save (the app would then fall back to Full autonomy), and Outlook panes share one per-mailbox mode.
+            // first save (the app would then fall back to Full autonomy), and Outlook panes on the same chat share one mode.
             if (_mode != null) SetEditingMode(_mode.Value);
             return ExecuteTool(name, input);
         }

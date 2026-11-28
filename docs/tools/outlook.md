@@ -163,7 +163,7 @@ to put an object-model change onto that slot.
 | `undo_last_action` | Reverses the assistant's most recent recorded action; call it again to step further back. Refuses if the item was changed since the assistant's action (by the user or anything else) rather than overwrite it, and never touches the user's own manual changes. A failed or refused entry is dropped, never retried. Stops at a barrier (below) instead of reaching past it. |
 | `redo_last_action` | Re-applies the most recently undone action, with the same "changed since" check. The redo list is cleared by any new recorded action or barrier. |
 
-How it works: an in-memory stack per mailbox chat (keyed like `ModeByMailbox`, capped at
+How it works: an in-memory stack per mailbox (keyed by the mailbox key, not the chat id the mode uses, capped at
 50 entries, lost on restart). Each mutating handler records one entry after its change
 succeeds:
 
