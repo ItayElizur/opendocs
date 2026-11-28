@@ -190,8 +190,8 @@ namespace OfficeAi.Shared
         // language, and PaneHostBase.cs.md for the exact property path.
         protected abstract int GetOfficeUiLanguageId();
 
-        // Extra text for the model's system prompt, asked for once when the page starts. Outlook adds the mailbox's
-        // work week; the other apps add nothing.
+        // Extra text for the model's system prompt, asked for once when the page starts. Outlook adds the user's name and
+        // addresses and the mailbox's work week; the other apps add nothing.
         protected virtual Task<string> GetPromptContextAsync() => Task.FromResult<string>(null);
 
         // async void, so nothing may escape: an exception here would take down the Office process. The pane can close
