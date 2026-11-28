@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -29,8 +30,26 @@ namespace OutlookAiAddIn
             if (item is Outlook.ItemEvents_10_Event events) events.PropertyChange += _onPropertyChange;
         }
 
+        // The item window's own gate, the second copy of entry.ts's item-window lists. Only these mailbox reads pass on
+        // to OutlookTools; every mailbox action stays in the main window. Must stay in sync with entry.ts's
+        // itemReadOnlyTools.
+        private static readonly HashSet<string> ItemReadTools = new HashSet<string>
+        {
+            "search_emails", "get_email", "open_email", "get_attachment", "list_folders", "search_contacts",
+            "list_events", "get_event", "find_meeting_slots", "list_color_categories", "list_tasks",
+        };
+
         protected override Task<ToolResult> ExecuteTool(string name, JsonElement input)
         {
+            if (!ItemReadTools.Contains(name))
+            {
+                return Task.FromResult(new ToolResult
+                {
+                    Output = "Blocked: " + name + " is done from the main Outlook window, not from this item's window.",
+                    IsError = true,
+                    Summary = name,
+                });
+            }
             return OutlookTools.ExecuteAsync(GetChatId(), name, input);
         }
 

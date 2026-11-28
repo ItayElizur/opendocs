@@ -19,15 +19,19 @@ first ribbon press in that window and disposes it on `Inspector.Close`.
   is moved or sent).
 - **Who the user is, and the work week.** The same lines in the prompt as the main window's pane
   (`TaskPaneHost.MailboxPromptContextAsync`).
-- **Editing mode and undo history.** Both per chat, like the main
-  window's (`OutlookTools.SetMode`, `HistoryFor`). `undo_last_action`
-  undoes what the model in this chat did: each chat's model knows only its
-  own actions, and an item window's changes belong to that item, while the
-  main window's undo is about mailbox actions (moves, flags, deletes).
-  `OutlookTools.MoveChat` carries both to the saved id at the first save,
-  so an AutoSave mid-conversation does not empty the undo list, and
-  `OutlookTools.ForgetChat` drops them when the window closes, because
-  undo entries hold references to items.
+- **Editing mode.** Per chat, like the main window's (`OutlookTools.SetMode`).
+  `OutlookTools.MoveChat` carries it to the saved id at the first save, and
+  `OutlookTools.ForgetChat` drops it when the window closes.
+
+## The gate
+
+`ExecuteTool` is the second copy of `entry.ts`'s item-window lists. It
+passes only the mailbox read tools (`ItemReadTools`) on to
+`OutlookTools.ExecuteAsync`, and refuses every other name as "done from the
+main Outlook window". Moving, deleting, flagging, drafting other mail,
+answering meetings, undo of mailbox actions and every send stay in the main
+window, so a draft's chat, whose body holds the incoming email's text,
+cannot act on the mailbox.
 
 ## The item as selection context
 
