@@ -102,7 +102,9 @@ shared-calendar path — each because the COM object model either can't do the j
   `svc.Timeout` 15 s) so Outlook stays responsive. **On-prem Exchange only.** EWS
   unreachable / SSPI failure / endpoint not found / timeout → a clear `IsError` result
   for `search_contacts` and for `list_events` with `mailbox` (EWS isn't optional
-  there); `find_meeting_slots` instead falls back to a hardcoded Sun-Thu/9-18 default,
+  there); the work week instead falls back to Outlook's own Calendar options in the
+  registry (`WorkDay`/`CalDefStart`/`CalDefEnd`, the only source for a Gmail/IMAP/POP
+  profile), and only then does `find_meeting_slots` use a hardcoded Sun-Thu/9-18 default,
   since EWS is an enhancement over an already-working COM-only path there, not the
   only way to do the job. These three are the only async tools — the shared
   `ToolExecutor` delegate is `Task<ToolResult>`-returning

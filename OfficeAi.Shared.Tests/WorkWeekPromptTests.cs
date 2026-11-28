@@ -18,6 +18,16 @@ namespace OfficeAi.Shared.Tests
             Assert.Contains("find_meeting_slots", text);
         }
 
+        [Theory]
+        [InlineData(124, new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday })]
+        [InlineData(248, new[] { DayOfWeek.Sunday, DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday })]
+        [InlineData(130, new[] { DayOfWeek.Sunday, DayOfWeek.Saturday })]
+        [InlineData(0, new DayOfWeek[0])]
+        public void DaysFromOutlookMask_ReadsOutlooksWorkDayBits(int mask, DayOfWeek[] expected)
+        {
+            Assert.Equal(expected, WorkWeekPrompt.DaysFromOutlookMask(mask));
+        }
+
         [Fact]
         public void Unknown_TellsTheModelToAskInsteadOfAssumingMondayToFriday()
         {

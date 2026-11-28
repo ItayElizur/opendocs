@@ -26,6 +26,13 @@ namespace OfficeAi.Shared
                    "assuming Monday to Friday.";
         }
 
+        // Outlook's WorkDay registry value (File > Options > Calendar > Work time): one bit per day, Sunday = 128 down to
+        // Saturday = 2, so Monday to Friday is 124 and Sunday to Thursday is 248.
+        public static List<DayOfWeek> DaysFromOutlookMask(int mask)
+        {
+            return Enum.GetValues(typeof(DayOfWeek)).Cast<DayOfWeek>().Where(d => (mask & (128 >> (int)d)) != 0).ToList();
+        }
+
         // 8.5 -> "08:30"; a fraction that is not a whole minute is rounded to one.
         public static string Hour(double hour)
         {
