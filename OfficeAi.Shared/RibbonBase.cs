@@ -15,23 +15,20 @@ namespace OfficeAi.Shared
     {
         private IRibbonUI _ribbon;
 
-        // Word/Excel/PowerPoint all inject into TabHome and answer every
-        // ribbonID. Outlook's Explorer home tab is TabMail, and Outlook calls
-        // GetCustomUI once per ribbon surface (Explorer, each Inspector class) -
-        // OutlookAiAddIn overrides both hooks so the button appears only on the
-        // Explorer's Mail tab and nowhere in the pop-out windows.
-        protected virtual string HomeTabIdMso { get { return "TabHome"; } }
-
-        protected virtual bool ProvidesRibbonFor(string ribbonID) { return true; }
+        // The built-in tab the button goes on for one ribbon surface, or null for no button there. Word/Excel/PowerPoint
+        // use TabHome everywhere. Outlook calls GetCustomUI once per surface (the main window, each kind of item window)
+        // and overrides this to pick its tabs.
+        protected virtual string TabIdMsoFor(string ribbonID) { return "TabHome"; }
 
         public string GetCustomUI(string ribbonID)
         {
-            if (!ProvidesRibbonFor(ribbonID)) return null;
+            string tab = TabIdMsoFor(ribbonID);
+            if (tab == null) return null;
             return
 @"<customUI xmlns=""http://schemas.microsoft.com/office/2009/07/customui"" onLoad=""OnRibbonLoad"">
   <ribbon>
     <tabs>
-      <tab idMso=""" + HomeTabIdMso + @""">
+      <tab idMso=""" + tab + @""">
         <group id=""OpenDocsGroup"" getLabel=""GetGroupLabel"">
           <button id=""OpenDocsToggleButton"" getLabel=""GetButtonLabel"" size=""large""
                   getImage=""GetLogoImage"" onAction=""OnToggleTaskPane"" />
@@ -81,8 +78,11 @@ namespace OfficeAi.Shared
 
         public void OnToggleTaskPane(IRibbonControl control)
         {
-            TogglePane();
+            TogglePane((object)control.Context);
         }
+
+        // context is the window whose button was pressed (Outlook passes its Explorer or Inspector).
+        protected virtual void TogglePane(object context) { TogglePane(); }
 
         protected abstract void TogglePane();
     }

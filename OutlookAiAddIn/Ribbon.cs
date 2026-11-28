@@ -3,25 +3,31 @@ using OfficeAi.Shared;
 
 namespace OutlookAiAddIn
 {
-    // Explorer-only: the OpenDocs button goes on the Explorer's Mail tab
-    // (idMso "TabMail", not Word/Excel/PowerPoint's "TabHome") and is
-    // suppressed on every Inspector (pop-out read/compose) ribbon surface.
+    // The OpenDocs button goes on the main window's Mail tab (idMso "TabMail", not Word/Excel/PowerPoint's "TabHome"),
+    // on the tab of a mail compose window, and on the appointment and meeting editor's tab. Windows that only read an
+    // item (a received email, a meeting request) get no button. See ThisAddIn.cs.md.
     [ComVisible(true)]
     public class Ribbon : RibbonBase
     {
-        protected override string HomeTabIdMso
+        protected override string TabIdMsoFor(string ribbonID)
         {
-            get { return "TabMail"; }
+            switch (ribbonID)
+            {
+                case "Microsoft.Outlook.Explorer": return "TabMail";
+                case "Microsoft.Outlook.Mail.Compose": return "TabNewMailMessage";
+                case "Microsoft.Outlook.Appointment": return "TabAppointment";
+                default: return null;
+            }
         }
 
-        protected override bool ProvidesRibbonFor(string ribbonID)
+        protected override void TogglePane(object context)
         {
-            return ribbonID == "Microsoft.Outlook.Explorer";
+            Globals.ThisAddIn.TogglePane(context);
         }
 
         protected override void TogglePane()
         {
-            Globals.ThisAddIn.TogglePane();
+            Globals.ThisAddIn.TogglePane(null);
         }
 
         protected override int GetOfficeUiLanguageId()

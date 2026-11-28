@@ -13,10 +13,24 @@ shared-calendar path — each because the COM object model either can't do the j
 
 ## Shape of the integration (differs from Word/Excel/PowerPoint)
 
-- **Explorer-only.** The chat pane docks in the main Outlook window (`Explorer`).
-  There is **no task pane in Inspector windows** (pop-out read/compose). The ribbon
-  button is on the Explorer's Mail tab (`idMso="TabMail"`, via `RibbonBase.HomeTabIdMso`
-  / `ProvidesRibbonFor`) and suppressed on every Inspector ribbon surface.
+- **Main window and item windows.** The chat pane docks in the main Outlook window
+  (`Explorer`), with the ribbon button on its Mail tab (`idMso="TabMail"`). A mail
+  compose window (`TabNewMailMessage`) and the appointment and meeting editor
+  (`TabAppointment`) also get the button (`Ribbon.TabIdMsoFor`). Windows that only read
+  an item, such as a received email or meeting request, get none. An item window's pane
+  (`ItemPaneHost`) is created on the first button press there, never when the window
+  opens, and removed on `Inspector.Close`.
+- **Item chats.** An item window's chat belongs to that item, not to the window:
+  `item-` + a hash of the store and EntryID, so a draft reopened from Drafts resumes
+  its chat. A new item has no EntryID until its first save, so it starts on a
+  provisional `new-` id and `ChatStore.Migrate` moves it at the first save
+  (`ItemChatId`). Each item chat has its own editing mode; undo history stays per
+  mailbox. The item (subject, recipients, times, attendees, location, the start of the
+  body) is sent as the pane's selection context and refreshed on `PropertyChange`. The
+  pane cannot change its item yet; it offers the main window's tools.
+  **NOT VERIFIED AGAINST LIVE OUTLOOK** — builds clean; whether `CustomTaskPanes.Add`
+  docks in an Inspector, and whether `TabAppointment` is also the meeting editor's
+  tab, were never run in Outlook.
 - **Per-mailbox chat.** `GetChatId()` returns `mbx-` + `SHA256(primary SMTP)[:16]` —
   one rolling conversation per mailbox. No file path, so none of Word/Excel/
   PowerPoint's provisional-id / `ChatStore.Migrate` / `DocSettingsStore` save

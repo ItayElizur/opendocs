@@ -95,6 +95,23 @@ export interface RawSelectionPayload {
   senderName?: string
   folderName?: string
   conversationTopic?: string | null
+  // Outlook item window (OutlookAiAddIn/ItemPaneHost.cs): the one mail draft or appointment the pane belongs to.
+  // entryId is '' until the item's first save.
+  itemKind?: 'mail' | 'appointment'
+  entryId?: string
+  to?: string
+  cc?: string
+  bcc?: string
+  location?: string
+  start?: string
+  end?: string
+  allDay?: boolean
+  isMeeting?: boolean
+  isOrganizer?: boolean
+  requiredAttendees?: string
+  optionalAttendees?: string
+  resources?: string
+  bodyPreview?: string
 }
 
 export interface BridgeHandlers {

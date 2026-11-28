@@ -24,6 +24,20 @@ namespace OutlookAiAddIn
             public Outlook.ExplorerEvents_10_SelectionChangeEventHandler OnSelectionChange;
         }
 
+        // A pane inside one item window (a mail draft, an appointment or meeting), created on the first button press
+        // there and removed when the window closes. See ThisAddIn.cs.md.
+        private sealed class ItemPaneEntry
+        {
+            public Outlook.Inspector Inspector;
+            public CustomTaskPane Pane;
+            public ItemPaneHost Control;
+            public Outlook.InspectorEvents_10_CloseEventHandler OnClose;
+        }
+
+        // Keyed by the Inspector's COM identity, like _panes. Outlook opens an item in at most one window, so one
+        // window's pane is also the only live pane for that item's chat.
+        private readonly Dictionary<IntPtr, ItemPaneEntry> _itemPanes = new Dictionary<IntPtr, ItemPaneEntry>();
+
         // Outlook's Explorer has no Hwnd (unlike Word/Excel/PowerPoint windows)
         // and RCW reference-equality is unreliable across COM calls, so panes
         // are keyed by the COM identity pointer (IUnknown). A lookup miss falls
@@ -74,6 +88,7 @@ namespace OutlookAiAddIn
             var keys = new List<IntPtr>(_panes.Keys);
             foreach (IntPtr key in keys) RemovePane(key);
             _panes.Clear();
+            foreach (IntPtr key in new List<IntPtr>(_itemPanes.Keys)) RemoveItemPane(key);
             _pendingActivate.Clear();
             _explorers = null;
         }
@@ -225,11 +240,17 @@ namespace OutlookAiAddIn
             catch { /* best-effort, mirrors the other hosts */ }
         }
 
-        // Invoked by Ribbon.cs. Creates the active explorer's pane on demand
-        // (so the button also recovers an explorer that never got one) then
-        // toggles visibility.
-        public void TogglePane()
+        // Invoked by Ribbon.cs with the window whose button was pressed. An item window gets its own pane; otherwise
+        // this creates the active explorer's pane on demand (so the button also recovers an explorer that never got
+        // one) then toggles visibility.
+        public void TogglePane(object context)
         {
+            if (context is Outlook.Inspector inspector)
+            {
+                try { ToggleItemPane(inspector); }
+                catch (Exception ex) { DebugLog.WriteException("ToggleItemPane", ex); }
+                return;
+            }
             try
             {
                 Outlook.Explorer active = this.Application.ActiveExplorer();
@@ -238,6 +259,65 @@ namespace OutlookAiAddIn
                 if (entry != null) entry.Pane.Visible = !entry.Pane.Visible;
             }
             catch { }
+        }
+
+        private void ToggleItemPane(Outlook.Inspector inspector)
+        {
+            IntPtr key = IdOf(inspector);
+            ItemPaneEntry existing;
+            if (_itemPanes.TryGetValue(key, out existing))
+            {
+                existing.Pane.Visible = !existing.Pane.Visible;
+                return;
+            }
+
+            object item = inspector.CurrentItem;
+            if (!(item is Outlook.MailItem) && !(item is Outlook.AppointmentItem)) return;
+            if (!_paneCreationInProgress.Add(key)) return;
+            try
+            {
+                var control = new ItemPaneHost(item);
+                CustomTaskPane pane = this.CustomTaskPanes.Add(control, PaneTitle(), inspector);
+                pane.Width = 420;
+                pane.Visible = true;
+                control.RequestPaneWidth += width => ApplyPaneWidth(pane, width);
+
+                var entry = new ItemPaneEntry { Inspector = inspector, Pane = pane, Control = control };
+                entry.OnClose = () =>
+                {
+                    try { RemoveItemPane(key); } catch { }
+                };
+                ((Outlook.InspectorEvents_10_Event)inspector).Close += entry.OnClose;
+                _itemPanes[key] = entry;
+            }
+            finally
+            {
+                _paneCreationInProgress.Remove(key);
+            }
+        }
+
+        // Also runs from Inspector.Close, before Outlook lets go of the item: the last chat id check there moves a new
+        // draft's chat onto its saved id if the window's own save just gave it one.
+        private void RemoveItemPane(IntPtr key)
+        {
+            ItemPaneEntry entry;
+            if (!_itemPanes.TryGetValue(key, out entry)) return;
+            _itemPanes.Remove(key);
+
+            try { ((Outlook.InspectorEvents_10_Event)entry.Inspector).Close -= entry.OnClose; }
+            catch { }
+
+            entry.Control.FlushChatIdMigration();
+
+            try
+            {
+                entry.Pane.Visible = false;
+                this.CustomTaskPanes.Remove(entry.Pane);
+            }
+            catch { }
+
+            try { entry.Control.Dispose(); } catch { }
+            entry.Inspector = null;
         }
 
         protected override Microsoft.Office.Core.IRibbonExtensibility CreateRibbonExtensibilityObject()
