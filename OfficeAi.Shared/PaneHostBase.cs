@@ -181,6 +181,9 @@ namespace OfficeAi.Shared
         // so the mode is per-document rather than shared across every window.
         protected abstract void SetEditingMode(EditingMode mode);
 
+        // Runs when the page has started and can receive messages. Outlook's item window sends its item here.
+        protected virtual void OnPageStarted() { }
+
         // Office's UI display language id - abstract because this shared
         // assembly has no access to any app's own VSTO-generated Globals
         // class. See OfficeLanguage.cs for how the LCID maps to a UI
@@ -216,6 +219,10 @@ namespace OfficeAi.Shared
                         kind = "history-loaded",
                         messages = records.ConvertAll(r => new { role = r.Role, text = r.Text }),
                     });
+                    // The page asks for history once when it starts, and anything posted before then was dropped, so
+                    // the selection is sent again even if it has not changed.
+                    _lastSelectionSignature = null;
+                    OnPageStarted();
                     break;
                 case "append-message":
                     string role = root.GetProperty("role").GetString();

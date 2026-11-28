@@ -1233,6 +1233,18 @@ describe('mountChatUI', () => {
     expect(root.querySelector('#scopeHintLabel')!.textContent).toBe('4 emails')
   })
 
+  it('an Outlook item window shows its subject, or names the draft or event before it has one', () => {
+    const { root, handle } = setup({ scopeUnit: 'mailbox' })
+    handle.setSelectionScope({ hasSelection: true, extent: { kind: 'outlookItem', itemKind: 'appointment', subject: 'Sync' } })
+    expect(root.querySelector('#scopeHintLabel')!.textContent).toBe('Sync')
+
+    handle.setSelectionScope({ hasSelection: true, extent: { kind: 'outlookItem', itemKind: 'appointment', subject: '' } })
+    expect(root.querySelector('#scopeHintLabel')!.textContent).toBe('This event')
+
+    handle.setSelectionScope({ hasSelection: true, extent: { kind: 'outlookItem', itemKind: 'mail', subject: '' } })
+    expect(root.querySelector('#scopeHintLabel')!.textContent).toBe('This draft')
+  })
+
   it('options.modes narrows the composer mode menu (Outlook: read only + full autonomy only)', () => {
     const { root } = setup({ modes: ['readOnly', 'fullAutonomy'] })
     const items = [...root.querySelectorAll<HTMLElement>('.ai-mode-menu-item')].map((el) => el.dataset.mode)

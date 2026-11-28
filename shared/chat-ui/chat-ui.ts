@@ -166,6 +166,9 @@ const STRINGS: Record<string, Record<Lang, string>> = {
   scopeWholeMailbox:    { en: 'Whole mailbox', he: 'כל תיבת הדואר' },
   scopeEmail:           { en: 'Selected email', he: 'הודעה נבחרת' },
   scopeEmails:          { en: 'emails', he: 'הודעות' },
+  // Outlook item window: the one draft or event the pane belongs to, before it has a subject.
+  scopeThisDraft:       { en: 'This draft', he: 'הטיוטה הזו' },
+  scopeThisEvent:       { en: 'This event', he: 'האירוע הזה' },
 }
 
 /** The structured facts of an Excel/PowerPoint selection (FT-2 Task 5); bootstrap.ts
@@ -183,6 +186,7 @@ export type SelectionExtent =
   | { kind: 'shapeText'; shapeName: string | null }
   | { kind: 'wordObject'; objectKind: 'table' | 'chart' | 'smartart'; objectIndex: number }
   | { kind: 'mailSelection'; count: number; subject: string }
+  | { kind: 'outlookItem'; itemKind: 'mail' | 'appointment'; subject: string }
 
 export interface SettingsSavePayload {
   provider: AiProviderId
@@ -964,6 +968,8 @@ export function mountChatUI(root: HTMLElement, options: ChatUIOptions): ChatUIHa
       }
       case 'mailSelection':
         return extent.count === 1 ? extent.subject || t('scopeEmail') : `${extent.count} ${t('scopeEmails')}`
+      case 'outlookItem':
+        return extent.subject || t(extent.itemKind === 'mail' ? 'scopeThisDraft' : 'scopeThisEvent')
       default:
         return ''
     }

@@ -79,6 +79,22 @@ export type SelectionContext =
       folderName: string
       conversationTopic: string | null
     }
+  | { kind: 'outlookMailItem'; entryId: string; subject: string; to: string; cc: string; bcc: string; bodyPreview: string }
+  | {
+      kind: 'outlookAppointment'
+      entryId: string
+      subject: string
+      location: string
+      start: string
+      end: string
+      allDay: boolean
+      isMeeting: boolean
+      isOrganizer: boolean
+      requiredAttendees: string
+      optionalAttendees: string
+      resources: string
+      bodyPreview: string
+    }
 
 function toSelectionContext(raw: RawSelectionPayload): SelectionContext {
   if (!raw.hasSelection) return { kind: 'none' }
@@ -94,6 +110,34 @@ function toSelectionContext(raw: RawSelectionPayload): SelectionContext {
       entireRows: raw.entireRows ?? false,
       effectiveAddress: raw.effectiveAddress ?? null,
       effectiveCellCount: raw.effectiveCellCount ?? 0,
+    }
+  }
+  if (raw.app === 'outlook' && raw.itemKind === 'mail') {
+    return {
+      kind: 'outlookMailItem',
+      entryId: raw.entryId ?? '',
+      subject: raw.subject ?? '',
+      to: raw.to ?? '',
+      cc: raw.cc ?? '',
+      bcc: raw.bcc ?? '',
+      bodyPreview: raw.bodyPreview ?? '',
+    }
+  }
+  if (raw.app === 'outlook' && raw.itemKind === 'appointment') {
+    return {
+      kind: 'outlookAppointment',
+      entryId: raw.entryId ?? '',
+      subject: raw.subject ?? '',
+      location: raw.location ?? '',
+      start: raw.start ?? '',
+      end: raw.end ?? '',
+      allDay: raw.allDay ?? false,
+      isMeeting: raw.isMeeting ?? false,
+      isOrganizer: raw.isOrganizer ?? true,
+      requiredAttendees: raw.requiredAttendees ?? '',
+      optionalAttendees: raw.optionalAttendees ?? '',
+      resources: raw.resources ?? '',
+      bodyPreview: raw.bodyPreview ?? '',
     }
   }
   if (raw.app === 'outlook') {
@@ -226,6 +270,34 @@ function defaultDescribeSelection(ctx: SelectionContext): string {
         `. Their message_ids (Outlook EntryIDs) are: ${ctx.entryIds.join(', ')}.`
       )
     }
+    case 'outlookMailItem':
+      return (
+        `This chat belongs to the email the user is writing in its own Outlook window.` +
+        ` Subject: "${ctx.subject}". To: ${ctx.to || '(nobody yet)'}.` +
+        (ctx.cc ? ` Cc: ${ctx.cc}.` : '') +
+        (ctx.bcc ? ` Bcc: ${ctx.bcc}.` : '') +
+        (ctx.bodyPreview ? ` The body so far begins: "${ctx.bodyPreview}"` : ' The body is empty so far.') +
+        (ctx.entryId ? ` Its message_id (Outlook EntryID) is ${ctx.entryId}.` : '') +
+        ` You cannot change this window's email yourself yet: write the text or the changes for the user to apply,` +
+        ` and use draft_email only when the user asks for a separate email.`
+      )
+    case 'outlookAppointment': {
+      const what = ctx.isMeeting ? 'meeting' : 'appointment'
+      return (
+        `This chat belongs to the ${what} the user has open in its own Outlook window.` +
+        ` Subject: "${ctx.subject}". ` +
+        (ctx.allDay ? `All day, from ${ctx.start} to ${ctx.end}.` : `From ${ctx.start} to ${ctx.end}.`) +
+        (ctx.location ? ` Location: ${ctx.location}.` : '') +
+        (ctx.requiredAttendees ? ` Required attendees: ${ctx.requiredAttendees}.` : '') +
+        (ctx.optionalAttendees ? ` Optional attendees: ${ctx.optionalAttendees}.` : '') +
+        (ctx.resources ? ` Rooms and resources: ${ctx.resources}.` : '') +
+        (ctx.isMeeting && !ctx.isOrganizer ? ' The user is an attendee, not the organizer, so they cannot change it.' : '') +
+        (ctx.bodyPreview ? ` Its description begins: "${ctx.bodyPreview}"` : '') +
+        (ctx.entryId ? ` Its event_id (Outlook EntryID) is ${ctx.entryId}.` : ' It is not saved yet.') +
+        ` You cannot change this window's ${what} yourself yet: tell the user what to change,` +
+        ` and use find_meeting_slots to suggest times.`
+      )
+    }
     default:
       return ''
   }
@@ -279,6 +351,9 @@ function toSelectionScopeUpdate(raw: RawSelectionPayload): { hasSelection: boole
       return { hasSelection: true, extent: { kind: 'cell', address: raw.address ?? '' } }
     }
     return { hasSelection: true, extent: { kind: 'range', address: raw.address ?? '', rows: raw.rows ?? 0, cols: raw.cols ?? 0 } }
+  }
+  if (raw.app === 'outlook' && raw.itemKind) {
+    return { hasSelection: true, extent: { kind: 'outlookItem', itemKind: raw.itemKind, subject: raw.subject ?? '' } }
   }
   if (raw.app === 'outlook') {
     const count = (raw.entryIds ?? []).length

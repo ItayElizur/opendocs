@@ -48,7 +48,7 @@ import { startAddIn } from '../web-src/app-shell/bootstrap'
 
 const flush = () => new Promise((r) => setTimeout(r, 0))
 
-function boot() {
+function boot(extra: Record<string, unknown> = {}) {
   document.body.innerHTML = '<div id="root"></div>'
   h.toolCalls.length = 0
   h.persisted.length = 0
@@ -60,6 +60,7 @@ function boot() {
     skillId: 'test',
     starters: [],
     readOnlyTools: ['read_doc'],
+    ...extra,
   })
   const root = document.getElementById('root')!
   const textarea = root.querySelector<HTMLTextAreaElement>('.ai-textarea')!
@@ -157,6 +158,38 @@ describe('direct tool call in the app shell', () => {
     await flush()
     expect(h.streams).toHaveLength(1)
     expect(JSON.stringify(h.streams[0]!.req.messages)).not.toContain('queued behind the call')
+  })
+})
+
+describe('an Outlook item window', () => {
+  it('tells the model about the draft the pane belongs to, even before its first save', async () => {
+    const { send } = boot({ useSelectionContext: true })
+    h.bridge.onSelectionChanged({
+      hasSelection: true, app: 'outlook', itemKind: 'mail', entryId: '',
+      subject: 'Budget for Q3', to: 'dana@example.com', cc: '', bcc: '', bodyPreview: 'Hi Dana,',
+    })
+    send('make it shorter')
+    await flush()
+    const sent = lastMessages()
+    expect(sent).toContain('This chat belongs to the email the user is writing')
+    expect(sent).toContain('Budget for Q3')
+    expect(sent).toContain('dana@example.com')
+    expect(sent).not.toContain('message_id')
+  })
+
+  it('says when the user only attends the meeting', async () => {
+    const { send } = boot({ useSelectionContext: true })
+    h.bridge.onSelectionChanged({
+      hasSelection: true, app: 'outlook', itemKind: 'appointment', entryId: 'E1', subject: 'Sync',
+      start: '2026-12-01T10:00', end: '2026-12-01T10:30', isMeeting: true, isOrganizer: false,
+      requiredAttendees: 'Dana', optionalAttendees: 'Noa',
+    })
+    send('move it')
+    await flush()
+    const sent = lastMessages()
+    expect(sent).toContain('Optional attendees: Noa')
+    expect(sent).toContain('cannot change it')
+    expect(sent).toContain('event_id (Outlook EntryID) is E1')
   })
 })
 

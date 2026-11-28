@@ -17,16 +17,16 @@ namespace OutlookAiAddIn
     // left there and refuses rather than overwrite an intervening change.
     public static partial class OutlookTools
     {
-        private static readonly Dictionary<string, ActionHistory<UndoEntry>> HistoryByMailbox =
+        private static readonly Dictionary<string, ActionHistory<UndoEntry>> HistoryByChat =
             new Dictionary<string, ActionHistory<UndoEntry>>();
 
         private static ActionHistory<UndoEntry> HistoryFor(string mbxKey)
         {
             ActionHistory<UndoEntry> h;
-            if (!HistoryByMailbox.TryGetValue(mbxKey, out h))
+            if (!HistoryByChat.TryGetValue(mbxKey, out h))
             {
                 h = new ActionHistory<UndoEntry>();
-                HistoryByMailbox[mbxKey] = h;
+                HistoryByChat[mbxKey] = h;
             }
             return h;
         }
