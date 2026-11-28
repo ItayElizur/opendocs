@@ -9,7 +9,7 @@ using Outlook = Microsoft.Office.Interop.Outlook;
 namespace OutlookAiAddIn
 {
     // The chat pane inside one item window: a mail draft, or an appointment or meeting. Its chat belongs to that item
-    // (ItemChatId), with its own editing mode and its own undo track. See ItemPaneHost.cs.md.
+    // (ItemChatId), with its own editing mode, and the model there edits only that item. See ItemPaneHost.cs.md.
     public class ItemPaneHost : PaneHostBase
     {
         private const string AppDataFolder = "OutlookAiAddIn";
@@ -19,7 +19,7 @@ namespace OutlookAiAddIn
         private string _chatId;
         private readonly Outlook.ItemEvents_10_PropertyChangeEventHandler _onPropertyChange;
 
-        public ItemPaneHost(object item) : base(AppDataFolder)
+        public ItemPaneHost(object item) : base(AppDataFolder, item is Outlook.MailItem ? "mail" : "appointment")
         {
             _item = item;
             _onPropertyChange = name =>
@@ -30,27 +30,75 @@ namespace OutlookAiAddIn
             if (item is Outlook.ItemEvents_10_Event events) events.PropertyChange += _onPropertyChange;
         }
 
-        // The item window's own gate, the second copy of entry.ts's item-window lists. Only these mailbox reads pass on
-        // to OutlookTools; every mailbox action stays in the main window. Must stay in sync with entry.ts's
-        // itemReadOnlyTools.
+        // The item window's own gate, the second copy of entry.ts's item-window lists. The mailbox reads pass on to
+        // OutlookTools; the item tools run here against this pane's item; every mailbox action stays in the main window.
+        // Must stay in sync with entry.ts's itemReadOnlyTools.
         private static readonly HashSet<string> ItemReadTools = new HashSet<string>
         {
             "search_emails", "get_email", "open_email", "get_attachment", "list_folders", "search_contacts",
             "list_events", "get_event", "find_meeting_slots", "list_color_categories", "list_tasks",
+            "get_current_item", "read_main_chat",
         };
+
+        // "Edit this draft" (Edit this meeting), on the CommentOnly slot. Must stay in sync with entry.ts's
+        // itemEditExtraTools.
+        private static readonly HashSet<string> ItemEditTools = new HashSet<string>
+        {
+            "edit_current_body", "set_current_fields",
+        };
+
+        // The mode the page last set; PaneHostBase runs no tool before the first one.
+        private EditingMode _mode = EditingMode.ReadOnly;
 
         protected override Task<ToolResult> ExecuteTool(string name, JsonElement input)
         {
-            if (!ItemReadTools.Contains(name))
+            bool edit = ItemEditTools.Contains(name);
+            if (!edit && !ItemReadTools.Contains(name))
+                return Task.FromResult(Refused(name, "Blocked: " + name + " is done from the main Outlook window, not from this item's window."));
+            if (edit && _mode < EditingMode.CommentOnly)
+                return Task.FromResult(Refused(name, "Blocked: this window is in Read only mode. Suggest the change instead, or ask the user to switch to " + EditModeLabel() + "."));
+            try
             {
-                return Task.FromResult(new ToolResult
+                switch (name)
                 {
-                    Output = "Blocked: " + name + " is done from the main Outlook window, not from this item's window.",
-                    IsError = true,
-                    Summary = name,
-                });
+                    case "get_current_item": return Task.FromResult(OutlookTools.GetCurrentItem(_item));
+                    case "read_main_chat": return Task.FromResult(OutlookTools.ReadMainChat());
+                    case "edit_current_body": return Task.FromResult(OutlookTools.EditCurrentBody(_item, input));
+                    case "set_current_fields": return Task.FromResult(OutlookTools.SetCurrentFields(_item, input));
+                    case "find_meeting_slots": input = WithDefaultAttendees(input); break;
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLog.WriteException("ItemPaneHost " + name, ex);
+                return Task.FromResult(Refused(name, ex.Message));
             }
             return OutlookTools.ExecuteAsync(GetChatId(), name, input);
+        }
+
+        private static ToolResult Refused(string name, string output)
+        {
+            return new ToolResult { Output = output, IsError = true, Summary = name };
+        }
+
+        private string EditModeLabel()
+        {
+            return _item is Outlook.MailItem ? "Edit this draft" : "Edit this meeting";
+        }
+
+        // In a meeting's window, find_meeting_slots called without attendees looks for the meeting's own.
+        private JsonElement WithDefaultAttendees(JsonElement input)
+        {
+            if (!string.IsNullOrEmpty(OutlookTools.Str(input, "attendees", null))) return input;
+            string attendees = OutlookTools.CurrentAttendees(_item);
+            if (attendees.Length == 0) return input;
+            var args = input.ValueKind == JsonValueKind.Object
+                ? JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(input.GetRawText())
+                : new Dictionary<string, JsonElement>();
+            using (JsonDocument value = JsonDocument.Parse(JsonSerializer.Serialize(attendees)))
+                args["attendees"] = value.RootElement.Clone();
+            using (JsonDocument doc = JsonDocument.Parse(JsonSerializer.Serialize(args)))
+                return doc.RootElement.Clone();
         }
 
         // A new item has no EntryID until its first save (Outlook's AutoSave does one after a few minutes), so the chat
@@ -78,6 +126,7 @@ namespace OutlookAiAddIn
 
         protected override void SetEditingMode(EditingMode mode)
         {
+            _mode = mode;
             OutlookTools.SetMode(GetChatId(), mode);
         }
 

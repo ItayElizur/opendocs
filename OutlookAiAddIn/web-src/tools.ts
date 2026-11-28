@@ -420,3 +420,72 @@ export const ALL_OUTLOOK_TOOLS = [
     inputSchema: { type: 'object', properties: EVENT_PROPS, required: [] },
   },
 ]
+
+// The item window's own tools (ItemPaneHost.cs): they act on the email, appointment or meeting open in that window,
+// never on an id. find_meeting_slots is repeated with its attendees optional, because there they default to the
+// meeting's own.
+const RECIPIENT_LIST = { type: 'array', items: { type: 'string' } }
+const FIND_SLOTS = ALL_OUTLOOK_TOOLS.find((t) => t.name === 'find_meeting_slots')!
+export const ITEM_WINDOW_TOOLS = [
+  {
+    name: 'get_current_item',
+    description:
+      'Reads the email, appointment or meeting open in this window, in full: subject, every recipient or attendee with their kind (and each attendee\'s response), times, location, recurrence, reminder, show-as, categories, and the whole body as text (signature and quoted thread included). Call it before changing anything, and again when an edit says the text was not found, since the user may have typed since.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'edit_current_body',
+    description:
+      "Edits the body of the item in this window in place, keeping its formatting, signature and quoted thread; the user can undo each edit with Ctrl+Z. Either replace a passage: find (copied exactly from get_current_item's body, line breaks as \n) and replace_with (\"\" deletes it). Or add text: insert and at (start, end, or the user's cursor). In a reply, \"end\" is after the quoted thread, so to add to the user's own text replace a passage of it instead. Rewrite in several smaller edits rather than one huge one, and never touch the quoted thread unless asked. Nothing is sent or saved.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        find: { type: 'string', description: 'The exact passage to replace, from the current body. Must appear once, or pass match.' },
+        replace_with: { type: 'string', description: 'The new text for that passage. Line breaks as \n.' },
+        match: { type: 'number', description: 'Which occurrence of find to replace, when it appears more than once (1 = first). Only after an error listed them.' },
+        insert: { type: 'string', description: 'Text to add. Line breaks as \n.' },
+        at: { type: 'string', enum: ['start', 'end', 'cursor'], description: 'Where to add insert.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'set_current_fields',
+    description:
+      'Changes fields of the item in this window, never its body. Nothing is sent or saved: the user presses Send (or Send Update) themselves. For an email: subject, importance, recipients. For an appointment or meeting: subject, start, end, all_day, location, recurrence, reminder_minutes, show_as, categories, attendees (required, optional) and rooms (resource). Recipients change by name or address: add_recipients adds people under a kind, and adding someone already on the item under another kind moves them ("make Dana optional" is add_recipients {"optional": ["Dana"]}); remove_recipients takes them off. A name that does not resolve to exactly one person is reported, not guessed: then find the address with search_contacts. A meeting the user only attends cannot be changed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        subject: { type: 'string' },
+        importance: { type: 'string', enum: ['low', 'normal', 'high'], description: 'Email only.' },
+        add_recipients: {
+          type: 'object',
+          description: 'Kind -> names or addresses. An email takes to, cc, bcc; a meeting takes required, optional, resource.',
+          properties: { to: RECIPIENT_LIST, cc: RECIPIENT_LIST, bcc: RECIPIENT_LIST, required: RECIPIENT_LIST, optional: RECIPIENT_LIST, resource: RECIPIENT_LIST },
+        },
+        remove_recipients: { type: 'array', items: { type: 'string' }, description: 'Names or addresses to take off, whatever their kind.' },
+        start: { type: 'string', description: 'Date-time, e.g. "2026-09-01T14:00". Alone, it moves the event and keeps its duration.' },
+        end: { type: 'string', description: 'Date-time.' },
+        all_day: { type: 'boolean' },
+        location: { type: 'string' },
+        recurrence: { ...EVENT_RECURRENCE, description: EVENT_RECURRENCE.description.replace('New events only. Makes this a recurring series.', 'Makes this appointment repeat, or changes how its series repeats.') },
+        remove_recurrence: { type: 'boolean', description: 'true makes a series a single appointment again.' },
+        reminder_minutes: { type: 'number', description: 'Minutes before the start; -1 turns the reminder off.' },
+        show_as: { type: 'string', enum: ['free', 'tentative', 'busy', 'out_of_office', 'working_elsewhere'] },
+        categories: { type: 'string', description: 'Color tags, comma-separated, from list_color_categories. "" clears them.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'read_main_chat',
+    description:
+      "Reads the main Outlook window's chat with the user (its last 20 messages since its last New chat, each cut to 2,000 characters). Call it only when the user refers to something discussed there, such as \"like we discussed\" or \"use what you found earlier\". Read-only.",
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    ...FIND_SLOTS,
+    description: FIND_SLOTS.description.replace('Feed a returned slot to draft_event.', "In a meeting's window, attendees defaults to the meeting's own required and optional attendees. Apply a chosen slot with set_current_fields."),
+    inputSchema: { ...FIND_SLOTS.inputSchema, required: ['duration_minutes'] },
+  },
+]

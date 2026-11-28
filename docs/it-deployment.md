@@ -139,6 +139,12 @@ have the same four names, but each app shows its own label:
 | `trackChanges` | Track changes: edits as Word tracked changes | **Edits with approval**: any edit, asking for approval as the policy sets | **Actions with approval**: also answers meeting invitations and deletes permanently, asking for approval as the policy sets |
 | `fullAutonomy` | Full autonomy: edits directly | Full autonomy | Full autonomy: also sends mail and calendar events immediately |
 
+The chat in an Outlook draft or meeting window has only two of these: `readOnly`, and `commentOnly` shown as **Edit
+this draft** (or **Edit this meeting**), which changes the item in its window and never sends. So switching
+`commentOnly` off for Outlook removes both Draft only in the main window and Edit this draft in those windows. To ask
+before each edit there, list `edit_current_body` and `set_current_fields` under `requireApproval` with
+`["commentOnly"]`.
+
 **Full autonomy never asks for approval**, whatever the policy lists: it is the mode without a person checking each
 step. If the assistant must not act on its own, switch Full autonomy off with `disabledModes`.
 

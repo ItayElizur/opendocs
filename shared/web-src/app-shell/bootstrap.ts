@@ -278,8 +278,8 @@ function defaultDescribeSelection(ctx: SelectionContext): string {
         (ctx.bcc ? ` Bcc: ${ctx.bcc}.` : '') +
         (ctx.bodyPreview ? ` The body so far begins: "${ctx.bodyPreview}"` : ' The body is empty so far.') +
         (ctx.entryId ? ` Its message_id (Outlook EntryID) is ${ctx.entryId}.` : '') +
-        ` You cannot change this window's email yourself yet: write the text or the changes for the user to apply,` +
-        ` and use draft_email only when the user asks for a separate email.`
+        ` get_current_item reads it in full; edit_current_body and set_current_fields change it in its window when the` +
+        ` mode allows, and otherwise you suggest the changes. Nothing is sent: the user presses Send.`
       )
     case 'outlookAppointment': {
       const what = ctx.isMeeting ? 'meeting' : 'appointment'
@@ -294,8 +294,8 @@ function defaultDescribeSelection(ctx: SelectionContext): string {
         (ctx.isMeeting && !ctx.isOrganizer ? ' The user is an attendee, not the organizer, so they cannot change it.' : '') +
         (ctx.bodyPreview ? ` Its description begins: "${ctx.bodyPreview}"` : '') +
         (ctx.entryId ? ` Its event_id (Outlook EntryID) is ${ctx.entryId}.` : ' It is not saved yet.') +
-        ` You cannot change this window's ${what} yourself yet: tell the user what to change,` +
-        ` and use find_meeting_slots to suggest times.`
+        ` get_current_item reads it in full; edit_current_body and set_current_fields change it in its window when the` +
+        ` mode allows, and otherwise you suggest the changes. find_meeting_slots suggests times.`
       )
     }
     default:
