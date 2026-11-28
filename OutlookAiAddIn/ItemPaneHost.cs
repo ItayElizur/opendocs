@@ -88,7 +88,7 @@ namespace OutlookAiAddIn
                 string subject = mail.Subject ?? "", to = mail.To ?? "", cc = mail.CC ?? "", bcc = mail.BCC ?? "";
                 string body = Preview(mail.Body);
                 string entryId = mail.EntryID ?? "";
-                PostSelection(new
+                PostItemPayload(new
                 {
                     kind = "selection-changed",
                     app = "outlook",
@@ -100,7 +100,7 @@ namespace OutlookAiAddIn
                     cc,
                     bcc,
                     bodyPreview = body,
-                }, string.Join("\u0001", "mail", entryId, subject, to, cc, bcc, body));
+                });
             }
             else if (_item is Outlook.AppointmentItem appt)
             {
@@ -113,7 +113,7 @@ namespace OutlookAiAddIn
                                    appt.MeetingStatus != Outlook.OlMeetingStatus.olMeetingReceivedAndCanceled;
                 string body = Preview(appt.Body);
                 string entryId = appt.EntryID ?? "";
-                PostSelection(new
+                PostItemPayload(new
                 {
                     kind = "selection-changed",
                     app = "outlook",
@@ -131,8 +131,14 @@ namespace OutlookAiAddIn
                     optionalAttendees = optional,
                     resources,
                     bodyPreview = body,
-                }, string.Join("\u0001", "appointment", entryId, subject, location, start, end, allDay, isMeeting, isOrganizer, required, optional, resources, body));
+                });
             }
+        }
+
+        // The payload itself is the "did it change?" key, so a field added to it can never be missed by the check.
+        private void PostItemPayload(object payload)
+        {
+            PostSelection(payload, JsonSerializer.Serialize(payload));
         }
 
         private static string Iso(DateTime value)
